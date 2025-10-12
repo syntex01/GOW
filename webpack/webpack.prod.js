@@ -19,7 +19,12 @@ const prod = {
     }
   },
   plugins: [
-    new CleanWebpackPlugin(['dist/*.js'], { root: path.resolve(__dirname, '../') }),
+    new CleanWebpackPlugin(['dist/*.js'], { root: path.resolve(__dirname, '../') })
+  ]
+}
+
+if (process.env.OBFUSCATE === 'true') {
+  prod.plugins.push(
     new JavaScriptObfuscator(
       {
         rotateStringArray: true,
@@ -29,7 +34,7 @@ const prod = {
       },
       ['vendors.*.js']
     )
-  ]
+  )
 }
 
 module.exports = merge(common, prod)
