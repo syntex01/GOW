@@ -1,6 +1,9 @@
 import 'phaser'
-import MainScene from './scenes/mainScene'
+import BootScene from './scenes/bootScene'
 import PreloadScene from './scenes/preloadScene'
+import MenuScene from './scenes/menuScene'
+import BattleScene from './scenes/battleScene'
+import HUDScene from './scenes/hudScene'
 // @ts-ignore
 import SpineWebGLPlugin from './plugins/SpineWebGLPlugin'
 
@@ -26,12 +29,12 @@ window.addEventListener('load', () => {
     plugins: {
       scene: [{ key: 'SpineWebGLPlugin', plugin: SpineWebGLPlugin, start: true, sceneKey: 'spine' }]
     },
-    scene: [PreloadScene, MainScene],
+    scene: [BootScene, PreloadScene, MenuScene, BattleScene, HUDScene],
     physics: {
       default: 'arcade',
       arcade: {
         debug: false,
-        gravity: { y: 2500 }
+        gravity: { x: 0, y: 0 }
       }
     }
   }
