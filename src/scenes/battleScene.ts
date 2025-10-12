@@ -1,64 +1,15 @@
-import LaneManager, { UnitBlueprint, UnitFaction } from '../battle/laneManager'
-import Base from '../battle/base'
 import { gameEvents, GameEvents } from '../state/events'
 import { gameState, MatchSnapshot } from '../state/gameState'
 
-const HINT_MESSAGE = 'Tap or click a lane to deploy units. Buttons select which troop to send.'
-
-type BlueprintKey = 'infantry' | 'tank' | 'scout'
-
-const UNIT_BLUEPRINTS: Record<BlueprintKey, UnitBlueprint & { cost: number; label: string }> = {
-  infantry: {
-    key: 'infantry',
-    label: 'Infantry',
-    cost: 25,
-    maxHp: 40,
-    damage: 6,
-    speed: 70,
-    attackInterval: 900,
-    range: 36,
-    tint: 0x38bdf8
-  },
-  tank: {
-    key: 'tank',
-    label: 'Guardian',
-    cost: 45,
-    maxHp: 90,
-    damage: 12,
-    speed: 50,
-    attackInterval: 1200,
-    range: 42,
-    tint: 0x22c55e,
-    width: 64,
-    height: 40
-  },
-  scout: {
-    key: 'scout',
-    label: 'Skirmisher',
-    cost: 18,
-    maxHp: 28,
-    damage: 4,
-    speed: 110,
-    attackInterval: 600,
-    range: 28,
-    tint: 0xf97316,
-    width: 44,
-    height: 26
-  }
+interface LaneMarker {
+  rect: Phaser.GameObjects.Rectangle
+  index: number
 }
 
 export default class BattleScene extends Phaser.Scene {
+  private laneMarkers: LaneMarker[] = []
   private resourceTimer?: Phaser.Time.TimerEvent
-  private enemySpawnTimer?: Phaser.Time.TimerEvent
   private snapshot: MatchSnapshot = gameState.getMatchSnapshot()
-  private playerBase?: Base
-  private enemyBase?: Base
-  private laneManager?: LaneManager
-  private selectedBlueprint: BlueprintKey = 'infantry'
-  private unitButtons: Phaser.GameObjects.Text[] = []
-  private tapHint?: Phaser.GameObjects.Text
-  private pointerHandler?: (pointer: Phaser.Input.Pointer) => void
-  private readonly laneCount = 3
 
   constructor() {
     super({
@@ -70,6 +21,7 @@ export default class BattleScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#071522')
 
     this.buildBattlefield()
+    this.drawBattlefield()
     this.scene.launch('HUDScene', { parentScene: this.scene.key })
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this)
     this.setupInput()
@@ -259,6 +211,48 @@ export default class BattleScene extends Phaser.Scene {
         this.tapHint.setText(HINT_MESSAGE)
       }
     })
+    this.emitHudUpdate()
+  }
+
+  private setupInput() {
+    this.input.keyboard.on('keydown-ESC', () => this.returnToMenu())
+    this.input.keyboard.on('keydown-Q', () => this.applyDamageToEnemyBase(5))
+    this.input.keyboard.on('keydown-W', () => this.applyDamageToPlayerBase(5))
+  }
+
+  private drawBattlefield() {
+    const { width, height } = this.cameras.main
+    const laneHeight = height / 4
+
+    for (let i = 0; i < 3; i += 1) {
+      const laneY = laneHeight * (i + 1)
+      const rect = this.add.rectangle(width / 2, laneY, width - 100, laneHeight - 30, 0x12304b, 0.35)
+      rect.setStrokeStyle(2, 0x2a6f97, 0.8)
+      this.laneMarkers.push({ rect, index: i })
+    }
+
+    const leftBase = this.add.rectangle(80, height / 2, 120, 240, 0x2c8d4c)
+    const rightBase = this.add.rectangle(width - 80, height / 2, 120, 240, 0x8d2c2c)
+    leftBase.setStrokeStyle(4, 0x56da7c)
+    rightBase.setStrokeStyle(4, 0xf87171)
+
+    const leftLabel = this.add.text(leftBase.x, leftBase.y, 'PLAYER
+BASE', {
+      fontFamily: 'Arial Black',
+      fontSize: '20px',
+      color: '#ffffff',
+      align: 'center'
+    })
+    leftLabel.setOrigin(0.5)
+
+    const rightLabel = this.add.text(rightBase.x, rightBase.y, 'ENEMY
+BASE', {
+      fontFamily: 'Arial Black',
+      fontSize: '20px',
+      color: '#ffffff',
+      align: 'center'
+    })
+    rightLabel.setOrigin(0.5)
   }
 
   private simulateResourceTick() {
@@ -285,6 +279,10 @@ export default class BattleScene extends Phaser.Scene {
       this.snapshot.playerResources += bounty
     } else {
       this.snapshot.enemyResources += bounty
+  private applyDamageToEnemyBase(amount: number) {
+    this.snapshot.enemyBaseHp = Math.max(this.snapshot.enemyBaseHp - amount, 0)
+    if (this.snapshot.enemyBaseHp === 0) {
+      this.concludeMatch('Victory!')
     }
     this.emitHudUpdate()
   }
@@ -305,6 +303,10 @@ export default class BattleScene extends Phaser.Scene {
       if (destroyed) {
         this.concludeMatch('Defeat…')
       }
+  private applyDamageToPlayerBase(amount: number) {
+    this.snapshot.playerBaseHp = Math.max(this.snapshot.playerBaseHp - amount, 0)
+    if (this.snapshot.playerBaseHp === 0) {
+      this.concludeMatch('Defeat…')
     }
     this.emitHudUpdate()
   }
@@ -347,6 +349,8 @@ export default class BattleScene extends Phaser.Scene {
       this.pointerHandler = undefined
     }
 
+    this.input.keyboard.removeListener('keydown-Q')
+    this.input.keyboard.removeListener('keydown-W')
     if (this.resourceTimer) {
       this.resourceTimer.destroy()
       this.resourceTimer = undefined
