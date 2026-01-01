@@ -78,7 +78,7 @@ export default class HUDScene extends Phaser.Scene {
     return { playerResources, enemyResources, playerBase, enemyBase, age, resultBanner }
   }
 
-  private addHudText(x: number, y: number, text: string, styleOverrides: Partial<Phaser.Types.GameObjects.Text.TextStyle> = {}) {
+  private addHudText(x: number, y: number, text: string, styleOverrides: any = {}) {
     return this.add
       .text(x, y, text, {
         fontFamily: 'Arial',

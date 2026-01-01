@@ -443,7 +443,7 @@ export class Unit {
       damage: this.config.damage,
       speed: this.config.projectileSpeed || 300,
       unitConfig: this.config,
-      onHit: (projectile) => {
+      onHit: (projectile: any) => {
         // Handled by projectile pool
       }
     })

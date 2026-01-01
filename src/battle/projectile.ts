@@ -25,7 +25,7 @@ export class Projectile {
   public unitConfig: UnitConfig
   private onHit: (projectile: Projectile) => void
   private active: boolean = true
-  private trail: Phaser.GameObjects.Particles.ParticleEmitter | null = null
+  private trail: any = null
   private effectsManager: EffectsManager
 
   constructor(config: ProjectileConfig) {
@@ -179,7 +179,7 @@ export class Projectile {
         if (this.trail && this.trail.manager) {
           this.trail.manager.destroy()
         }
-      })
+      }, [], this)
     }
     this.sprite.destroy()
   }
@@ -200,7 +200,7 @@ export class ProjectilePool {
     this.effectsManager = effectsManager
   }
 
-  spawn(config: Omit<ProjectileConfig, 'scene' | 'effectsManager'>): Projectile {
+  spawn(config: Pick<ProjectileConfig, 'x' | 'y' | 'targetX' | 'targetY' | 'damage' | 'speed' | 'unitConfig' | 'onHit'>): Projectile {
     const projectile = new Projectile({
       ...config,
       scene: this.scene,

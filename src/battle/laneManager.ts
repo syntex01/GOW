@@ -101,8 +101,8 @@ export default class LaneManager {
       return undefined
     }
 
-    const width = blueprint.width ?? 48
-    const height = blueprint.height ?? 32
+    const width = blueprint.width !== undefined ? blueprint.width : 48
+    const height = blueprint.height !== undefined ? blueprint.height : 32
     const offsetFromBase = 32
     const startX =
       faction === 'player'

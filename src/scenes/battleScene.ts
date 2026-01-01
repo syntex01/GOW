@@ -175,7 +175,7 @@ export default class BattleScene extends Phaser.Scene {
           button.setScale(1)
         })
         .on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
-          pointer.event?.stopPropagation()
+          if (pointer.event) { pointer.event.stopPropagation() }
           this.selectUnit(unitConfig.key)
         })
 
@@ -245,7 +245,7 @@ export default class BattleScene extends Phaser.Scene {
     })
 
     container.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
-      pointer.event?.stopPropagation()
+      if (pointer.event) { pointer.event.stopPropagation() }
       this.upgradeAge()
     })
 
