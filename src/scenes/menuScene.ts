@@ -19,7 +19,7 @@ export default class MenuScene extends Phaser.Scene {
     const { centerX, centerY, height } = this.cameras.main
 
     this.add
-      .text(centerX, 100, 'Age of War Prototype', {
+      .text(centerX, 100, '⚔️ Age of War ⚔️', {
         fontFamily: 'Arial Black',
         fontSize: '48px',
         color: '#f5f7fa'
@@ -79,7 +79,9 @@ export default class MenuScene extends Phaser.Scene {
       () => {
         const current = gameState.getSettings().audioEnabled
         gameState.updateSettings({ audioEnabled: !current })
-        this.audioToggle?.setText(`Audio: ${!current ? 'ON' : 'OFF'}`)
+        if (this.audioToggle) {
+          this.audioToggle.setText(`Audio: ${!current ? 'ON' : 'OFF'}`)
+        }
       }
     )
 
@@ -90,7 +92,9 @@ export default class MenuScene extends Phaser.Scene {
       () => {
         const current = gameState.getSettings().fastForward
         gameState.updateSettings({ fastForward: !current })
-        this.speedToggle?.setText(`Speed: ${!current ? 'FAST' : 'NORMAL'}`)
+        if (this.speedToggle) {
+          this.speedToggle.setText(`Speed: ${!current ? 'FAST' : 'NORMAL'}`)
+        }
       }
     )
   }
@@ -167,9 +171,21 @@ export default class MenuScene extends Phaser.Scene {
 
   private instructionsCopy() {
     return (
-      'Defend your base, gather resources, and advance through the ages.\n\n' +
-      'This prototype currently simulates unit lanes and resource flow while HUD overlays display match stats.\n' +
-      'Future updates will introduce real units, abilities, and AI opponents.'
+      '⚔️ HOW TO PLAY ⚔️\n\n' +
+      '🎯 OBJECTIVE: Destroy the enemy base before they destroy yours!\n\n' +
+      '💰 RESOURCES: Earn resources passively over time. Kill enemies for bonus resources.\n\n' +
+      '🏗️ UNITS: Click unit buttons at the bottom, then click a lane to spawn.\n' +
+      '  • Different units have different strengths and costs\n' +
+      '  • Balance your army composition for victory\n\n' +
+      '⬆️ AGES: Upgrade to new ages for stronger units and better income.\n' +
+      '  • Stone Age → Medieval → Modern → Future\n' +
+      '  • Each age unlocks powerful new units\n\n' +
+      '🎮 CONTROLS:\n' +
+      '  • Click lanes to spawn selected unit\n' +
+      '  • 1/2/3 keys for quick lane spawn\n' +
+      '  • SPACE to upgrade age\n' +
+      '  • ESC to return to menu\n\n' +
+      'Click anywhere to close'
     )
   }
 

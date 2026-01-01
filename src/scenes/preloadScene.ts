@@ -43,9 +43,21 @@ export default class PreloadScene extends Phaser.Scene {
     this.load.off(Phaser.Loader.Events.PROGRESS, this.handleProgress, this)
     this.load.off(Phaser.Loader.Events.COMPLETE, this.handleComplete, this)
 
+    // Create particle texture procedurally
+    this.createParticleTexture()
+
     this.loadFromManifest(manifest).then(() => {
       this.scene.start('MenuScene')
     })
+  }
+
+  private createParticleTexture() {
+    // Create a simple white circle texture for particles
+    const graphics = this.add.graphics()
+    graphics.fillStyle(0xffffff, 1)
+    graphics.fillCircle(8, 8, 8)
+    graphics.generateTexture('particle', 16, 16)
+    graphics.destroy()
   }
 
   private handleProgress(value: number) {
@@ -67,10 +79,10 @@ export default class PreloadScene extends Phaser.Scene {
     }
 
     const hasAssets =
-      !!manifest.images?.length ||
-      !!manifest.spritesheets?.length ||
-      !!manifest.audio?.length ||
-      !!manifest.atlases?.length
+      (manifest.images && manifest.images.length > 0) ||
+      (manifest.spritesheets && manifest.spritesheets.length > 0) ||
+      (manifest.audio && manifest.audio.length > 0) ||
+      (manifest.atlases && manifest.atlases.length > 0)
 
     if (!hasAssets) {
       return Promise.resolve()

@@ -42,31 +42,35 @@ export default class HUDScene extends Phaser.Scene {
     const leftColumnX = 30
     const rightColumnX = this.cameras.main.width - 30
 
-    const playerResources = this.addHudText(leftColumnX, topPadding, `Resources: ${snapshot.playerResources}`)
-    const enemyResources = this.addHudText(rightColumnX, topPadding, `Enemy Resources: ${snapshot.enemyResources}`, {
+    const playerResources = this.addHudText(leftColumnX, topPadding, `⚡ 0`)
+    const enemyResources = this.addHudText(rightColumnX, topPadding, `Enemy: 0 ⚡`, {
       align: 'right'
     })
 
-    const playerBase = this.addHudText(leftColumnX, topPadding + 40, `Base HP: ${snapshot.playerBaseHp}`)
-    const enemyBase = this.addHudText(rightColumnX, topPadding + 40, `Enemy Base HP: ${snapshot.enemyBaseHp}`, {
+    const playerBase = this.addHudText(leftColumnX, topPadding + 40, `Base: 0/0`)
+    const enemyBase = this.addHudText(rightColumnX, topPadding + 40, `Enemy Base: 0/0`, {
       align: 'right'
     })
 
     const age = this.add
-      .text(this.cameras.main.centerX, topPadding, `Age ${snapshot.age} — ${difficulty.toUpperCase()}`, {
+      .text(this.cameras.main.centerX, topPadding, `🪨 Stone Age — ${difficulty.toUpperCase()}`, {
         fontFamily: 'Arial Black',
         fontSize: '24px',
-        color: '#ffffff'
+        color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 4
       })
       .setOrigin(0.5, 0)
 
     const resultBanner = this.add
       .text(this.cameras.main.centerX, this.cameras.main.height - 80, '', {
         fontFamily: 'Arial Black',
-        fontSize: '32px',
+        fontSize: '48px',
         color: '#ffffff',
         backgroundColor: '#0f172a',
-        padding: { x: 20, y: 12 }
+        padding: { x: 30, y: 20 },
+        stroke: '#000000',
+        strokeThickness: 6
       })
       .setOrigin(0.5)
       .setAlpha(0)
@@ -87,24 +91,37 @@ export default class HUDScene extends Phaser.Scene {
       .setOrigin(styleOverrides.align === 'right' ? 1 : 0, 0)
   }
 
-  private handleHudUpdate = ({ snapshot }: { snapshot: MatchSnapshot }) => {
+  private handleHudUpdate = (data: any) => {
     if (!this.texts) {
       return
     }
 
-    this.texts.playerResources.setText(`Resources: ${snapshot.playerResources}`)
-    this.texts.enemyResources.setText(`Enemy Resources: ${snapshot.enemyResources}`)
-    this.texts.playerBase.setText(`Base HP: ${snapshot.playerBaseHp}`)
-    this.texts.enemyBase.setText(`Enemy Base HP: ${snapshot.enemyBaseHp}`)
-    this.texts.age.setText(`Age ${snapshot.age} — ${gameState.getSettings().difficulty.toUpperCase()}`)
+    this.texts.playerResources.setText(`⚡ ${Math.floor(data.playerResources || 0)}`)
+    this.texts.enemyResources.setText(`Enemy: ${Math.floor(data.enemyResources || 0)} ⚡`)
+    this.texts.playerBase.setText(`Base: ${Math.floor(data.playerBaseHp || 0)}/${data.playerMaxHp || 0}`)
+    this.texts.enemyBase.setText(`Enemy Base: ${Math.floor(data.enemyBaseHp || 0)}/${data.enemyMaxHp || 0}`)
+
+    const playerAge = this.formatAge(data.playerAge || 'stone')
+    const difficulty = gameState.getSettings().difficulty || 'normal'
+    this.texts.age.setText(`${playerAge} — ${difficulty.toUpperCase()}`)
 
     if (this.texts.resultBanner) {
       this.texts.resultBanner.setAlpha(0)
     }
   }
 
+  private formatAge(age: string): string {
+    const ageMap: Record<string, string> = {
+      stone: '🪨 Stone Age',
+      medieval: '⚔️ Medieval',
+      modern: '🔫 Modern',
+      future: '🚀 Future'
+    }
+    return ageMap[age] || age
+  }
+
   private handleMatchEnded = ({ result }: { result: string }) => {
-    if (!this.texts?.resultBanner) {
+    if (!this.texts || !this.texts.resultBanner) {
       return
     }
 

@@ -19,16 +19,17 @@ const prod = {
     }
   },
   plugins: [
-    new CleanWebpackPlugin(['dist/*.js'], { root: path.resolve(__dirname, '../') }),
-    new JavaScriptObfuscator(
-      {
-        rotateStringArray: true,
-        stringArray: true,
-        // stringArrayEncoding: 'base64', // disabled by default
-        stringArrayThreshold: 0.75
-      },
-      ['vendors.*.js']
-    )
+    new CleanWebpackPlugin(['dist/*.js'], { root: path.resolve(__dirname, '../') })
+    // JavaScriptObfuscator disabled for compatibility
+    // new JavaScriptObfuscator(
+    //   {
+    //     rotateStringArray: true,
+    //     stringArray: true,
+    //     // stringArrayEncoding: 'base64', // disabled by default
+    //     stringArrayThreshold: 0.75
+    //   },
+    //   ['vendors.*.js']
+    // )
   ]
 }
 

@@ -1,337 +1,642 @@
+import Phaser from 'phaser'
+import Base from '../battle/base'
+import { Unit, UnitFaction } from '../battle/unit'
+import { EffectsManager } from '../battle/effectsManager'
+import { ProjectilePool, Projectile } from '../battle/projectile'
+import {
+  ALL_UNIT_CONFIGS,
+  UnitConfig,
+  AgeType,
+  AGE_CONFIGS,
+  getUnitsForAge,
+  getNextAge
+} from '../battle/unitConfig'
 import { gameEvents, GameEvents } from '../state/events'
-import { gameState, MatchSnapshot } from '../state/gameState'
-
-interface LaneMarker {
-  rect: Phaser.GameObjects.Rectangle
-  index: number
-}
+import { gameState } from '../state/gameState'
 
 export default class BattleScene extends Phaser.Scene {
-  private laneMarkers: LaneMarker[] = []
-  private resourceTimer?: Phaser.Time.TimerEvent
-  private snapshot: MatchSnapshot = gameState.getMatchSnapshot()
+  private playerBase!: Base
+  private enemyBase!: Base
+  private effectsManager!: EffectsManager
+  private projectilePool!: ProjectilePool
+
+  // Units
+  private lanes: Map<number, { player: Unit[], enemy: Unit[] }> = new Map()
+  private laneCount: number = 3
+
+  // Game state
+  private playerAge: AgeType = 'stone'
+  private enemyAge: AgeType = 'stone'
+  private playerResources: number = 200
+  private enemyResources: number = 200
+  private playerBaseHp: number = 1000
+  private enemyBaseHp: number = 1000
+
+  // Income
+  private incomeTimer?: Phaser.Time.TimerEvent
+  private enemySpawnTimer?: Phaser.Time.TimerEvent
+
+  // UI
+  private selectedUnitKey?: string
+  private unitButtons: Phaser.GameObjects.Text[] = []
+  private ageButton?: Phaser.GameObjects.Container
+  private hintText?: Phaser.GameObjects.Text
+  private laneVisuals: Phaser.GameObjects.Rectangle[] = []
 
   constructor() {
-    super({
-      key: 'BattleScene'
-    })
+    super({ key: 'BattleScene' })
   }
 
   create() {
-    this.cameras.main.setBackgroundColor('#071522')
+    this.cameras.main.setBackgroundColor('#0a1628')
 
-    this.buildBattlefield()
-    this.drawBattlefield()
-    this.scene.launch('HUDScene', { parentScene: this.scene.key })
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this)
-    this.setupInput()
+    // Initialize systems
+    this.effectsManager = new EffectsManager(this)
+    this.projectilePool = new ProjectilePool(this, this.effectsManager)
 
-    this.resourceTimer = this.time.addEvent({
-      delay: 1000,
-      loop: true,
-      callback: this.simulateResourceTick,
-      callbackScope: this
-    })
-
-    this.enemySpawnTimer = this.time.addEvent({
-      delay: 2200,
-      loop: true,
-      callback: this.spawnEnemyWave,
-      callbackScope: this
-    })
-
-    this.emitHudUpdate()
-  }
-
-  update(_: number, delta: number) {
-    this.laneManager?.update(delta)
-  }
-
-  private setupInput() {
-    this.input.keyboard.on('keydown-ESC', () => this.returnToMenu())
-    this.input.keyboard.on('keydown-ONE', () => this.handlePlayerSpawn(0))
-    this.input.keyboard.on('keydown-TWO', () => this.handlePlayerSpawn(1))
-    this.input.keyboard.on('keydown-THREE', () => this.handlePlayerSpawn(2))
-
-    this.pointerHandler = pointer => {
-      if (!this.laneManager) {
-        return
-      }
-      const safeZoneBottom = this.cameras.main.height - 120
-      if (pointer.y > safeZoneBottom) {
-        return
-      }
-      const laneIndex = this.laneManager.getLaneIndexAt(pointer.y)
-      if (laneIndex >= 0) {
-        this.handlePlayerSpawn(laneIndex)
-      }
+    // Initialize lanes
+    for (let i = 0; i < this.laneCount; i++) {
+      this.lanes.set(i, { player: [], enemy: [] })
     }
 
-    this.input.on(Phaser.Input.Events.POINTER_UP, this.pointerHandler)
+    // Build battlefield
+    this.createBattlefield()
+    this.createBases()
+    this.createUI()
+
+    // Setup input
+    this.setupInput()
+
+    // Start game systems
+    this.startIncome()
+    this.startEnemyAI()
+
+    // Launch HUD
+    this.scene.launch('HUDScene')
+    this.updateHUD()
+
+    // Cleanup on shutdown
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this)
+
+    // Initial hint
+    this.showHint('Select a unit and click a lane to spawn!')
   }
 
-  private buildBattlefield() {
-    const { width, height, centerX } = this.cameras.main
+  private createBattlefield() {
+    const { width, height } = this.cameras.main
 
-    this.unitButtons = []
+    // Draw lanes
+    const laneHeight = height / (this.laneCount + 1)
+    for (let i = 0; i < this.laneCount; i++) {
+      const y = laneHeight * (i + 1)
+      const rect = this.add.rectangle(
+        width / 2,
+        y,
+        width - 200,
+        laneHeight - 40,
+        0x1e3a5f,
+        0.3
+      )
+      rect.setStrokeStyle(2, 0x3b82f6, 0.6)
+      this.laneVisuals.push(rect)
+    }
+
+    // Ground line
+    this.add.line(0, 0, 100, height - 120, width - 100, height - 120, 0x334155, 0.8).setOrigin(0)
+  }
+
+  private createBases() {
+    const { width, height } = this.cameras.main
+
+    this.playerBaseHp = AGE_CONFIGS[this.playerAge].baseHp
+    this.enemyBaseHp = AGE_CONFIGS[this.enemyAge].baseHp
 
     this.playerBase = new Base({
       scene: this,
       side: 'player',
-      x: 90,
+      x: 100,
       y: height / 2,
-      width: 120,
-      height: 240,
-      maxHp: this.snapshot.playerBaseHp,
-      label: 'PLAYER\nBASE',
-      fillColor: 0x2563eb,
-      strokeColor: 0x60a5fa
+      width: 100,
+      height: height - 240,
+      maxHp: this.playerBaseHp,
+      label: 'YOUR\nBASE',
+      fillColor: 0x1e40af,
+      strokeColor: 0x3b82f6
     })
 
     this.enemyBase = new Base({
       scene: this,
       side: 'enemy',
-      x: width - 90,
+      x: width - 100,
       y: height / 2,
-      width: 120,
-      height: 240,
-      maxHp: this.snapshot.enemyBaseHp,
+      width: 100,
+      height: height - 240,
+      maxHp: this.enemyBaseHp,
       label: 'ENEMY\nBASE',
-      fillColor: 0xb91c1c,
-      strokeColor: 0xf87171
+      fillColor: 0x991b1b,
+      strokeColor: 0xef4444
     })
 
-    const battlefield = new Phaser.Geom.Rectangle(0, 0, width, height)
-
-    this.laneManager = new LaneManager({
-      scene: this,
-      battlefieldBounds: battlefield,
-      laneCount: this.laneCount,
-      playerBase: this.playerBase,
-      enemyBase: this.enemyBase,
-      callbacks: {
-        onUnitKilled: this.handleUnitKilled,
-        onBaseDamaged: this.handleBaseDamaged
-      }
-    })
-
-    this.tapHint = this.add
-      .text(centerX, 32, HINT_MESSAGE, {
-        fontFamily: 'Arial',
-        fontSize: '20px',
-        color: '#e2e8f0'
-      })
-      .setOrigin(0.5, 0)
-
-    this.createUnitButtons()
+    // Set initial HP
+    this.playerBase.setHp(this.playerBaseHp)
+    this.enemyBase.setHp(this.enemyBaseHp)
   }
 
-  private createUnitButtons() {
-    const keys: BlueprintKey[] = ['infantry', 'tank', 'scout']
-    const baseY = this.cameras.main.height - 80
-    const spacing = 200
-    const startX = this.cameras.main.centerX - spacing
+  private createUI() {
+    const { width, height, centerX } = this.cameras.main
 
-    keys.forEach((key, index) => {
-      const blueprint = UNIT_BLUEPRINTS[key]
+    // Available units for current age
+    const availableUnits = getUnitsForAge(this.playerAge)
+    const buttonSpacing = 140
+    const startX = centerX - (availableUnits.length * buttonSpacing) / 2 + buttonSpacing / 2
+
+    availableUnits.forEach((unitConfig, index) => {
       const button = this.add
-        .text(startX + spacing * index, baseY, `${blueprint.label}\n${blueprint.cost} energy`, {
-          fontFamily: 'Arial Black',
-          fontSize: '20px',
-          color: '#f8fafc',
-          align: 'center',
-          backgroundColor: 'rgba(30, 41, 59, 0.85)',
-          padding: { x: 18, y: 14 }
-        })
+        .text(
+          startX + buttonSpacing * index,
+          height - 70,
+          `${unitConfig.name}\n${unitConfig.cost}⚡`,
+          {
+            fontFamily: 'Arial Black',
+            fontSize: '16px',
+            color: '#f1f5f9',
+            align: 'center',
+            backgroundColor: '#1e293b',
+            padding: { x: 12, y: 10 }
+          }
+        )
         .setOrigin(0.5)
         .setInteractive({ useHandCursor: true })
-
-      button.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, pointer => {
-        pointer.event?.stopPropagation?.()
-        this.selectBlueprint(key)
-      })
+        .on(Phaser.Input.Events.POINTER_OVER, () => {
+          button.setScale(1.05)
+          this.showHint(unitConfig.description)
+        })
+        .on(Phaser.Input.Events.POINTER_OUT, () => {
+          button.setScale(1)
+        })
+        .on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+          pointer.event?.stopPropagation()
+          this.selectUnit(unitConfig.key)
+        })
 
       this.unitButtons.push(button)
     })
 
-    this.selectBlueprint(this.selectedBlueprint)
-  }
+    // Age upgrade button
+    this.createAgeButton()
 
-  private selectBlueprint(key: BlueprintKey) {
-    this.selectedBlueprint = key
-    this.unitButtons.forEach(button => {
-      const isSelected = button.text.startsWith(UNIT_BLUEPRINTS[key].label)
-      button.setStyle({
-        backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.85)' : 'rgba(30, 41, 59, 0.85)',
-        color: isSelected ? '#0f172a' : '#f8fafc'
+    // Select first unit by default
+    if (availableUnits.length > 0) {
+      this.selectUnit(availableUnits[0].key)
+    }
+
+    // Hint text
+    this.hintText = this.add
+      .text(centerX, 30, '', {
+        fontFamily: 'Arial',
+        fontSize: '18px',
+        color: '#cbd5e1',
+        align: 'center'
       })
-      button.setAlpha(isSelected ? 1 : 0.85)
+      .setOrigin(0.5)
+  }
+
+  private createAgeButton() {
+    const { width } = this.cameras.main
+    const nextAge = getNextAge(this.playerAge)
+
+    if (!nextAge) return
+
+    const ageConfig = AGE_CONFIGS[nextAge]
+    const container = this.add.container(width - 150, 50)
+
+    const bg = this.add.rectangle(0, 0, 130, 60, 0x7c3aed, 1)
+    bg.setStrokeStyle(3, 0xa78bfa)
+
+    const text = this.add
+      .text(0, -10, `⬆ ${ageConfig.name}`, {
+        fontFamily: 'Arial Black',
+        fontSize: '14px',
+        color: '#ffffff',
+        align: 'center'
+      })
+      .setOrigin(0.5)
+
+    const cost = this.add
+      .text(0, 12, `${ageConfig.cost}⚡`, {
+        fontFamily: 'Arial',
+        fontSize: '12px',
+        color: '#fbbf24',
+        align: 'center'
+      })
+      .setOrigin(0.5)
+
+    container.add([bg, text, cost])
+    container.setSize(130, 60)
+    container.setInteractive({ useHandCursor: true })
+
+    container.on(Phaser.Input.Events.POINTER_OVER, () => {
+      container.setScale(1.05)
+      this.showHint(ageConfig.description)
     })
-  }
 
-  private handlePlayerSpawn(laneIndex: number) {
-    this.trySpawnUnit('player', laneIndex, this.selectedBlueprint)
-  }
-
-  private spawnEnemyWave() {
-    const laneIndex = Phaser.Math.Between(0, this.laneCount - 1)
-    const choices: BlueprintKey[] = ['infantry', 'scout']
-    const blueprint = Phaser.Utils.Array.GetRandom(choices)
-    this.trySpawnUnit('enemy', laneIndex, blueprint)
-  }
-
-  private trySpawnUnit(faction: UnitFaction, laneIndex: number, key: BlueprintKey) {
-    const blueprint = UNIT_BLUEPRINTS[key]
-    const cost = blueprint.cost
-
-    if (faction === 'player') {
-      if (this.snapshot.playerResources < cost) {
-        this.flashInsufficientResources()
-        return
-      }
-      this.snapshot.playerResources -= cost
-    } else {
-      if (this.snapshot.enemyResources < cost) {
-        return
-      }
-      this.snapshot.enemyResources -= cost
-    }
-
-    this.laneManager?.spawnUnit(faction, laneIndex, blueprint)
-    this.emitHudUpdate()
-  }
-
-  private flashInsufficientResources() {
-    if (!this.tapHint) {
-      return
-    }
-    this.tapHint.setText('Not enough energy! Wait for income or try a cheaper unit.')
-    this.time.delayedCall(1100, () => {
-      if (this.tapHint) {
-        this.tapHint.setText(HINT_MESSAGE)
-      }
+    container.on(Phaser.Input.Events.POINTER_OUT, () => {
+      container.setScale(1)
     })
-    this.emitHudUpdate()
+
+    container.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+      pointer.event?.stopPropagation()
+      this.upgradeAge()
+    })
+
+    this.ageButton = container
+  }
+
+  private selectUnit(key: string) {
+    this.selectedUnitKey = key
+    const config = ALL_UNIT_CONFIGS[key]
+
+    // Update button styles
+    this.unitButtons.forEach(button => {
+      const isSelected = button.text.startsWith(config.name)
+      button.setStyle({
+        backgroundColor: isSelected ? '#3b82f6' : '#1e293b',
+        color: isSelected ? '#0f172a' : '#f1f5f9'
+      })
+    })
+
+    this.showHint(`Selected: ${config.name} - ${config.description}`)
   }
 
   private setupInput() {
-    this.input.keyboard.on('keydown-ESC', () => this.returnToMenu())
-    this.input.keyboard.on('keydown-Q', () => this.applyDamageToEnemyBase(5))
-    this.input.keyboard.on('keydown-W', () => this.applyDamageToPlayerBase(5))
+    // Click on lane to spawn unit
+    this.input.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+      if (pointer.y < this.cameras.main.height - 120) {
+        const laneIndex = this.getLaneAtY(pointer.y)
+        if (laneIndex !== -1) {
+          this.spawnPlayerUnit(laneIndex)
+        }
+      }
+    })
+
+    // Keyboard shortcuts
+    this.input.keyboard?.on('keydown-ONE', () => this.spawnPlayerUnit(0))
+    this.input.keyboard?.on('keydown-TWO', () => this.spawnPlayerUnit(1))
+    this.input.keyboard?.on('keydown-THREE', () => this.spawnPlayerUnit(2))
+    this.input.keyboard?.on('keydown-SPACE', () => this.upgradeAge())
+    this.input.keyboard?.on('keydown-ESC', () => this.returnToMenu())
   }
 
-  private drawBattlefield() {
-    const { width, height } = this.cameras.main
-    const laneHeight = height / 4
+  private getLaneAtY(y: number): number {
+    for (let i = 0; i < this.laneVisuals.length; i++) {
+      const bounds = this.laneVisuals[i].getBounds()
+      if (y >= bounds.top && y <= bounds.bottom) {
+        return i
+      }
+    }
+    return -1
+  }
 
-    for (let i = 0; i < 3; i += 1) {
-      const laneY = laneHeight * (i + 1)
-      const rect = this.add.rectangle(width / 2, laneY, width - 100, laneHeight - 30, 0x12304b, 0.35)
-      rect.setStrokeStyle(2, 0x2a6f97, 0.8)
-      this.laneMarkers.push({ rect, index: i })
+  private spawnPlayerUnit(laneIndex: number) {
+    if (!this.selectedUnitKey) return
+
+    const config = ALL_UNIT_CONFIGS[this.selectedUnitKey]
+
+    if (this.playerResources < config.cost) {
+      this.showHint('Not enough resources!')
+      this.effectsManager.flash(0xff0000, 100)
+      return
     }
 
-    const leftBase = this.add.rectangle(80, height / 2, 120, 240, 0x2c8d4c)
-    const rightBase = this.add.rectangle(width - 80, height / 2, 120, 240, 0x8d2c2c)
-    leftBase.setStrokeStyle(4, 0x56da7c)
-    rightBase.setStrokeStyle(4, 0xf87171)
-
-    const leftLabel = this.add.text(leftBase.x, leftBase.y, 'PLAYER
-BASE', {
-      fontFamily: 'Arial Black',
-      fontSize: '20px',
-      color: '#ffffff',
-      align: 'center'
-    })
-    leftLabel.setOrigin(0.5)
-
-    const rightLabel = this.add.text(rightBase.x, rightBase.y, 'ENEMY
-BASE', {
-      fontFamily: 'Arial Black',
-      fontSize: '20px',
-      color: '#ffffff',
-      align: 'center'
-    })
-    rightLabel.setOrigin(0.5)
+    this.playerResources -= config.cost
+    this.spawnUnit('player', laneIndex, config)
+    this.updateHUD()
   }
 
-  private simulateResourceTick() {
-    const income = this.calculateIncome()
-    this.snapshot.playerResources += income.player
-    this.snapshot.enemyResources += income.enemy
+  private spawnUnit(faction: UnitFaction, laneIndex: number, config: UnitConfig) {
+    const lane = this.lanes.get(laneIndex)
+    if (!lane) return
 
-    this.emitHudUpdate()
+    const laneY = this.laneVisuals[laneIndex].y
+    const spawnX = faction === 'player' ? this.playerBase.getImpactX() + 40 : this.enemyBase.getImpactX() - 40
+
+    const unit = new Unit({
+      scene: this,
+      faction,
+      config,
+      x: spawnX,
+      y: laneY,
+      laneIndex,
+      effectsManager: this.effectsManager,
+      projectilePool: this.projectilePool
+    })
+
+    if (faction === 'player') {
+      lane.player.push(unit)
+    } else {
+      lane.enemy.push(unit)
+    }
+
+    // Spawn effect
+    this.effectsManager.dustCloud(spawnX, laneY)
   }
 
-  private calculateIncome() {
+  private upgradeAge() {
+    const nextAge = getNextAge(this.playerAge)
+    if (!nextAge) {
+      this.showHint('Already at maximum age!')
+      return
+    }
+
+    const ageConfig = AGE_CONFIGS[nextAge]
+
+    if (this.playerResources < ageConfig.cost) {
+      this.showHint('Not enough resources to upgrade age!')
+      this.effectsManager.flash(0xff0000, 100)
+      return
+    }
+
+    this.playerResources -= ageConfig.cost
+    this.playerAge = nextAge
+
+    // Upgrade base
+    const newMaxHp = ageConfig.baseHp
+    const hpIncrease = newMaxHp - this.playerBase.getHp()
+    this.playerBaseHp = newMaxHp
+    this.playerBase.setHp(this.playerBase.getHp() + hpIncrease)
+
+    // Visual feedback
+    this.effectsManager.explosion(this.playerBase.getBounds().centerX, this.playerBase.getBounds().centerY, 2, 50)
+    this.effectsManager.flash(0xffd700, 200)
+
+    // Recreate UI
+    this.unitButtons.forEach(b => b.destroy())
+    this.unitButtons = []
+    this.ageButton?.destroy()
+    this.createUI()
+
+    this.showHint(`Advanced to ${ageConfig.name}! New units unlocked!`)
+    this.updateHUD()
+  }
+
+  private startIncome() {
+    this.incomeTimer = this.time.addEvent({
+      delay: 1000,
+      loop: true,
+      callback: () => {
+        const settings = gameState.getSettings()
+        const baseIncome = 10
+
+        const playerIncomeBonus = AGE_CONFIGS[this.playerAge].incomeBonus
+        const enemyIncomeBonus = AGE_CONFIGS[this.enemyAge].incomeBonus
+
+        this.playerResources += baseIncome + playerIncomeBonus
+        this.enemyResources += baseIncome + enemyIncomeBonus
+
+        this.updateHUD()
+      }
+    })
+  }
+
+  private startEnemyAI() {
+    this.enemySpawnTimer = this.time.addEvent({
+      delay: 3000,
+      loop: true,
+      callback: () => {
+        this.enemyAITick()
+      }
+    })
+  }
+
+  private enemyAITick() {
     const settings = gameState.getSettings()
-    const baseIncome = 8
-    const difficultyModifier = settings.difficulty === 'easy' ? 0.8 : settings.difficulty === 'hard' ? 1.2 : 1
-    return {
-      player: Math.round(baseIncome * (settings.fastForward ? 1.5 : 1)),
-      enemy: Math.round(baseIncome * difficultyModifier)
-    }
-  }
+    const difficulty = settings.difficulty || 'normal'
 
-  private handleUnitKilled = (faction: UnitFaction) => {
-    const bounty = 8
-    if (faction === 'enemy') {
-      this.snapshot.playerResources += bounty
-    } else {
-      this.snapshot.enemyResources += bounty
-  private applyDamageToEnemyBase(amount: number) {
-    this.snapshot.enemyBaseHp = Math.max(this.snapshot.enemyBaseHp - amount, 0)
-    if (this.snapshot.enemyBaseHp === 0) {
-      this.concludeMatch('Victory!')
-    }
-    this.emitHudUpdate()
-  }
+    // Upgrade age when affordable
+    const nextAge = getNextAge(this.enemyAge)
+    if (nextAge) {
+      const ageConfig = AGE_CONFIGS[nextAge]
+      const ageCost = ageConfig.cost
+      const shouldUpgrade = this.enemyResources > ageCost * 1.5
 
-  private handleBaseDamaged = (
-    target: UnitFaction,
-    _amount: number,
-    remainingHp: number,
-    destroyed: boolean
-  ) => {
-    if (target === 'enemy') {
-      this.snapshot.enemyBaseHp = Math.max(Math.round(remainingHp), 0)
-      if (destroyed) {
-        this.concludeMatch('Victory!')
+      if (shouldUpgrade) {
+        this.enemyResources -= ageCost
+        this.enemyAge = nextAge
+
+        const newMaxHp = ageConfig.baseHp
+        const hpIncrease = newMaxHp - this.enemyBase.getHp()
+        this.enemyBaseHp = newMaxHp
+        this.enemyBase.setHp(this.enemyBase.getHp() + hpIncrease)
+
+        this.effectsManager.explosion(this.enemyBase.getBounds().centerX, this.enemyBase.getBounds().centerY, 2, 50)
+        this.showHint('Enemy has advanced to the next age!')
       }
-    } else {
-      this.snapshot.playerBaseHp = Math.max(Math.round(remainingHp), 0)
-      if (destroyed) {
-        this.concludeMatch('Defeat…')
-      }
-  private applyDamageToPlayerBase(amount: number) {
-    this.snapshot.playerBaseHp = Math.max(this.snapshot.playerBaseHp - amount, 0)
-    if (this.snapshot.playerBaseHp === 0) {
-      this.concludeMatch('Defeat…')
     }
-    this.emitHudUpdate()
+
+    // Spawn units
+    const availableUnits = getUnitsForAge(this.enemyAge)
+    const affordableUnits = availableUnits.filter(u => u.cost <= this.enemyResources)
+
+    if (affordableUnits.length > 0) {
+      // Choose based on difficulty
+      let chosenUnit: UnitConfig
+
+      if (difficulty === 'easy') {
+        // Spawn cheaper units
+        chosenUnit = affordableUnits.sort((a, b) => a.cost - b.cost)[0]
+      } else if (difficulty === 'hard') {
+        // Spawn more expensive units
+        chosenUnit = affordableUnits.sort((a, b) => b.cost - a.cost)[0]
+      } else {
+        // Random
+        chosenUnit = Phaser.Utils.Array.GetRandom(affordableUnits)
+      }
+
+      const lane = Phaser.Math.Between(0, this.laneCount - 1)
+      this.enemyResources -= chosenUnit.cost
+      this.spawnUnit('enemy', lane, chosenUnit)
+    }
+
+    this.updateHUD()
   }
 
-  private emitHudUpdate() {
-    gameState.setMatchSnapshot(this.snapshot)
-    gameEvents.emit(GameEvents.HUD_UPDATE, {
-      snapshot: { ...this.snapshot },
-      settings: gameState.getSettings()
+  update(time: number, delta: number) {
+    // Update all units
+    this.lanes.forEach((lane, laneIndex) => {
+      // Update player units
+      lane.player.forEach(unit => {
+        const direction = 1
+        const enemyUnits = lane.enemy.filter(u => !u.isDead())
+        const target = this.findClosestTarget(unit, enemyUnits)
+
+        unit.update(delta, direction, target, target ? undefined : this.enemyBase)
+      })
+
+      // Update enemy units
+      lane.enemy.forEach(unit => {
+        const direction = -1
+        const playerUnits = lane.player.filter(u => !u.isDead())
+        const target = this.findClosestTarget(unit, playerUnits)
+
+        unit.update(delta, direction, target, target ? undefined : this.playerBase)
+      })
+
+      // Remove dead units
+      lane.player = lane.player.filter(u => {
+        if (u.isDead()) {
+          this.onUnitKilled('player')
+          return false
+        }
+        return true
+      })
+
+      lane.enemy = lane.enemy.filter(u => {
+        if (u.isDead()) {
+          this.onUnitKilled('enemy')
+          return false
+        }
+        return true
+      })
+    })
+
+    // Update projectiles and handle hits
+    this.projectilePool.update()
+    this.handleProjectileCollisions()
+  }
+
+  private findClosestTarget(unit: Unit, enemies: Unit[]): Unit | undefined {
+    if (enemies.length === 0) return undefined
+
+    const unitX = unit.getX()
+    const direction = unit.faction === 'player' ? 1 : -1
+
+    const validTargets = enemies.filter(e => {
+      const diff = e.getX() - unitX
+      return diff * direction > 0
+    })
+
+    if (validTargets.length === 0) return undefined
+
+    return validTargets.reduce((closest, current) => {
+      const closestDist = Math.abs(closest.getX() - unitX)
+      const currentDist = Math.abs(current.getX() - unitX)
+      return currentDist < closestDist ? current : closest
     })
   }
 
-  private concludeMatch(result: string) {
-    if (this.resourceTimer) {
-      this.resourceTimer.destroy()
-      this.resourceTimer = undefined
-    }
+  private handleProjectileCollisions() {
+    const projectiles = this.projectilePool.getProjectiles()
 
-    if (this.enemySpawnTimer) {
-      this.enemySpawnTimer.destroy()
-      this.enemySpawnTimer = undefined
-    }
+    projectiles.forEach(projectile => {
+      if (!projectile.isActive()) return
 
-    gameEvents.emit(GameEvents.MATCH_ENDED, { result, snapshot: { ...this.snapshot } })
-    this.time.delayedCall(1800, () => this.returnToMenu())
+      const pos = projectile.getPosition()
+      const splashRadius = projectile.getSplashRadius()
+
+      // Find units at this position
+      this.lanes.forEach(lane => {
+        const allUnits = [...lane.player, ...lane.enemy]
+
+        allUnits.forEach(unit => {
+          if (unit.isDead()) return
+
+          const distance = Phaser.Math.Distance.Between(pos.x, pos.y, unit.getX(), unit.getY())
+
+          if (splashRadius > 0) {
+            // Splash damage
+            if (distance < splashRadius) {
+              unit.takeDamage(projectile.damage, projectile.unitConfig.age)
+              projectile.destroy()
+            }
+          } else {
+            // Direct hit
+            if (distance < 30) {
+              unit.takeDamage(projectile.damage, projectile.unitConfig.age)
+              projectile.destroy()
+            }
+          }
+        })
+      })
+
+      // Check base hits
+      if (!projectile.isActive()) return
+
+      const playerBaseBounds = this.playerBase.getBounds()
+      const enemyBaseBounds = this.enemyBase.getBounds()
+
+      if (Phaser.Geom.Rectangle.Contains(playerBaseBounds, pos.x, pos.y)) {
+        const destroyed = this.playerBase.takeDamage(projectile.damage)
+        this.effectsManager.impact(pos.x, pos.y, projectile.unitConfig.age === 'future')
+        projectile.destroy()
+
+        if (destroyed) {
+          this.endGame(false)
+        } else {
+          this.updateHUD()
+        }
+      } else if (Phaser.Geom.Rectangle.Contains(enemyBaseBounds, pos.x, pos.y)) {
+        const destroyed = this.enemyBase.takeDamage(projectile.damage)
+        this.effectsManager.impact(pos.x, pos.y, projectile.unitConfig.age === 'future')
+        projectile.destroy()
+
+        if (destroyed) {
+          this.endGame(true)
+        } else {
+          this.updateHUD()
+        }
+      }
+    })
+  }
+
+  private onUnitKilled(faction: UnitFaction) {
+    const bounty = 10
+    if (faction === 'enemy') {
+      this.playerResources += bounty
+    } else {
+      this.enemyResources += bounty
+    }
+    this.updateHUD()
+  }
+
+  private endGame(victory: boolean) {
+    // Stop timers
+    this.incomeTimer?.destroy()
+    this.enemySpawnTimer?.destroy()
+
+    // Massive explosion
+    const base = victory ? this.enemyBase : this.playerBase
+    this.effectsManager.explosion(base.getBounds().centerX, base.getBounds().centerY, 3, 80)
+
+    const message = victory ? '🎉 VICTORY! 🎉' : '☠️ DEFEAT ☠️'
+    this.showHint(message)
+
+    // Flash and shake
+    this.effectsManager.screenShake(500, 0.015)
+    this.effectsManager.flash(victory ? 0xffd700 : 0xff0000, 500)
+
+    // Return to menu
+    this.time.delayedCall(3000, () => {
+      this.returnToMenu()
+    })
+  }
+
+  private showHint(text: string) {
+    if (this.hintText) {
+      this.hintText.setText(text)
+    }
+  }
+
+  private updateHUD() {
+    gameEvents.emit(GameEvents.HUD_UPDATE, {
+      playerResources: this.playerResources,
+      enemyResources: this.enemyResources,
+      playerBaseHp: this.playerBase.getHp(),
+      enemyBaseHp: this.enemyBase.getHp(),
+      playerMaxHp: this.playerBaseHp,
+      enemyMaxHp: this.enemyBaseHp,
+      playerAge: this.playerAge,
+      enemyAge: this.enemyAge
+    })
   }
 
   private returnToMenu() {
@@ -340,27 +645,15 @@ BASE', {
   }
 
   private cleanup() {
-    this.input.keyboard.removeListener('keydown-ESC')
-    this.input.keyboard.removeListener('keydown-ONE')
-    this.input.keyboard.removeListener('keydown-TWO')
-    this.input.keyboard.removeListener('keydown-THREE')
-    if (this.pointerHandler) {
-      this.input.off(Phaser.Input.Events.POINTER_UP, this.pointerHandler)
-      this.pointerHandler = undefined
-    }
+    this.incomeTimer?.destroy()
+    this.enemySpawnTimer?.destroy()
+    this.projectilePool.destroy()
+    this.effectsManager.destroy()
 
-    this.input.keyboard.removeListener('keydown-Q')
-    this.input.keyboard.removeListener('keydown-W')
-    if (this.resourceTimer) {
-      this.resourceTimer.destroy()
-      this.resourceTimer = undefined
-    }
-    if (this.enemySpawnTimer) {
-      this.enemySpawnTimer.destroy()
-      this.enemySpawnTimer = undefined
-    }
-
-    this.playerBase?.destroy()
-    this.enemyBase?.destroy()
+    this.lanes.forEach(lane => {
+      lane.player.forEach(u => u.destroy())
+      lane.enemy.forEach(u => u.destroy())
+    })
+    this.lanes.clear()
   }
 }
