@@ -9,8 +9,9 @@ export default class BootScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#05060a')
 
     // Immediately proceed to preload
-    this.time.delayedCall(100, () => {
-      this.scene.start('PreloadScene')
-    })
+    const self = this
+    this.time.delayedCall(100, function() {
+      self.scene.start('PreloadScene')
+    }, [], this)
   }
 }

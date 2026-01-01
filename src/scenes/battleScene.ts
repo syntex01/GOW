@@ -151,33 +151,32 @@ export default class BattleScene extends Phaser.Scene {
     const startX = centerX - (availableUnits.length * buttonSpacing) / 2 + buttonSpacing / 2
 
     availableUnits.forEach((unitConfig, index) => {
-      const button = this.add
-        .text(
-          startX + buttonSpacing * index,
-          height - 70,
-          `${unitConfig.name}\n${unitConfig.cost}⚡`,
-          {
-            fontFamily: 'Arial Black',
-            fontSize: '16px',
-            color: '#f1f5f9',
-            align: 'center',
-            backgroundColor: '#1e293b',
-            padding: { x: 12, y: 10 }
-          }
-        )
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true })
-        .on(Phaser.Input.Events.POINTER_OVER, () => {
-          button.setScale(1.05)
-          this.showHint(unitConfig.description)
-        })
-        .on(Phaser.Input.Events.POINTER_OUT, () => {
-          button.setScale(1)
-        })
-        .on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
-          if (pointer.event) { pointer.event.stopPropagation() }
-          this.selectUnit(unitConfig.key)
-        })
+      const button = this.add.text(
+        startX + buttonSpacing * index,
+        height - 70,
+        `${unitConfig.name}\n${unitConfig.cost}⚡`,
+        {
+          fontFamily: 'Arial Black',
+          fontSize: '16px',
+          color: '#f1f5f9',
+          align: 'center',
+          backgroundColor: '#1e293b',
+          padding: { x: 12, y: 10 }
+        }
+      )
+      button.setOrigin(0.5)
+      button.setInteractive({ useHandCursor: true })
+      button.on(Phaser.Input.Events.POINTER_OVER, () => {
+        button.setScale(1.05)
+        this.showHint(unitConfig.description)
+      })
+      button.on(Phaser.Input.Events.POINTER_OUT, () => {
+        button.setScale(1)
+      })
+      button.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+        if (pointer.event) { pointer.event.stopPropagation() }
+        this.selectUnit(unitConfig.key)
+      })
 
       this.unitButtons.push(button)
     })
@@ -280,11 +279,13 @@ export default class BattleScene extends Phaser.Scene {
     })
 
     // Keyboard shortcuts
-    this.input.keyboard?.on('keydown-ONE', () => this.spawnPlayerUnit(0))
-    this.input.keyboard?.on('keydown-TWO', () => this.spawnPlayerUnit(1))
-    this.input.keyboard?.on('keydown-THREE', () => this.spawnPlayerUnit(2))
-    this.input.keyboard?.on('keydown-SPACE', () => this.upgradeAge())
-    this.input.keyboard?.on('keydown-ESC', () => this.returnToMenu())
+    if (this.input.keyboard) {
+      this.input.keyboard.on('keydown-ONE', () => this.spawnPlayerUnit(0))
+      this.input.keyboard.on('keydown-TWO', () => this.spawnPlayerUnit(1))
+      this.input.keyboard.on('keydown-THREE', () => this.spawnPlayerUnit(2))
+      this.input.keyboard.on('keydown-SPACE', () => this.upgradeAge())
+      this.input.keyboard.on('keydown-ESC', () => this.returnToMenu())
+    }
   }
 
   private getLaneAtY(y: number): number {
@@ -372,7 +373,9 @@ export default class BattleScene extends Phaser.Scene {
     // Recreate UI
     this.unitButtons.forEach(b => b.destroy())
     this.unitButtons = []
-    this.ageButton?.destroy()
+    if (this.ageButton) {
+      this.ageButton.destroy()
+    }
     this.createUI()
 
     this.showHint(`Advanced to ${ageConfig.name}! New units unlocked!`)
@@ -600,8 +603,12 @@ export default class BattleScene extends Phaser.Scene {
 
   private endGame(victory: boolean) {
     // Stop timers
-    this.incomeTimer?.destroy()
-    this.enemySpawnTimer?.destroy()
+    if (this.incomeTimer) {
+      this.incomeTimer.destroy()
+    }
+    if (this.enemySpawnTimer) {
+      this.enemySpawnTimer.destroy()
+    }
 
     // Massive explosion
     const base = victory ? this.enemyBase : this.playerBase
@@ -615,9 +622,7 @@ export default class BattleScene extends Phaser.Scene {
     this.effectsManager.flash(victory ? 0xffd700 : 0xff0000, 500)
 
     // Return to menu
-    this.time.delayedCall(3000, () => {
-      this.returnToMenu()
-    })
+    this.time.delayedCall(3000, this.returnToMenu, [], this)
   }
 
   private showHint(text: string) {
@@ -645,8 +650,12 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private cleanup() {
-    this.incomeTimer?.destroy()
-    this.enemySpawnTimer?.destroy()
+    if (this.incomeTimer) {
+      this.incomeTimer.destroy()
+    }
+    if (this.enemySpawnTimer) {
+      this.enemySpawnTimer.destroy()
+    }
     this.projectilePool.destroy()
     this.effectsManager.destroy()
 
