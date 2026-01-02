@@ -57,9 +57,72 @@ export default class TestScene extends Phaser.Scene {
       this.input.keyboard.on('keydown-SPACE', () => this.runNextTest())
       this.input.keyboard.on('keydown-R', () => this.restartTests())
       this.input.keyboard.on('keydown-ESC', () => this.scene.start('MenuScene'))
+      this.input.keyboard.on('keydown-A', () => this.runAllTests())
     }
 
     this.updateDisplay()
+
+    // Show instruction for auto-run
+    this.add.text(50, 80, 'Press A to auto-run all tests', {
+      fontFamily: 'Arial',
+      fontSize: '12px',
+      color: '#00ff00'
+    })
+  }
+
+  private runAllTests() {
+    this.restartTests()
+    this.autoRunTests()
+  }
+
+  private autoRunTests() {
+    if (this.testIndex >= this.allTests.length) {
+      this.logFinalResults()
+      return
+    }
+
+    this.runNextTest()
+
+    // Auto-advance to next test after delay
+    this.time.delayedCall(2500, () => {
+      this.autoRunTests()
+    }, [], this)
+  }
+
+  private logFinalResults() {
+    const passed = this.testResults.filter(r => r.passed).length
+    const total = this.testResults.length
+    const passRate = Math.round((passed / total) * 100)
+
+    console.log('='.repeat(60))
+    console.log('TEST SUITE RESULTS')
+    console.log('='.repeat(60))
+    console.log(`Total Tests: ${total}`)
+    console.log(`Passed: ${passed}`)
+    console.log(`Failed: ${total - passed}`)
+    console.log(`Pass Rate: ${passRate}%`)
+    console.log('='.repeat(60))
+    console.log('\nDetailed Results:')
+    this.testResults.forEach((result, i) => {
+      const icon = result.passed ? '✓' : '✗'
+      console.log(`${i + 1}. ${icon} ${result.name}`)
+      if (result.message) {
+        console.log(`   ${result.message}`)
+      }
+      if (!result.passed) {
+        console.error(`   FAILURE: ${result.name}`)
+      }
+    })
+    console.log('='.repeat(60))
+
+    // Show summary on screen
+    const summaryText = this.add.text(400, 500,
+      `\n\nAUTO-RUN COMPLETE\n${passed}/${total} tests passed (${passRate}%)\n\nCheck console for details`, {
+      fontFamily: 'Arial Black',
+      fontSize: '18px',
+      color: passRate === 100 ? '#00ff00' : '#ff0000',
+      align: 'center'
+    }).setOrigin(0.5)
   }
 
   private setupTests() {
@@ -144,31 +207,51 @@ export default class TestScene extends Phaser.Scene {
   // ============= INDIVIDUAL TESTS =============
 
   private testUnitCreation() {
-    const config = ALL_UNIT_CONFIGS['clubman']
-    const unit = new Unit({
-      scene: this,
-      faction: 'player',
-      config,
-      x: 400,
-      y: 300,
-      laneIndex: 0,
-      effectsManager: this.effectsManager,
-      projectilePool: this.projectilePool
-    })
+    try {
+      const config = ALL_UNIT_CONFIGS['clubman']
+      const unit = new Unit({
+        scene: this,
+        faction: 'player',
+        config,
+        x: 400,
+        y: 300,
+        laneIndex: 0,
+        effectsManager: this.effectsManager,
+        projectilePool: this.projectilePool
+      })
 
-    const passed = unit !== null && unit.getHp() === config.maxHp
-    this.addResult('Unit Creation', passed, passed ? 'Clubman created successfully' : 'Failed to create unit')
+      // Verify unit properties
+      const checks = [
+        unit !== null,
+        unit !== undefined,
+        unit.getHp() === config.maxHp,
+        unit.getHp() > 0,
+        unit.getX() === 400,
+        unit.getY() === 300,
+        unit.getConfig().key === 'clubman',
+        !unit.isDead()
+      ]
 
-    // Cleanup
-    this.time.delayedCall(500, () => {
-      unit.destroy()
-    }, [], this)
+      const passed = checks.every(check => check === true)
+      const failedChecks = checks.filter(c => !c).length
+
+      this.addResult('Unit Creation', passed,
+        passed ? 'All properties verified' : `${failedChecks} checks failed`)
+
+      // Cleanup
+      this.time.delayedCall(500, () => {
+        unit.destroy()
+      }, [], this)
+    } catch (e) {
+      const error = e as Error
+      this.addResult('Unit Creation', false, `Exception: ${error.message}`)
+    }
   }
 
   private testAllUnitTypes() {
     const unitKeys = Object.keys(ALL_UNIT_CONFIGS)
-    let allCreated = true
-    let errorUnit = ''
+    const failures: string[] = []
+    const units: Unit[] = []
 
     unitKeys.forEach(key => {
       try {
@@ -184,17 +267,26 @@ export default class TestScene extends Phaser.Scene {
           projectilePool: this.projectilePool
         })
 
-        this.time.delayedCall(1000, () => {
-          unit.destroy()
-        }, [], this)
+        // Verify critical properties
+        if (!unit || unit.getHp() !== config.maxHp || unit.getConfig().key !== key) {
+          failures.push(`${key}: property mismatch`)
+        }
+
+        units.push(unit)
       } catch (e) {
-        allCreated = false
-        errorUnit = key
+        const error = e as Error
+        failures.push(`${key}: ${error.message}`)
       }
     })
 
-    this.addResult('All Unit Types', allCreated,
-      allCreated ? `All ${unitKeys.length} unit types created` : `Failed on: ${errorUnit}`)
+    // Cleanup
+    this.time.delayedCall(1000, () => {
+      units.forEach(u => u.destroy())
+    }, [], this)
+
+    const passed = failures.length === 0
+    this.addResult('All Unit Types', passed,
+      passed ? `All ${unitKeys.length} units verified` : `Failures: ${failures.join(', ')}`)
   }
 
   private testMeleeAttack() {
@@ -224,13 +316,22 @@ export default class TestScene extends Phaser.Scene {
     })
 
     const initialHp = target.getHp()
+    const expectedDamage = attackerConfig.damage
 
-    // Force an attack
-    attacker.update(100, 1, target, undefined)
+    // Simulate multiple updates to ensure attack happens
+    for (let i = 0; i < 30; i++) {
+      attacker.update(100, 1, target, undefined)
+    }
+
     this.time.delayedCall(1500, () => {
-      const damaged = target.getHp() < initialHp
-      this.addResult('Melee Attack', damaged,
-        damaged ? `Target took ${initialHp - target.getHp()} damage` : 'No damage dealt')
+      const actualDamage = initialHp - target.getHp()
+      const damaged = actualDamage > 0
+      const expectedRange = actualDamage >= expectedDamage * 0.8 && actualDamage <= expectedDamage * 1.2
+
+      const passed = damaged && !target.isDead()
+      this.addResult('Melee Attack', passed,
+        passed ? `Damage: ${actualDamage} (expected ~${expectedDamage})` :
+        `Failed: damage=${actualDamage}, dead=${target.isDead()}`)
 
       attacker.destroy()
       target.destroy()
@@ -288,17 +389,29 @@ export default class TestScene extends Phaser.Scene {
     })
 
     const startX = unit.getX()
+    const startY = unit.getY()
 
-    // Update unit for 1 second of movement
+    // Update unit for 1 second of movement (10 frames at 100ms each)
     for (let i = 0; i < 10; i++) {
       unit.update(100, 1, undefined, undefined)
     }
 
     const endX = unit.getX()
-    const moved = endX > startX
+    const endY = unit.getY()
+    const distance = endX - startX
+    const expectedMinDistance = (config.moveSpeed * 1.0) * 0.5 // At least 50% of expected
 
-    this.addResult('Unit Movement', moved,
-      moved ? `Moved ${Math.round(endX - startX)}px` : 'Unit did not move')
+    const checks = [
+      distance > 0,
+      distance >= expectedMinDistance,
+      endY === startY, // Y should not change
+      !unit.isDead()
+    ]
+
+    const passed = checks.every(c => c)
+    this.addResult('Unit Movement', passed,
+      passed ? `Moved ${Math.round(distance)}px (expected ~${Math.round(config.moveSpeed)})` :
+      `Failed: distance=${Math.round(distance)}, yChanged=${endY !== startY}`)
 
     unit.destroy()
   }
@@ -317,11 +430,27 @@ export default class TestScene extends Phaser.Scene {
     })
 
     const initialHp = unit.getHp()
-    unit.takeDamage(20, 'stone')
-    const damaged = unit.getHp() < initialHp
+    const damageAmount = 20
+    unit.takeDamage(damageAmount, 'stone')
+    const finalHp = unit.getHp()
+    const actualDamage = initialHp - finalHp
 
-    this.addResult('Unit Damage', damaged,
-      damaged ? `HP: ${initialHp} → ${unit.getHp()}` : 'No damage taken')
+    // Account for armor reduction
+    const expectedDamage = Math.max(1, damageAmount * (1 - config.armor / 100))
+    const damageInRange = Math.abs(actualDamage - expectedDamage) < 1
+
+    const checks = [
+      finalHp < initialHp,
+      actualDamage > 0,
+      damageInRange,
+      !unit.isDead(),
+      finalHp > 0
+    ]
+
+    const passed = checks.every(c => c)
+    this.addResult('Unit Damage', passed,
+      passed ? `HP: ${initialHp} → ${finalHp} (damage: ${actualDamage})` :
+      `Failed: expected ${expectedDamage} damage, got ${actualDamage}`)
 
     unit.destroy()
   }
@@ -339,12 +468,23 @@ export default class TestScene extends Phaser.Scene {
       projectilePool: this.projectilePool
     })
 
-    // Kill the unit
-    unit.takeDamage(1000, 'stone')
+    const initialHp = unit.getHp()
 
-    this.time.delayedCall(100, () => {
-      const dead = unit.getHp() <= 0
-      this.addResult('Unit Death', dead, dead ? 'Unit died correctly' : 'Unit survived lethal damage')
+    // Kill the unit with massive damage
+    unit.takeDamage(10000, 'stone')
+
+    this.time.delayedCall(200, () => {
+      const checks = [
+        unit.getHp() <= 0,
+        unit.isDead(),
+        unit.getHp() < initialHp,
+        unit.getState() === 'dying' || unit.getState() === 'dead'
+      ]
+
+      const passed = checks.every(c => c)
+      this.addResult('Unit Death', passed,
+        passed ? `Unit died (HP: ${initialHp} → ${unit.getHp()}, state: ${unit.getState()})` :
+        `Failed: HP=${unit.getHp()}, isDead=${unit.isDead()}, state=${unit.getState()}`)
     }, [], this)
   }
 
@@ -383,12 +523,24 @@ export default class TestScene extends Phaser.Scene {
       strokeColor: 0x60a5fa
     })
     const initialHp = base.getHp()
+    const damageAmount = 100
 
-    base.takeDamage(100)
-    const damaged = base.getHp() === initialHp - 100
+    const destroyed = base.takeDamage(damageAmount)
+    const finalHp = base.getHp()
+    const actualDamage = initialHp - finalHp
 
-    this.addResult('Base Attack', damaged,
-      damaged ? `Base HP: ${initialHp} → ${base.getHp()}` : 'Base not damaged')
+    const checks = [
+      finalHp === initialHp - damageAmount,
+      actualDamage === damageAmount,
+      !destroyed,
+      finalHp > 0,
+      base.getHp() === 900
+    ]
+
+    const passed = checks.every(c => c)
+    this.addResult('Base Attack', passed,
+      passed ? `Base HP: ${initialHp} → ${finalHp}` :
+      `Failed: expected HP=900, got ${finalHp}, destroyed=${destroyed}`)
 
     base.destroy()
   }
