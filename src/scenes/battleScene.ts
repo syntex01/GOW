@@ -339,6 +339,7 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     // Spawn effect
+    this.effectsManager.unitSpawn(spawnX, laneY)
     this.effectsManager.dustCloud(spawnX, laneY)
   }
 
@@ -367,8 +368,9 @@ export default class BattleScene extends Phaser.Scene {
     this.playerBase.setHp(this.playerBase.getHp() + hpIncrease)
 
     // Visual feedback
-    this.effectsManager.explosion(this.playerBase.getBounds().centerX, this.playerBase.getBounds().centerY, 2, 50)
-    this.effectsManager.flash(0xffd700, 200)
+    const baseCenter = this.playerBase.getBounds()
+    this.effectsManager.ageUpEffect(baseCenter.centerX, baseCenter.centerY)
+    this.effectsManager.explosion(baseCenter.centerX, baseCenter.centerY, 2, 50)
 
     // Recreate UI
     this.unitButtons.forEach(b => b.destroy())
@@ -383,6 +385,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private startIncome() {
+    let incomeCounter = 0
     this.incomeTimer = this.time.addEvent({
       delay: 1000,
       loop: true,
@@ -393,8 +396,16 @@ export default class BattleScene extends Phaser.Scene {
         const playerIncomeBonus = AGE_CONFIGS[this.playerAge].incomeBonus
         const enemyIncomeBonus = AGE_CONFIGS[this.enemyAge].incomeBonus
 
-        this.playerResources += baseIncome + playerIncomeBonus
+        const playerIncome = baseIncome + playerIncomeBonus
+        this.playerResources += playerIncome
         this.enemyResources += baseIncome + enemyIncomeBonus
+
+        // Show resource gain effect every 5 seconds
+        incomeCounter++
+        if (incomeCounter % 5 === 0) {
+          const baseBounds = this.playerBase.getBounds()
+          this.effectsManager.resourceGain(baseBounds.centerX, baseBounds.top - 20, playerIncome * 5)
+        }
 
         this.updateHUD()
       }

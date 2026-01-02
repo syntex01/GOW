@@ -480,6 +480,7 @@ export class Unit {
     // Hit feedback
     if (this.effectsManager) {
       this.effectsManager.hitFeedback(this.container.x, this.container.y, true, attackerAge)
+      this.effectsManager.hitMarker(this.container.x, this.container.y - 20, actualDamage)
     }
 
     // Flash white on hit
@@ -551,5 +552,9 @@ export class Unit {
 
   getConfig(): UnitConfig {
     return this.config
+  }
+
+  getHp(): number {
+    return this.hp
   }
 }

@@ -144,6 +144,19 @@ export default class MenuScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true })
 
     instructions.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.showInstructions())
+
+    const testButton = this.add
+      .text(centerX, y + 140, 'Run Tests', {
+        fontFamily: 'Arial',
+        fontSize: '18px',
+        color: '#d9e2ef',
+        backgroundColor: '#1c2a3a',
+        padding: { x: 24, y: 10 }
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+
+    testButton.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.scene.start('TestScene'))
   }
 
   private showInstructions() {

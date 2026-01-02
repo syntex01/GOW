@@ -4,6 +4,7 @@ import PreloadScene from './scenes/preloadScene'
 import MenuScene from './scenes/menuScene'
 import BattleScene from './scenes/battleScene'
 import HUDScene from './scenes/hudScene'
+import TestScene from './scenes/testScene'
 // @ts-ignore
 import SpineWebGLPlugin from './plugins/SpineWebGLPlugin'
 
@@ -29,7 +30,7 @@ window.addEventListener('load', () => {
     plugins: {
       scene: [{ key: 'SpineWebGLPlugin', plugin: SpineWebGLPlugin, start: true, sceneKey: 'spine' }]
     },
-    scene: [BootScene, PreloadScene, MenuScene, BattleScene, HUDScene],
+    scene: [BootScene, PreloadScene, MenuScene, BattleScene, HUDScene, TestScene],
     physics: {
       default: 'arcade',
       arcade: {
