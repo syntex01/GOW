@@ -859,6 +859,11 @@ export class ThreeScene implements SceneController {
     for (const unit of Object.values(state.units)) {
       const uv = this.ensureUnitVisual(unit);
 
+      // Units held in Strategic Reserves are off the table — hide them entirely
+      // until they arrive (Deep Strike clears inReserves).
+      uv.group.visible = !unit.inReserves;
+      if (unit.inReserves) continue;
+
       // If an imported model is in use, keep it centred on the unit centroid.
       if (uv.imported) {
         this.positionImported(unit, uv);

@@ -714,6 +714,30 @@ export class GameEngine {
     return { ok: true, message: `${u.name} arrives from Deep Strike.` };
   }
 
+  /**
+   * Declare a unit into Strategic Reserves (testing aid: normally set at
+   * deployment). Allowed only during battle round 1. The unit and any attached
+   * leader leave the table; they must arrive by Deep Strike from round 2.
+   */
+  sendToReserves(unitId: string): { ok: boolean; message: string } {
+    const u = this.state.units[unitId];
+    if (!u) return { ok: false, message: `Unknown unit: ${unitId}` };
+    if (this.state.round > 1) {
+      return { ok: false, message: 'Reserves can only be declared in battle round 1.' };
+    }
+    u.inReserves = true;
+    u.deepStrike = true;
+    for (const leaderId of u.attachedLeaderIds) {
+      const leader = this.state.units[leaderId];
+      if (leader) {
+        leader.inReserves = true;
+        leader.deepStrike = true;
+      }
+    }
+    this.log(`${u.name} is placed into Strategic Reserves.`);
+    return { ok: true, message: `${u.name} held in Reserves; deep strike from round 2.` };
+  }
+
   // ---------------------------------------------------------------- win check
   winner(): PlayerId | 'draw' | undefined {
     const aAlive = this.unitsOf('A').some((u) => this.isAlive(u));

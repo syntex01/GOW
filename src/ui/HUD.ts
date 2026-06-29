@@ -52,6 +52,9 @@ export class GameUI {
   /** Which side, if any, is played by the heuristic AI. Default: player B. */
   private aiPlayer: PlayerId | null = 'B';
 
+  /** When set, the next table click deep-strikes this reserve unit. */
+  private deepStrikeUnitId: string | null = null;
+
   // Stratagem shell state (presentation only).
   private stratagems: StratagemEntry[] = [];
   private onStratagem: ((id: string) => void) | null = null;
@@ -320,6 +323,42 @@ export class GameUI {
       );
     }
 
+    // Strategic Reserves: declare in round 1 command, arrive from round 2 movement.
+    if (
+      phase === 'command' &&
+      this.engine.state.round === 1 &&
+      sel &&
+      sel.ownerId === this.engine.active &&
+      !sel.inReserves &&
+      !sel.leadingUnitId
+    ) {
+      actions.append(
+        this.button('→ Reserves', 'small', () => {
+          const res = this.engine.sendToReserves(sel.id);
+          this.notify(res.message, !res.ok);
+          this.deselect();
+          this.refresh();
+        }),
+      );
+    }
+    if (phase === 'movement' && this.engine.state.round >= 2) {
+      for (const r of this.engine.reservesOf(this.engine.active)) {
+        const active = this.deepStrikeUnitId === r.id;
+        actions.append(
+          this.button(
+            `${active ? 'Placing ▸ ' : '⤓ Deep Strike: '}${r.name}`,
+            `small ${active ? 'primary' : ''}`,
+            () => {
+              this.deepStrikeUnitId = active ? null : r.id;
+              this.scene.clearOverlays();
+              if (this.deepStrikeUnitId) this.showDeepStrikeExclusion();
+              this.refresh();
+            },
+          ),
+        );
+      }
+    }
+
     // Universal controls
     actions.append(
       this.button(`AI: ${this.aiPlayer ? 'On' : 'Off'}`, 'small', () => this.toggleAi()),
@@ -339,6 +378,10 @@ export class GameUI {
       case 'command':
         return `Command phase — CP gained, battle-shock resolved. Review the log, then advance.`;
       case 'movement':
+        if (this.deepStrikeUnitId) {
+          const ds = this.engine.state.units[this.deepStrikeUnitId];
+          return `Deep striking <b>${ds?.name}</b> — click a spot outside every red 9" ring.`;
+        }
         return sel
           ? `Moving <b>${sel.name}</b> (${this.moveMode}). Click a destination on the table. Max ${this.engine
               .moveAllowance(sel, this.moveMode)
@@ -514,6 +557,7 @@ export class GameUI {
     if (this.engine.state.phase === 'fight') this.autoResolveFights(true);
     this.engine.advancePhase();
     this.deselect();
+    this.deepStrikeUnitId = null;
     this.scene.clearOverlays();
     // If the turn just passed to the AI player, let it play its whole turn.
     if (this.aiPlayer && this.engine.active === this.aiPlayer && this.engine.winner() === undefined) {
@@ -543,6 +587,17 @@ export class GameUI {
     const unit = r.unitId ? this.engine.state.units[r.unitId] : undefined;
 
     if (phase === 'movement') {
+      // Deep-strike placement takes priority when arming a reserve unit.
+      if (this.deepStrikeUnitId) {
+        const res = this.engine.deepStrikeArrive(this.deepStrikeUnitId, r.point);
+        this.notify(res.message, !res.ok);
+        if (res.ok) {
+          this.deepStrikeUnitId = null;
+          this.scene.clearOverlays();
+          this.refresh();
+        }
+        return;
+      }
       if (unit && unit.ownerId === this.engine.active) return this.selectUnit(unit.id);
       const sel = this.selected();
       if (sel) this.doMove(sel, r.point);
@@ -725,6 +780,13 @@ export class GameUI {
   /** Public toast for host-driven messages (e.g. stratagem results). */
   notify(message: string, warn = false): void {
     this.toast(message, warn);
+  }
+
+  /** Draw 9" no-deploy rings around every enemy unit (deep-strike guidance). */
+  private showDeepStrikeExclusion(): void {
+    for (const e of this.engine.enemiesOf(this.engine.active)) {
+      this.scene.showRange(unitCentroid(e), 9, 0xd6483b);
+    }
   }
 
   private toast(msg: string, warn = false): void {

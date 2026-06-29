@@ -40,11 +40,41 @@ function moveGoal(e: GameEngine, u: UnitInstance): { x: number; y: number } | un
   return enemy ? unitCentroid(enemy) : undefined;
 }
 
+/** Candidate deep-strike points: the goal first, then a widening ring search. */
+function deepStrikeCandidates(
+  goal: { x: number; y: number },
+  board: { width: number; height: number },
+): Array<{ x: number; y: number }> {
+  const out = [goal];
+  for (let radius = 4; radius <= 24; radius += 4) {
+    for (let a = 0; a < 8; a++) {
+      const ang = (a / 8) * Math.PI * 2;
+      const x = goal.x + Math.cos(ang) * radius;
+      const y = goal.y + Math.sin(ang) * radius;
+      if (x > 3 && x < board.width - 3 && y > 3 && y < board.height - 3) out.push({ x, y });
+    }
+  }
+  return out;
+}
+
 function playPhase(e: GameEngine): void {
   const phase = e.state.phase;
   const own = e.unitsOf(e.active).filter((u) => e.isAlive(u) && !u.inReserves);
 
   if (phase === 'movement') {
+    // Bring reserves on by Deep Strike (round 2+), aiming near a target
+    // objective and searching outward for a legal (>9" from enemies) spot.
+    if (e.state.round >= 2) {
+      for (const r of e.reservesOf(e.active)) {
+        const goal = moveGoal(e, r) ?? { x: e.state.board.width / 2, y: e.state.board.height / 2 };
+        // Try the goal, then spiral outward; deepStrikeArrive is a no-op on
+        // failure, so the first ok placement wins.
+        const candidates = deepStrikeCandidates(goal, e.state.board);
+        for (const c of candidates) {
+          if (e.deepStrikeArrive(r.id, c).ok) break;
+        }
+      }
+    }
     for (const u of own) {
       if (e.enemiesOf(u.ownerId).some((en) => inEngagementRange(u, en))) continue;
       const goal = moveGoal(e, u);
