@@ -17,6 +17,8 @@ import {
   unitCentroid,
   computeObjectiveControl,
   isBelowHalfStrength,
+  hasLineOfSight,
+  unitInCover,
   ENGAGEMENT_RANGE,
 } from './geometry';
 
@@ -230,9 +232,12 @@ export class GameEngine {
   shootableWeapons(attacker: UnitInstance, target: UnitInstance): Weapon[] {
     const gap = unitGap(attacker, target);
     const selfEngaged = this.enemiesOf(attacker.ownerId).some((e) => inEngagementRange(attacker, e));
+    const los = hasLineOfSight(attacker, target, this.state.terrain);
     return attacker.weapons.filter((w) => {
       if (w.kind !== 'ranged') return false;
       if (gap > w.range) return false;
+      // Line of sight is required unless the weapon can fire indirectly.
+      if (!los && !w.keywords.some((k) => k.t === 'indirectFire')) return false;
       // While within engagement range, only Pistols may fire (at the engaging unit).
       if (selfEngaged && !w.keywords.some((k) => k.t === 'pistol')) return false;
       // Advancing units may only fire Assault weapons.
@@ -254,11 +259,14 @@ export class GameEngine {
   /** Resolve all shooting from an attacker into a target. */
   shoot(attacker: UnitInstance, target: UnitInstance, optsByWeapon?: Record<string, AttackOptions>): AttackResult[] {
     const weapons = this.shootableWeapons(attacker, target);
+    const cover = unitInCover(target, this.state.terrain);
     const results: AttackResult[] = [];
     for (const w of weapons) {
       const halfRange = unitGap(attacker, target) <= w.range / 2;
+      const ignoresCover = w.keywords.some((k) => k.t === 'ignoresCover');
       const opts: AttackOptions = {
         halfRange,
+        cover: cover && !ignoresCover,
         firingModels: aliveModels(attacker).length,
         ...this.attackerAbilityMods(attacker, 'shooting'),
         ...(optsByWeapon?.[w.id] ?? {}),

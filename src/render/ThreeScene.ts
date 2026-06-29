@@ -169,7 +169,7 @@ export class ThreeScene implements SceneController {
     this.scene.add(this.overlayGroup);
 
     this.buildBoard();
-    this.buildTerrain();
+    this.buildTerrain(state);
 
     /* input + sizing */
     this.attachInput();
@@ -326,12 +326,12 @@ export class ThreeScene implements SceneController {
   }
 
   /**
-   * Deterministic decorative terrain. Purely visual — placed in fixed spots
-   * scaled to the board so it never coincides with gameplay assumptions.
+   * Draw the engine's terrain pieces 1:1 — what you see is exactly the footprint
+   * the rules use for line of sight and cover. Ruins are rendered as broken-wall
+   * shells (so you can see models inside), craters as sunken discs.
    */
-  private buildTerrain(): void {
+  private buildTerrain(state: GameState): void {
     const terrainGroup = new THREE.Group();
-    const { width, height } = this.board;
 
     const ruinMat = new THREE.MeshStandardMaterial({
       color: 0x4a4438,
@@ -339,60 +339,48 @@ export class ThreeScene implements SceneController {
       metalness: 0.18,
     });
     const craterMat = new THREE.MeshStandardMaterial({
-      color: 0x101013,
+      color: 0x14110d,
       roughness: 1.0,
       metalness: 0.0,
     });
 
-    // Deterministic pseudo-random from a fixed seed for stable placement.
-    let seed = 1337;
-    const rnd = () => {
-      seed = (seed * 1664525 + 1013904223) & 0xffffffff;
-      return ((seed >>> 8) & 0xffffff) / 0xffffff;
-    };
-
-    // Ruined blocks: clustered low boxes forming broken walls.
-    const ruinSpots: Array<[number, number]> = [
-      [0.28, 0.32],
-      [0.7, 0.66],
-      [0.5, 0.5],
-      [0.78, 0.28],
-      [0.22, 0.72],
-    ];
-    for (const [fx, fy] of ruinSpots) {
-      const cx = (fx - 0.5) * width;
-      const cz = -(fy - 0.5) * height;
-      const blocks = 2 + Math.floor(rnd() * 3);
-      for (let b = 0; b < blocks; b++) {
-        const w = 2 + rnd() * 4;
-        const h = 1.5 + rnd() * 4;
-        const d = 2 + rnd() * 4;
-        const geo = new THREE.BoxGeometry(w, h, d);
+    for (const t of state.terrain) {
+      const c = this.tableToWorld(t.center);
+      if (t.kind === 'crater') {
+        const r = Math.max(t.width, t.depth) / 2;
+        const geo = new THREE.CylinderGeometry(r * 0.8, r * 1.1, 0.4, 20);
+        const mesh = new THREE.Mesh(geo, craterMat);
+        mesh.position.set(c.x, 0.06, c.z);
+        mesh.receiveShadow = true;
+        terrainGroup.add(mesh);
+        continue;
+      }
+      // Ruin: four low wall segments around the footprint with gaps (a shell).
+      const hw = t.width / 2;
+      const hd = t.depth / 2;
+      const th = 0.6; // wall thickness
+      const walls: Array<[number, number, number, number]> = [
+        [0, hd, t.width, th], // back
+        [0, -hd, t.width * 0.55, th], // front (gap)
+        [-hw, 0, th, t.depth], // left
+        [hw, 0, th, t.depth * 0.55], // right (gap)
+      ];
+      for (const [ox, oz, ww, dd] of walls) {
+        const geo = new THREE.BoxGeometry(ww, t.height, dd);
         const mesh = new THREE.Mesh(geo, ruinMat);
-        mesh.position.set(cx + (rnd() - 0.5) * 8, h / 2, cz + (rnd() - 0.5) * 8);
-        mesh.rotation.y = rnd() * TAU;
+        mesh.position.set(c.x + ox, t.height / 2, c.z - oz);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         terrainGroup.add(mesh);
       }
-    }
-
-    // Shallow craters: dark flattened discs sunk slightly into the mat.
-    const craterSpots: Array<[number, number]> = [
-      [0.4, 0.18],
-      [0.62, 0.82],
-      [0.15, 0.5],
-      [0.85, 0.55],
-    ];
-    for (const [fx, fy] of craterSpots) {
-      const cx = (fx - 0.5) * width;
-      const cz = -(fy - 0.5) * height;
-      const r = 2.5 + rnd() * 2.5;
-      const geo = new THREE.CylinderGeometry(r, r * 1.25, 0.4, 16);
-      const mesh = new THREE.Mesh(geo, craterMat);
-      mesh.position.set(cx, 0.05, cz);
-      mesh.receiveShadow = true;
-      terrainGroup.add(mesh);
+      // A faint floor pad to read the footprint from above.
+      const pad = new THREE.Mesh(
+        new THREE.BoxGeometry(t.width, 0.12, t.depth),
+        new THREE.MeshStandardMaterial({ color: 0x39342b, roughness: 0.95 }),
+      );
+      pad.position.set(c.x, 0.07, c.z);
+      pad.receiveShadow = true;
+      terrainGroup.add(pad);
     }
 
     this.boardGroup.add(terrainGroup);

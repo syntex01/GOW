@@ -127,6 +127,8 @@ describe('shooting reduces target models', () => {
   it('A shooting B kills models (deterministic seed)', () => {
     const g = newGame();
     g.startGame();
+    // Isolate the shooting mechanic: clear terrain so line of sight is open.
+    g.state.terrain = [];
     const aUnit = g.unitsOf('A')[0];
     const bUnit = g.unitsOf('B')[0];
     const before = bUnit.models.filter((m) => m.alive).length;

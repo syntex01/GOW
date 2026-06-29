@@ -1,4 +1,4 @@
-import type { ModelInstance, UnitInstance, Vec2, Objective, PlayerId } from './types';
+import type { ModelInstance, UnitInstance, Vec2, Objective, PlayerId, TerrainPiece } from './types';
 
 export const ENGAGEMENT_RANGE = 1; // inches
 export const COHERENCY_DISTANCE = 2; // inches between models in a unit
@@ -103,6 +103,100 @@ export function computeObjectiveControl(
     else if (totals.B > totals.A) obj.controlledBy = 'B';
     else obj.controlledBy = undefined;
   }
+}
+
+/* ------------------------------- terrain --------------------------------- */
+
+interface Rect {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+function footprint(t: TerrainPiece): Rect {
+  return {
+    minX: t.center.x - t.width / 2,
+    maxX: t.center.x + t.width / 2,
+    minY: t.center.y - t.depth / 2,
+    maxY: t.center.y + t.depth / 2,
+  };
+}
+
+function pointInRect(p: Vec2, r: Rect, pad = 0): boolean {
+  return p.x >= r.minX - pad && p.x <= r.maxX + pad && p.y >= r.minY - pad && p.y <= r.maxY + pad;
+}
+
+/** Does segment p1->p2 cross the axis-aligned rectangle r? (Liang–Barsky.) */
+function segmentIntersectsRect(p1: Vec2, p2: Vec2, r: Rect): boolean {
+  if (pointInRect(p1, r) || pointInRect(p2, r)) return true;
+  let t0 = 0;
+  let t1 = 1;
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const clip = (p: number, q: number): boolean => {
+    if (p === 0) return q >= 0; // parallel
+    const t = q / p;
+    if (p < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+    return true;
+  };
+  return (
+    clip(-dx, p1.x - r.minX) &&
+    clip(dx, r.maxX - p1.x) &&
+    clip(-dy, p1.y - r.minY) &&
+    clip(dy, r.maxY - p1.y)
+  );
+}
+
+/** Is any living model of the unit standing within/adjacent to this terrain? */
+function unitTouchesTerrain(u: UnitInstance, t: TerrainPiece, pad = 1): boolean {
+  const r = footprint(t);
+  return aliveModels(u).some((m) => pointInRect(m.position, r, m.baseRadius + pad));
+}
+
+/**
+ * Line of sight from `a` to `b`. Obscuring terrain (ruins) blocks LoS when the
+ * sight line between the two closest models passes through its footprint and
+ * neither unit is standing within/adjacent to that piece (mirrors how ruins
+ * work on the tabletop: you can see in/out when you're there, not through).
+ */
+export function hasLineOfSight(a: UnitInstance, b: UnitInstance, terrain: TerrainPiece[]): boolean {
+  const pa = closestModelTo(a, unitCentroid(b));
+  const pb = closestModelTo(b, unitCentroid(a));
+  if (!pa || !pb) return false;
+  for (const t of terrain) {
+    if (!t.obscuring) continue;
+    if (unitTouchesTerrain(a, t) || unitTouchesTerrain(b, t)) continue;
+    if (segmentIntersectsRect(pa.position, pb.position, footprint(t))) return false;
+  }
+  return true;
+}
+
+/** The living model of `u` closest to a point. */
+function closestModelTo(u: UnitInstance, p: Vec2): ModelInstance | undefined {
+  let best: ModelInstance | undefined;
+  let bd = Infinity;
+  for (const m of aliveModels(u)) {
+    const d = dist(m.position, p);
+    if (d < bd) {
+      bd = d;
+      best = m;
+    }
+  }
+  return best;
+}
+
+/** A unit benefits from cover if any living model is within a terrain footprint. */
+export function unitInCover(u: UnitInstance, terrain: TerrainPiece[]): boolean {
+  return terrain.some((t) =>
+    aliveModels(u).some((m) => pointInRect(m.position, footprint(t), m.baseRadius)),
+  );
 }
 
 /** Number of living models in a unit at/under half its starting strength? */

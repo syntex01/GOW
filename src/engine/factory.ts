@@ -7,6 +7,7 @@ import type {
   UnitInstance,
   Vec2,
   Characteristics,
+  TerrainPiece,
 } from './types';
 
 const MM_PER_INCH = 25.4;
@@ -116,6 +117,42 @@ export function defaultObjectives(board: { width: number; height: number }): Obj
 }
 
 /**
+ * Symmetric terrain layout: paired ruins (obscuring) and craters (cover) placed
+ * to give both sides equivalent board presence. Mid-board pieces create real
+ * line-of-sight lanes. These are the exact pieces the renderer draws.
+ */
+export function defaultTerrain(board: { width: number; height: number }): TerrainPiece[] {
+  const { width: w, height: h } = board;
+  const ruin = (id: string, x: number, y: number, ww: number, dd: number): TerrainPiece => ({
+    id,
+    kind: 'ruin',
+    center: { x, y },
+    width: ww,
+    depth: dd,
+    height: 4,
+    obscuring: true,
+  });
+  const crater = (id: string, x: number, y: number, r: number): TerrainPiece => ({
+    id,
+    kind: 'crater',
+    center: { x, y },
+    width: r * 2,
+    depth: r * 2,
+    height: 0.4,
+    obscuring: false,
+  });
+  return [
+    ruin('r_center', w / 2, h / 2, 9, 6),
+    ruin('r_nw', w / 2 - 16, h / 2 + 8, 8, 7),
+    ruin('r_se', w / 2 + 16, h / 2 - 8, 8, 7),
+    ruin('r_ne', w / 2 + 15, h / 2 + 9, 7, 6),
+    ruin('r_sw', w / 2 - 15, h / 2 - 9, 7, 6),
+    crater('c_w', w / 2 - 22, h / 2, 4),
+    crater('c_e', w / 2 + 22, h / 2, 4),
+  ];
+}
+
+/**
  * Assemble a full game state from two army lists and a registry of datasheets.
  * Player A deploys along the bottom edge, player B along the top.
  */
@@ -160,6 +197,7 @@ export function createGame(
     },
     units,
     objectives: defaultObjectives(board),
+    terrain: defaultTerrain(board),
     board,
     log: [],
     rngSeed: config.seed,

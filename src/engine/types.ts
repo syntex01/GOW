@@ -188,6 +188,22 @@ export interface Objective {
   controlledBy?: PlayerId;
 }
 
+/**
+ * A terrain feature on the table. Footprints are axis-aligned rectangles in
+ * inches. Ruins are `obscuring` (they block line of sight) and grant the
+ * benefit of cover; craters grant cover only. The renderer draws exactly these
+ * pieces, so what you see is what the rules use.
+ */
+export interface TerrainPiece {
+  id: string;
+  kind: 'ruin' | 'crater';
+  center: Vec2;
+  width: number; // x extent (inches)
+  depth: number; // y extent (inches)
+  height: number; // visual height (inches)
+  obscuring: boolean; // blocks line of sight when true
+}
+
 export type Phase =
   | 'command'
   | 'movement'
@@ -225,6 +241,7 @@ export interface GameState {
   players: Record<PlayerId, PlayerState>;
   units: Record<string, UnitInstance>;
   objectives: Objective[];
+  terrain: TerrainPiece[];
   board: BoardSize;
   log: LogEntry[];
   rngSeed: number;
