@@ -19,15 +19,20 @@ designed to expand to the whole game.
   Lethal Hits, Devastating Wounds, Twin-linked, Anti-X, Melta, Blast, Torrent…)
 - ✅ Five-phase turn: Command (CP, battle-shock, reanimation) → Movement
   (move / advance / fall back) → Shooting → Charge (2D6) → Fight (chargers first)
+- ✅ Terrain with true-ish **line of sight** (ruins block LoS) and **cover** saves
+- ✅ **Stratagems + command points**, **reserves / deep strike** (>9" rule),
+  **overwatch**, and **leader attachment** (attached leaders are untargetable
+  while their bodyguard lives; auras conferred)
 - ✅ Objectives, objective control (OC), progressive scoring, win conditions
-- ✅ Graphically rich Three.js battlefield: PBR battlemat, terrain, glowing
-  objective markers, faction-themed procedural model proxies, measurement &
-  range tools, damage popups, orbit camera
-- ✅ Interactive hotseat HUD: phase tracker, unit datacards, battle log
+- ✅ Graphically rich Three.js battlefield: **real glTF unit models**
+  (faction-tinted, bloom), PBR battlemat, terrain shells, glowing objectives,
+  measurement & range tools, damage popups, orbit/touch camera
+- ✅ Premium **grimdark-gothic HUD** with faction crests, datasheet-style unit
+  cards, a stratagem panel, and a **mobile / touch** responsive layout (PWA)
 - ✅ **Army importer**: paste an army-list text export (Warhammer app / New
   Recruit / BattleScribe) and deploy it
 - ✅ **Custom model import** slot (glTF / GLB / OBJ / STL) for publicly available models
-- ✅ 85 passing tests, incl. empirical-vs-analytic combat fidelity checks
+- ✅ 112 passing tests, incl. empirical-vs-analytic combat fidelity checks
 
 ## Run
 
@@ -61,8 +66,23 @@ The renderer talks to the rest of the app only through `SceneController`, so it
 can evolve (or be swapped for mobile/2D) independently. The engine is fully
 deterministic given a seed, which is what makes the tabletop fidelity testable.
 
+## Play on your phone (GitHub Pages)
+
+The repo ships a deploy workflow (`.github/workflows/deploy.yml`) that builds the
+app and publishes it to GitHub Pages on every push. **One-time setup:** open
+**Settings → Pages → Build and deployment → Source: GitHub Actions**. After the
+next push (or re-run the "Deploy to GitHub Pages" workflow) the app is live at:
+
+```
+https://syntex01.github.io/GOW/
+```
+
+Open that on your phone and use the browser's **Add to Home Screen** — it
+installs as a fullscreen PWA with its own icon.
+
 ## Roadmap
 
-Detachments, stratagems & enhancements; leader attachment in play; reserves /
-deep strike UI; terrain LoS & cover from real geometry; more factions/units;
-online multiplayer; touch/mobile controls; optional animations.
+Detachments & enhancements; per-model movement & pile-in/consolidate; deep-strike
+placement UI; mission deck & secondaries; more factions/units; online
+multiplayer; optional animations (model rigs are already loaded, ready to
+animate).
