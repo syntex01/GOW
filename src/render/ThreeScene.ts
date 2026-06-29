@@ -8,6 +8,15 @@ import type {
   Vec2,
 } from '../engine/types';
 import type { PickResult, SceneController } from './SceneController';
+import {
+  ModelLibrary,
+  resolveModelEntry,
+  type ModelRegistryEntry,
+} from './ModelRegistry';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 /**
  * Three.js implementation of the renderer contract.
@@ -41,6 +50,12 @@ function lerp(a: number, b: number, t: number): number {
 interface ModelVisual {
   /** The whole model: base + body, positioned at table location. */
   group: THREE.Group;
+  /**
+   * The body sub-group (procedural silhouette OR a real glTF clone). Swapped in
+   * place when an async GLB load completes; the base ring lives directly on
+   * `group` so it shows immediately and survives the swap.
+   */
+  body: THREE.Group;
   /** Cached "alive" flag so we can detect death transitions. */
   alive: boolean;
   /** Animation progress for the death sink (1 = fully alive, 0 = sunk). */
@@ -96,6 +111,9 @@ export class ThreeScene implements SceneController {
   private geoCache = new Map<string, THREE.BufferGeometry>();
   private matCache = new Map<string, THREE.Material>();
 
+  /* --- real-model loader (GLB cache + per-model clones) --- */
+  private modelLibrary = new ModelLibrary();
+
   /* --- input --- */
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
@@ -123,6 +141,10 @@ export class ThreeScene implements SceneController {
 
   private rafId = 0;
   private disposed = false;
+
+  /* --- postprocessing (gentle bloom so glow/objectives pop) --- */
+  private composer: EffectComposer | null = null;
+  private bloomPass: UnrealBloomPass | null = null;
 
   /* ============================== lifecycle ============================== */
 
@@ -171,6 +193,9 @@ export class ThreeScene implements SceneController {
     this.buildBoard();
     this.buildTerrain(state);
 
+    /* postprocessing (optional, robust): gentle bloom for glow + objectives */
+    this.setupComposer();
+
     /* input + sizing */
     this.attachInput();
     this.resize();
@@ -210,6 +235,50 @@ export class ThreeScene implements SceneController {
     const fill = new THREE.DirectionalLight(0x6a86ff, 0.6);
     fill.position.set(-this.board.width * 0.5, this.board.width * 0.4, -this.board.height * 0.4);
     this.scene.add(fill);
+  }
+
+  /**
+   * Build an EffectComposer with a gentle UnrealBloom so Necron glow and
+   * objective beacons pop. Wrapped in try/catch and a manual capability check:
+   * if the GL context can't support the float targets bloom needs (e.g. some
+   * headless contexts), we silently fall back to direct rendering — the scene
+   * still looks good thanks to tuned emissive/lighting.
+   */
+  private setupComposer(): void {
+    try {
+      const size = new THREE.Vector2();
+      this.renderer.getSize(size);
+      const w = Math.max(1, size.x);
+      const h = Math.max(1, size.y);
+
+      const composer = new EffectComposer(this.renderer);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+
+      // Keep the bloom gentle: low strength, generous threshold so only the
+      // brightest emissive (glow/objectives) blooms, not the whole board.
+      const bloom = new UnrealBloomPass(
+        new THREE.Vector2(w, h),
+        0.55, // strength
+        0.65, // radius
+        0.82, // threshold (only bright emissive blooms)
+      );
+      composer.addPass(bloom);
+
+      // OutputPass applies tone mapping + colour space conversion correctly when
+      // rendering through a composer.
+      composer.addPass(new OutputPass());
+
+      composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      composer.setSize(w, h);
+
+      this.composer = composer;
+      this.bloomPass = bloom;
+    } catch (err) {
+      // Robust fallback: no composer, render directly. Never break the scene.
+      console.warn('[ThreeScene] bloom composer unavailable, rendering directly', err);
+      this.composer = null;
+      this.bloomPass = null;
+    }
   }
 
   /* ============================ coordinate maps ============================ */
@@ -298,10 +367,27 @@ export class ThreeScene implements SceneController {
       ctx.stroke();
     }
 
+    // Cracked, weathered plating: scatter darker fault lines for depth.
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    for (let i = 0; i < 70; i++) {
+      ctx.lineWidth = 0.5 + Math.random() * 1.5;
+      ctx.beginPath();
+      let x = Math.random() * canvas.width;
+      let y = Math.random() * canvas.height;
+      ctx.moveTo(x, y);
+      const segs = 2 + Math.floor(Math.random() * 4);
+      for (let s = 0; s < segs; s++) {
+        x += (Math.random() - 0.5) * 90;
+        y += (Math.random() - 0.5) * 90;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
     // Faint grid every 12 inches.
     const pxPerInchX = canvas.width / width;
     const pxPerInchY = canvas.height / height;
-    ctx.strokeStyle = 'rgba(120,140,170,0.10)';
+    ctx.strokeStyle = 'rgba(120,140,170,0.12)';
     ctx.lineWidth = 1;
     for (let gx = 0; gx <= width; gx += 12) {
       const x = gx * pxPerInchX;
@@ -317,6 +403,24 @@ export class ThreeScene implements SceneController {
       ctx.lineTo(canvas.width, y);
       ctx.stroke();
     }
+
+    // Vignette: radial edge darkening so the board reads as a lit arena and the
+    // generic flat-plane feel is reduced.
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const grad = ctx.createRadialGradient(
+      cx,
+      cy,
+      Math.min(cx, cy) * 0.35,
+      cx,
+      cy,
+      Math.max(cx, cy) * 1.05,
+    );
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.75, 'rgba(0,0,0,0.18)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -452,15 +556,17 @@ export class ThreeScene implements SceneController {
     };
   }
 
-  /** Build a procedural model body (base + silhouette) for a unit's proxy. */
-  private buildModelMesh(proxy: ProxyDescriptor, baseRadius: number): THREE.Group {
+  /**
+   * Build the faction-coloured round base (dark disc + a coloured rim ring) for
+   * a single model. The base lives directly on the per-model group so it shows
+   * immediately and persists whether the body is procedural or a real glTF clone.
+   */
+  private buildBase(proxy: ProxyDescriptor, baseRadius: number): THREE.Group {
     const g = new THREE.Group();
-    const { primary, secondary } = this.proxyMaterials(proxy);
-    const h = proxy.heightInches ?? 1.8;
 
-    // Round base.
+    // Dark plinth disc.
     const baseGeo = this.getGeometry(`base:${baseRadius.toFixed(2)}`, () =>
-      new THREE.CylinderGeometry(baseRadius, baseRadius, 0.18, 20),
+      new THREE.CylinderGeometry(baseRadius, baseRadius, 0.18, 24),
     );
     const baseMat = this.getMaterial('baseMat', () =>
       new THREE.MeshStandardMaterial({ color: 0x0d0e11, roughness: 0.8, metalness: 0.2 }),
@@ -472,9 +578,34 @@ export class ThreeScene implements SceneController {
     base.userData.isBase = true;
     g.add(base);
 
+    // Faction-coloured rim ring around the top edge of the base, so even units
+    // sharing a model read their colour at a glance.
+    const ringGeo = this.getGeometry(`baseRing:${baseRadius.toFixed(2)}`, () => {
+      const rg = new THREE.RingGeometry(baseRadius * 0.78, baseRadius, 24);
+      rg.rotateX(-Math.PI / 2);
+      return rg;
+    });
+    const ringMat = this.getMaterial(`baseRingMat:${proxy.primary}`, () =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(proxy.primary),
+        emissive: new THREE.Color(proxy.primary),
+        emissiveIntensity: 0.35,
+        roughness: 0.5,
+        metalness: 0.3,
+      }),
+    );
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.y = 0.181;
+    g.add(ring);
+    return g;
+  }
+
+  /** Build a procedural model body (silhouette only) for a unit's proxy. */
+  private buildProceduralBody(proxy: ProxyDescriptor, baseRadius: number): THREE.Group {
     const body = new THREE.Group();
+    const { primary, secondary } = this.proxyMaterials(proxy);
+    const h = proxy.heightInches ?? 1.8;
     body.position.y = 0.18;
-    g.add(body);
 
     switch (proxy.silhouette) {
       case 'infantry':
@@ -491,13 +622,13 @@ export class ThreeScene implements SceneController {
         break;
     }
 
-    g.traverse((o) => {
+    body.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
         o.castShadow = true;
         o.receiveShadow = true;
       }
     });
-    return g;
+    return body;
   }
 
   private addMesh(
@@ -629,25 +760,90 @@ export class ThreeScene implements SceneController {
     if (uv) return uv;
 
     const proxy = unit.proxy ?? this.defaultProxy(unit);
+    // Pick a real model from the unit's keywords; null => procedural fallback.
+    const entry = resolveModelEntry(unit);
     const group = new THREE.Group();
     group.name = `unit:${unit.id}`;
     const models: ModelVisual[] = [];
 
     for (const m of unit.models) {
-      const mesh = this.buildModelMesh(proxy, m.baseRadius);
+      // Per-model group: holds the base ring + a swappable body.
+      const modelGroup = new THREE.Group();
       // Face direction by owner: A faces +Z, B faces -Z.
-      mesh.rotation.y = unit.ownerId === 'A' ? 0 : Math.PI;
-      // tag for picking
-      mesh.userData.unitId = unit.id;
-      mesh.traverse((o) => (o.userData.unitId = unit.id));
-      group.add(mesh);
-      models.push({ group: mesh, alive: m.alive, vitality: m.alive ? 1 : 0 });
+      modelGroup.rotation.y = unit.ownerId === 'A' ? 0 : Math.PI;
+
+      // Base is always present and shows immediately.
+      const base = this.buildBase(proxy, m.baseRadius);
+      modelGroup.add(base);
+
+      // Body: procedural by default. If a real model matched, we add the
+      // procedural body now as an instant placeholder and swap it for the GLB
+      // clone once it finishes loading (so the board is never empty).
+      const body = this.buildProceduralBody(proxy, m.baseRadius);
+      modelGroup.add(body);
+
+      // Tag the whole model group for picking.
+      modelGroup.userData.unitId = unit.id;
+      modelGroup.traverse((o) => (o.userData.unitId = unit.id));
+
+      group.add(modelGroup);
+      const mv: ModelVisual = {
+        group: modelGroup,
+        body,
+        alive: m.alive,
+        vitality: m.alive ? 1 : 0,
+      };
+      models.push(mv);
+
+      if (entry) {
+        this.loadRealModelBody(unit.id, mv, proxy, entry);
+      }
     }
 
     uv = { group, models, ownerId: unit.ownerId };
     this.unitVisuals.set(unit.id, uv);
     this.unitsGroup.add(group);
     return uv;
+  }
+
+  /**
+   * Asynchronously load + clone a real glTF model for one model instance and
+   * swap it in for the procedural placeholder body. The base ring, position,
+   * death-sink and picking all keep working because we only replace `mv.body`.
+   */
+  private loadRealModelBody(
+    unitId: string,
+    mv: ModelVisual,
+    proxy: ProxyDescriptor,
+    entry: ModelRegistryEntry,
+  ): void {
+    this.modelLibrary.instantiate(
+      entry.url,
+      proxy,
+      entry,
+      (clone) => {
+        // The unit may have been disposed before the load resolved.
+        if (this.disposed) {
+          this.disposeObject(clone);
+          return;
+        }
+        // Rest the model on top of the base disc.
+        clone.position.y = 0.18;
+        // Tag clone meshes for picking.
+        clone.userData.unitId = unitId;
+        clone.traverse((o) => (o.userData.unitId = unitId));
+
+        // Remove the procedural placeholder and attach the real model.
+        mv.group.remove(mv.body);
+        this.disposeObject(mv.body);
+        mv.group.add(clone);
+        mv.body = clone;
+        // Re-apply current death-sink scale so a model that died while loading
+        // doesn't pop to full size.
+        clone.visible = mv.vitality > 0.01;
+      },
+      // On error we simply keep the procedural placeholder (graceful fallback).
+    );
   }
 
   /* ================================= sync ================================= */
@@ -1225,6 +1421,9 @@ export class ThreeScene implements SceneController {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    // Keep the composer + bloom render targets in sync with the canvas.
+    if (this.composer) this.composer.setSize(w, h);
+    if (this.bloomPass) this.bloomPass.setSize(w, h);
   }
 
   /* ============================== animation ============================== */
@@ -1253,7 +1452,9 @@ export class ThreeScene implements SceneController {
       ring.scale.set(s, 1, s);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // Render through the bloom composer when available, else direct.
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   };
 
   /** Smoothly sink dead models and pop revived ones. */
@@ -1326,6 +1527,7 @@ export class ThreeScene implements SceneController {
       el.removeEventListener('wheel', this.onWheel);
     }
     window.removeEventListener('resize', this.onWindowResize);
+    this.composer?.dispose();
     this.renderer?.dispose();
     if (el && el.parentElement) el.parentElement.removeChild(el);
   }

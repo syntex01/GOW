@@ -27,7 +27,7 @@ page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 
 await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForSelector('canvas', { timeout: 15000 });
-await page.waitForTimeout(2500); // let three.js settle + a few frames
+await page.waitForTimeout(5000); // let three.js settle + GLB models load + clone
 
 await page.screenshot({ path: `${OUT}/01-deployment.png` });
 

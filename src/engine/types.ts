@@ -179,6 +179,28 @@ export interface UnitInstance {
   attachedLeaderIds: string[]; // if this is a bodyguard, leaders attached to it
 
   startingModelCount: number;
+
+  /* ---------------------------------------------------------------------- *
+   * Stratagem / transient defensive state (all optional & additive).        *
+   * These flags are set by activateStratagem and consumed/cleared by the    *
+   * relevant game step. They default to undefined (treated as false).       *
+   * ---------------------------------------------------------------------- */
+  /** Go to Ground: target counts as having the benefit of cover this turn. */
+  goToGround?: boolean;
+  /** Smokescreen: target has a 6+ invulnerable save vs shooting this turn. */
+  smokescreen?: boolean;
+  /** Battle round on which a defensive flag (goToGround/smokescreen) was set,
+   *  used to clear it at the start of the unit's following turn. */
+  defensiveFlagRound?: number;
+  /** Insane Bravery: the unit's next battle-shock test auto-passes. */
+  autoPassBattleshock?: boolean;
+  /** Counter-offensive: this unit fights next, out of the normal sequence. */
+  fightsNext?: boolean;
+  /** Fire Overwatch already used by this unit this battle round (1/round). */
+  overwatchUsedRound?: number;
+  /** Command Re-roll: a one-shot "re-roll all hits" granted to this unit's
+   *  next shooting/fight attack. Consumed by the next resolveWeapon. */
+  pendingRerollHits?: boolean;
 }
 
 export interface Objective {

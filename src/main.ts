@@ -6,6 +6,7 @@ import { createGame, type ArmyList, type GameConfig } from './engine/factory';
 import { DATASHEETS, FACTIONS, SAMPLE_ARMIES } from './engine/data/index';
 import { importRosterText } from './import/rosterImport';
 import { SAMPLE_ROSTERS } from './import/sampleRosters';
+import { CORE_STRATAGEMS } from './engine/stratagems';
 import type { PlayerId } from './engine/types';
 
 /**
@@ -48,12 +49,34 @@ class App {
     this.scene.init(this.container, state);
     this.engine.startGame();
     this.ui.bind(this.engine);
+    this.wireStratagems();
     this.scene.frameBoard();
   }
 
   private newBattle(): void {
     this.lists = { A: SAMPLE_ARMIES.necrons, B: SAMPLE_ARMIES.ultramarines };
     this.buildBattle();
+  }
+
+  /**
+   * Feed the full core-stratagem list to the HUD panel. The HUD gates each entry
+   * by the current phase and the active player's CP; activation spends CP and
+   * applies the effect via the engine, using the player's current selection as
+   * context (the chosen friendly unit, and a highlighted enemy as the target).
+   */
+  private wireStratagems(): void {
+    const entries = CORE_STRATAGEMS.map((s) => ({
+      id: s.id,
+      name: s.name,
+      cost: s.cost,
+      phase: s.phase,
+      detail: s.detail,
+    }));
+    this.ui.setStratagems(entries, (id) => {
+      const res = this.engine.activateStratagem(id, this.ui.currentSelection());
+      this.ui.notify(res.message, !res.ok);
+      this.ui.refresh();
+    });
   }
 
   // ---------------------------------------------------------------- import UI

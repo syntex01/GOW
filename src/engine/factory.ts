@@ -21,6 +21,8 @@ export interface ArmyListEntry {
   attachTo?: string;
   /** Optional stable instance id (used by importers to wire attachments). */
   instanceId?: string;
+  /** Start this unit in Strategic Reserves / Deep Strike (off the table). */
+  inReserves?: boolean;
 }
 
 export interface ArmyList {
@@ -166,25 +168,84 @@ export function createGame(
   const board = config.board ?? DEFAULT_BOARD;
   const units: Record<string, UnitInstance> = {};
 
+  // Maps a list entry's stable `instanceId` to the minted unit id, so that an
+  // entry's `attachTo` (which references another entry's instanceId) can be
+  // resolved into a concrete leader<->bodyguard link after deployment.
+  const instanceIdToUnitId: Record<string, string> = {};
+  // Per-list parallel array of minted unit ids, indexed by entry position. Lets
+  // us resolve a leader entry's own unit id even when it has no `instanceId`.
+  const entryUnitIds = new Map<ArmyList, (string | undefined)[]>();
+
   const deploy = (list: ArmyList, owner: PlayerId): void => {
     const facing: 1 | -1 = owner === 'A' ? 1 : -1;
     const baseY = owner === 'A' ? 8 : board.height - 8;
+    const ids: (string | undefined)[] = [];
     list.entries.forEach((entry, i) => {
       const ds = registry[entry.datasheetId];
       if (!ds) {
         console.warn(`Unknown datasheet: ${entry.datasheetId}`);
+        ids[i] = undefined;
         return;
       }
       const count = entry.modelCount ?? ds.composition[0]?.min ?? 1;
       const spread = list.entries.length;
       const x = board.width * ((i + 1) / (spread + 1));
       const unit = instantiateUnit(ds, owner, count, { x, y: baseY }, facing);
+      if (entry.inReserves) {
+        unit.inReserves = true;
+        unit.deepStrike = true;
+      }
+      if (entry.instanceId) instanceIdToUnitId[entry.instanceId] = unit.id;
+      ids[i] = unit.id;
       units[unit.id] = unit;
     });
+    entryUnitIds.set(list, ids);
   };
 
   deploy(listA, 'A');
   deploy(listB, 'B');
+
+  // Wire leader attachments now that every unit has a concrete id. A character
+  // entry with a Leader ability whose `attachTo` points at a deployed bodyguard
+  // unit is linked to it (co-deployed) and recorded via leadingUnitId /
+  // attachedLeaderIds. We move the leader on top of the bodyguard so they form
+  // a single board presence, and only link if the leader may lead that sheet.
+  const linkAttachment = (list: ArmyList): void => {
+    const ids = entryUnitIds.get(list) ?? [];
+    list.entries.forEach((entry, i) => {
+      if (!entry.attachTo) return;
+      const leaderId = entry.instanceId ? instanceIdToUnitId[entry.instanceId] : ids[i];
+      const bodyguardId = instanceIdToUnitId[entry.attachTo];
+      if (!leaderId || !bodyguardId) return;
+      const leader = units[leaderId];
+      const bodyguard = units[bodyguardId];
+      if (!leader || !bodyguard) return;
+      const leaderEff = leader.abilities.find((a) => a.effect?.t === 'leader')?.effect;
+      const canLead =
+        leaderEff?.t === 'leader' && leaderEff.canLeadDatasheetIds.includes(bodyguard.datasheetId);
+      if (!canLead) return;
+      leader.leadingUnitId = bodyguardId;
+      if (!bodyguard.attachedLeaderIds.includes(leaderId)) {
+        bodyguard.attachedLeaderIds.push(leaderId);
+      }
+      // Co-deploy: move the leader's models on top of the bodyguard anchor so
+      // the combined unit is physically together (and reserves stay in step).
+      if (!leader.inReserves && !bodyguard.inReserves) {
+        const anchor = bodyguard.models[0]?.position ?? leader.models[0]?.position;
+        if (anchor) {
+          leader.models.forEach((m, k) => {
+            m.position = { x: anchor.x + (k + 1) * 0.4, y: anchor.y };
+          });
+        }
+      } else {
+        // Keep the pair in the same deployment state.
+        leader.inReserves = bodyguard.inReserves;
+        leader.deepStrike = bodyguard.deepStrike;
+      }
+    });
+  };
+  linkAttachment(listA);
+  linkAttachment(listB);
 
   return {
     round: 1,

@@ -28,6 +28,12 @@ export interface AttackOptions {
   rerollWounds?: 'ones' | 'all';
   /** Number of models firing this weapon profile. */
   firingModels?: number;
+  /**
+   * Extra invulnerable save granted to the target for this attack only (N means
+   * N+), e.g. a 6+ from Go to Ground / Smokescreen. Combined with any printed
+   * invuln by taking the better (lower) of the two. Does not mutate the unit.
+   */
+  bonusInvuln?: number;
 }
 
 export interface AttackResult {
@@ -170,7 +176,11 @@ export function resolveWeapon(
 
   // --- Save step ---
   const armour = target.statline.save;
-  const invuln = target.statline.invuln;
+  const printedInvuln = target.statline.invuln;
+  const invuln =
+    opts.bonusInvuln !== undefined
+      ? Math.min(opts.bonusInvuln, printedInvuln ?? opts.bonusInvuln)
+      : printedInvuln;
   let effectiveArmour = armour + weapon.ap;
   if (opts.cover && !(weapon.ap === 0 && armour <= 3)) {
     // Cover improves the armour save by 1, but not for AP0 vs Sv 3+ or better.
