@@ -138,7 +138,7 @@ export class ThreeScene implements SceneController {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth || 800, container.clientHeight || 600);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.25;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -186,11 +186,11 @@ export class ThreeScene implements SceneController {
 
   private setupLights(): void {
     // Hemisphere fill: cold sky, warm-ish ground bounce, kept dim for grimdark.
-    const hemi = new THREE.HemisphereLight(0x556077, 0x14110d, 0.55);
+    const hemi = new THREE.HemisphereLight(0x6c7a96, 0x201a12, 0.9);
     this.scene.add(hemi);
 
     // Key directional light with shadows — raking angle for drama.
-    const key = new THREE.DirectionalLight(0xfff2d8, 2.1);
+    const key = new THREE.DirectionalLight(0xfff2d8, 2.7);
     key.position.set(this.board.width * 0.4, this.board.width * 0.9, this.board.height * 0.5);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -207,7 +207,7 @@ export class ThreeScene implements SceneController {
     this.scene.add(key);
 
     // Subtle cold fill from the opposite side, no shadows.
-    const fill = new THREE.DirectionalLight(0x4a6cff, 0.35);
+    const fill = new THREE.DirectionalLight(0x6a86ff, 0.6);
     fill.position.set(-this.board.width * 0.5, this.board.width * 0.4, -this.board.height * 0.4);
     this.scene.add(fill);
   }
@@ -334,9 +334,9 @@ export class ThreeScene implements SceneController {
     const { width, height } = this.board;
 
     const ruinMat = new THREE.MeshStandardMaterial({
-      color: 0x2a2c30,
-      roughness: 0.85,
-      metalness: 0.15,
+      color: 0x4a4438,
+      roughness: 0.82,
+      metalness: 0.18,
     });
     const craterMat = new THREE.MeshStandardMaterial({
       color: 0x101013,
