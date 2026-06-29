@@ -17,7 +17,6 @@ import {
   unitCentroid,
   computeObjectiveControl,
   isBelowHalfStrength,
-  isCoherent,
   ENGAGEMENT_RANGE,
 } from './geometry';
 

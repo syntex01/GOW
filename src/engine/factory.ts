@@ -85,6 +85,7 @@ export function instantiateUnit(
     abilities: ds.abilities.map((a) => ({ ...a })),
     keywords: [...ds.keywords],
     isCharacter: ds.isCharacter,
+    ...(ds.proxy ? { proxy: { ...ds.proxy } } : {}),
     moveState: 'none',
     advanceRoll: 0,
     hasShot: false,

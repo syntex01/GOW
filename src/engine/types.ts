@@ -160,6 +160,7 @@ export interface UnitInstance {
   abilities: Ability[];
   keywords: string[];
   isCharacter: boolean;
+  proxy?: ProxyDescriptor;
 
   // Per-turn status
   moveState: MoveState;
