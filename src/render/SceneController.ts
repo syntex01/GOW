@@ -1,0 +1,55 @@
+import type { GameState, Vec2 } from '../engine/types';
+
+/**
+ * Contract between the interactive UI and the 3D renderer. The UI talks only to
+ * this interface, so the Three.js implementation can evolve independently (and
+ * could be swapped for a 2D fallback or a different engine later).
+ *
+ * Table coordinates are inches with origin at the bottom-left of the board, the
+ * same convention used throughout the engine. The renderer is responsible for
+ * mapping those to whatever world space it uses internally.
+ */
+export interface PickResult {
+  /** Table coordinate under the cursor (inches). */
+  point: Vec2;
+  /** Unit id under the cursor, if a model/base was hit. */
+  unitId?: string;
+}
+
+export interface SceneController {
+  /** Build the scene for an initial game state and start rendering. */
+  init(container: HTMLElement, state: GameState): void;
+
+  /** Reconcile all meshes (positions, casualties, objective control) with state. */
+  sync(state: GameState): void;
+
+  /** Visually emphasise a unit (selection ring), or clear with null. */
+  highlightUnit(unitId: string | null): void;
+
+  /** Emphasise a set of units as valid targets (e.g. shooting/charge). */
+  setTargets(unitIds: string[]): void;
+
+  /** Draw a measuring tape / range indicator between two table points. */
+  showMeasurement(from: Vec2, to: Vec2, label?: string): void;
+
+  /** Draw a movement/threat range ring around a table point. */
+  showRange(center: Vec2, radius: number, color?: number): void;
+
+  /** Clear transient overlays (measurements, ranges). */
+  clearOverlays(): void;
+
+  /** Register a click handler; receives the picked table point and unit (if any). */
+  onPick(handler: (result: PickResult) => void): void;
+
+  /** Register a hover handler for live measurement and tooltips. */
+  onHover(handler: (result: PickResult) => void): void;
+
+  /** Pop a floating combat number (damage) above a unit. */
+  flashDamage(unitId: string, amount: number): void;
+
+  /** Resize to the container. */
+  resize(): void;
+
+  /** Frame the camera on the whole board. */
+  frameBoard(): void;
+}
