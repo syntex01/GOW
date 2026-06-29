@@ -2,6 +2,7 @@ import type { GameEngine } from '../engine/game';
 import type { SceneController, PickResult } from '../render/SceneController';
 import type { UnitInstance, Phase, Vec2, Weapon, PlayerId } from '../engine/types';
 import { aliveModels, unitCentroid, inEngagementRange } from '../engine/geometry';
+import { runAiTurn } from '../engine/ai';
 
 const PHASES: Phase[] = ['command', 'movement', 'shooting', 'charge', 'fight', 'end'];
 const PHASE_LABEL: Record<Phase, string> = {
@@ -47,6 +48,9 @@ export class GameUI {
   private selectedId: string | null = null;
   private moveMode: MoveMode = 'normal';
   private targets: string[] = [];
+
+  /** Which side, if any, is played by the heuristic AI. Default: player B. */
+  private aiPlayer: PlayerId | null = 'B';
 
   // Stratagem shell state (presentation only).
   private stratagems: StratagemEntry[] = [];
@@ -318,6 +322,7 @@ export class GameUI {
 
     // Universal controls
     actions.append(
+      this.button(`AI: ${this.aiPlayer ? 'On' : 'Off'}`, 'small', () => this.toggleAi()),
       this.button('Import Army ▾', 'small', () => this.cb.onImportArmy(this.engine.active)),
       this.button('New Battle', 'small', () => this.cb.onNewBattle()),
     );
@@ -510,8 +515,25 @@ export class GameUI {
     this.engine.advancePhase();
     this.deselect();
     this.scene.clearOverlays();
+    // If the turn just passed to the AI player, let it play its whole turn.
+    if (this.aiPlayer && this.engine.active === this.aiPlayer && this.engine.winner() === undefined) {
+      this.toast(`${this.engine.state.players[this.aiPlayer].name} is taking their turn…`);
+      runAiTurn(this.engine);
+    }
     if (this.engine.state.phase === 'command') this.toast(`${this.engine.state.players[this.engine.active].name}'s turn`);
     this.refresh();
+  }
+
+  /** Toggle the AI opponent on player B (off = hotseat). */
+  toggleAi(): void {
+    this.aiPlayer = this.aiPlayer ? null : 'B';
+    this.toast(this.aiPlayer ? 'AI opponent ON (plays the red army)' : 'AI off — hotseat');
+    this.refresh();
+  }
+
+  /** Whether the AI currently controls a side (for HUD labelling). */
+  aiEnabled(): boolean {
+    return this.aiPlayer !== null;
   }
 
   // ---------------------------------------------------------------- picking

@@ -29,6 +29,8 @@ designed to expand to the whole game.
   measurement & range tools, damage popups, orbit/touch camera
 - ✅ Premium **grimdark-gothic HUD** with faction crests, datasheet-style unit
   cards, a stratagem panel, and a **mobile / touch** responsive layout (PWA)
+- ✅ **Solo AI opponent** (toggle in the action bar) so one player can test a
+  list against the machine; deterministic heuristic play
 - ✅ **Army importer**: paste an army-list text export (Warhammer app / New
   Recruit / BattleScribe) and deploy it
 - ✅ **Custom model import** slot (glTF / GLB / OBJ / STL) for publicly available models
