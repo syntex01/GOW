@@ -47,6 +47,36 @@ export interface SceneController {
   /** Pop a floating combat number (damage) above a unit. */
   flashDamage(unitId: string, amount: number): void;
 
+  /* ------------------------------- combat FX ------------------------------ *
+   * Fire-and-forget, transient visual effects. They never touch engine state
+   * or RNG, never block, spawn pooled/transient objects animated by the
+   * renderer's own loop, and auto-dispose when their life ends. Safe to call
+   * from the UI on every shooting/fight resolution.
+   * ----------------------------------------------------------------------- */
+
+  /**
+   * Ranged attack: a few staggered glowing tracers/bolts travelling from a
+   * shooter model to a target model, with a muzzle flash at the origin and an
+   * impact spark + flash at the target. Colour follows the shooter's faction.
+   * @param opts.volleys number of tracers to stagger (clamped per quality tier)
+   * @param opts.melee   pass false (reserved); melee shots use playMelee
+   */
+  playShoot(
+    fromUnitId: string,
+    toUnitId: string,
+    opts?: { volleys?: number; melee?: false },
+  ): void;
+
+  /** Melee clash: combatants lunge toward each other, a spark/slash flash at
+   * the contact midpoint, and (above 'low' tier) a subtle screen shake. */
+  playMelee(aUnitId: string, bUnitId: string): void;
+
+  /** Hit flash + expanding ring on a unit (pairs with flashDamage numbers). */
+  playImpact(unitId: string, intensity?: number): void;
+
+  /** When on, FX are shortened or skipped (accessibility / battery). */
+  setReducedMotion(on: boolean): void;
+
   /** Resize to the container. */
   resize(): void;
 

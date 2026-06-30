@@ -7,7 +7,7 @@ import { GameEngine } from '../src/engine/game';
  *  army builds a legal game. */
 describe('content: new units + factions', () => {
   it('registers three factions with their datasheets', () => {
-    expect(Object.keys(FACTIONS).sort()).toEqual(['necrons', 'orks', 'ultramarines']);
+    expect(Object.keys(FACTIONS).sort()).toEqual(['chaos', 'necrons', 'orks', 'ultramarines']);
     for (const f of Object.values(FACTIONS)) {
       for (const id of f.datasheetIds) expect(DATASHEETS[id]).toBeDefined();
     }
@@ -63,10 +63,13 @@ describe('content: new units + factions', () => {
       SAMPLE_ARMIES.ultramarines,
     );
     const e = new GameEngine(state);
-    // unitsOf counts every owned unit record (attached leaders included).
-    expect(e.unitsOf('A').length).toBe(5); // warriors, overlord, immortals, lychguard, scarabs
-    expect(e.unitsOf('B').length).toBe(5); // intercessors, captain, assault, hellblasters, terminators
-    // Terminators start in Strategic Reserves.
-    expect(e.reservesOf('B').length).toBe(1);
+    // unitsOf counts every owned unit record (attached leaders included). The
+    // sample armies were expanded with the fuller rosters, so both sides now
+    // field more units; assert each side built and has a Leader linked.
+    expect(e.unitsOf('A').length).toBe(SAMPLE_ARMIES.necrons.entries.length);
+    expect(e.unitsOf('B').length).toBe(SAMPLE_ARMIES.ultramarines.entries.length);
+    expect(e.unitsOf('A').some((u) => u.leadingUnitId)).toBe(true);
+    // Terminators (Ultramarines) still start in Strategic Reserves.
+    expect(e.reservesOf('B').length).toBeGreaterThanOrEqual(1);
   });
 });

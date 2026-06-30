@@ -758,10 +758,14 @@ export class GameUI {
   private async doShoot(attacker: UnitInstance, target: UnitInstance): Promise<void> {
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     const results = this.engine.shoot(attacker, target);
-    // Animate the actual dice that were rolled, then reveal the casualties.
+    // Tracers fly while the dice tumble; impact + casualties reveal after.
+    this.scene.playShoot(attacker.id, target.id);
     await this.dice.rollResults(results, { title: `${attacker.name} shoots ${target.name}` });
     const after = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
-    if (before - after > 0) this.scene.flashDamage(target.id, before - after);
+    if (before - after > 0) {
+      this.scene.playImpact(target.id, Math.min(2, (before - after) / 3));
+      this.scene.flashDamage(target.id, before - after);
+    }
     this.deselect();
     this.refresh();
   }
@@ -802,16 +806,24 @@ export class GameUI {
     }
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     const results = this.engine.fight(attacker, target);
+    this.scene.playMelee(attacker.id, target.id);
     await this.dice.rollResults(results, { title: `${attacker.name} fights ${target.name}` });
     const after = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
-    if (before - after > 0) this.scene.flashDamage(target.id, before - after);
+    if (before - after > 0) {
+      this.scene.playImpact(target.id, Math.min(2, (before - after) / 3));
+      this.scene.flashDamage(target.id, before - after);
+    }
     // Retaliation: the target strikes back if still able.
     if (this.engine.canFight(target, attacker)) {
       const tb = aliveModels(attacker).reduce((a, m) => a + m.wounds, 0);
       const retal = this.engine.fight(target, attacker);
+      this.scene.playMelee(target.id, attacker.id);
       await this.dice.rollResults(retal, { title: `${target.name} strikes back` });
       const ta = aliveModels(attacker).reduce((a, m) => a + m.wounds, 0);
-      if (tb - ta > 0) this.scene.flashDamage(attacker.id, tb - ta);
+      if (tb - ta > 0) {
+        this.scene.playImpact(attacker.id, Math.min(2, (tb - ta) / 3));
+        this.scene.flashDamage(attacker.id, tb - ta);
+      }
     }
     this.deselect();
     this.refresh();

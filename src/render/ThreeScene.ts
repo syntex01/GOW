@@ -153,8 +153,24 @@ interface UnitVisual {
   group: THREE.Group;
   models: ModelVisual[];
   ownerId: PlayerId;
+  /** Faction proxy colour (hex int) used to tint combat FX (tracers etc.). */
+  factionColor: number;
   /** Optional imported model that replaces the procedural proxies. */
   imported?: THREE.Object3D;
+}
+
+/* -------------------------------- combat FX ------------------------------- *
+ * Transient, fire-and-forget effects animated by the existing rAF loop.
+ * Each active FX is a small struct with an `update(dt) -> alive` step; when it
+ * dies we detach + dispose its objects. A hard particle cap keeps perf bounded.
+ * ------------------------------------------------------------------------- */
+interface FxEffect {
+  /** Advance by dt seconds; return false when finished (then it is disposed). */
+  update(dt: number): boolean;
+  /** Detach + free all GPU resources owned by this effect. */
+  dispose(): void;
+  /** Approximate live sprite/mesh count, for the global cap. */
+  cost: number;
 }
 
 /* ------------------------------ overlay types ----------------------------- */
@@ -190,6 +206,21 @@ export class ThreeScene implements SceneController {
   private highlightedUnit: string | null = null;
   private targetRings = new Map<string, THREE.Mesh>();
   private floatingNumbers: FloatingNumber[] = [];
+
+  /* --- combat FX --- */
+  /** Dedicated group so FX never interfere with picking (it's never raycast). */
+  private fxGroup = new THREE.Group();
+  /** Active transient effects, stepped by the rAF loop and auto-disposed. */
+  private fxEffects: FxEffect[] = [];
+  /** Live sprite/mesh particle count, kept under a per-tier hard cap. */
+  private fxParticleCount = 0;
+  /** Subtle screen-space shake state (decays each frame). */
+  private fxShake = 0;
+  /** Accessibility/battery: shorten or skip FX when on. */
+  private reducedMotion = false;
+  /** Cached shared FX resources (sprite textures, geometries, materials). */
+  private fxGlowTex: THREE.Texture | null = null;
+  private fxSparkTex: THREE.Texture | null = null;
 
   /* --- selection/target ring template materials --- */
   private ringGeoCache = new Map<string, THREE.RingGeometry>();
@@ -298,6 +329,7 @@ export class ThreeScene implements SceneController {
     this.scene.add(this.objectivesGroup);
     this.scene.add(this.unitsGroup);
     this.scene.add(this.overlayGroup);
+    this.scene.add(this.fxGroup);
 
     this.buildBoard();
     this.buildTerrain(state);
@@ -1281,7 +1313,16 @@ export class ThreeScene implements SceneController {
       }
     }
 
-    uv = { group, models, ownerId: unit.ownerId };
+    // Faction colour for combat FX: the proxy's primary, else owner fallback.
+    let factionColor = unit.ownerId === 'A' ? 0x6fa8ff : 0xff6a4a;
+    try {
+      const hex = (unit.proxy ?? proxy).primary;
+      if (hex) factionColor = new THREE.Color(hex).getHex();
+    } catch {
+      /* keep fallback */
+    }
+
+    uv = { group, models, ownerId: unit.ownerId, factionColor };
     this.unitVisuals.set(unit.id, uv);
     this.unitsGroup.add(group);
     return uv;
@@ -1765,6 +1806,410 @@ export class ThreeScene implements SceneController {
     }
   }
 
+  /* ============================== combat FX ============================== */
+
+  /**
+   * Per-tier FX budget. Caps concurrent particles and tunes how lavish each
+   * effect is so phones ('low') stay smooth: fewer tracers, no screen shake.
+   */
+  private fxBudget(): {
+    maxParticles: number;
+    maxVolleys: number;
+    shake: boolean;
+    sparkCount: number;
+  } {
+    switch (this.quality.tier) {
+      case 'low':
+        return { maxParticles: 48, maxVolleys: 2, shake: false, sparkCount: 4 };
+      case 'medium':
+        return { maxParticles: 120, maxVolleys: 4, shake: true, sparkCount: 7 };
+      default: // high
+        return { maxParticles: 220, maxVolleys: 6, shake: true, sparkCount: 10 };
+    }
+  }
+
+  /** Radial soft glow sprite texture (white core -> transparent), additive. */
+  private getFxGlowTexture(): THREE.Texture {
+    if (this.fxGlowTex) return this.fxGlowTex;
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.7)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    this.fxGlowTex = tex;
+    return tex;
+  }
+
+  /** Sharp 4-point star spark texture for impact sparks/slashes, additive. */
+  private getFxSparkTexture(): THREE.Texture {
+    if (this.fxSparkTex) return this.fxSparkTex;
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const ctx = c.getContext('2d')!;
+    // soft core
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 18);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(32, 32, 18, 0, TAU);
+    ctx.fill();
+    // cross flare
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(32, 2);
+    ctx.lineTo(32, 62);
+    ctx.moveTo(2, 32);
+    ctx.lineTo(62, 32);
+    ctx.stroke();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    this.fxSparkTex = tex;
+    return tex;
+  }
+
+  /** A fresh additive sprite material (FX own their materials so fades are
+   * independent; disposed when the effect ends). */
+  private makeFxSpriteMat(tex: THREE.Texture, color: number, opacity: number): THREE.SpriteMaterial {
+    return new THREE.SpriteMaterial({
+      map: tex,
+      color,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      depthTest: true,
+      blending: THREE.AdditiveBlending,
+    });
+  }
+
+  /** World position of a unit's model (clamped index), or its centroid. */
+  private fxUnitPoint(unitId: string, modelIndex = 0): THREE.Vector3 | null {
+    const uv = this.unitVisuals.get(unitId);
+    if (!uv) return null;
+    if (uv.imported) return uv.imported.position.clone();
+    const live = uv.models.filter((m) => m.vitality > 0.05);
+    const src = live.length ? live : uv.models;
+    if (!src.length) return null;
+    const mv = src[clamp(modelIndex, 0, src.length - 1) | 0];
+    return mv.group.position.clone();
+  }
+
+  /** Register an effect, respecting the per-tier particle cap (drops if full). */
+  private addFxEffect(eff: FxEffect): void {
+    if (this.fxParticleCount + eff.cost > this.fxBudget().maxParticles) {
+      eff.dispose();
+      return;
+    }
+    this.fxParticleCount += eff.cost;
+    this.fxEffects.push(eff);
+  }
+
+  playShoot(
+    fromUnitId: string,
+    toUnitId: string,
+    opts?: { volleys?: number; melee?: false },
+  ): void {
+    if (this.reducedMotion) {
+      // Reduced motion: just a soft impact flash, no travelling tracers.
+      this.playImpact(toUnitId, 0.7);
+      return;
+    }
+    const from = this.fxUnitPoint(fromUnitId);
+    const to = this.fxUnitPoint(toUnitId);
+    if (!from || !to) return;
+    const budget = this.fxBudget();
+    const requested = Math.max(1, Math.round(opts?.volleys ?? 3));
+    const volleys = clamp(requested, 1, budget.maxVolleys);
+    const color = this.unitVisuals.get(fromUnitId)?.factionColor ?? 0xffae5c;
+
+    // Muzzle flash at the shooter, slightly above the base.
+    this.spawnFlash(from.clone().setY(from.y + 1.0), color, 1.1, 0.12);
+
+    // Stagger several tracers; each is a thin additive sprite that streaks from
+    // muzzle to target then triggers a small impact spark + flash on arrival.
+    for (let i = 0; i < volleys; i++) {
+      const delay = i * 0.06;
+      // Small per-shot spread at the target so they don't all stack.
+      const jitter = 0.35;
+      const target = to.clone().setY(to.y + 0.9);
+      target.x += (((i * 1357) % 7) / 7 - 0.5) * jitter * 2;
+      target.z += (((i * 911) % 5) / 5 - 0.5) * jitter * 2;
+      const origin = from.clone().setY(from.y + 1.0);
+      this.addFxEffect(this.makeTracer(origin, target, color, delay, budget.sparkCount));
+    }
+  }
+
+  playMelee(aUnitId: string, bUnitId: string): void {
+    const a = this.fxUnitPoint(aUnitId);
+    const b = this.fxUnitPoint(bUnitId);
+    if (!a || !b) return;
+    const mid = a.clone().add(b).multiplyScalar(0.5);
+    mid.y = Math.max(a.y, b.y) + 0.9;
+
+    if (!this.reducedMotion) {
+      // Lunge: nudge both combatants toward the midpoint and ease back.
+      this.addFxEffect(this.makeLunge(aUnitId, mid));
+      this.addFxEffect(this.makeLunge(bUnitId, mid));
+    }
+    // Clash spark/slash flash at the contact point (warm white-hot).
+    const budget = this.fxBudget();
+    this.spawnFlash(mid, 0xffe6b0, 1.5, 0.14);
+    this.addFxEffect(this.makeSparkBurst(mid, 0xfff1c8, budget.sparkCount, 7));
+    // Subtle screen shake on capable tiers (skipped on 'low' / reduced motion).
+    if (budget.shake && !this.reducedMotion) {
+      this.fxShake = Math.min(this.fxShake + 0.5, 1);
+    }
+  }
+
+  playImpact(unitId: string, intensity = 1): void {
+    const p = this.fxUnitPoint(unitId);
+    if (!p) return;
+    const k = clamp(intensity, 0.2, 2);
+    const at = p.clone().setY(p.y + 0.8);
+    this.spawnFlash(at, 0xff7a4a, 1.1 * k, 0.16);
+    // Expanding hit ring on the ground at the unit's feet.
+    this.addFxEffect(this.makeImpactRing(p.clone().setY(0.2), 0xff8a5a, k));
+    if (!this.reducedMotion) {
+      this.addFxEffect(this.makeSparkBurst(at, 0xffb070, this.fxBudget().sparkCount, 5 * k));
+    }
+  }
+
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    if (on) this.fxShake = 0;
+  }
+
+  /** One-shot additive glow puff (muzzle/impact flash). */
+  private spawnFlash(pos: THREE.Vector3, color: number, size: number, life: number): void {
+    const mat = this.makeFxSpriteMat(this.getFxGlowTexture(), color, 1);
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(pos);
+    sprite.scale.setScalar(size * 0.6);
+    this.fxGroup.add(sprite);
+    let age = 0;
+    this.addFxEffect({
+      cost: 1,
+      update: (dt) => {
+        age += dt;
+        const t = age / life;
+        if (t >= 1) return false;
+        sprite.scale.setScalar(size * (0.6 + t * 1.1));
+        mat.opacity = (1 - t) * 0.9;
+        return true;
+      },
+      dispose: () => {
+        this.fxGroup.remove(sprite);
+        mat.map = null; // shared texture; don't dispose it
+        mat.dispose();
+      },
+    });
+  }
+
+  /** A glowing tracer/bolt sprite that streaks origin->target, then impacts. */
+  private makeTracer(
+    origin: THREE.Vector3,
+    target: THREE.Vector3,
+    color: number,
+    delay: number,
+    sparkCount: number,
+  ): FxEffect {
+    const mat = this.makeFxSpriteMat(this.getFxGlowTexture(), color, 1);
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.35, 0.9, 1); // stretched bolt
+    sprite.position.copy(origin);
+    sprite.visible = false;
+    this.fxGroup.add(sprite);
+    const travel = 0.16; // seconds origin->target
+    let age = 0;
+    let impacted = false;
+    return {
+      cost: 1,
+      update: (dt) => {
+        age += dt;
+        if (age < delay) return true;
+        const t = (age - delay) / travel;
+        if (t < 1) {
+          sprite.visible = true;
+          sprite.position.lerpVectors(origin, target, t);
+          mat.opacity = 0.95;
+          return true;
+        }
+        if (!impacted) {
+          impacted = true;
+          sprite.visible = false;
+          // Impact spark + flash at the target end.
+          this.spawnFlash(target, color, 0.9, 0.12);
+          this.addFxEffect(this.makeSparkBurst(target, color, Math.max(3, sparkCount - 2), 4));
+        }
+        return false;
+      },
+      dispose: () => {
+        this.fxGroup.remove(sprite);
+        mat.map = null;
+        mat.dispose();
+      },
+    };
+  }
+
+  /** A short burst of additive spark sprites flying outward then fading. */
+  private makeSparkBurst(
+    center: THREE.Vector3,
+    color: number,
+    count: number,
+    speed: number,
+  ): FxEffect {
+    const n = Math.max(1, Math.min(count, 12));
+    const tex = this.getFxSparkTexture();
+    const sprites: THREE.Sprite[] = [];
+    const vel: THREE.Vector3[] = [];
+    const mat = this.makeFxSpriteMat(tex, color, 1); // shared across this burst
+    for (let i = 0; i < n; i++) {
+      const s = new THREE.Sprite(mat);
+      s.position.copy(center);
+      s.scale.setScalar(0.45);
+      // Deterministic spread (no RNG): even fan + slight upward bias.
+      const a = (i / n) * TAU + (i % 2) * 0.4;
+      const up = 0.4 + (i % 3) * 0.25;
+      vel.push(
+        new THREE.Vector3(Math.cos(a), up, Math.sin(a)).multiplyScalar(speed * (0.6 + (i % 4) * 0.15)),
+      );
+      sprites.push(s);
+      this.fxGroup.add(s);
+    }
+    const life = 0.3;
+    let age = 0;
+    return {
+      cost: n,
+      update: (dt) => {
+        age += dt;
+        const t = age / life;
+        if (t >= 1) return false;
+        for (let i = 0; i < sprites.length; i++) {
+          const s = sprites[i];
+          s.position.addScaledVector(vel[i], dt);
+          vel[i].y -= 9 * dt; // gravity
+          s.scale.setScalar(0.45 * (1 - t * 0.6));
+        }
+        mat.opacity = (1 - t) * 0.95;
+        return true;
+      },
+      dispose: () => {
+        for (const s of sprites) this.fxGroup.remove(s);
+        mat.map = null;
+        mat.dispose();
+      },
+    };
+  }
+
+  /** Expanding flat ground ring at an impact (additive, fades as it grows). */
+  private makeImpactRing(at: THREE.Vector3, color: number, scale: number): FxEffect {
+    const geo = new THREE.RingGeometry(0.2, 0.45, 28);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.position.copy(at);
+    ring.renderOrder = 3;
+    this.fxGroup.add(ring);
+    const life = 0.4;
+    const maxS = 2.4 * scale;
+    let age = 0;
+    return {
+      cost: 1,
+      update: (dt) => {
+        age += dt;
+        const t = age / life;
+        if (t >= 1) return false;
+        const s = 1 + t * maxS;
+        ring.scale.set(s, 1, s);
+        mat.opacity = (1 - t) * 0.9;
+        return true;
+      },
+      dispose: () => {
+        this.fxGroup.remove(ring);
+        geo.dispose();
+        mat.dispose();
+      },
+    };
+  }
+
+  /** Quick lunge of a unit's living models toward a point, then ease back.
+   * Animates the per-model group offset only (does not touch engine state or
+   * the sync()-driven base position); fully self-resets on completion. */
+  private makeLunge(unitId: string, toward: THREE.Vector3): FxEffect {
+    const uv = this.unitVisuals.get(unitId);
+    // No body groups to lunge (imported model) -> no-op effect.
+    const groups = uv && !uv.imported ? uv.models.map((m) => m.group) : [];
+    const dirs = groups.map((g) => {
+      const d = toward.clone().sub(g.position);
+      d.y = 0;
+      const len = d.length();
+      return len > 0.001 ? d.multiplyScalar(1 / len) : new THREE.Vector3();
+    });
+    const reach = 0.5; // inches of lunge
+    const life = 0.22;
+    let age = 0;
+    let prevOff = 0;
+    return {
+      cost: 0, // moves existing meshes; spawns nothing
+      update: (dt) => {
+        age += dt;
+        const t = clamp(age / life, 0, 1);
+        // 0 -> peak -> 0 (a quick jab).
+        const off = Math.sin(t * Math.PI) * reach;
+        const delta = off - prevOff;
+        prevOff = off;
+        for (let i = 0; i < groups.length; i++) {
+          groups[i].position.addScaledVector(dirs[i], delta);
+        }
+        return t < 1;
+      },
+      dispose: () => {
+        // Remove any residual offset so sync() positions stay authoritative.
+        for (let i = 0; i < groups.length; i++) {
+          groups[i].position.addScaledVector(dirs[i], -prevOff);
+        }
+      },
+    };
+  }
+
+  /** Step all active FX; dispose finished ones. Called from the rAF loop. */
+  private updateFx(dt: number): void {
+    for (let i = this.fxEffects.length - 1; i >= 0; i--) {
+      const eff = this.fxEffects[i];
+      let alive: boolean;
+      try {
+        alive = eff.update(dt);
+      } catch {
+        alive = false;
+      }
+      if (!alive) {
+        eff.dispose();
+        this.fxParticleCount = Math.max(0, this.fxParticleCount - eff.cost);
+        this.fxEffects.splice(i, 1);
+      }
+    }
+    // Decay screen shake.
+    if (this.fxShake > 0) {
+      this.fxShake = Math.max(0, this.fxShake - dt * 4);
+    }
+  }
+
   /* ============================== text sprites =========================== */
 
   /** Build a Sprite from a canvas texture for crisp world-space labels. */
@@ -2005,6 +2450,16 @@ export class ThreeScene implements SceneController {
     this.updateCamera(dt);
     this.updateDeathAnimations(dt);
     this.updateFloatingNumbers(dt);
+    this.updateFx(dt);
+
+    // Subtle screen shake: jitter the camera position slightly (post-orbit so
+    // it never corrupts the smoothed orbit state). Deterministic-ish wobble.
+    if (this.fxShake > 0.001) {
+      const amp = this.fxShake * 0.25;
+      this.camera.position.x += Math.sin(t * 90) * amp;
+      this.camera.position.y += Math.sin(t * 77 + 1.3) * amp * 0.6;
+      this.camera.position.z += Math.cos(t * 83) * amp;
+    }
 
     // Pulse the highlight ring.
     if (this.highlightRing && this.highlightRing.visible) {
@@ -2117,6 +2572,12 @@ export class ThreeScene implements SceneController {
       el.removeEventListener('wheel', this.onWheel);
     }
     window.removeEventListener('resize', this.onWindowResize);
+    // Tear down any in-flight combat FX and their shared textures.
+    for (const eff of this.fxEffects) eff.dispose();
+    this.fxEffects.length = 0;
+    this.fxParticleCount = 0;
+    this.fxGlowTex?.dispose();
+    this.fxSparkTex?.dispose();
     this.composer?.dispose();
     this.envTexture?.dispose();
     this.contactShadowTex?.dispose();

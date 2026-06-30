@@ -1111,3 +1111,445 @@
   .ls-sigil span { animation: none; }
   .loading-splash { transition: none; }
 }
+
+/* =========================================================================
+   ============================ POLISH PASS ================================
+   Heavy finish layer: entrance choreography, refined phase rail, button
+   sheen/embers, breathing player cards, animated log entries, cinematic
+   banner, crisper stratagems, and gothic hairline ornamentation.
+
+   RULES OBSERVED:
+   - GPU-cheap only: transform / opacity / filter (plus a few box-shadow
+     pulses that were already used by the base theme).
+   - Every animation/transition added here is neutralised or shortened in
+     the consolidated prefers-reduced-motion block at the very bottom.
+   - Only real, code-emitted class names are targeted (verified against
+     HUD.ts / Menu.ts). New helper class: .bump (harmless if unused).
+   - Desktop keeps `.drawer { transform: none !important }`, so drawer
+     entrances on desktop use opacity/filter only (no transform).
+   ========================================================================= */
+
+/* ---- Shared keyframes --------------------------------------------------- */
+@keyframes pol-rise {            /* slide up + fade (transform-safe panels) */
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pol-drop {            /* slide down + fade (top bar) */
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pol-fade {            /* opacity-only — safe under transform:none */
+  from { opacity: 0; filter: blur(2px); }
+  to   { opacity: 1; filter: blur(0); }
+}
+@keyframes pol-railslide {       /* phase rail keeps its translateX(-50%) */
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes pol-barslide {        /* action bar keeps its translateX(-50%) */
+  from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ---- Entrance choreography (staggered) ---------------------------------
+   The .hud is always present; these run once on first paint. Side drawers
+   are display:flex/block on desktop, so a gentle opacity fade reads as an
+   entrance without fighting the desktop transform lock. */
+.topbar   { animation: pol-drop 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.phaserail{ animation: pol-railslide 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) 0.08s both; }
+.actionbar{ animation: pol-barslide 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) 0.16s both; }
+
+@media (min-width: 821px) {
+  /* Desktop side panels: opacity entrance (transform is locked off). */
+  .logpanel.drawer   { animation: pol-fade 0.55s ease 0.22s both; }
+  .stratpanel.drawer { animation: pol-fade 0.55s ease 0.30s both; }
+  .unitpanel.drawer.show { animation: pol-fade 0.4s ease both; }
+}
+
+/* Player cards ease in with a tiny stagger left→right. */
+.player-card.pa { animation: pol-drop 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) 0.05s both; }
+.player-card.pb { animation: pol-drop 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) 0.12s both; }
+
+/* ---- Mobile drawer easing ----------------------------------------------
+   Base file already transitions transform; refine the curve + add a soft
+   fade so the bottom-sheet feels weighted as it rises. */
+@media (max-width: 820px) {
+  .drawer {
+    transition:
+      transform 0.34s cubic-bezier(0.16, 0.84, 0.30, 1),
+      opacity 0.28s ease;
+  }
+  .drawer:not(.open):not(.show) { opacity: 0.92; }
+  .drawer.open, .unitpanel.drawer.show { opacity: 1; }
+}
+
+/* =========================================================================
+   PHASE RAIL — deliberate, glowing current step + dot-fill on completion
+   ========================================================================= */
+/* Refined breathing glow on the active step (replaces base box-shadow-only
+   pulse with a subtler, layered pulse + faint scale). */
+.phaserail .step.on {
+  animation: pol-phaseGlow 2.6s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+@keyframes pol-phaseGlow {
+  0%, 100% {
+    box-shadow: 0 0 10px var(--accent-glow), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 22px var(--accent-glow), 0 0 4px var(--gold-bright), inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+    transform: scale(1.035);
+  }
+}
+/* Soft sheen sweeping across the active gold pill. */
+.phaserail .step.on::after {
+  content: '';
+  position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.5) 50%, transparent 65%);
+  background-size: 220% 100%;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  animation: pol-sheen 3.4s ease-in-out infinite;
+}
+.phaserail .step { overflow: hidden; }
+@keyframes pol-sheen {
+  0%, 60% { background-position: 200% 0; }
+  100%    { background-position: -120% 0; }
+}
+/* Completed steps animate their dot fill in (scale-pop of the accent dot). */
+.phaserail .step.done .dot {
+  animation: pol-dotFill 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes pol-dotFill {
+  0%   { transform: scale(0.2); opacity: 0; }
+  60%  { transform: scale(1.25); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 0.55; }
+}
+/* Smoother colour/shape transitions when phases advance. */
+.phaserail .step { transition: color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease; }
+
+/* =========================================================================
+   BUTTONS — hover lift + sheen sweep, active depress, primary embers
+   ========================================================================= */
+.btn {
+  position: relative;
+  overflow: hidden;
+  transition:
+    background 0.14s ease, border-color 0.14s ease,
+    transform 0.12s cubic-bezier(0.22, 0.61, 0.36, 1), box-shadow 0.14s ease;
+}
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+.btn:active:not(:disabled) { transform: translateY(1px) scale(0.985); }
+/* Diagonal sheen swept on hover. */
+.btn::after {
+  content: '';
+  position: absolute; top: 0; left: -60%; width: 45%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: skewX(-18deg);
+  opacity: 0;
+  pointer-events: none;
+}
+.btn:hover:not(:disabled)::after { animation: pol-btnSheen 0.7s ease; }
+@keyframes pol-btnSheen {
+  0%   { left: -60%; opacity: 0; }
+  20%  { opacity: 1; }
+  100% { left: 130%; opacity: 0; }
+}
+
+/* Primary (DEPLOY / Next Phase): animated gold gradient + ember shimmer. */
+.btn.primary {
+  background: linear-gradient(110deg, var(--gold), var(--gold-bright) 35%, #fff3d2 50%, var(--gold-bright) 65%, var(--gold));
+  background-size: 280% 100%;
+  animation: pol-goldFlow 6s linear infinite;
+}
+.btn.primary:hover:not(:disabled) {
+  background: linear-gradient(110deg, var(--gold-bright), #fff6db 40%, #ffffff 50%, #fff6db 60%, var(--gold-bright));
+  background-size: 280% 100%;
+  box-shadow: 0 0 18px var(--accent-glow), 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+@keyframes pol-goldFlow {
+  0%   { background-position: 0% 0; }
+  100% { background-position: 280% 0; }
+}
+/* Faint ember motes drifting up across primary buttons. */
+.btn.primary::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 80%, rgba(255, 244, 214, 0.9), transparent 60%),
+    radial-gradient(1.5px 1.5px at 55% 90%, rgba(255, 230, 170, 0.8), transparent 60%),
+    radial-gradient(1px 1px at 80% 85%, rgba(255, 250, 230, 0.9), transparent 60%);
+  background-repeat: no-repeat;
+  opacity: 0;
+  animation: pol-embers 3.2s ease-in-out infinite;
+}
+@keyframes pol-embers {
+  0%   { opacity: 0; transform: translateY(4px); }
+  35%  { opacity: 0.85; }
+  100% { opacity: 0; transform: translateY(-12px); }
+}
+
+/* Accessibility — clear focus-visible rings everywhere interactive. */
+.btn:focus-visible,
+.cbtn:focus-visible,
+.strat:focus-visible,
+.dt-skip:focus-visible,
+.drawer-close:focus-visible,
+.faction-pick:focus-visible,
+.seg-btn:focus-visible,
+.deploy-btn:focus-visible,
+.toggle:focus-visible,
+.join-input:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+/* Keep cluster buttons round under focus. */
+.cbtn:focus-visible { outline-offset: 3px; }
+
+/* =========================================================================
+   PLAYER CARDS — breathing active glow, crest shimmer, value-bump flash
+   ========================================================================= */
+.player-card.active {
+  animation:
+    pol-drop 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both,
+    pol-cardBreath 3.4s ease-in-out 0.5s infinite;
+}
+/* pa/pb staggered entrance + breathing (active overrides the entrance-only). */
+.player-card.pa.active { animation-delay: 0.05s, 0.55s; }
+.player-card.pb.active { animation-delay: 0.12s, 0.62s; }
+@keyframes pol-cardBreath {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent), 0 0 16px var(--accent-glow), 0 8px 24px rgba(0, 0, 0, 0.5); }
+  50%      { box-shadow: 0 0 0 1px var(--accent), 0 0 28px var(--accent-glow), 0 8px 24px rgba(0, 0, 0, 0.5); }
+}
+
+/* Crest: a slow specular shimmer sweeping the emblem. */
+.player-card .crest { overflow: hidden; }
+.player-card.active .crest::before {
+  /* augment the existing emblem with a moving highlight via a sibling layer */
+  filter: drop-shadow(0 0 4px var(--accent-glow));
+}
+.player-card.active .crest {
+  background-image:
+    linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.16) 50%, transparent 60%),
+    radial-gradient(circle at 50% 38%, var(--accent-glow), transparent 60%),
+    conic-gradient(from 45deg, #20262f, #11151c, #20262f, #11151c, #20262f);
+  background-size: 250% 250%, 100% 100%, 100% 100%;
+  animation: pol-crestShine 5s ease-in-out infinite;
+}
+@keyframes pol-crestShine {
+  0%, 70% { background-position: 180% 0, 0 0, 0 0; }
+  100%    { background-position: -80% 0, 0 0, 0 0; }
+}
+
+/* VP / CP value-change flash — HUD may add `.bump` to a <b>; harmless if not. */
+.player-card .stats b.bump,
+.bump {
+  animation: pol-bump 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pol-bump {
+  0%   { transform: scale(1); color: var(--gold-bright); }
+  35%  { transform: scale(1.5); color: #fff6db; text-shadow: 0 0 10px var(--accent-glow); }
+  100% { transform: scale(1); }
+}
+
+/* =========================================================================
+   BATTLE LOG — new entries fade/slide in, animated per-player accent edge
+   ========================================================================= */
+.logpanel .entry {
+  animation: pol-entry 0.4s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  position: relative;
+}
+@keyframes pol-entry {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+/* The accent edge wipes in from the top on player-tagged entries. */
+.logpanel .entry.pa::before,
+.logpanel .entry.pb::before {
+  content: '';
+  position: absolute; left: -2px; top: 0; bottom: 0; width: 2px;
+  transform-origin: top;
+  animation: pol-edgeWipe 0.45s ease both;
+}
+.logpanel .entry.pa::before { background: var(--a); }
+.logpanel .entry.pb::before { background: var(--b); }
+@keyframes pol-edgeWipe {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* =========================================================================
+   BANNER / TOAST — cinematic victory rays + scale-in, warn shake
+   ========================================================================= */
+.banner.show { animation: pol-bannerIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes pol-bannerIn {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+/* Gold rays radiating behind the big (non-toast) banner. */
+.banner:not(.toast)::before {
+  content: '';
+  position: absolute; left: 50%; top: 50%;
+  width: 320%; height: 320%;
+  transform: translate(-50%, -50%);
+  background:
+    repeating-conic-gradient(from 0deg,
+      rgba(232, 196, 106, 0.12) 0deg 6deg,
+      transparent 6deg 18deg);
+  border-radius: 50%;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-mask: radial-gradient(closest-side, #000 30%, transparent 72%);
+          mask: radial-gradient(closest-side, #000 30%, transparent 72%);
+}
+.banner.show:not(.toast)::before {
+  opacity: 1;
+  animation: pol-rays 24s linear infinite;
+}
+@keyframes pol-rays { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* Victory banner keeps its glow pulse + adds a gentle float. */
+.banner.victory.show { animation: pol-bannerIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both, victoryGlow 2.2s ease-in-out 0.5s infinite; }
+
+/* Warn toast shakes briefly when shown. */
+.banner.toast.warn.show {
+  animation: pol-bannerIn 0.35s ease both, pol-shake 0.5s ease 0.2s 1;
+}
+@keyframes pol-shake {
+  0%, 100% { transform: translate(-50%, -50%); }
+  15% { transform: translate(calc(-50% - 6px), -50%); }
+  30% { transform: translate(calc(-50% + 6px), -50%); }
+  45% { transform: translate(calc(-50% - 4px), -50%); }
+  60% { transform: translate(calc(-50% + 4px), -50%); }
+  80% { transform: translate(calc(-50% - 2px), -50%); }
+}
+
+/* =========================================================================
+   STRATAGEMS — crisper hover raise + clearer affordable / disabled states
+   ========================================================================= */
+.strat {
+  position: relative; overflow: hidden;
+  transition:
+    border-color 0.14s ease, box-shadow 0.14s ease,
+    transform 0.12s cubic-bezier(0.22, 0.61, 0.36, 1), background 0.14s ease;
+}
+.strat:not(.disabled):not(:disabled):hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px var(--accent-glow), 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+.strat:not(.disabled):not(:disabled):active { transform: translateY(0) scale(0.99); }
+/* Affordable cards get a faint gold left rule + brighter cost. */
+.strat:not(.disabled):not(:disabled)::before {
+  content: '';
+  position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  opacity: 0.65;
+}
+.strat:not(.disabled):not(:disabled):hover::before { opacity: 1; }
+/* Disabled: desaturate, etched-in look, no lift. */
+.strat.disabled, .strat:disabled {
+  filter: grayscale(0.45);
+  background: linear-gradient(165deg, #161a21, #101319);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+.strat.disabled .sc, .strat:disabled .sc { color: var(--muted); }
+/* Entrance for stratagem cards when the panel populates. */
+.strat-group { animation: pol-fade 0.35s ease both; }
+
+/* =========================================================================
+   GOTHIC ORNAMENTATION — corner ticks + hairline gold rules (legible)
+   ========================================================================= */
+/* Etched corner ticks on the major framed panels (top-left / bottom-right). */
+.logpanel::before,
+.stratpanel::before,
+.unitpanel::before {
+  content: '';
+  position: absolute; inset: 4px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    /* top-left corner */
+    linear-gradient(var(--gold-deep), var(--gold-deep)) left 6px top 6px / 12px 1px no-repeat,
+    linear-gradient(var(--gold-deep), var(--gold-deep)) left 6px top 6px / 1px 12px no-repeat,
+    /* bottom-right corner */
+    linear-gradient(var(--gold-deep), var(--gold-deep)) right 6px bottom 6px / 12px 1px no-repeat,
+    linear-gradient(var(--gold-deep), var(--gold-deep)) right 6px bottom 6px / 1px 12px no-repeat;
+  opacity: 0.55;
+}
+/* Don't let ornamentation eat taps / cover content. */
+.logpanel, .stratpanel, .unitpanel { isolation: isolate; }
+.log-body, .strat-body, .datacard-head, .panel-head { position: relative; z-index: 2; }
+
+/* Hairline gold rule + soft etched inset on the action bar prompt divider. */
+.actionbar { box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 -1px 0 rgba(232, 196, 106, 0.10),
+    0 8px 24px rgba(0, 0, 0, 0.55); }
+
+/* =========================================================================
+   MENU POLISH — hero/section entrances, faction-pick hover lift
+   ========================================================================= */
+.menu-hero  { animation: pol-rise 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.menu-sec   { animation: pol-rise 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.menu-sec:nth-of-type(1) { animation-delay: 0.06s; }
+.menu-sec:nth-of-type(2) { animation-delay: 0.12s; }
+.menu-sec:nth-of-type(3) { animation-delay: 0.18s; }
+.menu-sec:nth-of-type(4) { animation-delay: 0.24s; }
+.deploy-bar { animation: pol-rise 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) 0.3s both; }
+
+.mh-crest { animation: pol-cardBreath 4s ease-in-out infinite; }
+
+.faction-pick { transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.12s cubic-bezier(0.22, 0.61, 0.36, 1); }
+.faction-pick:hover { transform: translateY(-3px); border-color: var(--pa, var(--gold)); }
+.faction-pick.on { animation: pol-bump 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.seg-btn:hover { transform: translateY(-2px); }
+
+/* The big DEPLOY button reuses .btn.primary flow + a stronger ember layer. */
+.deploy-btn.primary { box-shadow: 0 0 22px var(--accent-glow), 0 8px 22px rgba(0, 0, 0, 0.5); }
+
+/* =========================================================================
+   CONSOLIDATED REDUCED-MOTION — disable / shorten everything added above
+   ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  /* Entrances: no movement — appear instantly. */
+  .topbar, .phaserail, .actionbar,
+  .player-card.pa, .player-card.pb, .player-card.active,
+  .logpanel.drawer, .stratpanel.drawer, .unitpanel.drawer.show,
+  .strat-group, .menu-hero, .menu-sec, .deploy-bar, .mh-crest,
+  .logpanel .entry, .banner.show, .banner.victory.show,
+  .banner.toast.warn.show {
+    animation: none !important;
+  }
+  /* Looping / decorative effects off. */
+  .phaserail .step.on,
+  .phaserail .step.on::after,
+  .phaserail .step.done .dot,
+  .btn.primary, .btn.primary::before,
+  .player-card.active .crest,
+  .banner.show:not(.toast)::before {
+    animation: none !important;
+  }
+  /* No hover lift / sheen / press scale. */
+  .btn::after, .btn:hover:not(:disabled)::after { animation: none !important; opacity: 0 !important; }
+  .btn:hover:not(:disabled),
+  .strat:not(.disabled):not(:disabled):hover,
+  .faction-pick:hover, .seg-btn:hover { transform: none !important; }
+  .btn:active:not(:disabled),
+  .strat:not(.disabled):not(:disabled):active { transform: none !important; }
+  .logpanel .entry.pa::before, .logpanel .entry.pb::before { animation: none !important; transform: scaleY(1); }
+  /* Crest reverts to its static gradient (drop the moving sheen layer). */
+  .player-card.active .crest {
+    background-image:
+      radial-gradient(circle at 50% 38%, var(--accent-glow), transparent 60%),
+      conic-gradient(from 45deg, #20262f, #11151c, #20262f, #11151c, #20262f);
+  }
+  /* Drawers snap. */
+  .drawer { transition: none !important; }
+}

@@ -385,3 +385,308 @@ export const necronScarabs: Datasheet = {
     heightInches: 0.8,
   },
 };
+
+// source: wahapedia.ru/wh40k10ed/factions/necrons/Skorpekh-Destroyers (10th ed)
+export const necronSkorpekhDestroyers: Datasheet = {
+  id: 'necron_skorpekh_destroyers',
+  name: 'Skorpekh Destroyers',
+  faction: 'necrons',
+  keywords: ['INFANTRY', 'DESTROYER CULT', 'SKORPEKH DESTROYERS', 'NECRONS'],
+  statline: {
+    move: 8,
+    toughness: 6,
+    save: 3, // 3+
+    wounds: 3,
+    leadership: 7, // 7+
+    objectiveControl: 2,
+  },
+  weapons: [
+    {
+      id: 'skorpekh_hyperphase',
+      name: 'Skorpekh Hyperphase Weapons',
+      kind: 'melee',
+      range: 0,
+      attacks: 4,
+      skill: 3, // WS 3+
+      strength: 7,
+      ap: 2, // AP -2
+      damage: 2,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Reanimation Protocols',
+      text: 'At the end of your Command phase this unit reanimates D3 wounds, restoring slain models.',
+      effect: { t: 'reanimation', wounds: 3 },
+    },
+    {
+      name: 'Whirling Onslaught',
+      text: 'This unit re-rolls melee Hit rolls of 1 (all Hit rolls if it charged this turn).',
+      effect: { t: 'reroll', phase: 'hit', scope: 'ones' },
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Skorpekh Destroyer',
+      min: 3,
+      max: 6,
+      defaultWeaponIds: ['skorpekh_hyperphase'],
+    },
+  ],
+  baseSizeMm: 50,
+  isCharacter: false,
+  points: 90, // 3 models
+  proxy: {
+    silhouette: 'monster',
+    primary: '#b8c0c8',
+    secondary: '#39ff7a',
+    metalness: 0.9,
+    glow: '#39ff7a',
+    heightInches: 2.2,
+  },
+};
+
+// source: wahapedia.ru/wh40k10ed/factions/necrons/Canoptek-Wraiths (10th ed)
+// Default loadout: Vicious Claws.
+export const necronWraiths: Datasheet = {
+  id: 'necron_wraiths',
+  name: 'Canoptek Wraiths',
+  faction: 'necrons',
+  keywords: ['BEASTS', 'FLY', 'CANOPTEK', 'WRAITHS', 'NECRONS'],
+  statline: {
+    move: 10,
+    toughness: 6,
+    save: 3, // 3+
+    invuln: 4, // 4+
+    wounds: 4,
+    leadership: 8, // 8+
+    objectiveControl: 2,
+  },
+  weapons: [
+    {
+      id: 'particle_caster',
+      name: 'Particle Caster',
+      kind: 'ranged',
+      range: 12,
+      attacks: 3,
+      skill: 4, // BS 4+
+      strength: 5,
+      ap: 0,
+      damage: 1,
+      keywords: [{ t: 'pistol' }, { t: 'devastatingWounds' }],
+    },
+    {
+      id: 'vicious_claws',
+      name: 'Vicious Claws',
+      kind: 'melee',
+      range: 0,
+      attacks: 4,
+      skill: 4, // WS 4+
+      strength: 6,
+      ap: 1, // AP -1
+      damage: 2,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Reanimation Protocols',
+      text: 'At the end of your Command phase this unit reanimates D3 wounds, restoring slain models.',
+      effect: { t: 'reanimation', wounds: 3 },
+    },
+    {
+      name: 'Invulnerable Save',
+      text: 'This model has a 4+ invulnerable save.',
+      effect: { t: 'invuln', value: 4 },
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Canoptek Wraith',
+      min: 3,
+      max: 6,
+      defaultWeaponIds: ['particle_caster', 'vicious_claws'],
+    },
+  ],
+  baseSizeMm: 50,
+  isCharacter: false,
+  points: 110, // 3 models
+  proxy: {
+    silhouette: 'monster',
+    primary: '#b8c0c8',
+    secondary: '#39ff7a',
+    metalness: 0.9,
+    glow: '#39ff7a',
+    heightInches: 1.8,
+  },
+};
+
+// source: wahapedia.ru/wh40k10ed/factions/necrons/Doomsday-Ark (10th ed)
+export const necronDoomsdayArk: Datasheet = {
+  id: 'necron_doomsday_ark',
+  name: 'Doomsday Ark',
+  faction: 'necrons',
+  keywords: ['VEHICLE', 'FLY', 'DOOMSDAY ARK', 'NECRONS'],
+  statline: {
+    move: 10,
+    toughness: 9,
+    save: 3, // 3+
+    invuln: 4, // 4+
+    wounds: 14,
+    leadership: 7, // 7+
+    objectiveControl: 5,
+  },
+  weapons: [
+    {
+      id: 'doomsday_cannon',
+      name: 'Doomsday Cannon (Blast)',
+      kind: 'ranged',
+      range: 72,
+      attacks: 'D6+1',
+      skill: 3, // BS 3+
+      strength: 18,
+      ap: 4, // AP -4
+      damage: 4,
+      keywords: [{ t: 'heavy' }, { t: 'blast' }],
+    },
+    {
+      id: 'gauss_flayer_array',
+      name: 'Gauss Flayer Array',
+      kind: 'ranged',
+      range: 24,
+      attacks: 5,
+      skill: 3, // BS 3+
+      strength: 4,
+      ap: 0,
+      damage: 1,
+      keywords: [{ t: 'lethalHits' }, { t: 'rapidFire', x: 5 }],
+    },
+    {
+      id: 'doomsday_armoured_bulk',
+      name: 'Armoured Bulk',
+      kind: 'melee',
+      range: 0,
+      attacks: 3,
+      skill: 4, // WS 4+
+      strength: 6,
+      ap: 0,
+      damage: 1,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Reanimation Protocols',
+      text: 'At the end of your Command phase this model reanimates D3 lost wounds.',
+      effect: { t: 'reanimation', wounds: 3 },
+    },
+    {
+      name: 'Invulnerable Save',
+      text: 'This model has a 4+ invulnerable save.',
+      effect: { t: 'invuln', value: 4 },
+    },
+    {
+      name: 'Deadly Demise D3',
+      text: 'When destroyed, on a 6 each unit within 6" suffers D3 mortal wounds.',
+      // Destruction-trigger not modelled by the engine; descriptive only.
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Doomsday Ark',
+      min: 1,
+      max: 1,
+      defaultWeaponIds: ['doomsday_cannon', 'gauss_flayer_array', 'doomsday_armoured_bulk'],
+    },
+  ],
+  baseSizeMm: 60,
+  isCharacter: false,
+  points: 200,
+  proxy: {
+    silhouette: 'vehicle',
+    primary: '#b8c0c8',
+    secondary: '#39ff7a',
+    metalness: 0.9,
+    glow: '#39ff7a',
+    heightInches: 3.0,
+  },
+};
+
+// source: wahapedia.ru/wh40k10ed/factions/necrons/Royal-Warden (10th ed)
+export const necronRoyalWarden: Datasheet = {
+  id: 'necron_royal_warden',
+  name: 'Royal Warden',
+  faction: 'necrons',
+  keywords: ['INFANTRY', 'CHARACTER', 'NOBLE', 'ROYAL WARDEN', 'NECRONS'],
+  statline: {
+    move: 5,
+    toughness: 5,
+    save: 3, // 3+
+    wounds: 4,
+    leadership: 6, // 6+
+    objectiveControl: 1,
+  },
+  weapons: [
+    {
+      id: 'relic_gauss_blaster',
+      name: 'Relic Gauss Blaster',
+      kind: 'ranged',
+      range: 24,
+      attacks: 2,
+      skill: 3, // BS 3+
+      strength: 5,
+      ap: 1, // AP -1
+      damage: 2,
+      keywords: [{ t: 'lethalHits' }, { t: 'rapidFire', x: 2 }],
+    },
+    {
+      id: 'warden_ccw',
+      name: 'Close Combat Weapon',
+      kind: 'melee',
+      range: 0,
+      attacks: 4,
+      skill: 3, // WS 3+
+      strength: 5,
+      ap: 0,
+      damage: 1,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Leader',
+      text: 'Can attach to a Necron Warriors or Immortals unit to lead it.',
+      effect: { t: 'leader', canLeadDatasheetIds: ['necron_warriors', 'necron_immortals'] },
+    },
+    {
+      name: 'Reanimation Protocols',
+      text: 'At the end of your Command phase this model reanimates D3 lost wounds.',
+      effect: { t: 'reanimation', wounds: 3 },
+    },
+    {
+      name: 'Adaptive Strategy',
+      text: 'The unit it leads is eligible to shoot and charge in a turn in which it Fell Back.',
+      // Eligibility relaxation not modelled by the engine; descriptive only.
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Royal Warden',
+      min: 1,
+      max: 1,
+      defaultWeaponIds: ['relic_gauss_blaster', 'warden_ccw'],
+    },
+  ],
+  baseSizeMm: 32,
+  isCharacter: true,
+  points: 50,
+  proxy: {
+    silhouette: 'character',
+    primary: '#b8c0c8',
+    secondary: '#39ff7a',
+    metalness: 0.9,
+    glow: '#39ff7a',
+    heightInches: 1.7,
+  },
+};
