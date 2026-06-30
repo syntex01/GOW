@@ -1031,8 +1031,12 @@
 .menu button { touch-action: manipulation; }
 
 /* ----------------------------- HERO ------------------------------------ */
-.menu-hero { text-align: center; padding-top: 6px; }
-/* Forge sigil: octagonal wax-seal disc with angular winged emblem */
+.menu-hero {
+  text-align: center; padding-top: 6px;
+  position: relative;
+  width: 100%; max-width: 880px;
+}
+/* Forge sigil: octagonal wax-seal disc with angular winged emblem + boss */
 .mh-crest {
   width: 76px; height: 76px; margin: 0 auto 14px;
   position: relative;
@@ -1047,19 +1051,50 @@
   background: linear-gradient(180deg, var(--brass-bright), var(--brass-deep));
   clip-path: polygon(50% 0, 62% 30%, 100% 42%, 70% 52%, 58% 100%, 50% 70%, 42% 100%, 30% 52%, 0 42%, 38% 30%);
 }
+/* Embossed centre boss (matches HUD .crest::after). */
+.mh-crest::after {
+  content: '';
+  position: absolute; left: 50%; top: 46%; width: 14px; height: 14px;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, color-mix(in srgb, var(--accent) 75%, #fff), #4a3815 70%);
+  box-shadow: 0 0 6px var(--accent-glow), inset 0 -1px 2px rgba(0,0,0,0.6);
+  z-index: 1;
+}
 .mh-kicker {
   font-family: var(--f-label); font-size: 12px; letter-spacing: 6px;
   text-transform: uppercase; color: var(--muted);
 }
+/* "Battle Forge" — STAMPED / ENGRAVED INTO METAL: dark recessed face with
+   a brass top-bevel highlight and a deep inset shadow read as a die-stamp. */
 .mh-title {
-  font-family: var(--f-title); font-weight: 700;
-  font-size: clamp(40px, 11vw, 78px); letter-spacing: 1px; line-height: 1;
+  font-family: var(--f-stencil), var(--f-title); font-weight: 400;
+  font-size: clamp(40px, 11vw, 78px); letter-spacing: 3px; line-height: 1;
   margin: 8px 0 10px;
-  background: linear-gradient(180deg, var(--brass-bright), var(--brass) 55%, var(--brass-deep));
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #45403a 0%, #2c2823 46%, #161310 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
-  text-shadow: 0 4px 30px var(--accent-glow);
+  /* engraved: bright brass top edge, black recessed depth below */
+  text-shadow:
+    0 -1px 0 rgba(0,0,0,0.7),
+    0 1px 0 color-mix(in srgb, var(--brass-bright) 70%, transparent),
+    0 2px 1px rgba(0,0,0,0.6),
+    0 3px 14px rgba(0,0,0,0.7);
 }
-.mh-sub { font-size: 13px; color: var(--muted); max-width: 480px; margin: 0 auto; line-height: 1.5; font-family: var(--f-body); }
+/* Riveted brass header rule beneath the title (hazard-tinged ends). */
+.menu-hero::after {
+  content: '';
+  display: block; width: min(420px, 80%); height: 4px; margin: 4px auto 0;
+  background:
+    radial-gradient(circle at 8px 50%, #e6cf8e 0 2.4px, #9a772c 3.5px, transparent 4px) left center / 16px 8px no-repeat,
+    radial-gradient(circle at calc(100% - 8px) 50%, #e6cf8e 0 2.4px, #9a772c 3.5px, transparent 4px) right center / 16px 8px no-repeat,
+    linear-gradient(90deg, transparent, var(--brass-deep) 14%, var(--brass) 50%, var(--brass-deep) 86%, transparent);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.6);
+}
+.mh-sub {
+  font-size: 13px; color: var(--muted); max-width: 480px; margin: 12px auto 0;
+  line-height: 1.5; font-family: var(--f-body);
+  letter-spacing: 0.5px;
+}
 
 /* --------------------------- SECTIONS ---------------------------------- */
 .menu-sec { width: 100%; max-width: 880px; }
@@ -1073,8 +1108,11 @@
   flex: 1; text-shadow: 0 1px 0 #000;
 }
 .sec-head::after {
-  content: ''; flex: 0 0 40%; height: 3px; align-self: center;
-  background: linear-gradient(90deg, var(--brass-deep), transparent);
+  content: ''; flex: 1; height: 3px; align-self: center;
+  background: var(--hazard);
+  -webkit-mask: linear-gradient(90deg, #000, #000 60%, transparent);
+          mask: linear-gradient(90deg, #000, #000 60%, transparent);
+  opacity: 0.85;
 }
 
 /* --------------------------- FACTIONS ---------------------------------- */
@@ -1083,41 +1121,86 @@
   background: var(--panel); border: 0;
   clip-path: var(--clip-plate);
   padding: 16px;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 0 2px var(--brass-deep), inset 0 0 26px rgba(0,0,0,0.5);
+  /* HUD double-bevel: black hairline / brass / black / top highlight / inner shade */
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.6),
+    inset 0 0 0 2px var(--brass-deep),
+    inset 0 0 0 3px rgba(0,0,0,0.5),
+    inset 0 2px 0 rgba(255,230,180,0.06),
+    inset 0 0 26px rgba(0,0,0,0.55);
   position: relative;
+  overflow: hidden;
 }
 .faction-col::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; z-index: 1;
-  background: linear-gradient(180deg, var(--brass-bright), var(--brass-deep));
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; z-index: 2;
+  background: linear-gradient(180deg, var(--brass-bright), var(--brass), var(--brass-deep));
+  box-shadow: 1px 0 0 rgba(0,0,0,0.6);
 }
+/* Grime + scratch + corner RIVET studs (matches HUD plate ::after). */
+.faction-col::after {
+  content: '';
+  position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+  clip-path: var(--clip-plate);
+  background-image:
+    var(--rivet), var(--rivet), var(--rivet), var(--rivet),
+    var(--grime), var(--noise);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat, repeat;
+  background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 200px 200px, 140px 140px;
+  background-position:
+    10px 10px, right 10px top 10px, 10px bottom 10px, right 10px bottom 10px,
+    0 0, 0 0;
+  opacity: 0.8;
+}
+.faction-col > * { position: relative; z-index: 2; }
 .faction-col.side-a::before { background: linear-gradient(180deg, var(--a), var(--a-dim)); }
 .faction-col.side-b::before { background: linear-gradient(180deg, var(--b), var(--b-dim)); }
-.fc-head { margin-bottom: 10px; }
+.fc-head { margin-bottom: 12px; }
 .fc-tag {
+  display: inline-block;
   font-family: var(--f-stencil); font-size: 11px; letter-spacing: 2px;
-  text-transform: uppercase; color: var(--muted);
+  text-transform: uppercase; color: var(--parchment);
+  text-shadow: 0 1px 0 #000;
+  padding-bottom: 5px;
+  border-bottom: 3px solid transparent; border-image: var(--hazard) 3;
 }
+.faction-col.side-a .fc-tag { color: color-mix(in srgb, var(--a) 60%, var(--parchment)); }
+.faction-col.side-b .fc-tag { color: color-mix(in srgb, var(--b) 55%, var(--parchment)); }
 
 .faction-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
 .faction-pick {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   background: var(--iron-raised); border: 0;
   clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px);
-  padding: 13px 8px; min-height: 88px; cursor: pointer; color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--brass-dark), inset 0 1px 0 rgba(255,235,190,0.08);
+  padding: 15px 8px 13px; min-height: 88px; cursor: pointer; color: var(--ink);
+  position: relative; overflow: hidden;
+  /* stamped-stud double bevel like HUD .btn */
+  box-shadow:
+    inset 0 0 0 1px var(--brass-dark),
+    inset 0 1px 0 rgba(255,235,190,0.12),
+    inset 0 -2px 4px rgba(0,0,0,0.55);
   transition: box-shadow 0.12s, transform 0.06s;
 }
 .faction-pick:active { transform: translateY(1px); }
 .faction-pick .fp-crest {
   width: 36px; height: 36px; position: relative;
   clip-path: polygon(50% 0,75% 8%,92% 25%,100% 50%,92% 75%,75% 92%,50% 100%,25% 92%,8% 75%,0 50%,8% 25%,25% 8%);
-  background: conic-gradient(from 0deg, #3a2f1c, #1a1510, #3a2f1c, #1a1510, #3a2f1c);
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--pa, var(--brass)) 30%, #2a2218), #15110c 72%),
+    conic-gradient(from 0deg, #3a2f1c, #1a1510, #3a2f1c, #1a1510, #3a2f1c);
   box-shadow: inset 0 0 0 1px var(--brass-deep), inset 0 0 8px rgba(0,0,0,0.8);
 }
 .faction-pick .fp-crest i {
   position: absolute; inset: 8px;
   background: linear-gradient(180deg, var(--brass-bright), var(--brass-deep));
   clip-path: polygon(50% 0, 62% 30%, 100% 42%, 70% 52%, 58% 100%, 50% 70%, 42% 100%, 30% 52%, 0 42%, 38% 30%);
+}
+/* Embossed centre boss on the sigil (matches HUD .crest::after). */
+.faction-pick .fp-crest::after {
+  content: '';
+  position: absolute; left: 50%; top: 46%; width: 7px; height: 7px;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, color-mix(in srgb, var(--pa, var(--brass)) 70%, #fff), #4a3815 70%);
 }
 /* Per-faction accent on each card via its data-accent. */
 .faction-pick[data-accent='necron']  { --pa: var(--green); }
@@ -1126,16 +1209,34 @@
 .faction-pick .fp-name {
   font-family: var(--f-stencil); font-size: 11px; letter-spacing: 0.5px;
   text-transform: uppercase; color: var(--muted); text-align: center; line-height: 1.15;
+  text-shadow: 0 1px 0 #000;
 }
+/* SELECTED = powered war-plate: faction rim-light + a HAZARD-CHEVRON strip
+   along the top edge, recoloured to the faction accent. */
 .faction-pick.on {
   color: var(--ink);
-  box-shadow: inset 0 0 0 2px var(--pa, var(--brass)), inset 0 0 16px color-mix(in srgb, var(--pa, var(--brass)) 22%, transparent), 0 0 16px color-mix(in srgb, var(--pa, var(--brass)) 30%, transparent);
+  background: var(--iron-raised);
+  box-shadow:
+    inset 0 0 0 2px var(--pa, var(--brass)),
+    inset 0 1px 0 rgba(255,235,190,0.14),
+    inset 0 0 18px color-mix(in srgb, var(--pa, var(--brass)) 24%, transparent),
+    0 0 16px color-mix(in srgb, var(--pa, var(--brass)) 32%, transparent);
+}
+.faction-pick.on::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0; height: 6px; z-index: 1;
+  background: repeating-linear-gradient(135deg,
+    var(--pa, var(--brass)) 0 8px, #15110a 8px 16px);
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,0.5);
 }
 .faction-pick.on .fp-name { color: var(--ink); }
-.faction-pick.on .fp-crest { box-shadow: inset 0 0 10px color-mix(in srgb, var(--pa) 40%, rgba(0,0,0,0.7)); }
+.faction-pick.on .fp-crest { box-shadow: inset 0 0 0 1px var(--pa), inset 0 0 10px color-mix(in srgb, var(--pa) 40%, rgba(0,0,0,0.7)); }
 
-/* Roster preview from SAMPLE_ARMIES */
-.fc-roster { margin-top: 12px; border-top: 1px solid var(--edge-soft); padding-top: 10px; }
+/* Roster preview from SAMPLE_ARMIES — engraved ledger on the war-plate */
+.fc-roster {
+  margin-top: 14px; padding-top: 11px;
+  border-top: 3px solid transparent; border-image: var(--hazard) 3;
+}
 .rr-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .rr-army { font-family: var(--f-stencil); font-size: 13px; font-weight: 400; color: var(--brass-bright); text-transform: uppercase; letter-spacing: 0.5px; }
 .rr-total {
@@ -1146,9 +1247,20 @@
 .rr-list { list-style: none; margin: 9px 0 0; padding: 0; }
 .rr-list li {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 5px 0; border-bottom: 1px solid var(--edge-soft); font-size: 12.5px;
+  padding: 6px 4px 6px 11px; border-bottom: 1px solid var(--edge-soft); font-size: 12.5px;
+  position: relative;
 }
-.rr-list .rr-name { color: var(--ink); }
+/* faint scanline tint on alternating rows = data-slate ledger */
+.rr-list li:nth-child(even) { background: rgba(0,0,0,0.22); }
+/* engraved brass tick at the start of each entry */
+.rr-list li::before {
+  content: '';
+  position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+  width: 4px; height: 4px;
+  clip-path: polygon(50% 0,100% 50%,50% 100%,0 50%);
+  background: var(--brass-deep);
+}
+.rr-list .rr-name { color: var(--ink); font-family: var(--f-body); }
 .rr-list .rr-meta { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .rr-list .rr-meta em {
   font-style: normal; font-family: var(--f-label); font-size: 9px; letter-spacing: 0.5px;
@@ -1162,15 +1274,32 @@
   display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
   background: var(--iron-raised); border: 0;
   clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px);
-  padding: 12px 14px; min-height: 44px; cursor: pointer; color: var(--ink); text-align: left;
-  box-shadow: inset 0 0 0 1px var(--brass-dark), inset 0 1px 0 rgba(255,235,190,0.08);
-  transition: box-shadow 0.12s, transform 0.06s, background 0.12s;
+  padding: 12px 14px; min-height: 48px; cursor: pointer; color: var(--ink); text-align: left;
+  position: relative; overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px var(--brass-dark),
+    inset 0 1px 0 rgba(255,235,190,0.12),
+    inset 0 -2px 4px rgba(0,0,0,0.55);
+  transition: box-shadow 0.12s, transform 0.06s, background 0.12s, color 0.12s;
 }
 .seg-btn:active { transform: translateY(1px); }
-.seg-btn .sb-label { font-family: var(--f-stencil); font-size: 13px; font-weight: 400; letter-spacing: 0.5px; text-transform: uppercase; }
+.seg-btn .sb-label {
+  font-family: var(--f-stencil); font-size: 13px; font-weight: 400; letter-spacing: 0.5px;
+  text-transform: uppercase; text-shadow: 0 1px 0 #000;
+}
 .seg-btn .sb-desc { font-size: 11px; color: var(--muted); font-family: var(--f-body); }
+/* ENGAGED actuator: lit accent rim + a hazard-chevron edge on the left. */
 .seg-btn.on {
-  box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 14px color-mix(in srgb, var(--accent) 20%, transparent), 0 0 14px var(--accent-glow);
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 1px 0 rgba(255,235,190,0.14),
+    inset 0 0 14px color-mix(in srgb, var(--accent) 20%, transparent),
+    0 0 14px var(--accent-glow);
+}
+.seg-btn.on::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 5px; z-index: 1;
+  background: repeating-linear-gradient(135deg, var(--accent) 0 6px, #15110a 6px 12px);
 }
 .seg-btn.on .sb-label { color: var(--brass-bright); }
 .seg-btn.small {
@@ -1178,14 +1307,43 @@
   font-family: var(--f-stencil); font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
 }
 
+/* Online HOST/JOIN = a riveted COMMS PANEL: chamfered plate, double-bevel,
+   grime + corner rivets, hazard header strip reading "VOX / WARP LINK". */
 .online-pane {
-  margin-top: 12px; padding: 15px;
+  margin-top: 12px; padding: 16px 15px 15px;
   clip-path: var(--clip-plate);
-  box-shadow: inset 0 0 0 1px var(--brass-deep), inset 0 0 22px rgba(0,0,0,0.5);
-  background: linear-gradient(168deg, rgba(31,36,43,0.7), rgba(11,13,17,0.8));
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.6),
+    inset 0 0 0 2px var(--brass-deep),
+    inset 0 0 0 3px rgba(0,0,0,0.5),
+    inset 0 2px 0 rgba(255,230,180,0.06),
+    inset 0 0 22px rgba(0,0,0,0.55);
+  background: linear-gradient(168deg, rgba(31,36,43,0.85), rgba(11,13,17,0.9));
   display: none; flex-direction: column; gap: 12px;
+  position: relative; overflow: hidden;
 }
 .online-pane.show { display: flex; animation: menuFade 0.25s ease; }
+/* hazard strip across the top of the comms panel */
+.online-pane.show::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0; height: 4px; z-index: 2;
+  background: var(--hazard);
+}
+/* grime + corner rivets */
+.online-pane::after {
+  content: '';
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  clip-path: var(--clip-plate);
+  background-image:
+    var(--rivet), var(--rivet), var(--rivet), var(--rivet),
+    var(--grime), var(--noise);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat, repeat;
+  background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 200px 200px, 140px 140px;
+  background-position:
+    9px 9px, right 9px top 9px, 9px bottom 9px, right 9px bottom 9px, 0 0, 0 0;
+  opacity: 0.7;
+}
+.online-pane > * { position: relative; z-index: 2; }
 @keyframes menuFade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .seg-sub { grid-template-columns: 1fr 1fr; }
 .seg-mini { grid-template-columns: repeat(3, 1fr); }
@@ -1199,19 +1357,25 @@
 .room-code .rc-code {
   font-family: var(--f-mono); font-size: 20px; font-weight: 700;
   letter-spacing: 4px; color: var(--brass-bright); flex: 1; min-width: 100px;
+  /* recessed cogitator readout slate */
+  padding: 8px 12px; background: #0a0c0f;
+  clip-path: polygon(5px 0,calc(100% - 5px) 0,100% 5px,100% calc(100% - 5px),calc(100% - 5px) 100%,5px 100%,0 calc(100% - 5px),0 5px);
+  box-shadow: inset 0 0 0 1px var(--brass-dark), inset 0 1px 4px rgba(0,0,0,0.8);
+  text-shadow: 0 0 8px var(--accent-glow);
 }
 .room-code .rc-copy { flex: 0 0 auto; }
 
 .join-wrap { display: none; }
 .online-pane.is-join .join-wrap { display: block; }
 .join-input {
-  width: 100%; background: #0a0c0f; color: var(--ink); border: 1px solid var(--brass-deep);
-  border-radius: 0; padding: 12px 14px; min-height: 48px;
+  width: 100%; background: #0a0c0f; color: var(--ink); border: 0;
+  border-radius: 0; padding: 13px 14px; min-height: 48px;
   font-family: var(--f-mono); font-size: 17px; letter-spacing: 3px; text-align: center;
-  box-shadow: inset 0 1px 4px rgba(0,0,0,0.7);
+  clip-path: polygon(6px 0,calc(100% - 6px) 0,100% 6px,100% calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,0 calc(100% - 6px),0 6px);
+  box-shadow: inset 0 0 0 1px var(--brass-deep), inset 0 1px 4px rgba(0,0,0,0.8);
 }
 .join-input::placeholder { letter-spacing: 1px; color: var(--muted-2); }
-.join-input:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 1px 4px rgba(0,0,0,0.6), 0 0 10px var(--accent-glow); }
+.join-input:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent), inset 0 1px 4px rgba(0,0,0,0.6), 0 0 10px var(--accent-glow); }
 
 .online-status {
   display: none; font-size: 12px; color: var(--muted); padding: 6px 10px;
@@ -1224,38 +1388,84 @@
   display: flex; flex-direction: column; gap: 14px;
   background: var(--panel); border: 0;
   clip-path: var(--clip-plate);
-  padding: 18px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 0 2px var(--brass-deep), inset 0 0 26px rgba(0,0,0,0.5);
+  padding: 18px;
+  position: relative; overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.6),
+    inset 0 0 0 2px var(--brass-deep),
+    inset 0 0 0 3px rgba(0,0,0,0.5),
+    inset 0 2px 0 rgba(255,230,180,0.06),
+    inset 0 0 26px rgba(0,0,0,0.55);
 }
+/* grime + corner rivets (matches HUD plate ::after) */
+.settings-grid::after {
+  content: '';
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  clip-path: var(--clip-plate);
+  background-image:
+    var(--rivet), var(--rivet), var(--rivet), var(--rivet),
+    var(--grime), var(--noise);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat, repeat;
+  background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 200px 200px, 140px 140px;
+  background-position:
+    10px 10px, right 10px top 10px, 10px bottom 10px, right 10px bottom 10px, 0 0, 0 0;
+  opacity: 0.75;
+}
+.settings-grid > * { position: relative; z-index: 1; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-.set-label { font-family: var(--f-stencil); font-size: 12px; letter-spacing: 0.5px; color: var(--ink); text-transform: uppercase; }
+.set-label { font-family: var(--f-stencil); font-size: 12px; letter-spacing: 0.5px; color: var(--ink); text-transform: uppercase; text-shadow: 0 1px 0 #000; }
 .slider-wrap { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 180px; justify-content: flex-end; }
 .set-val { font-family: var(--f-label); font-size: 12px; color: var(--brass-bright); min-width: 78px; text-align: right; }
+/* Dice-speed ACTUATOR: a brass slug riding a recessed iron channel. */
 .set-slider {
-  -webkit-appearance: none; appearance: none; flex: 1; max-width: 240px; height: 6px;
-  background: linear-gradient(90deg, var(--gold-deep), var(--edge)); border-radius: 4px; outline: none;
+  -webkit-appearance: none; appearance: none; flex: 1; max-width: 240px; height: 10px;
+  background:
+    linear-gradient(90deg, var(--brass-deep), var(--brass) 50%, var(--brass-deep));
+  border-radius: 0; outline: none;
+  clip-path: polygon(3px 0,calc(100% - 3px) 0,100% 3px,100% calc(100% - 3px),calc(100% - 3px) 100%,3px 100%,0 calc(100% - 3px),0 3px);
+  box-shadow: inset 0 0 0 1px var(--brass-dark), inset 0 1px 3px rgba(0,0,0,0.8);
 }
 .set-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%;
-  background: linear-gradient(180deg, var(--gold-bright), var(--gold)); border: 1px solid var(--gold-deep);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.5); cursor: pointer;
+  -webkit-appearance: none; width: 22px; height: 26px; border-radius: 0;
+  /* hex slug */
+  clip-path: polygon(50% 0,100% 28%,100% 72%,50% 100%,0 72%,0 28%);
+  background: linear-gradient(180deg, var(--brass-bright), var(--brass) 45%, var(--brass-deep));
+  box-shadow: inset 0 1px 0 rgba(255,245,210,0.6), inset 0 -2px 4px rgba(74,56,21,0.7), 0 2px 5px rgba(0,0,0,0.6);
+  cursor: pointer;
 }
 .set-slider::-moz-range-thumb {
-  width: 24px; height: 24px; border-radius: 50%;
-  background: linear-gradient(180deg, var(--gold-bright), var(--gold)); border: 1px solid var(--gold-deep); cursor: pointer;
+  width: 22px; height: 26px; border-radius: 0; border: 0;
+  clip-path: polygon(50% 0,100% 28%,100% 72%,50% 100%,0 72%,0 28%);
+  background: linear-gradient(180deg, var(--brass-bright), var(--brass) 45%, var(--brass-deep));
+  box-shadow: inset 0 1px 0 rgba(255,245,210,0.6), 0 2px 5px rgba(0,0,0,0.6);
+  cursor: pointer;
 }
 
+/* Machine-spirit BREAKER SWITCH: angular iron channel + a stamped brass
+   actuator that throws from OFF to ON. */
 .toggle {
-  width: 56px; height: 30px; border-radius: 16px; position: relative; cursor: pointer;
-  background: #0a0d12; border: 1px solid var(--edge); box-shadow: inset 0 1px 4px rgba(0,0,0,0.6);
-  transition: background 0.18s, border-color 0.18s; flex: 0 0 auto;
+  width: 58px; height: 30px; border-radius: 0; position: relative; cursor: pointer;
+  background: #0a0d12; border: 0; min-height: 30px;
+  clip-path: polygon(4px 0,calc(100% - 4px) 0,100% 4px,100% calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,0 calc(100% - 4px),0 4px);
+  box-shadow: inset 0 0 0 1px var(--brass-dark), inset 0 1px 4px rgba(0,0,0,0.7);
+  transition: box-shadow 0.18s, background 0.18s; flex: 0 0 auto;
 }
 .toggle .tog-knob {
-  position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+  position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 0;
+  clip-path: polygon(4px 0,calc(100% - 4px) 0,100% 4px,100% calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,0 calc(100% - 4px),0 4px);
   background: linear-gradient(180deg, #6b7585, #3a414c);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.6); transition: transform 0.18s, background 0.18s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -2px 3px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.6);
+  transition: transform 0.18s, background 0.18s;
 }
-.toggle.on { border-color: var(--accent); background: linear-gradient(90deg, var(--gold-deep), var(--accent-glow)); }
-.toggle.on .tog-knob { transform: translateX(26px); background: linear-gradient(180deg, var(--gold-bright), var(--gold)); }
+.toggle.on {
+  background: linear-gradient(90deg, var(--brass-deep), color-mix(in srgb, var(--accent) 35%, #15110a));
+  box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 10px color-mix(in srgb, var(--accent) 25%, transparent), 0 0 12px var(--accent-glow);
+}
+.toggle.on .tog-knob {
+  transform: translateX(28px);
+  background: linear-gradient(180deg, var(--brass-bright), var(--brass) 50%, var(--brass-deep));
+  box-shadow: inset 0 1px 0 rgba(255,245,210,0.6), 0 1px 3px rgba(0,0,0,0.6);
+}
 
 /* ---------------------------- DEPLOY ----------------------------------- */
 .deploy-bar {
@@ -1264,10 +1474,19 @@
   padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0));
   background: linear-gradient(0deg, #06080b 30%, rgba(6,8,11,0.85) 70%, transparent);
 }
+/* Heavy brass ACTUATOR PLATE — the big launch lever. Arrowhead plate with a
+   stamped-engraved label; sits on .btn.primary's brass material. */
 .deploy-btn {
   width: min(420px, 100%); min-height: 58px; font-family: var(--f-stencil);
   font-size: 19px; font-weight: 400; letter-spacing: 5px; text-transform: uppercase;
+  color: #1a1206;
   clip-path: polygon(14px 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,14px 100%,0 50%);
+  text-shadow: 0 1px 0 rgba(255,240,200,0.55), 0 -1px 0 rgba(0,0,0,0.25);
+  box-shadow:
+    inset 0 0 0 2px var(--brass-dark),
+    inset 0 2px 0 rgba(255,245,210,0.65),
+    inset 0 -4px 6px rgba(74,56,21,0.75),
+    0 4px 10px rgba(0,0,0,0.6);
 }
 
 /* --------------------------- RESPONSIVE -------------------------------- */
