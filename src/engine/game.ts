@@ -257,6 +257,9 @@ export class GameEngine {
     mode: 'normal' | 'advance' | 'fallBack',
     delta: Vec2,
   ): boolean {
+    // A unit moves once per Movement phase — without this, re-selecting an
+    // already-moved unit and moving again would stack unlimited distance.
+    if (u.moveState !== 'none') return false;
     const allowance = this.moveAllowance(u, mode);
     const moved = Math.hypot(delta.x, delta.y);
     if (moved > allowance + 1e-6) return false;
@@ -479,6 +482,7 @@ export class GameEngine {
 
   /** Why a rigid move of `u` by `delta` in `mode` is illegal, or null if legal. */
   moveBlockReason(u: UnitInstance, mode: 'normal' | 'advance' | 'fallBack', delta: Vec2): string | null {
+    if (u.moveState !== 'none') return `${u.name} has already moved this phase`;
     const allowance = this.moveAllowance(u, mode);
     const moved = Math.hypot(delta.x, delta.y);
     if (moved > allowance + 1e-6)
