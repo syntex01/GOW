@@ -105,6 +105,31 @@ class App {
         const cy = alive.reduce((a, m) => a + m.position.y, 0) / alive.length;
         this.scene!.frameUnit({ x: cx, y: cy }, 9);
       };
+      // Import 10 DIFFERENT real models onto 10 units, lined up for a showcase.
+      (w as unknown as { __showcaseRow?: () => void }).__showcaseRow = () => {
+        const urls = [
+          'models/marine.glb', 'models/necron.glb',
+          'models/showcase/riggedfigure.glb', 'models/showcase/cesiumman.glb',
+          'models/showcase/brainstem.glb', 'models/showcase/fox.glb',
+          'models/showcase/horse.glb', 'models/showcase/stork.glb',
+          'models/showcase/parrot.glb', 'models/showcase/flamingo.glb',
+        ];
+        const units = Object.values(this.engine.state.units)
+          .filter((u) => u.models.some((m) => m.alive))
+          .slice(0, urls.length);
+        const b = this.engine.state.board;
+        const y = b.height / 2;
+        units.forEach((u, i) => {
+          const x = b.width / 2 + (i - (units.length - 1) / 2) * 5;
+          for (const m of u.models) { m.alive = true; m.position = { x, y }; }
+          u.inReserves = false;
+          void this.scene!.importUnitModel(u.id, urls[i], 'glb', 3.6);
+        });
+        this.scene!.frameUnit({ x: b.width / 2, y }, 28);
+        const resync = () => this.ui.refresh();
+        resync();
+        for (const t of [800, 1800, 3000, 4500]) window.setTimeout(resync, t);
+      };
     }
   }
 
