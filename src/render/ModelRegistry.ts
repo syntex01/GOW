@@ -94,46 +94,40 @@ function targetHeightInches(proxy: ProxyDescriptor, entry: ModelRegistryEntry): 
  * normalised onto a unit-cube convention so per-unit clones only need to scale.
  * We store a Promise so concurrent requests share a single network load.
  */
+interface Template {
+  root: THREE.Object3D;
+  /** An idle-ish clip to pose each clone into a natural stance (or null). */
+  poseClip: THREE.AnimationClip | null;
+}
+
 export class ModelLibrary {
   private loader = new GLTFLoader();
-  private cache = new Map<string, Promise<THREE.Object3D>>();
+  private cache = new Map<string, Promise<Template>>();
 
   /**
    * Load (or reuse) the template scene for a URL. The returned object is the
    * SHARED template — never mutate or add it to the scene directly; clone it via
    * `instantiate`.
    */
-  private loadTemplate(url: string): Promise<THREE.Object3D> {
+  private loadTemplate(url: string): Promise<Template> {
     let p = this.cache.get(url);
     if (p) return p;
-    p = new Promise<THREE.Object3D>((resolve, reject) => {
+    p = new Promise<Template>((resolve, reject) => {
       this.loader.load(
         url,
         (gltf) => {
           const root = gltf.scene;
-          // Bake a natural idle STANCE (not the stiff T/bind pose) by sampling a
-          // single frame of an idle-ish clip into the bones, then dropping the
-          // mixer. Clones via SkeletonUtils inherit these posed bone transforms,
-          // so figures read as proper miniatures while staying fully static.
           const clips = gltf.animations ?? [];
-          if (clips.length) {
-            const idle =
-              clips.find((c) => /idle|survey|stand|pose/i.test(c.name) && !/t.?pose/i.test(c.name)) ??
-              clips.find((c) => !/t.?pose/i.test(c.name)) ??
-              clips[0];
-            try {
-              const mixer = new THREE.AnimationMixer(root);
-              mixer.clipAction(idle).play();
-              mixer.update(0.4); // settle into the stance
-              mixer.stopAllAction();
-            } catch {
-              /* if posing fails, fall back to bind pose */
-            }
-          }
-          // No ongoing animation: drop clips and never keep a mixer.
+          // Choose an idle-ish stance clip (never the bare T/bind pose). Each
+          // clone is posed into one frame of it so figures read as miniatures.
+          const poseClip =
+            clips.find((c) => /idle|survey|stand|breath/i.test(c.name) && !/t.?pose/i.test(c.name)) ??
+            clips.find((c) => !/t.?pose/i.test(c.name)) ??
+            clips[0] ??
+            null;
           gltf.animations = [];
           root.updateMatrixWorld(true);
-          resolve(root);
+          resolve({ root, poseClip });
         },
         undefined,
         (err) => reject(err instanceof Error ? err : new Error(String(err))),
@@ -160,7 +154,20 @@ export class ModelLibrary {
   ): void {
     this.loadTemplate(url)
       .then((template) => {
-        const clone = skeletonClone(template) as THREE.Object3D;
+        const clone = skeletonClone(template.root) as THREE.Object3D;
+        // Pose this clone into a natural idle stance (sample one frame), then
+        // discard the mixer — the bones hold the pose and stay fully static.
+        if (template.poseClip) {
+          try {
+            const mixer = new THREE.AnimationMixer(clone);
+            mixer.clipAction(template.poseClip).play();
+            mixer.update(0.4);
+            mixer.stopAllAction();
+            clone.updateMatrixWorld(true);
+          } catch {
+            /* fall back to bind pose */
+          }
+        }
         const group = new THREE.Group();
         group.add(clone);
 
