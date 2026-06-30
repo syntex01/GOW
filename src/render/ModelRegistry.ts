@@ -44,16 +44,16 @@ export interface ModelRegistryEntry {
  * use the marine. Extend by adding rows (most specific first if they overlap).
  */
 export const MODEL_REGISTRY: ModelRegistryEntry[] = [
-  // Necrons -> the robot model (matched case-insensitively).
-  { keywords: ['necrons'], url: 'models/necron.glb', heightScale: 1.0 },
-  // Power-armoured humanoids (loyalist + heretic Astartes) -> the soldier model.
+  // Faction-fitting CC0 (public-domain) figures by Quaternius (via poly.pizza).
+  // Matched case-insensitively. Order = priority (Chaos before generic Astartes).
+  { keywords: ['necrons'], url: 'models/factions/necron.glb', heightScale: 1.0 }, // skeletal
+  { keywords: ['chaos', 'heretic astartes'], url: 'models/factions/chaos.glb', heightScale: 1.05 }, // demon
+  { keywords: ['orks'], url: 'models/factions/ork.glb', heightScale: 1.1 }, // orc
   {
-    keywords: ['adeptus astartes', 'ultramarines', 'heretic astartes', 'chaos'],
-    url: 'models/marine.glb',
+    keywords: ['adeptus astartes', 'ultramarines', 'imperium'],
+    url: 'models/factions/ultramarine.glb', // armoured warrior
     heightScale: 1.0,
   },
-  // Orks -> the soldier model as a bulkier stand-in (real humanoid > a blob).
-  { keywords: ['orks'], url: 'models/marine.glb', heightScale: 1.15 },
 ];
 
 /**

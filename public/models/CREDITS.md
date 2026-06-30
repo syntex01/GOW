@@ -16,3 +16,11 @@ different real figures (not GW models): horse/parrot/flamingo/stork (three.js
 examples) and fox/cesiumman/brainstem/riggedfigure (Khronos glTF-Sample-Assets;
 see each upstream LICENSE — CC-BY / public-domain). Players import their own
 publicly-available models per unit via the in-app importer.
+
+## Faction default models (public/models/factions/)
+Legitimate CC0 (Public Domain) models by Quaternius, sourced via poly.pizza:
+- necron.glb — "Skeleton" (Necrons, skeletal). CC0, Quaternius.
+- ultramarine.glb — "Armor Metal" (armoured warrior). CC0, Quaternius.
+- chaos.glb — "Demon" (Chaos). CC0, Quaternius.
+- ork.glb — "Orc" (Orks). CC0, Quaternius.
+Source: https://poly.pizza (Quaternius, CC0). No Games Workshop assets are used.

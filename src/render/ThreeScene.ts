@@ -18,6 +18,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 /**
@@ -263,6 +264,8 @@ export class ThreeScene implements SceneController {
   /* --- postprocessing (gentle bloom so glow/objectives pop) --- */
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
+  /** Cheap final grimdark grade (vignette + desaturation + optional grain). */
+  private gradePass: ShaderPass | null = null;
 
   /* --- quality / mobile-perf --- */
   private quality!: QualitySettings;
@@ -306,20 +309,23 @@ export class ThreeScene implements SceneController {
 
     this.renderer.setPixelRatio(this.quality.pixelRatioCap);
     this.renderer.setSize(cw, ch);
-    // Filmic tone mapping; slightly lower exposure than before so the new
-    // environment reflections don't blow out and the grimdark mood holds.
+    // Filmic tone mapping pulled down for a moodier, more cinematic grimdark
+    // grade: deeper shadows, slightly crushed highlights so firelight/plasma
+    // glow reads as hot light rather than a washed-out scene.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 0.92;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.quality.shadowMapSize > 0;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.touchAction = 'none';
 
-    /* scene + grimdark atmosphere */
+    /* scene + grimdark atmosphere: a colder, deeper near-black with a faint
+     * steel-blue cast. Fog drawn in a touch closer so the board edges dissolve
+     * into murk sooner, reading as a battlefield swallowed by ash and dark. */
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0c10);
-    this.scene.fog = new THREE.Fog(0x0a0c10, this.board.width * 0.9, this.board.width * 2.6);
+    this.scene.background = new THREE.Color(0x070809);
+    this.scene.fog = new THREE.Fog(0x080a0d, this.board.width * 0.8, this.board.width * 2.3);
 
     /* procedural environment: gives PBR materials real, subtle reflections and
      * a soft cool ambient. Built once via PMREM from RoomEnvironment, tinted
@@ -342,6 +348,11 @@ export class ThreeScene implements SceneController {
 
     this.buildBoard();
     this.buildTerrain(state);
+
+    /* grimdark battlefield grit: low-poly rubble + broken gothic-industrial
+     * props scattered deterministically, never over terrain or deployment
+     * zones. Skipped on 'low' tier (phones) to keep draw calls down. */
+    this.buildScatter(state);
 
     /* grimdark mood: faint ground haze + cheap drifting dust motes */
     this.buildAtmosphere();
@@ -385,7 +396,9 @@ export class ThreeScene implements SceneController {
       this.envTexture = rt.texture;
       this.scene.environment = this.envTexture;
       // Keep reflections subtle/cold so they read as grimdark, not showroom.
-      this.scene.environmentIntensity = 0.35;
+      // Trimmed a touch for the moodier grade — metal catches just a cold
+      // sheen, never a bright studio reflection.
+      this.scene.environmentIntensity = 0.28;
       pmrem.dispose();
       // RoomEnvironment builds throwaway geometry/materials; free them.
       this.disposeObject(envScene);
@@ -402,14 +415,16 @@ export class ThreeScene implements SceneController {
    * board, and a dim cool fill. Hemisphere adds a touch of sky/ground bounce.
    */
   private setupLights(): void {
-    // Hemisphere fill: cold sky, warm-ish ground bounce, kept dim for grimdark.
-    // Pulled down a touch from before so the board reads moodier — the key light
-    // does the dramatic work and shadows stay deep without crushing models.
-    const hemi = new THREE.HemisphereLight(0x55617a, 0x16110a, 0.5);
+    // Hemisphere fill: cold steel sky, dim ember-warm ground bounce. Pulled
+    // down hard for grimdark — ambient barely lifts the blacks so the key light
+    // carves dramatic, deep shadows and the board sinks into murk at the edges.
+    const hemi = new THREE.HemisphereLight(0x424e63, 0x140d06, 0.34);
     this.scene.add(hemi);
 
-    // Key directional light with shadows — warm, raking angle for drama.
-    const key = new THREE.DirectionalLight(0xffe9c2, 2.6);
+    // Key directional light with shadows — warm firelight, raking angle for
+    // drama. Slightly hotter/oranger than before so lit faces read as torch or
+    // furnace light against the cold dark.
+    const key = new THREE.DirectionalLight(0xffdcaa, 2.7);
     key.position.set(this.board.width * 0.4, this.board.width * 0.9, this.board.height * 0.5);
     key.castShadow = this.quality.shadowMapSize > 0;
     const sm = Math.max(512, this.quality.shadowMapSize);
@@ -426,16 +441,26 @@ export class ThreeScene implements SceneController {
     key.shadow.normalBias = 0.02;
     this.scene.add(key);
 
-    // Cold rim/back light from behind to separate models from the dark board.
-    const rim = new THREE.DirectionalLight(0x8fb4ff, 0.85);
+    // Cold steel rim/back light from behind to carve model silhouettes out of
+    // the dark board — bumped a little to keep figures readable now that the
+    // ambient is darker. This is the cool counterpoint to the warm key.
+    const rim = new THREE.DirectionalLight(0x9cc0ff, 0.95);
     rim.position.set(-this.board.width * 0.45, this.board.width * 0.55, -this.board.height * 0.6);
     this.scene.add(rim);
 
-    // Subtle cool fill from the opposite low side, no shadows — lifts shadows
-    // without killing contrast. Trimmed slightly for a moodier balance.
-    const fill = new THREE.DirectionalLight(0x5870b0, 0.36);
+    // Subtle cool fill from the opposite low side, no shadows — lifts the
+    // deepest shadows just enough to keep detail without killing contrast.
+    const fill = new THREE.DirectionalLight(0x4a5f96, 0.3);
     fill.position.set(-this.board.width * 0.5, this.board.width * 0.3, this.board.height * 0.3);
     this.scene.add(fill);
+
+    // Warm ember point light low over the board centre — a faint pool of
+    // firelight that warms the middle of the battlefield and falls off into the
+    // cold dark, the "embers of warm light" of the grimdark grade. No shadow
+    // (cheap), modest range so it never flattens the contrast.
+    const ember = new THREE.PointLight(0xff8a3c, 0.55, this.board.width * 0.9, 2.0);
+    ember.position.set(0, 6, 0);
+    this.scene.add(ember);
   }
 
   /**
@@ -468,15 +493,22 @@ export class ThreeScene implements SceneController {
       const composer = new EffectComposer(this.renderer);
       composer.addPass(new RenderPass(this.scene, this.camera));
 
-      // Keep the bloom gentle: low strength, generous threshold so only the
-      // brightest emissive (glow/objectives) blooms, not the whole board.
+      // Tuned so glow reads as firelight/plasma, not neon: a softer strength
+      // with a wide, hazy radius and a high threshold so ONLY the hottest
+      // emissive (objective relics, Necron glow, muzzle/plasma FX) blooms — the
+      // rest of the desaturated board stays grounded and dark.
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(bw, bh),
-        0.55, // strength
-        0.7, // radius
-        0.82, // threshold (only bright emissive blooms)
+        0.48, // strength (gentle halo, not a neon wash)
+        0.85, // radius (wide, soft — reads as glow in haze)
+        0.86, // threshold (only the brightest hot spots bloom)
       );
       composer.addPass(bloom);
+
+      // Cheap grimdark grade pass (vignette + desaturation toward steel/ash +
+      // faint film grain). Wrapped in its own try/catch inside; on any failure
+      // it is simply skipped and bloom still renders.
+      this.addGradePass(composer);
 
       // OutputPass applies tone mapping + colour space conversion correctly when
       // rendering through a composer.
@@ -492,6 +524,82 @@ export class ThreeScene implements SceneController {
       console.warn('[ThreeScene] bloom composer unavailable, rendering directly', err);
       this.composer = null;
       this.bloomPass = null;
+    }
+  }
+
+  /**
+   * Add a single, cheap full-screen grade pass to the composer for a cinematic
+   * grimdark finish:
+   *  - radial VIGNETTE (deepens the corners into murk),
+   *  - global DESATURATION pulled toward a steel/ash tint (kills the bright,
+   *    "video-game" colour and unifies the palette),
+   *  - faint animated FILM GRAIN (skipped on 'low' tier — phones get a static
+   *    cheaper path) so the image reads as gritty film, not clean CG.
+   *
+   * One extra fragment pass over the canvas: a few math ops per pixel, no
+   * texture fetches beyond the input — robust on the swiftshader headless
+   * renderer and cheap on mobile. Entirely wrapped: any failure leaves the
+   * composer with just bloom + output (the scene still renders).
+   */
+  private addGradePass(composer: EffectComposer): void {
+    try {
+      // Grain is the only per-pixel-random work; disable it on 'low' so phones
+      // pay nothing for it. The vignette + desaturation are effectively free.
+      const grain = this.quality.tier === 'low' ? 0.0 : 1.0;
+      const shader = {
+        uniforms: {
+          tDiffuse: { value: null as THREE.Texture | null },
+          uTime: { value: 0 },
+          uVignette: { value: 0.62 }, // 0 = none, 1 = heavy corners
+          uDesat: { value: 0.26 }, // pull toward grey/steel
+          uGrain: { value: grain * 0.05 }, // grain amplitude
+          uTint: { value: new THREE.Color(0x8088a0) }, // cold steel/ash tint
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform sampler2D tDiffuse;
+          uniform float uTime;
+          uniform float uVignette;
+          uniform float uDesat;
+          uniform float uGrain;
+          uniform vec3 uTint;
+          varying vec2 vUv;
+          // cheap hash for grain
+          float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+          }
+          void main() {
+            vec4 col = texture2D(tDiffuse, vUv);
+            // Desaturate toward luma, then bias the grey toward a cold tint so
+            // the whole frame settles into desaturated steel/ash.
+            float l = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+            vec3 steel = mix(vec3(l), l * uTint, 0.5);
+            col.rgb = mix(col.rgb, steel, uDesat);
+            // Radial vignette: darken corners into murk.
+            vec2 d = vUv - 0.5;
+            float v = smoothstep(0.8, 0.18, dot(d, d) * 2.0);
+            col.rgb *= mix(1.0, v, uVignette);
+            // Faint animated film grain (amplitude 0 on low tier).
+            if (uGrain > 0.0) {
+              float g = hash(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 100.0);
+              col.rgb += (g - 0.5) * uGrain;
+            }
+            gl_FragColor = col;
+          }
+        `,
+      };
+      const pass = new ShaderPass(shader);
+      composer.addPass(pass);
+      this.gradePass = pass;
+    } catch (err) {
+      console.warn('[ThreeScene] grade pass unavailable, skipping', err);
+      this.gradePass = null;
     }
   }
 
@@ -1045,6 +1153,99 @@ export class ThreeScene implements SceneController {
       ctx.lineTo(x + (Math.random() - 0.5) * 120, y + (Math.random() - 0.5) * 120);
       ctx.stroke();
     }
+
+    // Scorch blast marks: soft dark radial burns with a faint ember-warm core,
+    // as if shells and plasma have cooked the rockcrete. Deterministic count
+    // scaled to resolution; reads as battle damage, not noise.
+    const scorchN = Math.round(16 * (px / 1024));
+    for (let i = 0; i < scorchN; i++) {
+      const x = Math.random() * cw;
+      const y = Math.random() * ch;
+      const r = (16 + Math.random() * 64) * (px / 1024);
+      const sg = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
+      sg.addColorStop(0, 'rgba(10,8,6,0.5)');
+      sg.addColorStop(0.4, 'rgba(14,11,8,0.32)');
+      sg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sg;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      // a faint warm rim where the burn cooled
+      ctx.strokeStyle = `rgba(110,52,22,${0.05 + Math.random() * 0.05})`;
+      ctx.lineWidth = (1 + Math.random() * 2) * (px / 1024);
+      ctx.beginPath();
+      ctx.arc(x, y, r * (0.5 + Math.random() * 0.3), 0, TAU);
+      ctx.stroke();
+    }
+
+    // Blood-rust pools: dark oxidised crimson stains soaking into the ash.
+    const stainN = Math.round(20 * (px / 1024));
+    for (let i = 0; i < stainN; i++) {
+      const x = Math.random() * cw;
+      const y = Math.random() * ch;
+      const r = (8 + Math.random() * 34) * (px / 1024);
+      const bg = ctx.createRadialGradient(x, y, 1, x, y, r);
+      const a = 0.05 + Math.random() * 0.08;
+      bg.addColorStop(0, `rgba(74,18,12,${a})`);
+      bg.addColorStop(0.7, `rgba(52,14,10,${a * 0.6})`);
+      bg.addColorStop(1, 'rgba(40,12,8,0)');
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      // irregular blob via a few overlapping arcs
+      for (let k = 0; k < 3; k++) {
+        const ox = (Math.random() - 0.5) * r;
+        const oy = (Math.random() - 0.5) * r;
+        ctx.moveTo(x + ox + r, y + oy);
+        ctx.arc(x + ox, y + oy, r * (0.5 + Math.random() * 0.5), 0, TAU);
+      }
+      ctx.fill();
+    }
+
+    // Oil / promethium slicks: low-frequency dark glossy smears (the matching
+    // roughness map below also dips here so they catch the light wet).
+    for (let i = 0; i < Math.round(10 * (px / 1024)); i++) {
+      const x = Math.random() * cw;
+      const y = Math.random() * ch;
+      const w = (30 + Math.random() * 90) * (px / 1024);
+      const h = (10 + Math.random() * 30) * (px / 1024);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.random() * TAU);
+      const og = ctx.createRadialGradient(0, 0, 1, 0, 0, w / 2);
+      og.addColorStop(0, 'rgba(6,7,9,0.4)');
+      og.addColorStop(1, 'rgba(6,7,9,0)');
+      ctx.fillStyle = og;
+      ctx.scale(1, h / w);
+      ctx.beginPath();
+      ctx.arc(0, 0, w / 2, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Faint stencilled deployment chevrons + unit-marking ticks near the zone
+    // boundaries — worn painted directional markings, original geometry only.
+    const drawChevron = (cxp: number, cyp: number, size: number, col: string, up: boolean) => {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = Math.max(2, size * 0.16);
+      ctx.lineCap = 'round';
+      const dir = up ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(cxp - size, cyp + dir * size * 0.5);
+      ctx.lineTo(cxp, cyp - dir * size * 0.5);
+      ctx.lineTo(cxp + size, cyp + dir * size * 0.5);
+      ctx.stroke();
+    };
+    const chevSize = cw * 0.018;
+    const chevCols = ['rgba(70,90,130,0.10)', 'rgba(150,50,40,0.10)'];
+    for (let band = 0; band < 2; band++) {
+      const yBase = band === 0 ? ch * 0.14 : ch * 0.86;
+      const col = chevCols[band];
+      const up = band === 0;
+      for (let i = 0; i < 3; i++) {
+        const cxp = cw * (0.18 + i * 0.32);
+        for (let r = 0; r < 3; r++) {
+          drawChevron(cxp, yBase + r * chevSize * 1.1 * (up ? 1 : -1), chevSize, col, up);
+        }
+      }
+    }
     // Cracked plating: scatter darker fault lines for depth.
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     for (let i = 0; i < 70; i++) {
@@ -1225,6 +1426,222 @@ export class ThreeScene implements SceneController {
     }
 
     this.boardGroup.add(terrainGroup);
+  }
+
+  /**
+   * Deterministic grimdark scatter: low-poly rubble chunks and a handful of
+   * broken gothic-industrial props (leaning spikes, tattered banner poles,
+   * cairn/skull-pile style mounds) strewn across the open battlefield. All
+   * shapes are ORIGINAL gothic-industrial geometry — no real-world iconography.
+   *
+   * Placement is fully deterministic (seeded from the board size, no Math.random
+   * in the layout) and rejection-sampled so a prop NEVER overlaps a terrain
+   * footprint, the two deployment-zone bands, or sits too close to the table
+   * centre line. Purely cosmetic: scatter lives in its own group and is never
+   * raycast, so it can't interfere with picking or the rules footprints.
+   *
+   * Budget scales with tier: skipped entirely on 'low'; a modest count on
+   * 'medium'; more on 'high'. Geometry + materials are cached/shared.
+   */
+  private buildScatter(state: GameState): void {
+    if (this.quality.tier === 'low') return;
+    const group = new THREE.Group();
+    group.name = 'scatter';
+
+    const { width, height } = this.board;
+    // Forbidden rectangles (in table coords) = terrain footprints, padded.
+    const blocked = state.terrain.map((t) => ({
+      x: t.center.x,
+      y: t.center.y,
+      hw: t.width / 2 + 1.0,
+      hd: t.depth / 2 + 1.0,
+    }));
+    // Deployment-zone depth mirrors the painted bands on the mat (~22%).
+    const zoneDepth = height * 0.22;
+
+    // Seeded RNG (xorshift32) keyed off board dims so layout is identical every
+    // load but varies between boards. No allocations in the loop.
+    let seed = this.hashId(`scatter:${width}x${height}`);
+    const rng = () => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return ((seed >>> 0) % 100000) / 100000;
+    };
+    const free = (x: number, y: number, pad: number): boolean => {
+      if (x < pad || x > width - pad || y < pad || y > height - pad) return false;
+      if (y < zoneDepth || y > height - zoneDepth) return false; // keep zones clear
+      for (const b of blocked) {
+        if (Math.abs(x - b.x) < b.hw + pad && Math.abs(y - b.y) < b.hd + pad) return false;
+      }
+      return true;
+    };
+
+    // --- shared low-poly materials (cached) ---
+    const rubbleMat = this.getMaterial('scatterRubble', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x4a4438,
+        roughness: 0.95,
+        metalness: 0.04,
+        envMapIntensity: 0.3,
+      }),
+    );
+    const ironMat = this.getMaterial('scatterIron', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x20242b,
+        roughness: 0.6,
+        metalness: 0.8,
+        envMapIntensity: 0.7,
+      }),
+    );
+    const boneMat = this.getMaterial('scatterBone', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x6e6450,
+        roughness: 0.85,
+        metalness: 0.02,
+        envMapIntensity: 0.25,
+      }),
+    );
+    const clothMat = this.getMaterial('scatterCloth', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x4a1410,
+        roughness: 0.95,
+        metalness: 0.0,
+        side: THREE.DoubleSide,
+        envMapIntensity: 0.15,
+      }),
+    );
+
+    const seg = Math.max(6, Math.round(this.quality.ringSegments * 0.3));
+    const rubbleGeo = this.getGeometry('scatterRock', () =>
+      new THREE.DodecahedronGeometry(0.5, 0),
+    );
+
+    const placeRubbleCluster = (x: number, y: number): void => {
+      const w = this.tableToWorld({ x, y });
+      const n = 2 + Math.floor(rng() * 3);
+      for (let i = 0; i < n; i++) {
+        const rock = new THREE.Mesh(rubbleGeo, rubbleMat);
+        const s = 0.3 + rng() * 0.6;
+        rock.scale.set(s, s * (0.5 + rng() * 0.4), s);
+        rock.position.set(
+          w.x + (rng() - 0.5) * 1.6,
+          s * 0.3,
+          w.z + (rng() - 0.5) * 1.6,
+        );
+        rock.rotation.set(rng() * TAU, rng() * TAU, rng() * TAU);
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        group.add(rock);
+      }
+    };
+
+    const placeSpike = (x: number, y: number): void => {
+      const w = this.tableToWorld({ x, y });
+      // A leaning iron spike/stake driven into the ground (original shape).
+      const spike = new THREE.Mesh(
+        this.getGeometry('scatterSpike', () =>
+          new THREE.ConeGeometry(0.18, 2.6, 5),
+        ),
+        ironMat,
+      );
+      spike.position.set(w.x, 1.0, w.z);
+      spike.rotation.z = (rng() - 0.5) * 0.5;
+      spike.rotation.x = (rng() - 0.5) * 0.4;
+      spike.castShadow = true;
+      group.add(spike);
+      // a rubble collar at its base
+      placeRubbleCluster(x, y);
+    };
+
+    const placeBanner = (x: number, y: number): void => {
+      const w = this.tableToWorld({ x, y });
+      const pole = new THREE.Mesh(
+        this.getGeometry('scatterPole', () =>
+          new THREE.CylinderGeometry(0.08, 0.1, 4.2, 6),
+        ),
+        ironMat,
+      );
+      const lean = (rng() - 0.5) * 0.35;
+      pole.position.set(w.x, 2.0, w.z);
+      pole.rotation.z = lean;
+      pole.castShadow = true;
+      group.add(pole);
+      // crossbar
+      const bar = new THREE.Mesh(
+        this.getGeometry('scatterBannerBar', () =>
+          new THREE.CylinderGeometry(0.05, 0.05, 1.5, 5),
+        ),
+        ironMat,
+      );
+      bar.position.set(w.x + Math.sin(lean) * 1.6, 3.5, w.z);
+      bar.rotation.z = Math.PI / 2 + lean;
+      group.add(bar);
+      // tattered hanging cloth (a thin tapered slab, ragged via a notched clip)
+      const cloth = new THREE.Mesh(
+        this.getGeometry('scatterBannerCloth', () => {
+          const g = new THREE.PlaneGeometry(1.3, 2.0, 1, 1);
+          return g;
+        }),
+        clothMat,
+      );
+      cloth.position.set(w.x + Math.sin(lean) * 1.6, 2.5, w.z + 0.02);
+      cloth.rotation.z = lean;
+      cloth.castShadow = true;
+      group.add(cloth);
+    };
+
+    const placeCairn = (x: number, y: number): void => {
+      const w = this.tableToWorld({ x, y });
+      // A low mound of pale rounded forms — a battlefield cairn / bone-pile,
+      // built from clustered spheres (original, abstracted — no GW skull motif).
+      const n = 4 + Math.floor(rng() * 4);
+      const boneGeo = this.getGeometry('scatterBoneBall', () =>
+        new THREE.SphereGeometry(0.26, seg, Math.max(4, seg - 2)),
+      );
+      for (let i = 0; i < n; i++) {
+        const b = new THREE.Mesh(boneGeo, boneMat);
+        const s = 0.6 + rng() * 0.7;
+        b.scale.setScalar(s);
+        b.position.set(
+          w.x + (rng() - 0.5) * 1.4,
+          0.2 + rng() * 0.5,
+          w.z + (rng() - 0.5) * 1.4,
+        );
+        b.castShadow = true;
+        b.receiveShadow = true;
+        group.add(b);
+      }
+    };
+
+    // Target counts by tier.
+    const counts =
+      this.quality.tier === 'high'
+        ? { rubble: 14, spike: 5, banner: 3, cairn: 3 }
+        : { rubble: 8, spike: 3, banner: 2, cairn: 2 };
+
+    const place = (kind: 'rubble' | 'spike' | 'banner' | 'cairn', want: number) => {
+      let placed = 0;
+      let tries = 0;
+      const pad = kind === 'rubble' ? 1.4 : 2.0;
+      while (placed < want && tries < want * 12) {
+        tries++;
+        const x = rng() * width;
+        const y = rng() * height;
+        if (!free(x, y, pad)) continue;
+        if (kind === 'rubble') placeRubbleCluster(x, y);
+        else if (kind === 'spike') placeSpike(x, y);
+        else if (kind === 'banner') placeBanner(x, y);
+        else placeCairn(x, y);
+        placed++;
+      }
+    };
+    place('rubble', counts.rubble);
+    place('spike', counts.spike);
+    place('banner', counts.banner);
+    place('cairn', counts.cairn);
+
+    this.boardGroup.add(group);
   }
 
   /** Stable 32-bit hash of a string id, for deterministic terrain detailing. */
@@ -1485,6 +1902,26 @@ export class ThreeScene implements SceneController {
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.position.y = 0.192;
     g.add(ring);
+
+    // Ornate brass trim ring around the outer rim of the base — a slim warm
+    // metal band that catches the key/ember light, so bases read as turned
+    // gothic plinths. Shared dark-brass material (one extra cached draw).
+    const trimGeo = this.getGeometry(`baseTrim:${baseRadius.toFixed(2)}:${seg}`, () => {
+      const rg = new THREE.RingGeometry(baseRadius * 0.99, baseRadius * 1.06, seg);
+      rg.rotateX(-Math.PI / 2);
+      return rg;
+    });
+    const trimMat = this.getMaterial('baseTrimMat', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x4a3a1c,
+        roughness: 0.45,
+        metalness: 0.9,
+        envMapIntensity: 0.8,
+      }),
+    );
+    const trim = new THREE.Mesh(trimGeo, trimMat);
+    trim.position.y = 0.105;
+    g.add(trim);
     return g;
   }
 
@@ -1868,38 +2305,109 @@ export class ThreeScene implements SceneController {
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xaaaaaa,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.8,
       side: THREE.DoubleSide,
+      depthWrite: false,
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.position.y = 0.12;
     group.add(ring);
 
-    // Floating holo-ring that spins + bobs above the marker (animated group).
+    // A faint inner ward ring just inside the control radius for a more ornate,
+    // ritual-circle read on the relic's zone (shares the tinted ring material).
+    const wardGeo = this.getGeometry(`objward:${obj.radius}:${seg}`, () => {
+      const g = new THREE.RingGeometry(obj.radius * 0.55, obj.radius * 0.55 + 0.12, seg);
+      g.rotateX(-Math.PI / 2);
+      return g;
+    });
+    const ward = new THREE.Mesh(wardGeo, ringMat);
+    ward.position.y = 0.1;
+    group.add(ward);
+
+    // Ominous relic plinth: a dark gothic-industrial stub the holo projects
+    // from — a stepped iron base + a chamfered obelisk, so the objective reads
+    // as a recovered war-relic rather than a flat marker. Shared dark material.
+    const relicMat = this.getMaterial('objRelicIron', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x161a1f,
+        roughness: 0.6,
+        metalness: 0.8,
+        envMapIntensity: 0.6,
+      }),
+    );
+    const relicBrass = this.getMaterial('objRelicBrass', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x5c4a24,
+        roughness: 0.45,
+        metalness: 0.92,
+        emissive: 0x140d03,
+        emissiveIntensity: 0.5,
+        envMapIntensity: 0.9,
+      }),
+    );
+    const plinthBase = new THREE.Mesh(
+      this.getGeometry('objRelicBase', () =>
+        new THREE.CylinderGeometry(0.7, 0.95, 0.45, 8),
+      ),
+      relicMat,
+    );
+    plinthBase.position.y = 0.28;
+    plinthBase.castShadow = true;
+    plinthBase.receiveShadow = true;
+    group.add(plinthBase);
+    const obelisk = new THREE.Mesh(
+      this.getGeometry('objRelicObelisk', () =>
+        new THREE.CylinderGeometry(0.22, 0.42, 1.6, 6),
+      ),
+      relicMat,
+    );
+    obelisk.position.y = 1.2;
+    obelisk.castShadow = true;
+    group.add(obelisk);
+    // brass collar band on the obelisk for a touch of warm relic metal
+    const collar = new THREE.Mesh(
+      this.getGeometry('objRelicCollar', () =>
+        new THREE.TorusGeometry(0.34, 0.07, 6, 8),
+      ),
+      relicBrass,
+    );
+    collar.rotation.x = Math.PI / 2;
+    collar.position.y = 0.75;
+    group.add(collar);
+
+    // Floating holo-ring that spins + bobs above the relic (animated group).
     const holo = new THREE.Group();
     holo.name = 'objHolo';
     const holoRing = new THREE.Mesh(
-      this.getGeometry('objHoloRing', () => new THREE.TorusGeometry(0.9, 0.08, 8, 28)),
+      this.getGeometry('objHoloRing', () => new THREE.TorusGeometry(0.9, 0.07, 8, 32)),
       ringMat,
     );
     holoRing.rotation.x = Math.PI / 2;
     holo.add(holoRing);
+    // A second, smaller counter-cant ring for a more ornate reliquary halo.
+    const holoRing2 = new THREE.Mesh(
+      this.getGeometry('objHoloRing2', () => new THREE.TorusGeometry(0.58, 0.05, 8, 28)),
+      ringMat,
+    );
+    holoRing2.rotation.x = Math.PI / 2;
+    holoRing2.rotation.z = 0.5;
+    holo.add(holoRing2);
     // Floating icon: a small emissive diamond at the centre of the holo-ring.
     const icon = new THREE.Mesh(
-      this.getGeometry('objIcon', () => new THREE.OctahedronGeometry(0.45, 0)),
+      this.getGeometry('objIcon', () => new THREE.OctahedronGeometry(0.42, 0)),
       discMat,
     );
     holo.add(icon);
-    holo.position.y = 2.4;
+    holo.position.y = 2.6;
     holo.userData.holo = true;
     group.add(holo);
 
-    // A short central beacon stub so the holo reads as projected from the marker.
+    // A short central beacon stub so the holo reads as projected from the relic.
     const beacon = new THREE.Mesh(
-      this.getGeometry('objbeacon', () => new THREE.CylinderGeometry(0.18, 0.34, 1.4, 10)),
+      this.getGeometry('objbeacon', () => new THREE.CylinderGeometry(0.1, 0.22, 0.9, 10)),
       discMat,
     );
-    beacon.position.y = 0.7;
+    beacon.position.y = 2.05;
     group.add(beacon);
 
     this.objectivesGroup.add(group);
@@ -2883,13 +3391,18 @@ export class ThreeScene implements SceneController {
       const inner = ring.getObjectByName('inner');
       if (inner) inner.rotation.y = -t * 1.1;
     }
-    // Objective holo-rings: slow spin + gentle vertical bob.
+    // Objective holo-rings: slow spin + gentle vertical bob over the relic.
     for (const g of this.objectiveGroups) {
       const holo = g.getObjectByName('objHolo');
       if (holo) {
-        holo.rotation.y = t * 0.8;
-        holo.position.y = 2.4 + Math.sin(t * 1.6 + g.position.x) * 0.18;
+        holo.rotation.y = t * 0.7;
+        holo.position.y = 2.6 + Math.sin(t * 1.4 + g.position.x) * 0.16;
       }
+    }
+
+    // Advance the grade pass's grain time (only when grain is active).
+    if (this.gradePass) {
+      this.gradePass.uniforms.uTime.value = t;
     }
 
     // Render through the bloom composer when available, else direct.
@@ -3063,6 +3576,7 @@ export class ThreeScene implements SceneController {
     this.fxGlowTex?.dispose();
     this.fxSparkTex?.dispose();
     this.composer?.dispose();
+    this.gradePass = null;
     this.envTexture?.dispose();
     this.contactShadowTex?.dispose();
     // Atmosphere + frame textures.
