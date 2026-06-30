@@ -12,6 +12,7 @@ import { NetController } from './net/NetController';
 import { PeerTransport } from './net/PeerTransport';
 import { loadAssignments } from './render/ModelAssignments';
 import { Cinematic } from './ui/Cinematic';
+import { TrailerCapture } from './ui/TrailerCapture';
 import type { PlayerId } from './engine/types';
 
 /**
@@ -136,6 +137,23 @@ class App {
       // Play the AI-vs-AI cinematic trailer (used by the recording script).
       (w as unknown as { __trailer?: () => Promise<void> }).__trailer = () =>
         new Cinematic(this.engine, this.scene!, this.gameRoot).run();
+      // Deterministic frame-stepped capture (smooth video on any GPU). The
+      // recorder calls __capInit() once, then __capStep(dtMs) per output frame,
+      // screenshotting between calls; __capStep returns true when finished.
+      let cap: TrailerCapture | null = null;
+      (w as unknown as { __capInit?: () => void }).__capInit = () => {
+        cap = new TrailerCapture(this.engine, this.scene!, this.gameRoot);
+      };
+      (w as unknown as { __capStep?: (dtMs: number) => boolean }).__capStep = (dtMs: number) => {
+        if (!cap) return true;
+        cap.step(dtMs / 1000);
+        if (cap.done) {
+          cap.cleanup();
+          cap = null;
+          return true;
+        }
+        return false;
+      };
     }
   }
 

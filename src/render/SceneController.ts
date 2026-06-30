@@ -113,6 +113,14 @@ export interface SceneController {
   setAutoOrbit(radPerSec: number): void;
 
   /**
+   * Render exactly one frame, advancing animation by a FIXED virtual timestep
+   * (seconds) regardless of real wall-clock time. Switches the renderer into
+   * manual mode (the internal rAF loop stops driving frames). Used for smooth,
+   * deterministic offline trailer capture on slow/software GPUs.
+   */
+  tick(dtSeconds: number): void;
+
+  /**
    * Replace a unit's visual with a user-supplied model loaded from a URL (e.g. a
    * publicly hosted glTF) or a local File. Lets players bring in their own
    * collection. Resolves once applied; rejects on load failure.

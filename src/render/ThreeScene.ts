@@ -285,6 +285,10 @@ export class ThreeScene implements SceneController {
   private perfAccum = 0; // seconds since last governor evaluation
   private perfGoodHolds = 0; // consecutive good evaluations (for slow recovery)
   private perfBloomDropped = false; // bloom disabled by the governor (floor state)
+  /* Offline capture: when true the rAF loop stops and frames are driven by
+   * tick(dt) with a virtual clock, for smooth deterministic video on any GPU. */
+  private manualMode = false;
+  private manualTime = 0;
   /** PMREM-generated environment map (procedural) for PBR reflections. */
   private envTexture: THREE.Texture | null = null;
   /** Animated objective groups (holo-ring spin + bob). */
@@ -3342,6 +3346,7 @@ export class ThreeScene implements SceneController {
    * few seconds so one-off load/shader-compile spikes don't trigger a downscale.
    */
   private governPerformance(dt: number, t: number): void {
+    if (this.manualMode) return; // capture uses a virtual clock — never govern
     // Exponential moving average of frame time in milliseconds.
     this.perfFrameMs = this.perfFrameMs * 0.9 + dt * 1000 * 0.1;
     if (t < 3) return; // warm-up: ignore asset decode / shader compile spikes
@@ -3483,9 +3488,28 @@ export class ThreeScene implements SceneController {
   private animate = (): void => {
     if (this.disposed) return;
     this.rafId = requestAnimationFrame(this.animate);
+    if (this.manualMode) return; // capture mode drives frames via tick()
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
+    this.frame(dt, t);
+  };
 
+  /**
+   * Deterministic single-frame render for offline capture. Advances a virtual
+   * clock by exactly `dtSeconds` and renders one frame — independent of how long
+   * the GPU actually takes. Lets a software renderer produce perfectly smooth
+   * video (each output frame is a fixed timestep) at the cost of wall-clock time.
+   * Enables manual mode on first call so the rAF loop stops driving frames.
+   */
+  tick(dtSeconds: number): void {
+    if (this.disposed) return;
+    this.manualMode = true;
+    this.manualTime += dtSeconds;
+    this.frame(dtSeconds, this.manualTime);
+  }
+
+  /** One frame of updates + render, shared by the rAF loop and manual capture. */
+  private frame(dt: number, t: number): void {
     this.governPerformance(dt, t);
     this.updateCamera(dt);
     this.updateDeathAnimations(dt);
@@ -3537,7 +3561,7 @@ export class ThreeScene implements SceneController {
     // Render through the bloom composer when available, else direct.
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
-  };
+  }
 
   /** Smoothly sink dead models and pop revived ones. */
   private updateDeathAnimations(dt: number): void {

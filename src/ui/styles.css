@@ -2270,3 +2270,12 @@
   transition: opacity 0.6s ease;
 }
 .cine-fade.show { opacity: 1; }
+
+/* Offline capture: opacity is driven frame-by-frame from JS against a virtual
+   clock, so all CSS transitions/animations must be off or screenshots would
+   sample the wrong (wall-clock) state. */
+.cine.cap,
+.cine.cap * {
+  transition: none !important;
+  animation: none !important;
+}
