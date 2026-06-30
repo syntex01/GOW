@@ -150,7 +150,10 @@ export function defaultTerrain(board: { width: number; height: number }): Terrai
     depth: dd,
     height: 4,
     obscuring: true,
-    clearance: 0, // solid structure: no model base may overlap its footprint
+    // Ruins are broken-wall structures with an open interior: infantry and
+    // characters (≤2" tall) can occupy the ground floor for cover, but monsters
+    // and vehicles are too big to move into/under them and are kept out.
+    clearance: 2.0,
   });
   const crater = (id: string, x: number, y: number, r: number): TerrainPiece => ({
     id,
