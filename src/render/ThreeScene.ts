@@ -259,10 +259,14 @@ export class ThreeScene implements SceneController {
    *  the single per-frame camera update — no second loop, no allocations. */
   private autoOrbitSpeed = 0;
 
-  private dragMode: 'none' | 'orbit' | 'pan' = 'none';
+  private dragMode: 'none' | 'orbit' | 'pan' | 'pinch' = 'none';
   private lastPointer = { x: 0, y: 0 };
   private movedDuringDrag = false;
-  private activePointerId: number | null = null;
+  /** All active pointers (for multi-touch pinch-zoom + two-finger pan). */
+  private pointers = new Map<number, { x: number; y: number }>();
+  /** Previous finger distance + midpoint while pinching (touch). */
+  private pinchDist = 0;
+  private pinchMid = { x: 0, y: 0 };
 
   private rafId = 0;
   private disposed = false;
@@ -3259,6 +3263,9 @@ export class ThreeScene implements SceneController {
 
   private attachInput(): void {
     const el = this.renderer.domElement;
+    // Claim all touch gestures (orbit/pinch/pan) so the browser doesn't scroll
+    // or page-zoom the canvas out from under us.
+    el.style.touchAction = 'none';
     el.addEventListener('pointerdown', this.onPointerDown);
     el.addEventListener('pointermove', this.onPointerMove);
     el.addEventListener('pointerup', this.onPointerUp);
@@ -3269,16 +3276,63 @@ export class ThreeScene implements SceneController {
   }
 
   private onPointerDown = (e: PointerEvent): void => {
-    this.activePointerId = e.pointerId;
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    if (this.pointers.size >= 2) {
+      // Two fingers down => pinch-zoom + two-finger pan. Seed the gesture state.
+      this.dragMode = 'pinch';
+      this.movedDuringDrag = true; // suppress the tap-to-pick on release
+      this.seedPinch();
+      return;
+    }
     this.lastPointer = { x: e.clientX, y: e.clientY };
     this.movedDuringDrag = false;
-    // Right button or shift => pan; left => orbit.
+    // Right button or shift => pan; left/touch => orbit.
     if (e.button === 2 || e.shiftKey) this.dragMode = 'pan';
     else this.dragMode = 'orbit';
   };
 
+  /** Capture the current two-finger distance + midpoint as the pinch baseline. */
+  private seedPinch(): void {
+    const pts = Array.from(this.pointers.values());
+    if (pts.length < 2) return;
+    const [a, b] = pts;
+    this.pinchDist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    this.pinchMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+
   private onPointerMove = (e: PointerEvent): void => {
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Two-finger gesture: pinch distance => zoom, midpoint motion => pan.
+    if (this.dragMode === 'pinch' && this.pointers.size >= 2) {
+      const pts = Array.from(this.pointers.values());
+      const [a, b] = pts;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      // Zoom: fingers apart => zoom in (smaller radius).
+      this.targetRadius = clamp(
+        this.targetRadius * (this.pinchDist / dist),
+        this.orbitMinRadius,
+        this.orbitMaxRadius,
+      );
+      // Pan by the midpoint translation, in the ground-projected camera basis.
+      const mdx = mid.x - this.pinchMid.x;
+      const mdy = mid.y - this.pinchMid.y;
+      const panScale = this.orbitRadius * 0.0016;
+      const fwd = this.tmpV1;
+      const right = this.tmpV2;
+      this.camera.getWorldDirection(fwd);
+      fwd.y = 0;
+      fwd.normalize();
+      right.crossVectors(fwd, this.UP).normalize();
+      this.targetPivot.addScaledVector(right, -mdx * panScale);
+      this.targetPivot.addScaledVector(fwd, mdy * panScale);
+      this.pinchDist = dist;
+      this.pinchMid = mid;
+      return;
+    }
+
     // Hover handler regardless of drag (but skip while actively dragging camera).
     if (this.dragMode === 'none') {
       if (this.hoverHandler) {
@@ -3313,16 +3367,33 @@ export class ThreeScene implements SceneController {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
-    if (this.activePointerId !== null) {
-      (e.target as HTMLElement).releasePointerCapture?.(this.activePointerId);
+    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    this.pointers.delete(e.pointerId);
+
+    // Lifting one finger of a pinch: if one remains, resume single-finger orbit
+    // from it (re-seed so the camera doesn't jump); if a finger is still down we
+    // stay in pinch. Either way, don't treat this as a tap-to-pick.
+    if (this.dragMode === 'pinch') {
+      if (this.pointers.size >= 2) {
+        this.seedPinch();
+        return;
+      }
+      if (this.pointers.size === 1) {
+        const [, pt] = Array.from(this.pointers.entries())[0];
+        this.lastPointer = { x: pt.x, y: pt.y };
+        this.dragMode = 'orbit';
+        return;
+      }
+      this.dragMode = 'none';
+      return;
     }
+
     const wasDrag = this.movedDuringDrag;
     const mode = this.dragMode;
     this.dragMode = 'none';
-    this.activePointerId = null;
 
-    // A click (no significant drag) with the left button => pick.
-    if (!wasDrag && mode === 'orbit' && this.pickHandler) {
+    // A tap/click (no significant drag), single-finger => pick.
+    if (!wasDrag && mode === 'orbit' && this.pickHandler && this.pointers.size === 0) {
       const res = this.computePick(e.clientX, e.clientY);
       if (res) this.pickHandler(res);
     }
