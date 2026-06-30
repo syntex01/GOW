@@ -103,6 +103,19 @@ interface Template {
 export class ModelLibrary {
   private loader = new GLTFLoader();
   private cache = new Map<string, Promise<Template>>();
+  /** Live per-clone mixers driving a subtle idle so figures aren't static T-poses. */
+  private mixers: THREE.AnimationMixer[] = [];
+
+  /** Advance all idle animations; call once per frame from the render loop. */
+  update(dt: number): void {
+    for (const m of this.mixers) m.update(dt);
+  }
+
+  /** Stop & drop all idle mixers (called on scene dispose). */
+  dispose(): void {
+    for (const m of this.mixers) m.stopAllAction();
+    this.mixers.length = 0;
+  }
 
   /**
    * Load (or reuse) the template scene for a URL. The returned object is the
@@ -155,15 +168,16 @@ export class ModelLibrary {
     this.loadTemplate(url)
       .then((template) => {
         const clone = skeletonClone(template.root) as THREE.Object3D;
-        // Pose this clone into a natural idle stance (sample one frame), then
-        // discard the mixer — the bones hold the pose and stay fully static.
+        // Drive a subtle, perpetual idle so figures read as living miniatures
+        // instead of stiff T-poses. Each clone gets its own mixer, offset in
+        // time so a squad doesn't breathe in lockstep. Updated from the render
+        // loop via ModelLibrary.update().
         if (template.poseClip) {
           try {
             const mixer = new THREE.AnimationMixer(clone);
             mixer.clipAction(template.poseClip).play();
-            mixer.update(0.4);
-            mixer.stopAllAction();
-            clone.updateMatrixWorld(true);
+            mixer.setTime(Math.random() * 2); // desync squad members
+            this.mixers.push(mixer);
           } catch {
             /* fall back to bind pose */
           }

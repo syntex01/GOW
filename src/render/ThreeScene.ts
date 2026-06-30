@@ -2451,6 +2451,7 @@ export class ThreeScene implements SceneController {
     this.updateDeathAnimations(dt);
     this.updateFloatingNumbers(dt);
     this.updateFx(dt);
+    this.modelLibrary.update(dt); // subtle idle animation on real-model figures
 
     // Subtle screen shake: jitter the camera position slightly (post-orbit so
     // it never corrupts the smoothed orbit state). Deterministic-ish wobble.
@@ -2562,6 +2563,7 @@ export class ThreeScene implements SceneController {
   /** Tear down the renderer and listeners. */
   dispose(): void {
     this.disposed = true;
+    this.modelLibrary.dispose();
     cancelAnimationFrame(this.rafId);
     const el = this.renderer?.domElement;
     if (el) {
