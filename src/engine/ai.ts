@@ -110,7 +110,9 @@ function playPhase(e: GameEngine): void {
   } else if (phase === 'fight') {
     for (const u of e.fightOrder()) {
       if (u.hasFought || !e.isAlive(u)) continue;
-      const enemy = e.enemiesOf(u.ownerId).find((en) => inEngagementRange(u, en) && e.isAlive(en));
+      const enemy = e
+        .targetableEnemiesOf(u.ownerId)
+        .find((en) => inEngagementRange(u, en) && e.isAlive(en));
       if (enemy) e.fight(u, enemy);
     }
   }

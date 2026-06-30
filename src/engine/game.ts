@@ -198,12 +198,17 @@ export class GameEngine {
           m.alive = false;
           m.wounds = 0;
         }
+        u.inReserves = false; // no longer pending — it is gone for good
         this.log(`${u.name} never arrived from Reserves and is destroyed.`);
       }
     }
   }
 
   private reanimate(u: UnitInstance, woundsToRestore: number): void {
+    // A wholly destroyed unit stays destroyed — reanimation can't raise a unit
+    // that has no living models (this also stops an overdue Reserves unit, just
+    // slain by destroyOverdueReserves, from coming back as an invisible ghost).
+    if (!u.models.some((m) => m.alive)) return;
     let pool = woundsToRestore;
     // First heal a damaged living model, then raise slain models.
     const damaged = u.models.find((m) => m.alive && m.wounds < m.maxWounds);
@@ -596,11 +601,23 @@ export class GameEngine {
   // ---------------------------------------------------------------- fight
   /** Units eligible to fight: in engagement range and not yet fought. */
   canFight(u: UnitInstance, target: UnitInstance): boolean {
-    return this.isAlive(u) && this.isAlive(target) && inEngagementRange(u, target) && !u.hasFought;
+    return (
+      this.isAlive(u) &&
+      this.isAlive(target) &&
+      !this.isProtectedLeader(target) &&
+      inEngagementRange(u, target) &&
+      !u.hasFought
+    );
   }
 
   /** Resolve melee from attacker into target. */
   fight(attacker: UnitInstance, target: UnitInstance): AttackResult[] {
+    // A leader shielded by a living bodyguard can't be singled out in melee,
+    // exactly as in shooting — attacks must go to the bodyguard unit.
+    if (this.isProtectedLeader(target)) {
+      this.log(`Cannot target ${target.name} in melee — it is protected by its bodyguard.`);
+      return [];
+    }
     const weapons = attacker.weapons.filter((w) => w.kind === 'melee');
     const rerollFlag = attacker.pendingRerollHits;
     const results: AttackResult[] = [];

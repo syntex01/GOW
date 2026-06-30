@@ -874,7 +874,7 @@ export class GameUI {
   private selectForShooting(u: UnitInstance): void {
     this.selectedId = u.id;
     this.targets = this.engine
-      .enemiesOf(this.engine.active)
+      .targetableEnemiesOf(this.engine.active) // excludes bodyguard-shielded leaders
       .filter((e) => this.engine.shootableWeapons(u, e).length > 0)
       .map((e) => e.id);
     this.scene.highlightUnit(u.id);
@@ -924,7 +924,7 @@ export class GameUI {
   private selectForFight(u: UnitInstance): void {
     this.selectedId = u.id;
     this.targets = this.engine
-      .enemiesOf(this.engine.active)
+      .targetableEnemiesOf(this.engine.active) // can't single out a shielded leader
       .filter((e) => inEngagementRange(u, e))
       .map((e) => e.id);
     this.scene.highlightUnit(u.id);
