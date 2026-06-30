@@ -1,0 +1,47 @@
+=== ROUND-1 COMMAND (entry) ===
+phase: Ultramarines Strike Force's Command
+metrics: {"docScrollW":390,"docClientW":390,"overflowX":0,"vw":390,"vh":844,"actionbar":{"x":-195,"y":632,"w":390,"h":212,"bottom":844,"right":195},"unitpanelShown":false,"unitpanel":{"x":0,"y":41,"w":390,"h":39,"bottom":80,"right":390},"moveButtons":["AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"],"datacardCoversActionbar":false,"topAtActionbarCenter":"CANVAS","topAtLowerBoard":"CANVAS","topAtMidBoard":"CANVAS"}
+
+=== SELECT in command, check Reserves button ===
+action buttons in command w/ selection: ["AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"]
+has "→ Reserves" button: false
+
+=== MOVEMENT (round 1) ===
+phase: Ultramarines Strike Force's Movement
+SELECTED metrics: {"docScrollW":390,"docClientW":390,"overflowX":0,"vw":390,"vh":844,"actionbar":{"x":-195,"y":528,"w":390,"h":316,"bottom":844,"right":195},"unitpanelShown":true,"unitpanel":{"x":0,"y":369,"w":390,"h":351,"bottom":720,"right":390},"moveButtons":["Move","Advance","Fall Back","Remain","AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"],"datacardCoversActionbar":true,"topAtActionbarCenter":"CANVAS","topAtLowerBoard":"CANVAS","topAtMidBoard":"CANVAS"}
+-> moveButtons present: ["Move","Advance","Fall Back","Remain","AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"] | datacardCoversActionbar: true | topAtActionbarCenter: CANVAS | topAtLowerBoard: CANVAS
+Advance button count (DOM): 1
+Advance visible: true box: {"x":-185.015625,"y":634,"width":92.265625,"height":44} (if y>vh it is below the fold / occluded)
+
+=== CAMERA pinch (zoom) on top canvas strip ===
+RUN ERROR: cdpSession.send: Target page, context or browser has been closed cdpSession.send: Target page, context or browser has been closed
+    at pinch (/home/user/GOW/scripts/_audit_move2.mjs:52:66)
+    at /home/user/GOW/scripts/async file:/home/user/GOW/scripts/_audit_move2.mjs:111:3
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+browserContext.close: Target page, context or browser has been closed
+Browser logs:
+
+<launching> /opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-extensions --disable-features=ImprovedCookieControls,LazyFrameLoading,GlobalMediaControls,DestroyProfileOnBrowserClose,MediaRouter,DialMediaRouteProvider,AcceptCHFrame,AutoExpandDetailsElement,CertificateTransparencyComponentUpdater,AvoidUnnecessaryBeforeUnloadCheckSync,Translate,HttpsUpgrades,PaintHolding,ThirdPartyStoragePartitioning,LensOverlay --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --force-color-profile=srgb --metrics-recording-only --no-first-run --enable-automation --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --headless=old --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist --no-sandbox --user-data-dir=/tmp/playwright_chromiumdev_profile-AqtdJI --remote-debugging-pipe --no-startup-window
+<launched> pid=3908
+[pid=3908][err] [0630/191553.282378:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+[pid=3908][err] [0630/191553.283697:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+[pid=3908][err] [0630/191553.284007:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+[pid=3908][err] [0630/191553.300486:WARNING:device/bluetooth/dbus/bluez_dbus_manager.cc:209] Floss manager service not available, cannot set Floss enable/disable.
+[pid=3908][err] [0630/191553.337474:WARNING:sandbox/policy/linux/sandbox_linux.cc:414] InitializeSandbox() called with multiple threads in process gpu-process.
+[pid=3908][err] [0630/191559.944099:ERROR:net/socket/ssl_client_socket_impl.cc:902] handshake failed; returned -1, SSL error code 1, net_error -100
+[pid=3908][err] [0630/191606.361764:ERROR:net/socket/ssl_client_socket_impl.cc:902] handshake failed; returned -1, SSL error code 1, net_error -100
+[pid=3908][err] [0630/191606.378095:INFO:third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc:885] Running WebRTC with a combined Network and Worker thread.
+[pid=3908][err] [0630/191608.609134:WARNING:media/audio/linux/audio_manager_linux.cc:54] Falling back to ALSA for audio output. PulseAudio is not available or could not be initialized.
+[pid=3908][err] [0630/191613.403639:INFO:CONSOLE:52] "THREE.Material: parameter 'roughnessMap' has value of undefined.", source: file:///home/user/GOW/builds/GrimdarkTabletop.html (52)
+[pid=3908] <gracefully close start>
+[pid=3908][err] [0630/191756.071461:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:389] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[pid=3908][err] [0630/191756.072769:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:389] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[pid=3908][err] [0630/191756.083806:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:389] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[pid=3908][err] [0630/191756.084480:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:389] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[pid=3908][err] [0630/191756.084829:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:389] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+    at /home/user/GOW/scripts/async file:/home/user/GOW/scripts/_audit_move2.mjs:154:1
+
+Node.js v22.22.2

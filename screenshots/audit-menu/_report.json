@@ -1,0 +1,1057 @@
+{
+  "errors": [],
+  "findings": [
+    {
+      "area": "Game mode",
+      "what": "tap mode matching /hotseat/",
+      "expected": "mode button tappable & selects",
+      "actual": "could not find/tap mode element",
+      "severity": "major",
+      "screenshot": "/home/user/GOW/screenshots/audit-menu/09-mode-hotseat.png"
+    },
+    {
+      "area": "Game mode",
+      "what": "tap mode matching /machine spirit|vs machine|machine/",
+      "expected": "mode button tappable & selects",
+      "actual": "could not find/tap mode element",
+      "severity": "major",
+      "screenshot": "/home/user/GOW/screenshots/audit-menu/10-mode-machinespirit.png"
+    },
+    {
+      "area": "Game mode",
+      "what": "tap mode matching /online/",
+      "expected": "mode button tappable & selects",
+      "actual": "could not find/tap mode element",
+      "severity": "major",
+      "screenshot": "/home/user/GOW/screenshots/audit-menu/11-mode-online.png"
+    },
+    {
+      "area": "Settings slider",
+      "what": "slider #2 (slider-wrap)",
+      "expected": "on-screen and draggable",
+      "actual": "slider is off-screen vertically (y=919)",
+      "severity": "major"
+    },
+    {
+      "area": "Settings slider",
+      "what": "slider #3 (set-slider)",
+      "expected": "on-screen and draggable",
+      "actual": "slider is off-screen vertically (y=921)",
+      "severity": "major"
+    },
+    {
+      "area": "Settings slider",
+      "what": "slider #4 (slider-wrap)",
+      "expected": "on-screen and draggable",
+      "actual": "slider is off-screen vertically (y=948)",
+      "severity": "major"
+    },
+    {
+      "area": "Settings slider",
+      "what": "slider #5 (set-slider)",
+      "expected": "on-screen and draggable",
+      "actual": "slider is off-screen vertically (y=950)",
+      "severity": "major"
+    },
+    {
+      "area": "Settings slider",
+      "what": "slider #6 (slider-wrap)",
+      "expected": "on-screen and draggable",
+      "actual": "slider is off-screen vertically (y=1005)",
+      "severity": "major"
+    },
+    {
+      "area": "Settings slider",
+      "what": "slider #7 (set-slider)",
+      "expected": "on-screen and draggable",
+      "actual": "slider is off-screen vertically (y=1007)",
+      "severity": "major"
+    },
+    {
+      "area": "Driver",
+      "what": "audit run",
+      "expected": "completes",
+      "actual": "threw: page.waitForTimeout: Target page, context or browser has been closed",
+      "severity": "blocker"
+    }
+  ],
+  "controlDumps": {
+    "menuInitial": [
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick on",
+        "txt": "Necrons",
+        "x": 34,
+        "y": 420,
+        "w": 102,
+        "h": 88,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": false,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick",
+        "txt": "Ultramarines",
+        "x": 144,
+        "y": 420,
+        "w": 102,
+        "h": 88,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": false,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick",
+        "txt": "Orks",
+        "x": 254,
+        "y": 420,
+        "w": 102,
+        "h": 88,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": false,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick",
+        "txt": "Chaos Space Marines",
+        "x": 34,
+        "y": 516,
+        "w": 102,
+        "h": 97,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": false,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick",
+        "txt": "Necrons",
+        "x": 34,
+        "y": 1006,
+        "w": 102,
+        "h": 88,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick on",
+        "txt": "Ultramarines",
+        "x": 144,
+        "y": 1006,
+        "w": 102,
+        "h": 88,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick",
+        "txt": "Orks",
+        "x": 254,
+        "y": 1006,
+        "w": 102,
+        "h": 88,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "faction-pick",
+        "txt": "Chaos Space Marines",
+        "x": 34,
+        "y": 1102,
+        "w": 102,
+        "h": 97,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "seg-btn on",
+        "txt": "HotseatTwo warlords, one altar",
+        "x": 18,
+        "y": 1599,
+        "w": 354,
+        "h": 55,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "seg-btn",
+        "txt": "vs Machine SpiritBattle the co",
+        "x": 18,
+        "y": 1662,
+        "w": 354,
+        "h": 55,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "seg-btn",
+        "txt": "OnlineCross the warp",
+        "x": 18,
+        "y": 1725,
+        "w": 354,
+        "h": 55,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "Dice Animation",
+        "x": 36,
+        "y": 1860,
+        "w": 104,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "DIV",
+        "type": "",
+        "cls": "slider-wrap",
+        "txt": "Normal",
+        "x": 154,
+        "y": 1860,
+        "w": 200,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "range",
+        "cls": "set-slider",
+        "txt": "",
+        "x": 152,
+        "y": 1862,
+        "w": 140,
+        "h": 10,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "Graphics",
+        "x": 36,
+        "y": 1905,
+        "w": 67,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "seg-btn small on",
+        "txt": "Auto",
+        "x": 143,
+        "y": 1888,
+        "w": 65,
+        "h": 48,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "seg-btn small",
+        "txt": "Low",
+        "x": 216,
+        "y": 1888,
+        "w": 65,
+        "h": 48,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "seg-btn small",
+        "txt": "High",
+        "x": 289,
+        "y": 1888,
+        "w": 65,
+        "h": 48,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "Machine Spirit (Player B)",
+        "x": 36,
+        "y": 1971,
+        "w": 179,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "",
+        "cls": "toggle",
+        "txt": "",
+        "x": 296,
+        "y": 1963,
+        "w": 58,
+        "h": 30,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "Master Volume",
+        "x": 36,
+        "y": 2106,
+        "w": 111,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "DIV",
+        "type": "",
+        "cls": "slider-wrap",
+        "txt": "80%",
+        "x": 161,
+        "y": 2106,
+        "w": 193,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "range",
+        "cls": "set-slider",
+        "txt": "",
+        "x": 152,
+        "y": 2108,
+        "w": 140,
+        "h": 10,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "Battle SFX",
+        "x": 36,
+        "y": 2134,
+        "w": 76,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "DIV",
+        "type": "",
+        "cls": "slider-wrap",
+        "txt": "90%",
+        "x": 126,
+        "y": 2134,
+        "w": 228,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "range",
+        "cls": "set-slider",
+        "txt": "",
+        "x": 126,
+        "y": 2136,
+        "w": 166,
+        "h": 10,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "War-Hymns (Music)",
+        "x": 36,
+        "y": 2162,
+        "w": 133,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "DIV",
+        "type": "",
+        "cls": "slider-wrap",
+        "txt": "45%",
+        "x": 36,
+        "y": 2190,
+        "w": 318,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "range",
+        "cls": "set-slider",
+        "txt": "",
+        "x": 52,
+        "y": 2192,
+        "w": 240,
+        "h": 10,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "Silence All",
+        "x": 36,
+        "y": 2239,
+        "w": 81,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "toggle",
+        "txt": "",
+        "x": 296,
+        "y": 2231,
+        "w": 58,
+        "h": 30,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "LABEL",
+        "type": "",
+        "cls": "set-label",
+        "txt": "War-Hymns",
+        "x": 36,
+        "y": 2283,
+        "w": 79,
+        "h": 14,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "toggle on",
+        "txt": "",
+        "x": 296,
+        "y": 2275,
+        "w": 58,
+        "h": 30,
+        "small": true,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": true,
+        "offTop": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "cls": "btn primary deploy-btn",
+        "txt": "Deploy",
+        "x": 16,
+        "y": 772,
+        "w": 358,
+        "h": 58,
+        "small": false,
+        "offRight": false,
+        "offLeft": false,
+        "offBottom": false,
+        "offTop": false
+      }
+    ]
+  },
+  "overflow": {
+    "menuInitial": {
+      "scrollW": 390,
+      "clientW": 390,
+      "bodyScrollW": 390,
+      "overflow": 0
+    }
+  },
+  "probe": {
+    "modes": [
+      {
+        "tag": "BUTTON",
+        "cls": "seg-btn on",
+        "txt": "HotseatTwo warlords, one altar",
+        "x": 18,
+        "y": 1599,
+        "w": 354,
+        "h": 55
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "seg-btn",
+        "txt": "vs Machine SpiritBattle the cogitator",
+        "x": 18,
+        "y": 1662,
+        "w": 354,
+        "h": 55
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "seg-btn",
+        "txt": "OnlineCross the warp",
+        "x": 18,
+        "y": 1725,
+        "w": 354,
+        "h": 55
+      },
+      {
+        "tag": "DIV",
+        "cls": "set-row",
+        "txt": "Machine Spirit (Player B)",
+        "x": 36,
+        "y": 1950,
+        "w": 318,
+        "h": 43
+      },
+      {
+        "tag": "LABEL",
+        "cls": "set-label",
+        "txt": "Machine Spirit (Player B)",
+        "x": 36,
+        "y": 1971,
+        "w": 179,
+        "h": 14
+      }
+    ],
+    "factions": [
+      {
+        "tag": "DIV",
+        "cls": "faction-grid",
+        "txt": "NecronsUltramarinesOrksChaos Space Marin",
+        "x": 34,
+        "y": 420,
+        "w": 322,
+        "h": 193
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick on",
+        "txt": "Necrons",
+        "x": 34,
+        "y": 420,
+        "w": 102,
+        "h": 88
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick",
+        "txt": "Ultramarines",
+        "x": 144,
+        "y": 420,
+        "w": 102,
+        "h": 88
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick",
+        "txt": "Orks",
+        "x": 254,
+        "y": 420,
+        "w": 102,
+        "h": 88
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick",
+        "txt": "Chaos Space Marines",
+        "x": 34,
+        "y": 516,
+        "w": 102,
+        "h": 97
+      },
+      {
+        "tag": "DIV",
+        "cls": "rr-head",
+        "txt": "Necron Patrol820 pts",
+        "x": 34,
+        "y": 641,
+        "w": 322,
+        "h": 18
+      },
+      {
+        "tag": "DIV",
+        "cls": "faction-grid",
+        "txt": "NecronsUltramarinesOrksChaos Space Marin",
+        "x": 34,
+        "y": 1006,
+        "w": 322,
+        "h": 193
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick",
+        "txt": "Necrons",
+        "x": 34,
+        "y": 1006,
+        "w": 102,
+        "h": 88
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick on",
+        "txt": "Ultramarines",
+        "x": 144,
+        "y": 1006,
+        "w": 102,
+        "h": 88
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick",
+        "txt": "Orks",
+        "x": 254,
+        "y": 1006,
+        "w": 102,
+        "h": 88
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "faction-pick",
+        "txt": "Chaos Space Marines",
+        "x": 34,
+        "y": 1102,
+        "w": 102,
+        "h": 97
+      },
+      {
+        "tag": "DIV",
+        "cls": "rr-head",
+        "txt": "Ultramarines Strike Force945 pts",
+        "x": 34,
+        "y": 1227,
+        "w": 322,
+        "h": 18
+      }
+    ],
+    "settings": [
+      {
+        "tag": "BUTTON",
+        "cls": "seg-btn",
+        "txt": "vs Machine SpiritBattle the cogitator",
+        "x": 18,
+        "y": 1662,
+        "w": 354,
+        "h": 55
+      },
+      {
+        "tag": "DIV",
+        "cls": "set-row",
+        "txt": "Dice AnimationNormal",
+        "x": 36,
+        "y": 1860,
+        "w": 318,
+        "h": 14
+      },
+      {
+        "tag": "LABEL",
+        "cls": "set-label",
+        "txt": "Dice Animation",
+        "x": 36,
+        "y": 1860,
+        "w": 104,
+        "h": 14
+      },
+      {
+        "tag": "DIV",
+        "cls": "set-row",
+        "txt": "Machine Spirit (Player B)",
+        "x": 36,
+        "y": 1950,
+        "w": 318,
+        "h": 43
+      },
+      {
+        "tag": "LABEL",
+        "cls": "set-label",
+        "txt": "Machine Spirit (Player B)",
+        "x": 36,
+        "y": 1971,
+        "w": 179,
+        "h": 14
+      },
+      {
+        "tag": "DIV",
+        "cls": "set-row",
+        "txt": "Master Volume80%",
+        "x": 36,
+        "y": 2106,
+        "w": 318,
+        "h": 14
+      },
+      {
+        "tag": "LABEL",
+        "cls": "set-label",
+        "txt": "Master Volume",
+        "x": 36,
+        "y": 2106,
+        "w": 111,
+        "h": 14
+      },
+      {
+        "tag": "DIV",
+        "cls": "set-row",
+        "txt": "Battle SFX90%",
+        "x": 36,
+        "y": 2134,
+        "w": 318,
+        "h": 14
+      },
+      {
+        "tag": "LABEL",
+        "cls": "set-label",
+        "txt": "Battle SFX",
+        "x": 36,
+        "y": 2134,
+        "w": 76,
+        "h": 14
+      },
+      {
+        "tag": "DIV",
+        "cls": "set-row",
+        "txt": "War-Hymns (Music)45%",
+        "x": 36,
+        "y": 2162,
+        "w": 318,
+        "h": 42
+      },
+      {
+        "tag": "LABEL",
+        "cls": "set-label",
+        "txt": "War-Hymns (Music)",
+        "x": 36,
+        "y": 2162,
+        "w": 133,
+        "h": 14
+      }
+    ],
+    "deploy": [
+      {
+        "tag": "DIV",
+        "cls": "deploy-bar",
+        "txt": "Deploy",
+        "x": 0,
+        "y": 758,
+        "w": 390,
+        "h": 86
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "btn primary deploy-btn",
+        "txt": "Deploy",
+        "x": 16,
+        "y": 772,
+        "w": 358,
+        "h": 58
+      }
+    ]
+  },
+  "factionCards": [
+    {
+      "txt": "Necrons",
+      "x": 85,
+      "y": 464,
+      "w": 102,
+      "h": 88,
+      "left": 34
+    },
+    {
+      "txt": "Ultramarines",
+      "x": 195,
+      "y": 464,
+      "w": 102,
+      "h": 88,
+      "left": 144
+    },
+    {
+      "txt": "Orks",
+      "x": 305,
+      "y": 464,
+      "w": 102,
+      "h": 88,
+      "left": 254
+    },
+    {
+      "txt": "Chaos Space Marines",
+      "x": 85,
+      "y": 564,
+      "w": 102,
+      "h": 97,
+      "left": 34
+    },
+    {
+      "txt": "Chaos Space Marines",
+      "x": 85,
+      "y": 587,
+      "w": 86,
+      "h": 25,
+      "left": 42
+    },
+    {
+      "txt": "Necrons",
+      "x": 85,
+      "y": 1050,
+      "w": 102,
+      "h": 88,
+      "left": 34
+    },
+    {
+      "txt": "Ultramarines",
+      "x": 195,
+      "y": 1050,
+      "w": 102,
+      "h": 88,
+      "left": 144
+    },
+    {
+      "txt": "Orks",
+      "x": 305,
+      "y": 1050,
+      "w": 102,
+      "h": 88,
+      "left": 254
+    },
+    {
+      "txt": "Chaos Space Marines",
+      "x": 85,
+      "y": 1151,
+      "w": 102,
+      "h": 97,
+      "left": 34
+    },
+    {
+      "txt": "Chaos Space Marines",
+      "x": 85,
+      "y": 1174,
+      "w": 86,
+      "h": 25,
+      "left": 42
+    }
+  ],
+  "sliders": [
+    {
+      "tag": "DIV",
+      "type": "",
+      "cls": "slider-wrap",
+      "x": 153,
+      "y": 668,
+      "w": 204,
+      "h": 14
+    },
+    {
+      "tag": "INPUT",
+      "type": "range",
+      "cls": "set-slider",
+      "x": 151,
+      "y": 670,
+      "w": 143,
+      "h": 10
+    },
+    {
+      "tag": "DIV",
+      "type": "",
+      "cls": "slider-wrap",
+      "x": 160,
+      "y": 919,
+      "w": 197,
+      "h": 14
+    },
+    {
+      "tag": "INPUT",
+      "type": "range",
+      "cls": "set-slider",
+      "x": 151,
+      "y": 921,
+      "w": 143,
+      "h": 10
+    },
+    {
+      "tag": "DIV",
+      "type": "",
+      "cls": "slider-wrap",
+      "x": 125,
+      "y": 948,
+      "w": 232,
+      "h": 14
+    },
+    {
+      "tag": "INPUT",
+      "type": "range",
+      "cls": "set-slider",
+      "x": 125,
+      "y": 950,
+      "w": 169,
+      "h": 10
+    },
+    {
+      "tag": "DIV",
+      "type": "",
+      "cls": "slider-wrap",
+      "x": 33,
+      "y": 1005,
+      "w": 324,
+      "h": 14
+    },
+    {
+      "tag": "INPUT",
+      "type": "range",
+      "cls": "set-slider",
+      "x": 49,
+      "y": 1007,
+      "w": 245,
+      "h": 10
+    }
+  ],
+  "switches": [
+    {
+      "tag": "DIV",
+      "cls": "set-row",
+      "txt": "War-Hymns (Music)45%",
+      "x": 33,
+      "y": 976,
+      "w": 324,
+      "h": 43
+    },
+    {
+      "tag": "LABEL",
+      "cls": "set-label",
+      "txt": "War-Hymns (Music)",
+      "x": 33,
+      "y": 976,
+      "w": 136,
+      "h": 14
+    }
+  ],
+  "consoleErrors": []
+}
