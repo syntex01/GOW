@@ -52,4 +52,16 @@ export interface SceneController {
 
   /** Frame the camera on the whole board. */
   frameBoard(): void;
+
+  /**
+   * Replace a unit's visual with a user-supplied model loaded from a URL (e.g. a
+   * publicly hosted glTF) or a local File. Lets players bring in their own
+   * collection. Resolves once applied; rejects on load failure.
+   */
+  importUnitModel(
+    unitId: string,
+    src: string | File,
+    format: 'gltf' | 'glb' | 'obj' | 'stl',
+    heightInches?: number,
+  ): Promise<void>;
 }

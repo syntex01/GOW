@@ -410,6 +410,7 @@ export class GameUI {
     actions.append(
       this.button(`AI: ${this.aiPlayer ? 'On' : 'Off'}`, 'small', () => this.toggleAi()),
       this.button('Import Army ▾', 'small', () => this.cb.onImportArmy(this.engine.active)),
+      this.button('Import Model ▾', 'small', () => this.openModelImport()),
       this.button('New Battle', 'small', () => this.cb.onNewBattle()),
     );
     const next = this.button(phase === 'end' ? 'End Turn ▸' : 'Next Phase ▸', 'primary', () =>
@@ -850,6 +851,64 @@ export class GameUI {
   /** Public toast for host-driven messages (e.g. stratagem results). */
   notify(message: string, warn = false): void {
     this.toast(message, warn);
+  }
+
+  /** Modal to import a publicly-available 3D model (URL or file) onto a unit. */
+  private openModelImport(): void {
+    const unit = this.selected() ?? this.engine.unitsOf(this.engine.active).find((u) => this.engine.isAlive(u));
+    if (!unit) {
+      this.toast('Select a unit to apply a model to', true);
+      return;
+    }
+    const detectFmt = (s: string): 'gltf' | 'glb' | 'obj' | 'stl' => {
+      const e = s.toLowerCase().split('?')[0];
+      if (e.endsWith('.glb')) return 'glb';
+      if (e.endsWith('.obj')) return 'obj';
+      if (e.endsWith('.stl')) return 'stl';
+      return 'gltf';
+    };
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop show';
+    backdrop.innerHTML = `
+      <div class="modal">
+        <h3>Import 3D model → ${unit.name}</h3>
+        <p>Paste a public model URL (glTF/GLB/OBJ/STL) or choose a file. Replaces this unit's visual.</p>
+        <input id="murl" type="text" placeholder="https://…/model.glb" style="width:100%;margin-bottom:8px;background:#0c1016;color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:9px;font-family:ui-monospace,monospace;font-size:12px;" />
+        <input id="mfile" type="file" accept=".glb,.gltf,.obj,.stl" style="font-size:12px;" />
+        <div class="warn" id="mwarn"></div>
+        <div class="row">
+          <button class="btn small" id="mCancel">Cancel</button>
+          <button class="btn primary small" id="mGo">Apply</button>
+        </div>
+      </div>`;
+    this.root.appendChild(backdrop);
+    const url = backdrop.querySelector('#murl') as HTMLInputElement;
+    const file = backdrop.querySelector('#mfile') as HTMLInputElement;
+    const warn = backdrop.querySelector('#mwarn') as HTMLElement;
+    const close = () => backdrop.remove();
+    (backdrop.querySelector('#mCancel') as HTMLElement).onclick = close;
+    (backdrop.querySelector('#mGo') as HTMLElement).onclick = () => {
+      const f = file.files?.[0];
+      const src: string | File | undefined = f ?? (url.value.trim() || undefined);
+      if (!src) {
+        warn.textContent = 'Provide a URL or choose a file.';
+        return;
+      }
+      const fmt = detectFmt(f ? f.name : url.value);
+      warn.textContent = 'Loading…';
+      this.scene
+        .importUnitModel(unit.id, src, fmt)
+        .then(() => {
+          this.toast(`Model applied to ${unit.name}`);
+          close();
+        })
+        .catch((e: unknown) => {
+          warn.textContent = `Failed to load model: ${e instanceof Error ? e.message : String(e)}`;
+        });
+    };
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) close();
+    };
   }
 
   /** Dev/demo hook: play a representative dice sequence through the real tray. */

@@ -13,6 +13,7 @@ import {
   resolveModelEntry,
   type ModelRegistryEntry,
 } from './ModelRegistry';
+import { loadModel } from './ModelImport';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -2090,6 +2091,17 @@ export class ThreeScene implements SceneController {
   /** Access the live scene (used by import helpers if needed). */
   getScene(): THREE.Scene {
     return this.scene;
+  }
+
+  /** Load a user-supplied model (URL or File) and apply it to a unit. */
+  async importUnitModel(
+    unitId: string,
+    src: string | File,
+    format: 'gltf' | 'glb' | 'obj' | 'stl',
+    heightInches = 3,
+  ): Promise<void> {
+    const obj = await loadModel(src, format, { targetHeightInches: heightInches });
+    this.setUnitModel(unitId, obj);
   }
 
   /** Tear down the renderer and listeners. */
