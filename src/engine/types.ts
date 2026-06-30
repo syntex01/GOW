@@ -172,6 +172,9 @@ export interface UnitInstance {
   // Per-turn status
   moveState: MoveState;
   advanceRoll: number; // inches gained this turn from advancing
+  /** Inches of movement already spent this phase (a unit moves up to its Move
+   *  characteristic in total, optionally across several smaller repositionings). */
+  moveBudgetUsed?: number;
   hasShot: boolean;
   hasChargedThisTurn: boolean;
   hasFought: boolean;

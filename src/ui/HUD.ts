@@ -511,9 +511,9 @@ export class GameUI {
         }
         return tag(
           sel
-            ? `Moving <b>${sel.name}</b> (${this.moveMode}). Click a destination on the table. Max ${this.engine
-                .moveAllowance(sel, this.moveMode)
-                .toFixed(0)}".`
+            ? `Moving <b>${sel.name}</b> (${this.moveMode}). Click a destination — ${this.engine
+                .remainingMove(sel, this.moveMode)
+                .toFixed(1)}" of movement left.`
             : `Movement phase — click one of <b>your</b> units to move it.`,
         );
       case 'shooting':
@@ -835,7 +835,8 @@ export class GameUI {
       const d = Math.hypot(r.point.x - from.x, r.point.y - from.y);
       this.scene.clearOverlays();
       if (phase === 'movement') {
-        const allow = this.engine.moveAllowance(sel, this.moveMode);
+        // Show the REMAINING move budget (it shrinks as the unit repositions).
+        const allow = this.engine.remainingMove(sel, this.moveMode);
         this.scene.showRange(from, allow, d <= allow ? 0x39ff7a : 0xd6483b);
       }
       this.scene.showMeasurement(from, r.point, `${d.toFixed(1)}"`);
@@ -871,7 +872,14 @@ export class GameUI {
     sound.playEvent('move');
     haptic();
     this.scene.clearOverlays();
-    this.deselect();
+    // Keep the unit selected while it still has movement left, so the player can
+    // reposition in several steps and watch the remaining range shrink. Once the
+    // budget is spent, deselect so the next unit is easy to pick.
+    if (this.engine.remainingMove(u, this.moveMode) > 0.5) {
+      this.toast(`${this.engine.remainingMove(u, this.moveMode).toFixed(1)}" of movement left`);
+    } else {
+      this.deselect();
+    }
     this.refresh();
   }
 
@@ -1029,7 +1037,9 @@ export class GameUI {
       .filter((u) => this.engine.isAlive(u) && !u.inReserves);
     switch (this.engine.state.phase) {
       case 'movement':
-        return mine.filter((u) => u.moveState === 'none');
+        return mine.filter(
+          (u) => u.moveState !== 'remainedStationary' && this.engine.remainingMove(u, 'normal') > 0.5,
+        );
       case 'shooting':
         return mine.filter((u) => this.engine.shootBlockReason(u) === null);
       case 'charge':

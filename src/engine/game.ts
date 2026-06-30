@@ -142,6 +142,7 @@ export class GameEngine {
     for (const u of this.unitsOf(this.active)) {
       u.moveState = 'none';
       u.advanceRoll = 0;
+      u.moveBudgetUsed = 0;
       u.hasShot = false;
       u.hasChargedThisTurn = false;
       u.hasFought = false;
@@ -252,17 +253,39 @@ export class GameEngine {
    * Rigidly translate a whole unit by `delta`, validating the move is legal for
    * the chosen mode. Returns false (and does nothing) if illegal.
    */
+  /** Mode a unit has committed to this phase (it can't switch mid-phase), or null. */
+  private committedMoveMode(u: UnitInstance): 'normal' | 'advance' | 'fallBack' | null {
+    return u.moveState === 'advanced'
+      ? 'advance'
+      : u.moveState === 'fellBack'
+        ? 'fallBack'
+        : u.moveState === 'normal'
+          ? 'normal'
+          : null;
+  }
+
+  /** Inches of move a unit still has this phase for `mode` (its budget minus spent). */
+  remainingMove(u: UnitInstance, mode: 'normal' | 'advance' | 'fallBack' = 'normal'): number {
+    if (u.moveState === 'remainedStationary') return 0;
+    return Math.max(0, this.moveAllowance(u, mode) - (u.moveBudgetUsed ?? 0));
+  }
+
   moveUnit(
     u: UnitInstance,
     mode: 'normal' | 'advance' | 'fallBack',
     delta: Vec2,
   ): boolean {
-    // A unit moves once per Movement phase — without this, re-selecting an
-    // already-moved unit and moving again would stack unlimited distance.
-    if (u.moveState !== 'none') return false;
-    const allowance = this.moveAllowance(u, mode);
+    // A unit moves up to its Move characteristic IN TOTAL this phase, optionally
+    // across several repositionings. It can't switch move type once committed,
+    // and a unit that chose to Remain Stationary doesn't move.
+    if (u.moveState === 'remainedStationary') return false;
+    const committed = this.committedMoveMode(u);
+    if (committed && committed !== mode) return false;
+
+    const firstMove = (u.moveBudgetUsed ?? 0) === 0;
+    const remaining = this.moveAllowance(u, mode) - (u.moveBudgetUsed ?? 0);
     const moved = Math.hypot(delta.x, delta.y);
-    if (moved > allowance + 1e-6) return false;
+    if (moved > remaining + 1e-6) return false; // would exceed the remaining budget
 
     const startEngaged = this.enemiesOf(u.ownerId).some((e) => inEngagementRange(u, e));
     if (mode === 'normal' && startEngaged) return false; // must Fall Back to leave combat
@@ -272,10 +295,9 @@ export class GameEngine {
       m.position = { x: m.position.x + delta.x, y: m.position.y + delta.y };
     }
 
-    // Normal/Advance moves may not end within engagement range of the enemy.
+    // Normal/Advance/Fall-Back moves may not end within engagement range.
     const endEngaged = this.enemiesOf(u.ownerId).some((e) => inEngagementRange(u, e));
-    if ((mode === 'normal' || mode === 'advance' || mode === 'fallBack') && endEngaged) {
-      // revert
+    if (endEngaged) {
       for (const m of aliveModels(u)) {
         m.position = { x: m.position.x - delta.x, y: m.position.y - delta.y };
       }
@@ -283,14 +305,15 @@ export class GameEngine {
     }
 
     u.moveState = mode === 'advance' ? 'advanced' : mode === 'fallBack' ? 'fellBack' : 'normal';
+    u.moveBudgetUsed = (u.moveBudgetUsed ?? 0) + moved;
     this.clampToBoard(u);
     this.settlePositions();
     this.log(
       `${u.name} ${mode === 'fallBack' ? 'falls back' : mode === 'advance' ? 'advances' : 'moves'} ` +
         `${moved.toFixed(1)}".`,
     );
-    // Desperate Escape: a Battle-shocked unit that Falls Back tests each model.
-    if (mode === 'fallBack' && u.isBattleShocked) this.desperateEscape(u);
+    // Desperate Escape fires once, on the first Fall Back move of a shocked unit.
+    if (mode === 'fallBack' && u.isBattleShocked && firstMove) this.desperateEscape(u);
     return true;
   }
 
@@ -482,11 +505,16 @@ export class GameEngine {
 
   /** Why a rigid move of `u` by `delta` in `mode` is illegal, or null if legal. */
   moveBlockReason(u: UnitInstance, mode: 'normal' | 'advance' | 'fallBack', delta: Vec2): string | null {
-    if (u.moveState !== 'none') return `${u.name} has already moved this phase`;
-    const allowance = this.moveAllowance(u, mode);
+    if (u.moveState === 'remainedStationary') return `${u.name} chose to stay still this phase`;
+    const committed = this.committedMoveMode(u);
+    if (committed && committed !== mode)
+      return `${u.name} is already making a ${committed === 'fallBack' ? 'Fall Back' : committed} move`;
+    const remaining = this.moveAllowance(u, mode) - (u.moveBudgetUsed ?? 0);
     const moved = Math.hypot(delta.x, delta.y);
-    if (moved > allowance + 1e-6)
-      return `too far — ${moved.toFixed(1)}" exceeds the ${allowance.toFixed(0)}" move`;
+    if (moved > remaining + 1e-6)
+      return remaining < 0.1
+        ? `${u.name} has used all its movement this phase`
+        : `too far — only ${remaining.toFixed(1)}" of movement left`;
     const startEngaged = this.enemiesOf(u.ownerId).some((e) => inEngagementRange(u, e));
     if (mode === 'normal' && startEngaged) return 'in combat — use Fall Back to disengage';
     // Simulate the end position (without mutating) to mirror moveUnit's end check.

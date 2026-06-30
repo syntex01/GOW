@@ -288,3 +288,32 @@ describe('new stratagems', () => {
     expect(u.inReserves).toBe(false);
   });
 });
+
+describe('move budget (one Move characteristic in total per phase)', () => {
+  it('allows several small moves summing to the Move, then blocks the overspend', () => {
+    const e = game(1, grunts(5), grunts(5));
+    const u = e.unitsOf('A')[0];
+    const M = u.statline.move; // 6"
+    // Reposition sideways (away from the enemy) in small steps.
+    expect(e.moveUnit(u, 'normal', { x: 3, y: 0 })).toBe(true);
+    expect(e.remainingMove(u, 'normal')).toBeCloseTo(M - 3, 1);
+    expect(e.moveUnit(u, 'normal', { x: 2, y: 0 })).toBe(true);
+    expect(e.remainingMove(u, 'normal')).toBeCloseTo(M - 5, 1);
+    // Only ~1" left — a 2" move would exceed the budget and is rejected.
+    expect(e.moveUnit(u, 'normal', { x: 2, y: 0 })).toBe(false);
+    // A 0.8" nudge still fits.
+    expect(e.moveUnit(u, 'normal', { x: 0.8, y: 0 })).toBe(true);
+    // Total moved (~5.8") must never exceed the 6" Move.
+    expect((u.moveBudgetUsed ?? 0)).toBeLessThanOrEqual(M + 1e-6);
+    // Budget essentially spent — a further 1" move is rejected.
+    expect(e.moveUnit(u, 'normal', { x: 1, y: 0 })).toBe(false);
+  });
+
+  it('cannot switch move type mid-phase (normal then advance)', () => {
+    const e = game(1, grunts(5), grunts(5));
+    const u = e.unitsOf('A')[0];
+    expect(e.moveUnit(u, 'normal', { x: 2, y: 0 })).toBe(true);
+    e.rollAdvance(u);
+    expect(e.moveUnit(u, 'advance', { x: 2, y: 0 })).toBe(false);
+  });
+});
