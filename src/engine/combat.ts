@@ -28,6 +28,8 @@ export interface AttackOptions {
   rerollWounds?: 'ones' | 'all';
   /** Number of models firing this weapon profile. */
   firingModels?: number;
+  /** Grant Lethal Hits to this attack regardless of weapon (e.g. Dark Pacts). */
+  grantLethalHits?: boolean;
   /**
    * Extra invulnerable save granted to the target for this attack only (N means
    * N+), e.g. a 6+ from Go to Ground / Smokescreen. Combined with any printed
@@ -141,7 +143,7 @@ export function resolveWeapon(
 
   const torrent = !!findKeyword(weapon, 'torrent') || weapon.skill === 0;
   const sustained = findKeyword(weapon, 'sustainedHits');
-  const lethal = !!findKeyword(weapon, 'lethalHits');
+  const lethal = !!findKeyword(weapon, 'lethalHits') || !!opts.grantLethalHits;
   const dev = !!findKeyword(weapon, 'devastatingWounds');
   const twin = !!findKeyword(weapon, 'twinLinked');
   const anti = weapon.keywords.find((k) => k.t === 'anti') as

@@ -135,6 +135,15 @@ export const CORE_STRATAGEMS: Stratagem[] = [
     detail:
       "A targeted unit shrugs off enemy fire: incoming attacks suffer -1 AP against it until your next turn.",
   },
+  {
+    id: 'dark_pact',
+    name: 'Dark Pact',
+    cost: 0,
+    phase: 'any',
+    when: 'your-turn',
+    detail:
+      "Chaos only: a chosen unit swears a pact — pass a Leadership test to gain Lethal Hits on its next attack; fail and it suffers D3 mortal wounds.",
+  },
 ];
 
 /** Look up a stratagem definition by id. */

@@ -482,6 +482,11 @@ export class GameEngine {
       if (reroll.phase === 'hit') mods.rerollHits = reroll.scope === 'all' ? 'all' : 'ones';
       if (reroll.phase === 'wound') mods.rerollWounds = reroll.scope === 'all' ? 'all' : 'ones';
     }
+    // Dark Pacts: a one-shot Lethal Hits granted this turn, consumed on use.
+    if (u.lethalHitsNext) {
+      mods.grantLethalHits = true;
+      u.lethalHitsNext = false;
+    }
     return mods;
   }
 
@@ -776,6 +781,21 @@ export class GameEngine {
         }
         return { ok: true, message: `${unit.name} issues an Epic Challenge (melee gains Precision).` };
       }
+      case 'dark_pact': {
+        if (!unit) return { ok: false, message: 'Dark Pact needs a unit (ctx.unitId).' };
+        if (!unit.keywords.includes('CHAOS')) {
+          return { ok: false, message: `${unit.name} cannot swear a Dark Pact (not CHAOS).` };
+        }
+        spend();
+        const roll = this.rng.die() + this.rng.die();
+        if (roll >= unit.statline.leadership) {
+          unit.lethalHitsNext = true;
+          return { ok: true, message: `${unit.name} swears a Dark Pact (rolled ${roll}): Lethal Hits on its next attack.` };
+        }
+        const mortals = rollDice('D3', this.rng);
+        this.applyMortalWounds(unit, mortals);
+        return { ok: true, message: `${unit.name}'s Dark Pact backfires (rolled ${roll}): suffers ${mortals} mortal wounds.` };
+      }
       case 'heroic_intervention':
       case 'tank_shock': {
         // Listed for completeness; the engine has no faithful hook for these, so
@@ -921,6 +941,30 @@ export class GameEngine {
     }
     this.log(`${u.name} is placed into Strategic Reserves.`);
     return { ok: true, message: `${u.name} held in Reserves; deep strike from round 2.` };
+  }
+
+  /**
+   * Apply `amount` mortal wounds to a unit: lost one wound at a time across
+   * models (Feel No Pain still applies per wound), removing slain models.
+   */
+  applyMortalWounds(u: UnitInstance, amount: number): void {
+    const fnp = u.statline.feelNoPain;
+    let remaining = amount;
+    while (remaining > 0) {
+      if (fnp !== undefined && this.rng.die() >= fnp) {
+        remaining -= 1;
+        continue; // shrugged off
+      }
+      const m = u.models.find((mm) => mm.alive);
+      if (!m) break;
+      m.wounds -= 1;
+      if (m.wounds <= 0) {
+        m.wounds = 0;
+        m.alive = false;
+      }
+      remaining -= 1;
+    }
+    this.cleanupDestroyed();
   }
 
   // ---------------------------------------------------------------- win check

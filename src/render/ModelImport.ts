@@ -57,7 +57,14 @@ function loadRaw(url: string, format: ModelFormat, stlColor: number): Promise<TH
       return new Promise((resolve, reject) => {
         loader.load(
           url,
-          (gltf) => resolve(gltf.scene),
+          (gltf) => {
+            // Carry any animation clips on the returned scene via the standard
+            // Object3D.animations field so ThreeScene can drive a subtle idle for
+            // skinned imports. Static models simply have an empty array.
+            const scene = gltf.scene;
+            scene.animations = gltf.animations ?? [];
+            resolve(scene);
+          },
           undefined,
           (err) => reject(err instanceof Error ? err : new Error(String(err))),
         );

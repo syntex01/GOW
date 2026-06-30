@@ -208,6 +208,9 @@ export interface UnitInstance {
   rapidIngressRound?: number;
   /** Set once a unit's destruction has been credited to a player's kill tally. */
   deathCredited?: boolean;
+  /** Dark Pacts: the unit's next attack this turn gains Lethal Hits. Consumed
+   *  by the next shoot()/fight(). */
+  lethalHitsNext?: boolean;
 }
 
 export interface Objective {

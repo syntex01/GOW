@@ -270,6 +270,15 @@ export class ThreeScene implements SceneController {
   private envTexture: THREE.Texture | null = null;
   /** Animated objective groups (holo-ring spin + bob). */
   private objectiveGroups: THREE.Group[] = [];
+  /** Faint ground-haze plane (additive) drifting just above the mat. */
+  private haze: THREE.Mesh | null = null;
+  /** Cheap additive dust-mote points; null/empty on 'low' tier. */
+  private dustMotes: THREE.Points | null = null;
+  /** Per-mote base data for the slow drift animation (xz extent + speeds). */
+  private dustData: { baseY: Float32Array; phase: Float32Array; speed: Float32Array } | null =
+    null;
+  /** Local idle mixers for imported skinned models (driven in the render loop). */
+  private importedMixers: THREE.AnimationMixer[] = [];
   /** Reusable scratch vectors to avoid per-frame allocation in pan/update. */
   private tmpV1 = new THREE.Vector3();
   private tmpV2 = new THREE.Vector3();
@@ -300,7 +309,7 @@ export class ThreeScene implements SceneController {
     // Filmic tone mapping; slightly lower exposure than before so the new
     // environment reflections don't blow out and the grimdark mood holds.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.quality.shadowMapSize > 0;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -333,6 +342,9 @@ export class ThreeScene implements SceneController {
 
     this.buildBoard();
     this.buildTerrain(state);
+
+    /* grimdark mood: faint ground haze + cheap drifting dust motes */
+    this.buildAtmosphere();
 
     /* postprocessing (optional, robust): gentle bloom for glow + objectives */
     this.setupComposer();
@@ -391,7 +403,9 @@ export class ThreeScene implements SceneController {
    */
   private setupLights(): void {
     // Hemisphere fill: cold sky, warm-ish ground bounce, kept dim for grimdark.
-    const hemi = new THREE.HemisphereLight(0x6c7a96, 0x1a150e, 0.65);
+    // Pulled down a touch from before so the board reads moodier — the key light
+    // does the dramatic work and shadows stay deep without crushing models.
+    const hemi = new THREE.HemisphereLight(0x55617a, 0x16110a, 0.5);
     this.scene.add(hemi);
 
     // Key directional light with shadows — warm, raking angle for drama.
@@ -418,8 +432,8 @@ export class ThreeScene implements SceneController {
     this.scene.add(rim);
 
     // Subtle cool fill from the opposite low side, no shadows — lifts shadows
-    // without killing contrast.
-    const fill = new THREE.DirectionalLight(0x5870b0, 0.45);
+    // without killing contrast. Trimmed slightly for a moodier balance.
+    const fill = new THREE.DirectionalLight(0x5870b0, 0.36);
     fill.position.set(-this.board.width * 0.5, this.board.width * 0.3, this.board.height * 0.3);
     this.scene.add(fill);
   }
@@ -535,28 +549,409 @@ export class ThreeScene implements SceneController {
     plinth.receiveShadow = true;
     this.boardGroup.add(plinth);
 
-    // Beveled metal frame (four rails) sitting on the plinth lip, brushed-metal
-    // look that catches the environment reflections.
-    const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x23272f,
-      roughness: 0.45,
-      metalness: 0.7,
-      envMapIntensity: 0.8,
+    // Gothic-industrial war-table edge: chamfered brass-and-iron rails with
+    // repeating engraved panels, corner bastion blocks, rivets and a faint
+    // hazard-stripe inlay. Built as a frame strictly OUTSIDE the play area so it
+    // never overlaps the mat or any terrain footprint.
+    this.buildWarTableFrame(width, height);
+  }
+
+  /**
+   * Gothic-industrial war-table frame surrounding the play surface. All original
+   * motifs (chamfered iron rails, engraved recessed panels, corner bastion
+   * blocks, rivet rows, hazard-stripe inlay) — no real-world / GW iconography.
+   *
+   * Geometry budget scales with the quality tier: rivets and per-panel engraving
+   * are dropped on 'low' so phones stay light. The frame lives entirely beyond
+   * ±width/2 / ±height/2, so it can never cover the mat or a terrain footprint.
+   */
+  private buildWarTableFrame(width: number, height: number): void {
+    const frame = new THREE.Group();
+    frame.name = 'warTableFrame';
+
+    const lowTier = this.quality.tier === 'low';
+    const railT = 2.0; // rail thickness (outward from play edge)
+    const railH = 1.15; // rail height
+    const innerLipH = 0.35; // a slim raised inner lip kissing the mat edge
+
+    // --- shared materials (cached so frames across rebuilds share state) ---
+    const ironMat = this.getMaterial('frameIron', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x1c2026,
+        roughness: 0.55,
+        metalness: 0.85,
+        envMapIntensity: 0.9,
+      }),
+    );
+    const brassMat = this.getMaterial('frameBrass', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x6e5a2e,
+        roughness: 0.42,
+        metalness: 0.95,
+        emissive: 0x140e04,
+        emissiveIntensity: 0.4,
+        envMapIntensity: 1.0,
+      }),
+    );
+    const panelMat = this.getMaterial('framePanel', () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x101216,
+        roughness: 0.7,
+        metalness: 0.6,
+        envMapIntensity: 0.5,
+      }),
+    );
+    const hazardMat = this.getMaterial('frameHazard', () => {
+      const m = new THREE.MeshStandardMaterial({
+        roughness: 0.6,
+        metalness: 0.3,
+        map: this.makeHazardStripeTexture(),
+        envMapIntensity: 0.4,
+      });
+      return m;
     });
-    const rimT = 1.6; // thickness inches
-    const rimH = 1.0; // height inches
-    const makeRim = (w: number, d: number, x: number, z: number) => {
-      const g = new THREE.BoxGeometry(w, rimH, d);
-      const m = new THREE.Mesh(g, rimMat);
-      m.position.set(x, rimH / 2 - 0.02, z);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      this.boardGroup.add(m);
+
+    // half extents of the play surface; rails are centred on the lines just
+    // outside these so the inner face sits flush with the mat edge.
+    const hw = width / 2;
+    const hh = height / 2;
+
+    /**
+     * Build one chamfered rail of length `len` running along an axis. Returned in
+     * local space (long axis = X, thickness = Z, height = Y) so callers rotate +
+     * position it. The chamfer is faked with a wider base box + a narrower bevel
+     * cap, plus a brass top fillet and recessed engraved panels along its face.
+     */
+    const makeRail = (len: number): THREE.Group => {
+      const g = new THREE.Group();
+      // Lower iron body (slightly wider, the structural rail).
+      const body = new THREE.Mesh(
+        this.getGeometry(`railBody:${len.toFixed(1)}:${railT}:${railH}`, () =>
+          new THREE.BoxGeometry(len, railH, railT),
+        ),
+        ironMat,
+      );
+      body.position.y = railH / 2 - 0.02;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+
+      // Chamfered iron cap (narrower in Z, sits on top) -> reads as a bevel.
+      const cap = new THREE.Mesh(
+        this.getGeometry(`railCap:${len.toFixed(1)}:${railT}:${railH}`, () =>
+          new THREE.BoxGeometry(len, railH * 0.28, railT * 0.62),
+        ),
+        ironMat,
+      );
+      cap.position.y = railH - 0.02;
+      cap.castShadow = true;
+      g.add(cap);
+
+      // Brass top fillet running the rail length (the warm metal highlight).
+      const fillet = new THREE.Mesh(
+        this.getGeometry(`railFillet:${len.toFixed(1)}`, () =>
+          new THREE.BoxGeometry(len, railH * 0.12, railT * 0.3),
+        ),
+        brassMat,
+      );
+      fillet.position.y = railH + railH * 0.1 - 0.02;
+      g.add(fillet);
+
+      // Hazard-stripe inlay strip on the outer top face (faint, painted look).
+      const hazard = new THREE.Mesh(
+        this.getGeometry(`railHazard:${len.toFixed(1)}`, () => {
+          const hg = new THREE.PlaneGeometry(len, railT * 0.22);
+          hg.rotateX(-Math.PI / 2);
+          return hg;
+        }),
+        hazardMat,
+      );
+      hazard.position.set(0, railH + 0.02, railT * 0.34);
+      hazard.receiveShadow = true;
+      g.add(hazard);
+
+      // Repeating engraved recessed panels along the inner face. On 'low' tier we
+      // skip these to save draw calls — the rail still reads as a frame.
+      if (!lowTier) {
+        const panelW = 3.4;
+        const gap = 1.0;
+        const pitch = panelW + gap;
+        const count = Math.max(1, Math.floor((len - gap) / pitch));
+        const used = count * pitch - gap;
+        const start = -used / 2 + panelW / 2;
+        const panelGeo = this.getGeometry('framePanelGeo', () =>
+          new THREE.BoxGeometry(panelW, railH * 0.5, 0.12),
+        );
+        const brassGeo = this.getGeometry('framePanelStud', () =>
+          new THREE.BoxGeometry(panelW * 0.18, railH * 0.5 * 0.7, 0.16),
+        );
+        for (let i = 0; i < count; i++) {
+          const px = start + i * pitch;
+          const panel = new THREE.Mesh(panelGeo, panelMat);
+          // recessed slightly into the inner face (toward -Z, the play side)
+          panel.position.set(px, railH * 0.5, -railT / 2 + 0.05);
+          g.add(panel);
+          // a slim central brass stud/boss for the engraved motif accent
+          const stud = new THREE.Mesh(brassGeo, brassMat);
+          stud.position.set(px, railH * 0.5, -railT / 2 + 0.02);
+          g.add(stud);
+        }
+      }
+
+      // Rivet rows along the top edge (additive detail; skipped on 'low').
+      if (!lowTier) {
+        const rivetGeo = this.getGeometry('frameRivet', () =>
+          new THREE.SphereGeometry(0.12, 6, 5),
+        );
+        const rivetPitch = 2.4;
+        const n = Math.max(2, Math.floor(len / rivetPitch));
+        for (let i = 0; i <= n; i++) {
+          const rx = -len / 2 + (i / n) * len;
+          const rivet = new THREE.Mesh(rivetGeo, brassMat);
+          rivet.position.set(rx, railH - 0.02, -railT * 0.28);
+          g.add(rivet);
+        }
+      }
+
+      return g;
     };
-    makeRim(width + rimT * 2, rimT, 0, height / 2 + rimT / 2);
-    makeRim(width + rimT * 2, rimT, 0, -height / 2 - rimT / 2);
-    makeRim(rimT, height, width / 2 + rimT / 2, 0);
-    makeRim(rimT, height, -width / 2 - rimT / 2, 0);
+
+    // Long rails span the full width plus the corner bastions; place them just
+    // outside the top/bottom play edges.
+    const railLen = width; // inner face flush; bastions cover the corners
+    const top = makeRail(railLen);
+    top.position.set(0, 0, hh + railT / 2);
+    frame.add(top);
+
+    const bottom = makeRail(railLen);
+    bottom.rotation.y = Math.PI; // engraved face still points inward
+    bottom.position.set(0, 0, -hh - railT / 2);
+    frame.add(bottom);
+
+    const left = makeRail(height);
+    left.rotation.y = Math.PI / 2;
+    left.position.set(-hw - railT / 2, 0, 0);
+    frame.add(left);
+
+    const right = makeRail(height);
+    right.rotation.y = -Math.PI / 2;
+    right.position.set(hw + railT / 2, 0, 0);
+    frame.add(right);
+
+    // Corner bastion blocks: taller chamfered towers anchoring each corner,
+    // capped with a brass boss. They sit fully outside the play area.
+    const bastionGeo = this.getGeometry('frameBastion', () =>
+      new THREE.BoxGeometry(railT * 1.7, railH * 1.7, railT * 1.7),
+    );
+    const bastionCapGeo = this.getGeometry('frameBastionCap', () =>
+      new THREE.BoxGeometry(railT * 1.2, railH * 0.3, railT * 1.2),
+    );
+    const bossGeo = this.getGeometry('frameBoss', () =>
+      new THREE.CylinderGeometry(railT * 0.34, railT * 0.42, railH * 0.45, 6),
+    );
+    const cornerX = hw + railT / 2;
+    const cornerZ = hh + railT / 2;
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const b = new THREE.Mesh(bastionGeo, ironMat);
+        b.position.set(sx * cornerX, (railH * 1.7) / 2 - 0.02, sz * cornerZ);
+        b.castShadow = true;
+        b.receiveShadow = true;
+        frame.add(b);
+        const cap = new THREE.Mesh(bastionCapGeo, ironMat);
+        cap.position.set(sx * cornerX, railH * 1.7 - 0.02, sz * cornerZ);
+        frame.add(cap);
+        const boss = new THREE.Mesh(bossGeo, brassMat);
+        boss.position.set(sx * cornerX, railH * 1.7 + railH * 0.18, sz * cornerZ);
+        frame.add(boss);
+      }
+    }
+
+    // A slim raised inner lip hugging the mat edge so the play surface reads as
+    // recessed within the frame (kept just outside the mat to avoid z-fighting).
+    const lipMat = ironMat;
+    const makeLip = (w: number, d: number, x: number, z: number) => {
+      const lip = new THREE.Mesh(
+        this.getGeometry(`frameLip:${w.toFixed(1)}:${d.toFixed(1)}`, () =>
+          new THREE.BoxGeometry(w, innerLipH, d),
+        ),
+        lipMat,
+      );
+      lip.position.set(x, innerLipH / 2 + 0.01, z);
+      lip.receiveShadow = true;
+      frame.add(lip);
+    };
+    const lipT = 0.5;
+    makeLip(width + lipT * 2, lipT, 0, hh + lipT / 2);
+    makeLip(width + lipT * 2, lipT, 0, -hh - lipT / 2);
+    makeLip(lipT, height, hw + lipT / 2, 0);
+    makeLip(lipT, height, -hw - lipT / 2, 0);
+
+    this.boardGroup.add(frame);
+  }
+
+  /**
+   * Procedural hazard-stripe texture (dark/brass diagonal caution stripes) for
+   * the faint rim inlay. Cached + low-res; reads as worn painted metal.
+   */
+  private hazardStripeTex: THREE.Texture | null = null;
+  private makeHazardStripeTexture(): THREE.Texture {
+    if (this.hazardStripeTex) return this.hazardStripeTex;
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 32;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#15171b';
+    ctx.fillRect(0, 0, c.width, c.height);
+    // diagonal brass/iron stripes
+    const stripeW = 22;
+    ctx.lineWidth = stripeW;
+    ctx.strokeStyle = '#5a4a24';
+    for (let x = -c.height; x < c.width + c.height; x += stripeW * 2) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + c.height, c.height);
+      ctx.stroke();
+    }
+    // grime/scratch overlay so the paint looks worn, not pristine
+    for (let i = 0; i < 60; i++) {
+      ctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.12})`;
+      ctx.fillRect(Math.random() * c.width, Math.random() * c.height, 1 + Math.random() * 6, 1);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.repeat.set(12, 1);
+    tex.needsUpdate = true;
+    this.hazardStripeTex = tex;
+    return tex;
+  }
+
+  /* ============================== atmosphere ============================== */
+
+  /**
+   * Grimdark mood layer over the board:
+   *  - a faint, additive ground-haze plane drifting just above the mat (a cheap
+   *    fake of volumetric fog — one soft radial texture, no extra passes), and
+   *  - capped, additive dust motes as THREE.Points (disabled on 'low' tier).
+   *
+   * Both are purely cosmetic, never raycast (they live in their own throwaway
+   * objects under boardGroup) and are kept subtle so models/objectives stay
+   * readable. All per-frame cost is a single attribute write + matrix update.
+   */
+  private buildAtmosphere(): void {
+    const { width, height } = this.board;
+
+    // --- ground haze: a big soft additive quad hovering low over the mat ---
+    const hazeGeo = new THREE.PlaneGeometry(width * 1.1, height * 1.1, 1, 1);
+    hazeGeo.rotateX(-Math.PI / 2);
+    const hazeMat = new THREE.MeshBasicMaterial({
+      map: this.makeHazeTexture(),
+      transparent: true,
+      opacity: this.quality.tier === 'low' ? 0.1 : 0.16,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      color: 0x2a3340, // cold blue-grey haze, kept dim so contrast holds
+      fog: false,
+    });
+    const haze = new THREE.Mesh(hazeGeo, hazeMat);
+    haze.position.y = 0.8;
+    haze.renderOrder = 2; // draw after the mat/terrain
+    this.haze = haze;
+    this.boardGroup.add(haze);
+
+    // --- dust motes: cheap additive points, capped, skipped on 'low' tier ---
+    if (this.quality.tier === 'low') {
+      this.dustMotes = null;
+      this.dustData = null;
+      return;
+    }
+    const count = this.quality.tier === 'high' ? 280 : 150;
+    const positions = new Float32Array(count * 3);
+    const baseY = new Float32Array(count);
+    const phase = new Float32Array(count);
+    const speed = new Float32Array(count);
+    const spanX = width * 0.95;
+    const spanZ = height * 0.95;
+    const ceiling = 9; // motes drift between ~0.4 and 9 inches up
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * spanX;
+      const y = 0.4 + Math.random() * ceiling;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * spanZ;
+      baseY[i] = y;
+      phase[i] = Math.random() * TAU;
+      speed[i] = 0.15 + Math.random() * 0.35;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      map: this.makeMoteTexture(),
+      size: 0.5,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      color: 0xb9c4d6,
+      fog: true,
+    });
+    const points = new THREE.Points(geo, mat);
+    points.renderOrder = 3;
+    points.frustumCulled = false;
+    this.dustMotes = points;
+    this.dustData = { baseY, phase, speed };
+    this.boardGroup.add(points);
+  }
+
+  /** Soft radial haze texture (bright centre -> transparent edge), cached. */
+  private hazeTex: THREE.Texture | null = null;
+  private makeHazeTexture(): THREE.Texture {
+    if (this.hazeTex) return this.hazeTex;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(128, 128, 10, 128, 128, 128);
+    g.addColorStop(0, 'rgba(255,255,255,0.5)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.22)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    // a little large-scale blotch so the haze isn't a perfect disc
+    for (let i = 0; i < 14; i++) {
+      const x = Math.random() * 256;
+      const y = Math.random() * 256;
+      const r = 20 + Math.random() * 60;
+      const bg = ctx.createRadialGradient(x, y, 2, x, y, r);
+      bg.addColorStop(0, 'rgba(255,255,255,0.06)');
+      bg.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    this.hazeTex = tex;
+    return tex;
+  }
+
+  /** Tiny soft circular sprite for dust motes (white core -> transparent). */
+  private moteTex: THREE.Texture | null = null;
+  private makeMoteTexture(): THREE.Texture {
+    if (this.moteTex) return this.moteTex;
+    const c = document.createElement('canvas');
+    c.width = c.height = 32;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    this.moteTex = tex;
+    return tex;
   }
 
   /**
@@ -2452,6 +2847,8 @@ export class ThreeScene implements SceneController {
     this.updateFloatingNumbers(dt);
     this.updateFx(dt);
     this.modelLibrary.update(dt); // subtle idle animation on real-model figures
+    for (const m of this.importedMixers) m.update(dt); // imported skinned idles
+    this.updateAtmosphere(dt, t);
 
     // Subtle screen shake: jitter the camera position slightly (post-orbit so
     // it never corrupts the smoothed orbit state). Deterministic-ish wobble.
@@ -2514,6 +2911,36 @@ export class ThreeScene implements SceneController {
     }
   }
 
+  /**
+   * Drift the ground haze and dust motes. Cheap: the haze just slowly rotates +
+   * breathes its opacity; motes do one bob/sway attribute write per frame. No
+   * work at all when motes are disabled ('low' tier) or reduced motion is on.
+   */
+  private updateAtmosphere(dt: number, t: number): void {
+    if (this.haze) {
+      this.haze.rotation.y = t * 0.012;
+      const base = this.quality.tier === 'low' ? 0.1 : 0.16;
+      (this.haze.material as THREE.MeshBasicMaterial).opacity =
+        base + Math.sin(t * 0.5) * 0.025;
+    }
+    if (this.reducedMotion) return;
+    const motes = this.dustMotes;
+    const data = this.dustData;
+    if (!motes || !data) return;
+    const attr = motes.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    const n = data.baseY.length;
+    for (let i = 0; i < n; i++) {
+      const ph = data.phase[i];
+      const sp = data.speed[i];
+      // gentle vertical bob + slow horizontal sway (no per-mote allocation)
+      arr[i * 3 + 1] = data.baseY[i] + Math.sin(t * sp + ph) * 0.5;
+      arr[i * 3] += Math.sin(t * sp * 0.5 + ph) * dt * 0.4;
+      arr[i * 3 + 2] += Math.cos(t * sp * 0.4 + ph) * dt * 0.4;
+    }
+    attr.needsUpdate = true;
+  }
+
   /* ========================= imported-model hook ========================= */
 
   /**
@@ -2523,15 +2950,18 @@ export class ThreeScene implements SceneController {
   setUnitModel(unitId: string, object3d: THREE.Object3D): void {
     const uv = this.unitVisuals.get(unitId);
     if (!uv) return;
-    // Remove old imported, if any.
+    // Remove old imported, if any (also tear down its idle mixer).
     if (uv.imported) {
+      this.detachImportedIdle(uv.imported);
       uv.group.remove(uv.imported);
       this.disposeObject(uv.imported);
       uv.imported = undefined;
     }
     // Hide procedural models.
     for (const mv of uv.models) mv.group.visible = false;
-    // Tag for picking and attach.
+    // Tag for picking and attach. Note whether any skinned mesh exists so we can
+    // decide whether to drive an idle (static meshes are left untouched).
+    let hasSkinned = false;
     object3d.traverse((o) => {
       o.userData.unitId = unitId;
       const mesh = o as THREE.Mesh;
@@ -2539,9 +2969,50 @@ export class ThreeScene implements SceneController {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
       }
+      if ((o as THREE.SkinnedMesh).isSkinnedMesh) hasSkinned = true;
     });
     uv.group.add(object3d);
     uv.imported = object3d;
+
+    // Subtle idle for imported skinned models that carry animation clips, driven
+    // by the render loop via a local mixer (mirrors ModelLibrary's mechanism).
+    // No skin or no clips -> the model is simply left static. Never throws.
+    this.attachImportedIdle(object3d, hasSkinned);
+  }
+
+  /**
+   * If `object3d` is a skinned model carrying animation clips, start a subtle,
+   * looping idle on a local AnimationMixer and register it for per-frame update.
+   * Picks an idle-ish clip (avoiding bare T/bind poses). Safe on static meshes:
+   * with no skin or no clips it does nothing.
+   */
+  private attachImportedIdle(object3d: THREE.Object3D, hasSkinned: boolean): void {
+    const clips = (object3d.animations ?? []) as THREE.AnimationClip[];
+    if (!hasSkinned || clips.length === 0) return;
+    const clip =
+      clips.find((c) => /idle|survey|stand|breath/i.test(c.name) && !/t.?pose/i.test(c.name)) ??
+      clips.find((c) => !/t.?pose/i.test(c.name)) ??
+      clips[0];
+    if (!clip) return;
+    try {
+      const mixer = new THREE.AnimationMixer(object3d);
+      mixer.clipAction(clip).play();
+      mixer.setTime(Math.random() * 2); // desync from other imports
+      object3d.userData.idleMixer = mixer;
+      this.importedMixers.push(mixer);
+    } catch {
+      /* fall back to a static pose — never crash on an odd rig */
+    }
+  }
+
+  /** Stop + unregister the idle mixer attached to an imported model, if any. */
+  private detachImportedIdle(object3d: THREE.Object3D): void {
+    const mixer = object3d.userData.idleMixer as THREE.AnimationMixer | undefined;
+    if (!mixer) return;
+    mixer.stopAllAction();
+    const i = this.importedMixers.indexOf(mixer);
+    if (i >= 0) this.importedMixers.splice(i, 1);
+    object3d.userData.idleMixer = undefined;
   }
 
   /** Access the live scene (used by import helpers if needed). */
@@ -2564,6 +3035,9 @@ export class ThreeScene implements SceneController {
   dispose(): void {
     this.disposed = true;
     this.modelLibrary.dispose();
+    // Stop + drop any imported-model idle mixers.
+    for (const m of this.importedMixers) m.stopAllAction();
+    this.importedMixers.length = 0;
     cancelAnimationFrame(this.rafId);
     const el = this.renderer?.domElement;
     if (el) {
@@ -2583,6 +3057,12 @@ export class ThreeScene implements SceneController {
     this.composer?.dispose();
     this.envTexture?.dispose();
     this.contactShadowTex?.dispose();
+    // Atmosphere + frame textures.
+    this.hazardStripeTex?.dispose();
+    this.hazeTex?.dispose();
+    this.moteTex?.dispose();
+    if (this.haze) this.disposeObject(this.haze);
+    if (this.dustMotes) this.disposeObject(this.dustMotes);
     this.renderer?.dispose();
     if (el && el.parentElement) el.parentElement.removeChild(el);
   }
