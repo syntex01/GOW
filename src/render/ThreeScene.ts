@@ -2590,9 +2590,10 @@ export class ThreeScene implements SceneController {
       'readyRingMat',
       () =>
         new THREE.MeshBasicMaterial({
-          color: 0x46e08a,
+          // Cyan reads clearly under any faction colour (incl. green Necrons).
+          color: 0x36d8ff,
           transparent: true,
-          opacity: 0.55,
+          opacity: 0.6,
           side: THREE.DoubleSide,
           depthWrite: false,
         }),

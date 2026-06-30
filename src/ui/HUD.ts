@@ -414,7 +414,7 @@ export class GameUI {
 
     if (phase === 'movement' && sel && sel.ownerId === this.engine.active) {
       const mk = (m: MoveMode, label: string) =>
-        this.button(label, `small ${this.moveMode === m ? 'primary' : ''}`, () => {
+        this.button(label, `small ${this.moveMode === m ? 'selected' : ''}`, () => {
           this.moveMode = m;
           if (m === 'advance') {
             const r = this.engine.rollAdvance(sel);
@@ -519,13 +519,17 @@ export class GameUI {
       case 'shooting':
         return tag(
           sel
-            ? `<b>${sel.name}</b> selected. Click a highlighted enemy unit to shoot.`
+            ? this.targets.length
+              ? `<b>${sel.name}</b> selected. Click a highlighted enemy unit to shoot.`
+              : `<b>${sel.name}</b> has no target in range or line of sight. Pick another unit or advance.`
             : `Shooting phase — click one of <b>your</b> units that can shoot.`,
         );
       case 'charge':
         return tag(
           sel
-            ? `<b>${sel.name}</b> selected. Click a highlighted enemy within 12" to charge.`
+            ? this.targets.length
+              ? `<b>${sel.name}</b> selected. Click a highlighted enemy within 12" to charge.`
+              : `<b>${sel.name}</b> has no enemy within 12". Pick another unit or advance.`
             : `Charge phase — click one of <b>your</b> units to declare a charge.`,
         );
       case 'fight':
