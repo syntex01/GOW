@@ -112,7 +112,7 @@ function detectQuality(width: number, height: number, gl: THREE.WebGLRenderer): 
   if (tablet) {
     return {
       tier: 'medium',
-      pixelRatioCap: Math.min(dpr, 1.75),
+      pixelRatioCap: Math.min(dpr, 1.5),
       shadowMapSize: 2048,
       bloom: true,
       bloomDownscale: isWebGL2 ? 1 : 2,
@@ -123,7 +123,10 @@ function detectQuality(width: number, height: number, gl: THREE.WebGLRenderer): 
   }
   return {
     tier: 'high',
-    pixelRatioCap: Math.min(dpr, 2),
+    // 1.5 is the sweet spot even on retina/4K: with bloom + grain + grain the
+    // extra pixels of a full 2x are imperceptible but cost ~80% more fill rate.
+    // The adaptive governor scales this further down if the GPU can't keep up.
+    pixelRatioCap: Math.min(dpr, 1.5),
     shadowMapSize: 2048,
     bloom: true,
     bloomDownscale: 1,
@@ -272,6 +275,16 @@ export class ThreeScene implements SceneController {
 
   /* --- quality / mobile-perf --- */
   private quality!: QualitySettings;
+  /* Adaptive performance governor: measures frame time and scales the effective
+   * pixel ratio down (and, as a last resort, drops bloom) when the GPU can't
+   * hold a smooth frame rate — then recovers when there's headroom. Keeps the
+   * sim smooth on weak/integrated/mobile GPUs without a fixed low-quality mode. */
+  private basePixelRatio = 1; // the tier's chosen cap (governor scales from this)
+  private perfScale = 1; // adaptive multiplier on basePixelRatio (1 .. 0.6)
+  private perfFrameMs = 16.7; // EMA of frame time (ms)
+  private perfAccum = 0; // seconds since last governor evaluation
+  private perfGoodHolds = 0; // consecutive good evaluations (for slow recovery)
+  private perfBloomDropped = false; // bloom disabled by the governor (floor state)
   /** PMREM-generated environment map (procedural) for PBR reflections. */
   private envTexture: THREE.Texture | null = null;
   /** Animated objective groups (holo-ring spin + bob). */
@@ -309,6 +322,7 @@ export class ThreeScene implements SceneController {
      * whole pipeline (pixel ratio, shadows, bloom, texture sizes) scales to the
      * device — phones stay smooth, desktops look premium. */
     this.quality = detectQuality(cw, ch, this.renderer);
+    this.basePixelRatio = this.quality.pixelRatioCap;
 
     this.renderer.setPixelRatio(this.quality.pixelRatioCap);
     this.renderer.setSize(cw, ch);
@@ -3304,6 +3318,64 @@ export class ThreeScene implements SceneController {
 
   /* =============================== camera ================================ */
 
+  /**
+   * Apply the current effective pixel ratio (tier cap × adaptive scale) to the
+   * renderer and the bloom composer. Cheap; only called when the governor
+   * actually changes a step, so render-target reallocation stays rare.
+   */
+  private applyEffectivePixelRatio(): void {
+    const pr = Math.max(0.6, this.basePixelRatio * this.perfScale);
+    this.renderer.setPixelRatio(pr);
+    if (this.composer) {
+      const size = new THREE.Vector2();
+      this.renderer.getSize(size);
+      this.composer.setPixelRatio(pr);
+      this.composer.setSize(size.x, size.y);
+    }
+  }
+
+  /**
+   * Adaptive performance governor. Tracks an EMA of frame time and, ~once per
+   * second, steps the effective resolution down when the GPU is behind (and, as
+   * a last resort once resolution bottoms out, disables bloom). When there is
+   * sustained headroom it recovers resolution one step at a time. Skips the first
+   * few seconds so one-off load/shader-compile spikes don't trigger a downscale.
+   */
+  private governPerformance(dt: number, t: number): void {
+    // Exponential moving average of frame time in milliseconds.
+    this.perfFrameMs = this.perfFrameMs * 0.9 + dt * 1000 * 0.1;
+    if (t < 3) return; // warm-up: ignore asset decode / shader compile spikes
+
+    this.perfAccum += dt;
+    if (this.perfAccum < 1) return; // evaluate about once per second
+    this.perfAccum = 0;
+
+    const slow = this.perfFrameMs > 30; // sustained < ~33 fps → shed load
+    const fast = this.perfFrameMs < 20; // sustained > ~50 fps → headroom to recover
+
+    if (slow) {
+      this.perfGoodHolds = 0;
+      if (this.perfScale > 0.62) {
+        this.perfScale = Math.max(0.6, this.perfScale - 0.15);
+        this.applyEffectivePixelRatio();
+      } else if (this.composer && !this.perfBloomDropped) {
+        // Resolution floor reached and still slow: drop bloom entirely. The
+        // tuned emissive/lighting keeps the look strong without it.
+        this.perfBloomDropped = true;
+        this.composer = null;
+      }
+    } else if (fast && this.perfScale < 1 && !this.perfBloomDropped) {
+      // Recover slowly (only after several good seconds) to avoid oscillation.
+      if (++this.perfGoodHolds >= 4) {
+        this.perfScale = Math.min(1, this.perfScale + 0.1);
+        this.applyEffectivePixelRatio();
+        this.perfGoodHolds = 0;
+      }
+    } else {
+      this.perfGoodHolds = 0;
+    }
+  }
+
   private updateCamera(dt: number): void {
     // Cinematic auto-orbit: advance BOTH the smoothed value and its target by the
     // same delta so the orbit drifts continuously without ever fighting the
@@ -3414,6 +3486,7 @@ export class ThreeScene implements SceneController {
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
 
+    this.governPerformance(dt, t);
     this.updateCamera(dt);
     this.updateDeathAnimations(dt);
     this.updateFloatingNumbers(dt);
