@@ -19,6 +19,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 /**
@@ -276,6 +278,8 @@ export class ThreeScene implements SceneController {
   /* --- postprocessing (gentle bloom so glow/objectives pop) --- */
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
+  /** Depth-of-field pass — the tilt-shift "real photographed miniatures" look. */
+  private bokehPass: BokehPass | null = null;
   /** Cheap final grimdark grade (vignette + desaturation + optional grain). */
   private gradePass: ShaderPass | null = null;
 
@@ -537,9 +541,39 @@ export class ThreeScene implements SceneController {
       // it is simply skipped and bloom still renders.
       this.addGradePass(composer);
 
+      // Depth of field — the SINGLE biggest "this is a real photographed
+      // miniatures diorama" cue. The focal plane tracks the board centre (set
+      // each frame from the orbit distance), so figures near the pivot are crisp
+      // while the far/near board falls softly out of focus. High tier only — it
+      // renders an extra depth pass, so phones/low GPUs skip it.
+      if (this.quality.tier === 'high') {
+        try {
+          const bokeh = new BokehPass(this.scene, this.camera, {
+            focus: this.orbitRadius,
+            aperture: 0.00055, // subtle — a shallow miniatures DoF, not a blur wall
+            maxblur: 0.006,
+          });
+          composer.addPass(bokeh);
+          this.bokehPass = bokeh;
+        } catch {
+          this.bokehPass = null;
+        }
+      }
+
       // OutputPass applies tone mapping + colour space conversion correctly when
       // rendering through a composer.
       composer.addPass(new OutputPass());
+
+      // SMAA — clean sub-pixel edge antialiasing (MSAA is unavailable through the
+      // composer). Final pass so it cleans the fully-composited image. Skipped on
+      // the low tier to save fill rate.
+      if (this.quality.tier !== 'low') {
+        try {
+          composer.addPass(new SMAAPass(w, h));
+        } catch {
+          /* AA is a nice-to-have; never break the scene over it */
+        }
+      }
 
       composer.setPixelRatio(this.quality.pixelRatioCap);
       composer.setSize(w, h);
@@ -3683,6 +3717,12 @@ export class ThreeScene implements SceneController {
     // Advance the grade pass's grain time (only when grain is active).
     if (this.gradePass) {
       this.gradePass.uniforms.uTime.value = t;
+    }
+    // Keep the depth-of-field focal plane on whatever the camera is looking at
+    // (the orbit pivot), so the framed figures stay crisp as you zoom/orbit.
+    if (this.bokehPass) {
+      const u = (this.bokehPass as unknown as { uniforms?: Record<string, { value: number }> }).uniforms;
+      if (u && u.focus) u.focus.value = this.camera.position.distanceTo(this.orbitTarget);
     }
 
     // Render through the bloom composer when available, else direct.
