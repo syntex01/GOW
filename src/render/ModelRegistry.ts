@@ -44,19 +44,30 @@ export interface ModelRegistryEntry {
  * use the marine. Extend by adding rows (most specific first if they overlap).
  */
 export const MODEL_REGISTRY: ModelRegistryEntry[] = [
-  { keywords: ['Necrons'], url: 'models/necron.glb', heightScale: 1.0 },
+  // Necrons -> the robot model (matched case-insensitively).
+  { keywords: ['necrons'], url: 'models/necron.glb', heightScale: 1.0 },
+  // Power-armoured humanoids (loyalist + heretic Astartes) -> the soldier model.
   {
-    keywords: ['Adeptus Astartes', 'Ultramarines'],
+    keywords: ['adeptus astartes', 'ultramarines', 'heretic astartes', 'chaos'],
     url: 'models/marine.glb',
     heightScale: 1.0,
   },
+  // Orks -> the soldier model as a bulkier stand-in (real humanoid > a blob).
+  { keywords: ['orks'], url: 'models/marine.glb', heightScale: 1.15 },
 ];
 
-/** Resolve the registry entry for a unit, or null to use the procedural proxy. */
+/**
+ * Resolve the registry entry for a unit, or null to use the procedural proxy.
+ * Matching is CASE-INSENSITIVE (datasheet keywords are uppercase, e.g.
+ * 'NECRONS'). Vehicles and monsters keep the procedural body — a human-scale
+ * figure model would misrepresent a tank/walker; those get bespoke models later.
+ */
 export function resolveModelEntry(unit: UnitInstance): ModelRegistryEntry | null {
-  const kw = unit.keywords ?? [];
+  const sil = unit.proxy?.silhouette;
+  if (sil === 'vehicle' || sil === 'monster') return null;
+  const kw = (unit.keywords ?? []).map((k) => k.toLowerCase());
   for (const entry of MODEL_REGISTRY) {
-    if (entry.keywords.some((k) => kw.includes(k))) return entry;
+    if (entry.keywords.some((k) => kw.includes(k.toLowerCase()))) return entry;
   }
   return null;
 }
@@ -100,9 +111,27 @@ export class ModelLibrary {
         url,
         (gltf) => {
           const root = gltf.scene;
-          // No animations: we deliberately drop clips and never build a mixer.
+          // Bake a natural idle STANCE (not the stiff T/bind pose) by sampling a
+          // single frame of an idle-ish clip into the bones, then dropping the
+          // mixer. Clones via SkeletonUtils inherit these posed bone transforms,
+          // so figures read as proper miniatures while staying fully static.
+          const clips = gltf.animations ?? [];
+          if (clips.length) {
+            const idle =
+              clips.find((c) => /idle|survey|stand|pose/i.test(c.name) && !/t.?pose/i.test(c.name)) ??
+              clips.find((c) => !/t.?pose/i.test(c.name)) ??
+              clips[0];
+            try {
+              const mixer = new THREE.AnimationMixer(root);
+              mixer.clipAction(idle).play();
+              mixer.update(0.4); // settle into the stance
+              mixer.stopAllAction();
+            } catch {
+              /* if posing fails, fall back to bind pose */
+            }
+          }
+          // No ongoing animation: drop clips and never keep a mixer.
           gltf.animations = [];
-          // Make sure transforms are baked for accurate bounding-box math later.
           root.updateMatrixWorld(true);
           resolve(root);
         },
