@@ -2213,7 +2213,9 @@ export class ThreeScene implements SceneController {
         const halfZ = Math.max(Math.abs(box.min.z), Math.abs(box.max.z));
         const footprint = Math.max(halfX, halfZ);
         const limit = baseRadius * 0.92; // base reads slightly larger than the model
-        if (footprint > limit && footprint > 1e-4) {
+        // Vehicles (fitToBase === false) legitimately overhang their footprint —
+        // only shrink figures (infantry/characters) so they never clip neighbours.
+        if (entry.fitToBase !== false && footprint > limit && footprint > 1e-4) {
           clone.scale.multiplyScalar(limit / footprint);
         }
         // Rest the model on top of the base disc.

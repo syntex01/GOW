@@ -24,3 +24,5 @@ Legitimate CC0 (Public Domain) models by Quaternius, sourced via poly.pizza:
 - chaos.glb — "Demon" (Chaos). CC0, Quaternius.
 - ork.glb — "Orc" (Orks). CC0, Quaternius.
 Source: https://poly.pizza (Quaternius, CC0). No Games Workshop assets are used.
+
+- tank.glb — CC0 / Public Domain sci-fi tank (Quaternius, via poly.pizza /m/VSxUAFhzbA). Used for all 'vehicle' silhouette units, faction-tinted.

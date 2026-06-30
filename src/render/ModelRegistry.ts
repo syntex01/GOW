@@ -62,7 +62,28 @@ export interface ModelRegistryEntry {
    * slow perpetual idle. Lets a weak idle be replaced by a menacing held pose.
    */
   poseFreezeAt?: number;
+  /**
+   * Whether the renderer should shrink the model to fit inside its round base
+   * (true/undefined for infantry & characters, so figures never overhang and
+   * clip neighbours). Vehicles legitimately overhang their footprint, so they
+   * set this false and keep their natural normalized size.
+   */
+  fitToBase?: boolean;
 }
+
+/**
+ * Generic CC0 sci-fi tank (Quaternius, public domain, via poly.pizza) used for
+ * any unit whose proxy silhouette is 'vehicle', across factions (tinted to the
+ * faction colour at instantiation). A single well-made hull reads far better
+ * than the procedural box, and replaces the old "vehicles are procedural" path.
+ */
+export const VEHICLE_ENTRY: ModelRegistryEntry = {
+  keywords: [], // selected by silhouette, not keyword
+  url: 'models/factions/tank.glb',
+  heightScale: 1.15,
+  yaw: 0,
+  fitToBase: false, // a tank's hull overhangs its base — don't shrink it
+};
 
 /**
  * Faction -> model table. Necrons use the robot; Adeptus Astartes / Ultramarines
@@ -120,7 +141,10 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
  */
 export function resolveModelEntry(unit: UnitInstance): ModelRegistryEntry | null {
   const sil = unit.proxy?.silhouette;
-  if (sil === 'vehicle' || sil === 'monster') return null;
+  // Vehicles use the shared tank hull (selected by silhouette). Monsters keep
+  // the procedural body for now (no fitting CC0 creature sourced yet).
+  if (sil === 'vehicle') return VEHICLE_ENTRY;
+  if (sil === 'monster') return null;
   const kw = (unit.keywords ?? []).map((k) => k.toLowerCase());
   for (const entry of MODEL_REGISTRY) {
     if (entry.keywords.some((k) => kw.includes(k.toLowerCase()))) return entry;
