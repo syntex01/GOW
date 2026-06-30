@@ -29,6 +29,9 @@ export interface SceneController {
   /** Emphasise a set of units as valid targets (e.g. shooting/charge). */
   setTargets(unitIds: string[]): void;
 
+  /** Mark friendly units that can still act this phase (green ground ring). */
+  setReadyUnits(unitIds: string[]): void;
+
   /** Draw a measuring tape / range indicator between two table points. */
   showMeasurement(from: Vec2, to: Vec2, label?: string): void;
 

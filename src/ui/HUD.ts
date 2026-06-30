@@ -81,6 +81,8 @@ type Drawer = 'unit' | 'log' | 'stratagems' | null;
 export class GameUI {
   private engine!: GameEngine;
   private selectedId: string | null = null;
+  /** Set once the player is warned about ending a phase early; re-tap confirms. */
+  private endPhaseConfirmed = false;
   private moveMode: MoveMode = 'normal';
   private targets: string[] = [];
 
@@ -297,6 +299,12 @@ export class GameUI {
     this.renderUnitPanel();
     this.renderLog();
     this.renderStratagems();
+    // Show which friendly units can still act (green rings) as a phase overview,
+    // but only when nothing is selected — once a unit is picked, its targets /
+    // range take over the highlight so the board stays readable.
+    this.scene.setReadyUnits(
+      this.selectedId || !this.canLocalAct() ? [] : this.actionableUnits().map((u) => u.id),
+    );
     this.scene.sync(this.engine.state);
     this.detectStateSounds();
     this.checkVictory();
@@ -483,6 +491,16 @@ export class GameUI {
   private promptText(): string {
     const phase = this.engine.state.phase;
     const sel = this.selected();
+    // A live "N can still act" tag the player can rely on across phases.
+    const ready = (['movement', 'shooting', 'charge', 'fight'] as const).includes(phase as 'movement')
+      ? (() => {
+          const n = this.actionableUnits().length;
+          return n > 0
+            ? ` <span class="ready-tag">${n} can still ${this.phaseVerb()}</span>`
+            : ` <span class="ready-tag done">all units done</span>`;
+        })()
+      : '';
+    const tag = (s: string) => s + ready;
     switch (phase) {
       case 'command':
         return `Command phase — CP gained, battle-shock resolved. Review the log, then advance.`;
@@ -491,21 +509,27 @@ export class GameUI {
           const ds = this.engine.state.units[this.deepStrikeUnitId];
           return `Deep striking <b>${ds?.name}</b> — click a spot outside every red 9" ring.`;
         }
-        return sel
-          ? `Moving <b>${sel.name}</b> (${this.moveMode}). Click a destination on the table. Max ${this.engine
-              .moveAllowance(sel, this.moveMode)
-              .toFixed(0)}".`
-          : `Movement phase — click one of <b>your</b> units to move it.`;
+        return tag(
+          sel
+            ? `Moving <b>${sel.name}</b> (${this.moveMode}). Click a destination on the table. Max ${this.engine
+                .moveAllowance(sel, this.moveMode)
+                .toFixed(0)}".`
+            : `Movement phase — click one of <b>your</b> units to move it.`,
+        );
       case 'shooting':
-        return sel
-          ? `<b>${sel.name}</b> selected. Click a highlighted enemy unit to shoot.`
-          : `Shooting phase — click one of <b>your</b> units that can shoot.`;
+        return tag(
+          sel
+            ? `<b>${sel.name}</b> selected. Click a highlighted enemy unit to shoot.`
+            : `Shooting phase — click one of <b>your</b> units that can shoot.`,
+        );
       case 'charge':
-        return sel
-          ? `<b>${sel.name}</b> selected. Click a highlighted enemy within 12" to charge.`
-          : `Charge phase — click one of <b>your</b> units to declare a charge.`;
+        return tag(
+          sel
+            ? `<b>${sel.name}</b> selected. Click a highlighted enemy within 12" to charge.`
+            : `Charge phase — click one of <b>your</b> units to declare a charge.`,
+        );
       case 'fight':
-        return `Fight phase — click <b>your</b> engaged unit, then an adjacent enemy. Chargers fight first.`;
+        return tag(`Fight phase — click <b>your</b> engaged unit, then an adjacent enemy. Chargers fight first.`);
       case 'end':
         return `End of turn — objectives scored on advancing. Pass to the opponent.`;
     }
@@ -666,6 +690,16 @@ export class GameUI {
       this.toast('Waiting for the other player…');
       return;
     }
+    // Gentle reminder: leaving an action phase with units that could still act.
+    // Non-blocking — the player stays in control, but isn't caught out.
+    const leftover = this.actionableUnits().length;
+    if (leftover > 0 && !this.endPhaseConfirmed) {
+      this.endPhaseConfirmed = true;
+      this.toast(`${leftover} unit${leftover > 1 ? 's' : ''} could still ${this.phaseVerb()} — tap again to end the phase`, true);
+      sound.playEvent('error');
+      return;
+    }
+    this.endPhaseConfirmed = false;
     // Auto-resolve fights left on the board when leaving the fight phase.
     if (this.engine.state.phase === 'fight') this.autoResolveFights(true);
     const prevActive = this.engine.active;
@@ -714,6 +748,7 @@ export class GameUI {
   // ---------------------------------------------------------------- picking
   private handlePick(r: PickResult): void {
     if (!this.canLocalAct()) return; // not our turn in online play
+    this.endPhaseConfirmed = false; // any board action re-arms the end-phase guard
     const phase = this.engine.state.phase;
     if (phase === 'command' || phase === 'end') return;
     const unit = r.unitId ? this.engine.state.units[r.unitId] : undefined;
@@ -739,21 +774,40 @@ export class GameUI {
     }
 
     if (phase === 'shooting') {
-      if (unit && unit.ownerId === this.engine.active && this.engine.canShoot(unit))
-        return this.selectForShooting(unit);
+      if (unit && unit.ownerId === this.engine.active) {
+        if (this.engine.canShoot(unit)) return this.selectForShooting(unit);
+        // Tapped a friendly unit that can't shoot — say why instead of ignoring.
+        const why = this.engine.shootBlockReason(unit);
+        if (why) this.toast(why, true);
+        return;
+      }
       const sel = this.selected();
-      if (sel && unit && unit.ownerId !== this.engine.active && this.targets.includes(unit.id)) {
-        void this.doShoot(sel, unit);
+      if (sel && unit && unit.ownerId !== this.engine.active) {
+        if (this.targets.includes(unit.id)) {
+          void this.doShoot(sel, unit);
+        } else {
+          this.toast(`${sel.name} can't hit ${unit.name} — out of range or no line of sight`, true);
+        }
         return;
       }
       return;
     }
 
     if (phase === 'charge') {
-      if (unit && unit.ownerId === this.engine.active) return this.selectForCharge(unit);
+      if (unit && unit.ownerId === this.engine.active) {
+        const why = this.engine.chargeBlockReason(unit);
+        if (why) {
+          this.toast(why, true);
+          return;
+        }
+        return this.selectForCharge(unit);
+      }
       const sel = this.selected();
-      if (sel && unit && unit.ownerId !== this.engine.active && this.targets.includes(unit.id))
-        return this.doCharge(sel, unit);
+      if (sel && unit && unit.ownerId !== this.engine.active) {
+        if (this.targets.includes(unit.id)) return this.doCharge(sel, unit);
+        this.toast(`${unit.name} is beyond 12" — out of charge range`, true);
+        return;
+      }
       return;
     }
 
@@ -806,7 +860,7 @@ export class GameUI {
     const delta = { x: dest.x - from.x, y: dest.y - from.y };
     const ok = this.engine.moveUnit(u, this.moveMode, delta);
     if (!ok) {
-      this.toast('Illegal move', true);
+      this.toast(this.engine.moveBlockReason(u, this.moveMode, delta) ?? 'Illegal move', true);
       sound.playEvent('error');
       return;
     }
@@ -957,6 +1011,39 @@ export class GameUI {
   // ---------------------------------------------------------------- misc
   private selected(): UnitInstance | undefined {
     return this.selectedId ? this.engine.state.units[this.selectedId] : undefined;
+  }
+
+  /**
+   * Friendly units that can STILL take this phase's action — drives the "N can
+   * still act" guidance and the end-phase reminder so the player never loses
+   * track of their options or ends a phase by accident.
+   */
+  private actionableUnits(): UnitInstance[] {
+    const me = this.engine.active;
+    const mine = this.engine
+      .unitsOf(me)
+      .filter((u) => this.engine.isAlive(u) && !u.inReserves);
+    switch (this.engine.state.phase) {
+      case 'movement':
+        return mine.filter((u) => u.moveState === 'none');
+      case 'shooting':
+        return mine.filter((u) => this.engine.shootBlockReason(u) === null);
+      case 'charge':
+        return mine.filter((u) => this.engine.chargeBlockReason(u) === null);
+      case 'fight':
+        return mine.filter(
+          (u) => !u.hasFought && this.engine.enemiesOf(me).some((e) => inEngagementRange(u, e)),
+        );
+      default:
+        return [];
+    }
+  }
+
+  /** Verb describing the current phase's action, for guidance copy. */
+  private phaseVerb(): string {
+    return { movement: 'move', shooting: 'shoot', charge: 'charge', fight: 'fight' }[
+      this.engine.state.phase as 'movement' | 'shooting' | 'charge' | 'fight'
+    ] ?? 'act';
   }
 
   /** The current friendly selection + first highlighted enemy, for stratagems. */

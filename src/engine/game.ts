@@ -444,6 +444,59 @@ export class GameEngine {
     return true;
   }
 
+  /* ------------------------------------------------------------------ *
+   * "Why can't I?" explainers. Each returns a short human-readable     *
+   * reason an action is unavailable, or null if it IS available. The   *
+   * HUD surfaces these so the player always understands their options. *
+   * ------------------------------------------------------------------ */
+
+  /** Why `u` cannot shoot this phase, or null if it can. */
+  shootBlockReason(u: UnitInstance): string | null {
+    if (!this.isAlive(u)) return 'it is destroyed';
+    if (u.hasShot) return `${u.name} already shot this turn`;
+    if (u.moveState === 'fellBack') return `${u.name} fell back and cannot shoot`;
+    const hasTarget = this.enemiesOf(u.ownerId).some((e) => this.shootableWeapons(u, e).length > 0);
+    if (!hasTarget) return `${u.name} has no eligible target (range / line of sight)`;
+    return null;
+  }
+
+  /** Why `u` cannot declare a charge this phase, or null if it can. */
+  chargeBlockReason(u: UnitInstance): string | null {
+    if (!this.isAlive(u)) return 'it is destroyed';
+    if (u.hasChargedThisTurn) return `${u.name} already charged this turn`;
+    if (u.moveState === 'advanced') return `${u.name} advanced and cannot charge`;
+    if (u.moveState === 'fellBack') return `${u.name} fell back and cannot charge`;
+    if (this.enemiesOf(u.ownerId).some((e) => inEngagementRange(u, e)))
+      return `${u.name} is already in combat`;
+    if (this.chargeTargets(u).length === 0) return `no enemy within 12" of ${u.name}`;
+    return null;
+  }
+
+  /** Why a rigid move of `u` by `delta` in `mode` is illegal, or null if legal. */
+  moveBlockReason(u: UnitInstance, mode: 'normal' | 'advance' | 'fallBack', delta: Vec2): string | null {
+    const allowance = this.moveAllowance(u, mode);
+    const moved = Math.hypot(delta.x, delta.y);
+    if (moved > allowance + 1e-6)
+      return `too far — ${moved.toFixed(1)}" exceeds the ${allowance.toFixed(0)}" move`;
+    const startEngaged = this.enemiesOf(u.ownerId).some((e) => inEngagementRange(u, e));
+    if (mode === 'normal' && startEngaged) return 'in combat — use Fall Back to disengage';
+    // Simulate the end position (without mutating) to mirror moveUnit's end check.
+    const enemies = this.enemiesOf(u.ownerId);
+    const endEngaged = aliveModels(u).some((m) => {
+      const nx = m.position.x + delta.x;
+      const ny = m.position.y + delta.y;
+      return enemies.some((e) =>
+        aliveModels(e).some(
+          (em) =>
+            Math.hypot(nx - em.position.x, ny - em.position.y) - m.baseRadius - em.baseRadius <=
+            ENGAGEMENT_RANGE + 1e-6,
+        ),
+      );
+    });
+    if (endEngaged && mode !== 'fallBack') return 'would end within 1" of an enemy';
+    return null;
+  }
+
   /** Resolve all shooting from an attacker into a target. */
   shoot(attacker: UnitInstance, target: UnitInstance, optsByWeapon?: Record<string, AttackOptions>): AttackResult[] {
     // A target shielded as an attached leader (living bodyguard) cannot be shot.

@@ -209,6 +209,8 @@ export class ThreeScene implements SceneController {
   private highlightRing: THREE.Mesh | null = null;
   private highlightedUnit: string | null = null;
   private targetRings = new Map<string, THREE.Mesh>();
+  /** Soft green markers under friendly units that can still act this phase. */
+  private readyRings = new Map<string, THREE.Mesh>();
   private floatingNumbers: FloatingNumber[] = [];
 
   /* --- combat FX --- */
@@ -2577,6 +2579,37 @@ export class ThreeScene implements SceneController {
     }
   }
 
+  /**
+   * Mark the friendly units that can still act this phase with a soft green
+   * ground ring, so the player can see their remaining options at a glance.
+   * Pass [] to clear (e.g. once a unit is selected).
+   */
+  setReadyUnits(unitIds: string[]): void {
+    for (const [id, ring] of this.readyRings) if (!unitIds.includes(id)) ring.visible = false;
+    const mat = this.getMaterial(
+      'readyRingMat',
+      () =>
+        new THREE.MeshBasicMaterial({
+          color: 0x46e08a,
+          transparent: true,
+          opacity: 0.55,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+    );
+    for (const id of unitIds) {
+      let ring = this.readyRings.get(id);
+      if (!ring) {
+        ring = new THREE.Mesh(this.flatRingGeo(1.55, 1.95), mat);
+        ring.name = `readyRing:${id}`;
+        ring.renderOrder = 1;
+        this.overlayGroup.add(ring);
+        this.readyRings.set(id, ring);
+      }
+      ring.visible = true;
+    }
+  }
+
   /** Re-centre highlight/target rings under the relevant units each sync. */
   private updateAttachedRings(state: GameState): void {
     if (this.highlightRing && this.highlightedUnit) {
@@ -2592,6 +2625,12 @@ export class ThreeScene implements SceneController {
       if (!ring.visible) continue;
       const c = this.unitCenterWorld(state, id);
       if (c) ring.position.set(c.x, 0.15, c.z);
+      else ring.visible = false;
+    }
+    for (const [id, ring] of this.readyRings) {
+      if (!ring.visible) continue;
+      const c = this.unitCenterWorld(state, id);
+      if (c) ring.position.set(c.x, 0.14, c.z);
       else ring.visible = false;
     }
   }
