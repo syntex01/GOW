@@ -1,0 +1,16 @@
+import { chromium } from 'playwright-core';
+const EXE = '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell';
+const b = await chromium.launch({ executablePath: EXE, headless: true, args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--no-sandbox'] });
+const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+const page = await ctx.newPage();
+await page.goto('file:///home/user/GOW/builds/GrimdarkTabletop.html', { waitUntil: 'commit' });
+await page.getByText(/deploy/i).first().waitFor({ timeout: 40000 });
+await page.locator('.deploy-btn').click();
+await page.waitForSelector('canvas'); await page.waitForTimeout(4000);
+const before = await page.locator('.actionbar .actions button', { hasText: /AI:/ }).textContent();
+await page.locator('.actionbar .actions button', { hasText: /AI:/ }).click();
+await page.waitForTimeout(500);
+const after = await page.locator('.actionbar .actions button', { hasText: /AI:/ }).textContent();
+const banner = await page.evaluate(()=>{const x=document.querySelector('.banner');return x?x.textContent.trim():null;});
+console.log(JSON.stringify({ before, after, banner }));
+await b.close();
