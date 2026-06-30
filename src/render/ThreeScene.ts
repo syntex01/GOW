@@ -252,6 +252,9 @@ export class ThreeScene implements SceneController {
   private targetPolar = 0.95;
   private targetRadius = 70;
   private targetPivot = new THREE.Vector3(0, 0, 0);
+  /** Cinematic auto-orbit speed (rad/sec around Y); 0 = off. Integrated into
+   *  the single per-frame camera update — no second loop, no allocations. */
+  private autoOrbitSpeed = 0;
 
   private dragMode: 'none' | 'orbit' | 'pan' = 'none';
   private lastPointer = { x: 0, y: 0 };
@@ -3302,6 +3305,16 @@ export class ThreeScene implements SceneController {
   /* =============================== camera ================================ */
 
   private updateCamera(dt: number): void {
+    // Cinematic auto-orbit: advance BOTH the smoothed value and its target by the
+    // same delta so the orbit drifts continuously without ever fighting the
+    // damping (and so user drag still composes on top). Pure scalar add — no
+    // allocations, folded into this single existing per-frame update.
+    if (this.autoOrbitSpeed !== 0) {
+      const d = this.autoOrbitSpeed * dt;
+      this.targetAzimuth += d;
+      this.orbitAzimuth += d;
+    }
+
     // Smoothly approach targets (frame-rate independent damping).
     const k = 1 - Math.pow(0.0001, dt);
     this.orbitAzimuth = lerp(this.orbitAzimuth, this.targetAzimuth, k);
@@ -3336,6 +3349,49 @@ export class ThreeScene implements SceneController {
     this.targetPivot.set(w.x, 1.5, w.z);
     this.targetRadius = clamp(radiusInches * 2.2 + 6, this.orbitMinRadius, this.orbitMaxRadius);
     this.targetPolar = 1.18; // lower, near eye-level for a miniatures look
+  }
+
+  /* ---------------------------- cinematic camera --------------------------- */
+
+  /**
+   * Smoothly move the orbit camera to look at a table point, optionally
+   * reframing radius/azimuth/polar. Omitted options keep their current target.
+   * `immediate` snaps the smoothed state to the target for an instant cut.
+   * Drives the SAME orbit state as frameBoard/frameUnit, so it composes with
+   * user input and the auto-orbit.
+   */
+  focusOn(
+    center: Vec2,
+    opts?: { radius?: number; azimuth?: number; polar?: number; immediate?: boolean },
+  ): void {
+    const w = this.tableToWorld(center);
+    // Aim a touch above the table so figures sit in frame rather than the mat.
+    this.targetPivot.set(w.x, 1.5, w.z);
+    if (opts?.radius !== undefined) {
+      this.targetRadius = clamp(opts.radius, this.orbitMinRadius, this.orbitMaxRadius);
+    }
+    if (opts?.azimuth !== undefined) {
+      this.targetAzimuth = opts.azimuth;
+    }
+    if (opts?.polar !== undefined) {
+      // Keep above the table and below the zenith (matches drag clamp).
+      this.targetPolar = clamp(opts.polar, 0.15, Math.PI / 2 - 0.05);
+    }
+    if (opts?.immediate) {
+      this.orbitTarget.copy(this.targetPivot);
+      this.orbitAzimuth = this.targetAzimuth;
+      this.orbitPolar = this.targetPolar;
+      this.orbitRadius = this.targetRadius;
+    }
+  }
+
+  /**
+   * Continuously rotate the camera azimuth for an establishing shot. Speed is
+   * radians/second; 0 stops it (the camera rests where it is). Integrated into
+   * the existing per-frame camera update — no second loop, no allocations.
+   */
+  setAutoOrbit(radPerSec: number): void {
+    this.autoOrbitSpeed = radPerSec;
   }
 
   resize(): void {

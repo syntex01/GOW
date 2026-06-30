@@ -37,6 +37,31 @@ export interface ModelRegistryEntry {
    * larger/smaller than its nominal proxy size. 1 = exactly proxy height.
    */
   heightScale?: number;
+  /**
+   * Pre-rotation (radians about +Y) baked into the model clone so the figure's
+   * own FORWARD axis points toward the engine's +Z. After this correction the
+   * existing per-owner rotation (A: 0, B: π) makes BOTH armies face the centre
+   * line — A's figures look toward +Z, B's toward -Z.
+   *
+   * Derived by inspecting each GLB's default orientation (head/face silhouette,
+   * toe direction and front/back mass split via a GLTFLoader probe). All four
+   * supplied CC0 figures already author their forward along +Z, so the
+   * correction is 0 for every faction; the field exists so a future model
+   * authored along a different axis (e.g. -Z => Math.PI, +X => -Math.PI/2) can
+   * be fixed by one number without touching code.
+   */
+  yaw?: number;
+  /**
+   * Optional explicit name (or regex source) of the animation clip to pose into.
+   * When omitted we auto-pick a grounded idle/ready stance and avoid any T-pose.
+   */
+  poseClip?: string;
+  /**
+   * When set, the chosen clip is FROZEN at this time (seconds) into a single
+   * deliberate, battle-ready frame instead of looping. Leave undefined to play a
+   * slow perpetual idle. Lets a weak idle be replaced by a menacing held pose.
+   */
+  poseFreezeAt?: number;
 }
 
 /**
@@ -46,13 +71,44 @@ export interface ModelRegistryEntry {
 export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   // Faction-fitting CC0 (public-domain) figures by Quaternius (via poly.pizza).
   // Matched case-insensitively. Order = priority (Chaos before generic Astartes).
-  { keywords: ['necrons'], url: 'models/factions/necron.glb', heightScale: 1.0 }, // skeletal
-  { keywords: ['chaos', 'heretic astartes'], url: 'models/factions/chaos.glb', heightScale: 1.05 }, // demon
-  { keywords: ['orks'], url: 'models/factions/ork.glb', heightScale: 1.1 }, // orc
+  //
+  // `yaw` corrects each model's authored forward to engine +Z (see field doc).
+  // All four figures already face +Z (verified via a GLTFLoader silhouette/toe
+  // probe), so yaw = 0 across the board — but it is set explicitly so the
+  // facing contract is intentional and self-documenting.
+  //
+  // The skeletal Necron and the armoured warrior ship WITHOUT animation clips,
+  // so they hold their authored static stance (already a grounded, weapon-ready
+  // pose — not a flat T-pose). The demon and orc carry the Quaternius clip set;
+  // we freeze them into a single menacing, grounded combat frame rather than a
+  // bouncy loop so a battle line reads as deliberate and braced.
+  {
+    keywords: ['necrons'],
+    url: 'models/factions/necron.glb',
+    heightScale: 1.0,
+    yaw: 0,
+  }, // skeletal
+  {
+    keywords: ['chaos', 'heretic astartes'],
+    url: 'models/factions/chaos.glb',
+    heightScale: 1.05,
+    yaw: 0,
+    poseClip: 'idle',
+    poseFreezeAt: 0.55, // hold a grounded, braced idle frame (menacing, still)
+  }, // demon
+  {
+    keywords: ['orks'],
+    url: 'models/factions/ork.glb',
+    heightScale: 1.1,
+    yaw: 0,
+    poseClip: 'idle',
+    poseFreezeAt: 0.4, // hunched, ready-to-charge held frame
+  }, // orc
   {
     keywords: ['adeptus astartes', 'ultramarines', 'imperium'],
     url: 'models/factions/ultramarine.glb', // armoured warrior
     heightScale: 1.0,
+    yaw: 0,
   },
 ];
 
@@ -96,8 +152,46 @@ function targetHeightInches(proxy: ProxyDescriptor, entry: ModelRegistryEntry): 
  */
 interface Template {
   root: THREE.Object3D;
-  /** An idle-ish clip to pose each clone into a natural stance (or null). */
-  poseClip: THREE.AnimationClip | null;
+  /** All clips shipped with the GLB (may be empty). Clip CHOICE happens per
+   *  registry entry in `instantiate`, so different factions can pose differently
+   *  from the same loader cache. */
+  clips: THREE.AnimationClip[];
+}
+
+/**
+ * Choose the best grounded, battle-ready stance clip for a model, honouring an
+ * optional explicit preference from the registry entry. Always avoids a bare
+ * T/bind pose. Returns null when the GLB has no usable clip (then the clone
+ * holds its authored static stance).
+ */
+function pickPoseClip(
+  clips: THREE.AnimationClip[],
+  entry: ModelRegistryEntry,
+): THREE.AnimationClip | null {
+  if (clips.length === 0) return null;
+  const notTpose = (c: THREE.AnimationClip) => !/t.?pose|bind|a.?pose/i.test(c.name);
+
+  // 1) Explicit preference from the registry (name or regex source).
+  if (entry.poseClip) {
+    let re: RegExp | null = null;
+    try {
+      re = new RegExp(entry.poseClip, 'i');
+    } catch {
+      re = null;
+    }
+    const wanted = clips.find((c) =>
+      re ? re.test(c.name) : c.name.toLowerCase() === entry.poseClip!.toLowerCase(),
+    );
+    if (wanted) return wanted;
+  }
+
+  // 2) A grounded idle/ready/combat stance (never a locomotion or T-pose clip).
+  return (
+    clips.find((c) => /idle|survey|stand|breath|ready|guard|combat/i.test(c.name) && notTpose(c)) ??
+    clips.find((c) => notTpose(c)) ??
+    clips[0] ??
+    null
+  );
 }
 
 export class ModelLibrary {
@@ -130,17 +224,13 @@ export class ModelLibrary {
         url,
         (gltf) => {
           const root = gltf.scene;
+          // Keep every clip on the template; the per-faction registry entry picks
+          // the right grounded stance at instantiate time (so the same cached
+          // load can pose different factions differently).
           const clips = gltf.animations ?? [];
-          // Choose an idle-ish stance clip (never the bare T/bind pose). Each
-          // clone is posed into one frame of it so figures read as miniatures.
-          const poseClip =
-            clips.find((c) => /idle|survey|stand|breath/i.test(c.name) && !/t.?pose/i.test(c.name)) ??
-            clips.find((c) => !/t.?pose/i.test(c.name)) ??
-            clips[0] ??
-            null;
           gltf.animations = [];
           root.updateMatrixWorld(true);
-          resolve({ root, poseClip });
+          resolve({ root, clips });
         },
         undefined,
         (err) => reject(err instanceof Error ? err : new Error(String(err))),
@@ -168,20 +258,37 @@ export class ModelLibrary {
     this.loadTemplate(url)
       .then((template) => {
         const clone = skeletonClone(template.root) as THREE.Object3D;
-        // Drive a subtle, perpetual idle so figures read as living miniatures
-        // instead of stiff T-poses. Each clone gets its own mixer, offset in
-        // time so a squad doesn't breathe in lockstep. Updated from the render
-        // loop via ModelLibrary.update().
-        if (template.poseClip) {
+
+        // Pose the skeleton FIRST so the bounding box used for scaling/centring
+        // reflects the actual stance (feet rest on y=0 even for a hunched combat
+        // frame). A frozen pose holds one deliberate, battle-ready frame; an
+        // unspecified one plays a slow perpetual idle, desynced per clone so a
+        // squad doesn't breathe in lockstep.
+        const clip = pickPoseClip(template.clips, entry);
+        if (clip) {
           try {
             const mixer = new THREE.AnimationMixer(clone);
-            mixer.clipAction(template.poseClip).play();
-            mixer.setTime(Math.random() * 2); // desync squad members
-            this.mixers.push(mixer);
+            mixer.clipAction(clip).play();
+            if (entry.poseFreezeAt !== undefined) {
+              // Hold a single menacing frame; do NOT register the mixer so it is
+              // never advanced — the stance stays locked and costs nothing.
+              mixer.setTime(entry.poseFreezeAt);
+              mixer.update(0); // write the frozen pose into the bones now
+            } else {
+              mixer.setTime(Math.random() * 2); // desync squad members
+              this.mixers.push(mixer);
+            }
           } catch {
-            /* fall back to bind pose */
+            /* fall back to authored static stance */
           }
         }
+
+        // Correct the model's authored forward to engine +Z (independent of the
+        // per-owner rotation applied by the caller). Applied to the inner clone
+        // so the owner rotation on the parent group still spins both armies to
+        // face the centre line.
+        clone.rotation.y = entry.yaw ?? 0;
+
         const group = new THREE.Group();
         group.add(clone);
 
@@ -190,6 +297,7 @@ export class ModelLibrary {
         tintModel(clone, proxy);
 
         // Normalise: scale uniformly to the target height and rest feet on y=0.
+        // Runs AFTER posing + yaw so the box is measured in final orientation.
         normalizeToHeight(clone, targetHeightInches(proxy, entry));
 
         // Shadows on every mesh.
@@ -213,15 +321,24 @@ export class ModelLibrary {
 /* --------------------------- material tinting ----------------------------- */
 
 /**
- * Clone every material on the model and tint it toward the proxy's primary
- * colour, keeping the original shading readable (we blend, not flatten). For
- * Necrons (proxy.glow set) we add an emissive so the green glow survives and
- * pops under bloom.
+ * Repaint every material on the model into a GRIMDARK finish: the faction
+ * primary is desaturated and darkened toward a weathered war-paint tone, then
+ * blended over the model's own shading; roughness is driven up and the surface
+ * given a cold metal response with a faint dark ambient wash in the recesses.
+ *
+ * Necrons (proxy.glow set) KEEP a green emissive so the undying glow survives
+ * and pops under bloom — read as cold metal-bone. Everything else is made
+ * NON-emissive and gritty: the demon dark and ominous, the orc dark olive/iron,
+ * the armoured warrior dark battle-worn steel.
  */
 function tintModel(root: THREE.Object3D, proxy: ProxyDescriptor): void {
+  // Grimdark war-paint: pull the faction primary toward grey (desaturate) and
+  // darken it so nothing reads bright or cartoony. We compute this ONCE per unit.
   const primary = new THREE.Color(proxy.primary);
+  const grimPrimary = grimdarkify(primary);
   const glow = proxy.glow ? new THREE.Color(proxy.glow) : null;
-  const metalness = proxy.metalness ?? 0.35;
+  // Higher base metalness for a cold, gunmetal sheen rather than plastic.
+  const metalness = proxy.metalness ?? 0.55;
 
   // Cache cloned materials by their source so shared source materials within a
   // single model stay shared after cloning (cheaper, fewer draw-state changes).
@@ -232,16 +349,30 @@ function tintModel(root: THREE.Object3D, proxy: ProxyDescriptor): void {
     if (!mesh.isMesh) return;
     const src = mesh.material;
     if (Array.isArray(src)) {
-      mesh.material = src.map((m) => tintMaterial(m, primary, glow, metalness, seen));
+      mesh.material = src.map((m) => tintMaterial(m, grimPrimary, glow, metalness, seen));
     } else if (src) {
-      mesh.material = tintMaterial(src, primary, glow, metalness, seen);
+      mesh.material = tintMaterial(src, grimPrimary, glow, metalness, seen);
     }
   });
 }
 
+/**
+ * Turn a faction colour into a grimdark war-paint tone: desaturate toward steel
+ * and darken, so even a "bright blue" Ultramarine reads as dark battle-worn
+ * steel-blue rather than a toy. Hue is preserved so factions stay distinct.
+ */
+function grimdarkify(c: THREE.Color): THREE.Color {
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  // Desaturate hard and crush the value into the lower-mid range (weathered).
+  const s = hsl.s * 0.55;
+  const l = THREE.MathUtils.clamp(hsl.l * 0.62, 0.05, 0.42);
+  return new THREE.Color().setHSL(hsl.h, s, l);
+}
+
 function tintMaterial(
   src: THREE.Material,
-  primary: THREE.Color,
+  grimPrimary: THREE.Color,
   glow: THREE.Color | null,
   metalness: number,
   seen: Map<THREE.Material, THREE.Material>,
@@ -253,21 +384,36 @@ function tintMaterial(
   // Only standard-like materials carry colour/PBR fields; guard with a cast.
   const std = out as THREE.MeshStandardMaterial;
   if (std.color) {
-    // Blend the model's own colour toward the faction primary so detail (and any
-    // baked texture) stays visible rather than being painted flat.
-    std.color.lerp(primary, 0.55);
+    // Blend the model's own colour toward the grim faction tone (stronger pull
+    // than before so the bright source albedo is overpowered), then a final
+    // dark ambient wash deepens recesses for a shaded, dirty look.
+    std.color.lerp(grimPrimary, 0.7);
+    std.color.multiplyScalar(0.82); // subtle dark wash — sink the midtones
   }
   if ('metalness' in std) {
     std.metalness = THREE.MathUtils.clamp(metalness, 0, 1);
   }
   if ('roughness' in std && typeof std.roughness === 'number') {
-    // Nudge toward a slightly glossy wargame finish without going mirror-like.
-    std.roughness = THREE.MathUtils.clamp(std.roughness * 0.9, 0.25, 0.9);
+    // Push toward a high-roughness, weathered finish — never glossy/plastic, but
+    // not fully matte so the cold rim light still catches edges.
+    std.roughness = THREE.MathUtils.clamp(std.roughness * 1.15 + 0.2, 0.55, 0.96);
   }
-  if (glow && std.emissive) {
-    std.emissive.copy(glow);
-    std.emissiveIntensity = 0.7;
+  // Keep reflections cold and restrained so figures stay grounded, not chromed.
+  if ('envMapIntensity' in std) {
+    std.envMapIntensity = 0.45;
   }
+  if (std.emissive) {
+    if (glow) {
+      // Necron: cold undying glow survives and blooms.
+      std.emissive.copy(glow);
+      std.emissiveIntensity = 0.7;
+    } else {
+      // Everyone else is gritty and non-emissive — kill any baked glow.
+      std.emissive.setRGB(0, 0, 0);
+      std.emissiveIntensity = 0;
+    }
+  }
+  std.needsUpdate = true;
   seen.set(src, out);
   return out;
 }

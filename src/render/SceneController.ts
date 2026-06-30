@@ -86,6 +86,32 @@ export interface SceneController {
   /** Move the camera to a close, low-angle view centred on a table point. */
   frameUnit(center: Vec2, radiusInches?: number): void;
 
+  /* ----------------------------- cinematic camera ------------------------- *
+   * Additive, smooth camera direction for cutscene-style shots. They drive the
+   * same single orbit state as frameBoard/frameUnit (no second loop, no
+   * per-frame allocations), so they compose cleanly with user orbit/pan/zoom.
+   * ----------------------------------------------------------------------- */
+
+  /**
+   * Smoothly move the orbit camera to look at a table point, optionally
+   * reframing it. Omitted options keep their current value.
+   * @param opts.radius   orbit distance (world units); clamped to limits
+   * @param opts.azimuth  yaw around the target (radians)
+   * @param opts.polar    down-tilt from +Y (radians); clamped to a sane range
+   * @param opts.immediate snap instead of easing (e.g. for an instant cut)
+   */
+  focusOn(
+    center: Vec2,
+    opts?: { radius?: number; azimuth?: number; polar?: number; immediate?: boolean },
+  ): void;
+
+  /**
+   * Continuously rotate the camera azimuth for an establishing shot. The speed
+   * is radians per second; 0 stops the auto-orbit (the camera then rests wherever
+   * it is). Integrated into the existing per-frame camera update.
+   */
+  setAutoOrbit(radPerSec: number): void;
+
   /**
    * Replace a unit's visual with a user-supplied model loaded from a URL (e.g. a
    * publicly hosted glTF) or a local File. Lets players bring in their own

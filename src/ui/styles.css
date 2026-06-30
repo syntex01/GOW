@@ -2162,3 +2162,111 @@
 @media (prefers-reduced-motion: reduce) {
   .phaserail .step.on { animation: none !important; }
 }
+
+/* =========================================================================
+   Cinematic trailer overlay — letterbox film look layered over the canvas.
+   Driven by src/ui/Cinematic.ts (AI-vs-AI director). The recorded page IS
+   the finished film, so everything here is composited live in the browser.
+   ========================================================================= */
+.cine {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  font-family: var(--f-title);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+/* Heavy cinematic vignette + faint warm grade so the board reads as film. */
+.cine-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 42%, transparent 38%, rgba(0,0,0,0.55) 78%, rgba(0,0,0,0.86) 100%),
+    radial-gradient(80% 60% at 50% 36%, rgba(120, 86, 30, 0.10), transparent 60%);
+  mix-blend-mode: multiply;
+}
+
+/* Top & bottom letterbox bars slide in to frame the action. */
+.cine-bars span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 11vh;
+  background: #000;
+  box-shadow: 0 0 30px #000;
+}
+.cine-bars span:first-child { top: 0; }
+.cine-bars span:last-child { bottom: 0; }
+
+/* Centre title card (rises from dark, gold gilt, blackletter). */
+.cine-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.7s ease, transform 0.9s cubic-bezier(0.16, 0.84, 0.3, 1);
+}
+.cine-card.show { opacity: 1; transform: translateY(0); }
+.cine-title {
+  font-family: var(--f-title);
+  font-size: clamp(34px, 6.4vw, 92px);
+  line-height: 1.04;
+  letter-spacing: 0.01em;
+  color: var(--brass-bright);
+  text-shadow:
+    0 2px 0 var(--brass-dark),
+    0 0 26px rgba(184, 146, 63, 0.5),
+    0 6px 34px rgba(0, 0, 0, 0.9);
+  background: linear-gradient(180deg, #f4e2a8 0%, var(--brass) 52%, var(--brass-deep) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.8));
+}
+.cine-sub {
+  font-family: var(--f-label);
+  text-transform: uppercase;
+  letter-spacing: 0.34em;
+  font-size: clamp(11px, 1.5vw, 18px);
+  color: var(--parchment);
+  -webkit-text-fill-color: var(--parchment);
+  opacity: 0.92;
+  text-shadow: 0 2px 10px #000;
+}
+
+/* Lower-third caption (faction names / phase labels). */
+.cine-lower {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 13vh;
+  text-align: center;
+  font-family: var(--f-stencil);
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: clamp(15px, 2.3vw, 30px);
+  color: var(--ink);
+  text-shadow: 0 2px 4px #000, 0 0 22px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.45s ease, transform 0.5s ease;
+}
+.cine-lower.show { opacity: 1; transform: translateY(0); }
+
+/* Full-frame fade-to-black for cuts / open / close. */
+.cine-fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.cine-fade.show { opacity: 1; }

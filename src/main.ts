@@ -11,6 +11,7 @@ import { CORE_STRATAGEMS } from './engine/stratagems';
 import { NetController } from './net/NetController';
 import { PeerTransport } from './net/PeerTransport';
 import { loadAssignments } from './render/ModelAssignments';
+import { Cinematic } from './ui/Cinematic';
 import type { PlayerId } from './engine/types';
 
 /**
@@ -132,6 +133,9 @@ class App {
         resync();
         for (const t of [800, 1800, 3000, 4500]) window.setTimeout(resync, t);
       };
+      // Play the AI-vs-AI cinematic trailer (used by the recording script).
+      (w as unknown as { __trailer?: () => Promise<void> }).__trailer = () =>
+        new Cinematic(this.engine, this.scene!, this.gameRoot).run();
     }
   }
 
