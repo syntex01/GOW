@@ -5,6 +5,7 @@ import { aliveModels, unitCentroid, inEngagementRange } from '../engine/geometry
 import { runAiTurn } from '../engine/ai';
 import { DiceTray } from './DiceTray';
 import { Rng } from '../engine/dice';
+import { setAssignment, fileToDataUrl, formatFromName, type ModelFormat } from '../render/ModelAssignments';
 
 const PHASES: Phase[] = ['command', 'movement', 'shooting', 'charge', 'fight', 'end'];
 const PHASE_LABEL: Record<Phase, string> = {
@@ -872,21 +873,17 @@ export class GameUI {
       this.toast('Select a unit to apply a model to', true);
       return;
     }
-    const detectFmt = (s: string): 'gltf' | 'glb' | 'obj' | 'stl' => {
-      const e = s.toLowerCase().split('?')[0];
-      if (e.endsWith('.glb')) return 'glb';
-      if (e.endsWith('.obj')) return 'obj';
-      if (e.endsWith('.stl')) return 'stl';
-      return 'gltf';
-    };
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop show';
     backdrop.innerHTML = `
       <div class="modal">
         <h3>Import 3D model → ${unit.name}</h3>
-        <p>Paste a public model URL (glTF/GLB/OBJ/STL) or choose a file. Replaces this unit's visual.</p>
+        <p>Use models you have the rights to. Paste a public URL (glTF/GLB/OBJ/STL) or choose a file.</p>
         <input id="murl" type="text" placeholder="https://…/model.glb" style="width:100%;margin-bottom:8px;background:#0c1016;color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:9px;font-family:ui-monospace,monospace;font-size:12px;" />
-        <input id="mfile" type="file" accept=".glb,.gltf,.obj,.stl" style="font-size:12px;" />
+        <input id="mfile" type="file" accept=".glb,.gltf,.obj,.stl" style="font-size:12px;margin-bottom:10px;" />
+        <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer;">
+          <input id="mall" type="checkbox" checked /> Apply to all <b style="color:var(--ink);margin:0 3px;">${unit.name}</b> and remember it
+        </label>
         <div class="warn" id="mwarn"></div>
         <div class="row">
           <button class="btn small" id="mCancel">Cancel</button>
@@ -896,22 +893,39 @@ export class GameUI {
     this.root.appendChild(backdrop);
     const url = backdrop.querySelector('#murl') as HTMLInputElement;
     const file = backdrop.querySelector('#mfile') as HTMLInputElement;
+    const all = backdrop.querySelector('#mall') as HTMLInputElement;
     const warn = backdrop.querySelector('#mwarn') as HTMLElement;
     const close = () => backdrop.remove();
     (backdrop.querySelector('#mCancel') as HTMLElement).onclick = close;
     (backdrop.querySelector('#mGo') as HTMLElement).onclick = () => {
       const f = file.files?.[0];
-      const src: string | File | undefined = f ?? (url.value.trim() || undefined);
+      const raw = url.value.trim();
+      const src: string | File | undefined = f ?? (raw || undefined);
       if (!src) {
         warn.textContent = 'Provide a URL or choose a file.';
         return;
       }
-      const fmt = detectFmt(f ? f.name : url.value);
+      const fmt: ModelFormat = formatFromName(f ? f.name : raw);
+      const applyToAll = all.checked;
       warn.textContent = 'Loading…';
-      this.scene
-        .importUnitModel(unit.id, src, fmt)
-        .then(() => {
-          this.toast(`Model applied to ${unit.name}`);
+      // The set of units to update: just this one, or every unit of its type.
+      const targets = applyToAll
+        ? Object.values(this.engine.state.units).filter((u) => u.datasheetId === unit.datasheetId)
+        : [unit];
+      Promise.all(targets.map((u) => this.scene.importUnitModel(u.id, src, fmt)))
+        .then(async () => {
+          if (applyToAll) {
+            // Persist so it auto-applies to this unit type in future battles.
+            const persistSrc = f ? await fileToDataUrl(f).catch(() => '') : raw;
+            const ok = persistSrc ? setAssignment(unit.datasheetId, { src: persistSrc, format: fmt }) : false;
+            this.toast(
+              ok
+                ? `Saved for all ${unit.name}`
+                : `Applied to all ${unit.name} (too large to remember between sessions)`,
+            );
+          } else {
+            this.toast(`Model applied to ${unit.name}`);
+          }
           close();
         })
         .catch((e: unknown) => {

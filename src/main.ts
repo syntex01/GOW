@@ -10,6 +10,7 @@ import { SAMPLE_ROSTERS } from './import/sampleRosters';
 import { CORE_STRATAGEMS } from './engine/stratagems';
 import { NetController } from './net/NetController';
 import { PeerTransport } from './net/PeerTransport';
+import { loadAssignments } from './render/ModelAssignments';
 import type { PlayerId } from './engine/types';
 
 /**
@@ -86,6 +87,7 @@ class App {
     });
     this.ui.bind(this.engine);
     this.wireStratagems();
+    this.applyModelAssignments();
     this.scene.frameBoard();
     if (import.meta.env.DEV) {
       const w = window as Window & { __demoDice?: () => void; __frameBiggest?: () => void };
@@ -130,6 +132,16 @@ class App {
         resync();
         for (const t of [800, 1800, 3000, 4500]) window.setTimeout(resync, t);
       };
+    }
+  }
+
+  /** Apply persisted per-datasheet model assignments to the deployed units. */
+  private applyModelAssignments(): void {
+    const assignments = loadAssignments();
+    if (Object.keys(assignments).length === 0) return;
+    for (const u of Object.values(this.engine.state.units)) {
+      const a = assignments[u.datasheetId];
+      if (a) void this.scene!.importUnitModel(u.id, a.src, a.format, a.heightInches ?? 3.6);
     }
   }
 
