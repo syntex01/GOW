@@ -136,3 +136,11 @@ class App {
 }
 
 new App().start();
+
+// Offline support / instant repeat loads — production only, so dev & tests are
+// never served stale assets. Safe to fail silently.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
