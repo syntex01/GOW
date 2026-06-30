@@ -1,4 +1,5 @@
 import type { DiceRolls, AttackResult } from '../engine/combat';
+import { sound } from '../audio/SoundEngine';
 
 /**
  * DiceTray — an animated, 3D-looking dice-rolling overlay.
@@ -307,6 +308,9 @@ export class DiceTray {
     const stagger = this.dur(this.reducedMotion ? 0 : 55);
     const tumble = this.dur(620);
 
+    // Rattle of the dice as they tumble in.
+    sound.playEvent('dice_roll');
+
     for (let i = 0; i < cubes.length; i++) {
       if (this.skipping || this.disposed) break;
       this.launchDie(cubes[i], values[i], step, tumble);
@@ -316,11 +320,14 @@ export class DiceTray {
     // If we skipped mid-stagger, hard-settle every remaining die instantly.
     if (this.skipping || this.disposed) {
       for (let i = 0; i < cubes.length; i++) this.settleInstant(cubes[i], values[i], step);
+      sound.playEvent('dice_settle');
       return;
     }
 
     // Wait for the last die to finish tumbling, plus a short read pause.
     await this.wait(tumble + this.dur(260));
+    // Dice land.
+    sound.playEvent('dice_settle');
   }
 
   /** Build a 6-faced cube DOM with pip layouts. */

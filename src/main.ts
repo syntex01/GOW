@@ -13,6 +13,7 @@ import { PeerTransport } from './net/PeerTransport';
 import { loadAssignments } from './render/ModelAssignments';
 import { Cinematic } from './ui/Cinematic';
 import { TrailerCapture } from './ui/TrailerCapture';
+import { sound } from './audio/SoundEngine';
 import type { PlayerId } from './engine/types';
 
 /**
@@ -39,6 +40,11 @@ class App {
     this.menu = new Menu(this.container);
     this.menu.onStart((cfg) => this.beginBattle(cfg));
     window.addEventListener('resize', () => this.scene?.resize());
+
+    // Unlock the audio context on the first user gesture (browsers require it).
+    const unlock = () => sound.unlock();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
   }
 
   private armyFor(faction: string): ArmyList {
@@ -59,6 +65,7 @@ class App {
     } else {
       this.menu.hide();
       hideLoading();
+      sound.startMusic();
     }
   }
 
@@ -188,6 +195,7 @@ class App {
       if (st === 'connected') {
         this.menu.hide();
         hideLoading();
+        sound.startMusic();
         // Host is authoritative: push the opening state to the guest.
         if (net.localPlayer === 'A') this.ui.refresh();
       }

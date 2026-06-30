@@ -6,6 +6,38 @@ import { runAiTurn } from '../engine/ai';
 import { DiceTray } from './DiceTray';
 import { Rng } from '../engine/dice';
 import { setAssignment, fileToDataUrl, formatFromName, type ModelFormat } from '../render/ModelAssignments';
+import { sound } from '../audio/SoundEngine';
+
+/** Short confirmation haptic, guarded for devices/browsers without vibrate. */
+function haptic(pattern: number | number[] = 12): void {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(pattern);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Inspect a unit's weapons and pick the best-matching shooting sound family by
+ * name/keyword (gauss / plasma / bolt / heavy), defaulting to the bolter sound.
+ */
+function shootSoundFor(unit: UnitInstance): string {
+  const ranged = unit.weapons.filter((w) => w.kind === 'ranged');
+  const text = ranged.map((w) => w.name.toLowerCase()).join(' ');
+  if (/gauss|tesla|flayer|disintegrat/.test(text)) return 'shoot_gauss';
+  if (/plasma|melta|fusion/.test(text)) return 'shoot_plasma';
+  // Heavy if any weapon carries the HEAVY keyword or a "heavy/lascannon" name.
+  if (
+    ranged.some((w) => w.keywords.some((k) => k.t === 'heavy')) ||
+    /heavy|lascannon|autocannon|battle cannon|missile/.test(text)
+  ) {
+    return 'shoot_heavy';
+  }
+  if (/bolt|bolter/.test(text)) return 'shoot_bolter';
+  return 'shoot_bolter';
+}
 
 const PHASES: Phase[] = ['command', 'movement', 'shooting', 'charge', 'fight', 'end'];
 const PHASE_LABEL: Record<Phase, string> = {
@@ -70,6 +102,11 @@ export class GameUI {
 
   // Which drawer is open (drives the mobile bottom-sheet behaviour).
   private openDrawer: Drawer = null;
+
+  // Audio change-detection: last-seen objective control + total CP, so refresh()
+  // can fire capture / command-point cues only when these actually change.
+  private lastObjOwners: Record<string, string> = {};
+  private lastTotalCp = -1;
 
   // DOM refs
   private el = {
@@ -161,6 +198,27 @@ export class GameUI {
       this.el.banner,
     );
     this.root.appendChild(hud);
+
+    // Delegated UI feedback: any button inside the HUD plays a click on press
+    // and a soft tick on hover, without each call site wiring it up.
+    hud.addEventListener('pointerdown', (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest('button');
+      if (!btn || btn.disabled) return;
+      sound.unlock();
+      sound.playEvent(btn.classList.contains('strat') ? 'stratagem' : 'ui_click');
+    });
+    hud.addEventListener(
+      'pointerover',
+      (e) => {
+        const t = e.target as HTMLElement | null;
+        const btn = t?.closest('button');
+        // Fire only when the pointer first enters the button (not its children).
+        if (btn && !btn.disabled && !(e.relatedTarget && btn.contains(e.relatedTarget as Node))) {
+          sound.playEvent('ui_hover');
+        }
+      },
+      true,
+    );
   }
 
   /** Floating control cluster (recenter, datacard, log, stratagems). */
@@ -240,6 +298,7 @@ export class GameUI {
     this.renderLog();
     this.renderStratagems();
     this.scene.sync(this.engine.state);
+    this.detectStateSounds();
     this.checkVictory();
     // Online: push our authoritative state to the peer after any local change.
     // Host (A) may broadcast from the start; guest (B) only after it has first
@@ -352,6 +411,7 @@ export class GameUI {
           if (m === 'advance') {
             const r = this.engine.rollAdvance(sel);
             this.toast(`Advance +${r}"`);
+            sound.playEvent('advance');
           }
           this.refresh();
         });
@@ -608,7 +668,15 @@ export class GameUI {
     }
     // Auto-resolve fights left on the board when leaving the fight phase.
     if (this.engine.state.phase === 'fight') this.autoResolveFights(true);
+    const prevActive = this.engine.active;
     this.engine.advancePhase();
+    // Turn handoff plays a heavier cue than a plain phase change.
+    if (this.engine.active !== prevActive) {
+      sound.playEvent('turn_start');
+      haptic(18);
+    } else {
+      sound.playEvent('phase_change');
+    }
     this.deselect();
     this.deepStrikeUnitId = null;
     this.scene.clearOverlays();
@@ -656,6 +724,8 @@ export class GameUI {
         const res = this.engine.deepStrikeArrive(this.deepStrikeUnitId, r.point);
         this.notify(res.message, !res.ok);
         if (res.ok) {
+          sound.playEvent('deep_strike');
+          haptic(18);
           this.deepStrikeUnitId = null;
           this.scene.clearOverlays();
           this.refresh();
@@ -737,8 +807,11 @@ export class GameUI {
     const ok = this.engine.moveUnit(u, this.moveMode, delta);
     if (!ok) {
       this.toast('Illegal move', true);
+      sound.playEvent('error');
       return;
     }
+    sound.playEvent('move');
+    haptic();
     this.scene.clearOverlays();
     this.deselect();
     this.refresh();
@@ -758,14 +831,18 @@ export class GameUI {
 
   private async doShoot(attacker: UnitInstance, target: UnitInstance): Promise<void> {
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
+    const beforeModels = aliveModels(target).length;
     const results = this.engine.shoot(attacker, target);
     // Tracers fly while the dice tumble; impact + casualties reveal after.
     this.scene.playShoot(attacker.id, target.id);
+    sound.playEvent(shootSoundFor(attacker));
+    haptic();
     await this.dice.rollResults(results, { title: `${attacker.name} shoots ${target.name}` });
     const after = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     if (before - after > 0) {
       this.scene.playImpact(target.id, Math.min(2, (before - after) / 3));
       this.scene.flashDamage(target.id, before - after);
+      this.playDamageSounds(target, beforeModels, before - after);
     }
     this.deselect();
     this.refresh();
@@ -784,6 +861,8 @@ export class GameUI {
   private doCharge(u: UnitInstance, target: UnitInstance): void {
     const res = this.engine.charge(u, target);
     this.toast(`Charge roll: ${res.roll} — ${res.success ? 'success!' : 'failed'}`, !res.success);
+    sound.playEvent(res.success ? 'charge' : 'ui_cancel');
+    if (res.success) haptic([12, 20, 12]);
     this.deselect();
     this.refresh();
   }
@@ -803,27 +882,39 @@ export class GameUI {
   private async doFight(attacker: UnitInstance, target: UnitInstance): Promise<void> {
     if (!this.engine.canFight(attacker, target)) {
       this.toast('Cannot fight that unit', true);
+      sound.playEvent('error');
       return;
     }
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
+    const beforeModels = aliveModels(target).length;
     const results = this.engine.fight(attacker, target);
     this.scene.playMelee(attacker.id, target.id);
+    sound.playEvent('melee_swing');
+    haptic([8, 16, 8]);
     await this.dice.rollResults(results, { title: `${attacker.name} fights ${target.name}` });
     const after = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     if (before - after > 0) {
+      sound.playEvent('melee_hit');
       this.scene.playImpact(target.id, Math.min(2, (before - after) / 3));
       this.scene.flashDamage(target.id, before - after);
+      this.playDamageSounds(target, beforeModels, before - after);
+    } else {
+      sound.playEvent('save_clang');
     }
     // Retaliation: the target strikes back if still able.
     if (this.engine.canFight(target, attacker)) {
       const tb = aliveModels(attacker).reduce((a, m) => a + m.wounds, 0);
+      const tbModels = aliveModels(attacker).length;
       const retal = this.engine.fight(target, attacker);
       this.scene.playMelee(target.id, attacker.id);
+      sound.playEvent('melee_swing');
       await this.dice.rollResults(retal, { title: `${target.name} strikes back` });
       const ta = aliveModels(attacker).reduce((a, m) => a + m.wounds, 0);
       if (tb - ta > 0) {
+        sound.playEvent('melee_hit');
         this.scene.playImpact(attacker.id, Math.min(2, (tb - ta) / 3));
         this.scene.flashDamage(attacker.id, tb - ta);
+        this.playDamageSounds(attacker, tbModels, tb - ta);
       }
     }
     this.deselect();
@@ -843,6 +934,24 @@ export class GameUI {
     if (!silent) this.toast('Melees resolved');
     this.deselect();
     this.refresh();
+  }
+
+  /**
+   * Play impact/casualty audio: a wound thud, a death cry per model lost, and a
+   * heavier knell if the whole unit was wiped out. `before` is the model count
+   * prior to the attack; `woundsLost` the total wounds dealt.
+   */
+  private playDamageSounds(target: UnitInstance, beforeModels: number, woundsLost: number): void {
+    if (woundsLost <= 0) return;
+    const killed = beforeModels - aliveModels(target).length;
+    if (!this.engine.isAlive(target)) {
+      sound.playEvent('unit_destroyed');
+    } else if (killed > 0) {
+      sound.playEvent('model_death');
+    } else {
+      sound.playEvent('wound_thud');
+    }
+    haptic(killed > 0 ? [10, 30, 10] : 8);
   }
 
   // ---------------------------------------------------------------- misc
@@ -966,6 +1075,31 @@ export class GameUI {
     (b as any)._t = window.setTimeout(() => b.classList.remove('show'), 1100);
   }
 
+  /**
+   * Compare objective control + total command points against the last refresh
+   * and play the matching cue on change. Seeds silently on the first call.
+   */
+  private detectStateSounds(): void {
+    const s = this.engine.state;
+    const owners: Record<string, string> = {};
+    let captured = false;
+    for (const o of s.objectives) {
+      const now = o.controlledBy ?? '';
+      owners[o.id] = now;
+      const prev = this.lastObjOwners[o.id];
+      if (prev !== undefined && now && now !== prev) captured = true;
+    }
+    const seeded = this.lastTotalCp >= 0;
+    const totalCp = s.players.A.commandPoints + s.players.B.commandPoints;
+    if (seeded) {
+      if (captured) sound.playEvent('objective_captured');
+      if (totalCp > this.lastTotalCp) sound.playEvent('command_point');
+    }
+    this.lastObjOwners = owners;
+    this.lastTotalCp = totalCp;
+  }
+
+  private victoryAnnounced = false;
   private checkVictory(): void {
     const w = this.engine.winner();
     if (!w) return;
@@ -977,5 +1111,12 @@ export class GameUI {
     b.textContent = text;
     b.classList.remove('toast', 'warn');
     b.classList.add('show', 'victory');
+    // Stinger once: defeat if the local player lost, otherwise the victory knell.
+    if (!this.victoryAnnounced) {
+      this.victoryAnnounced = true;
+      const lost = this.localPlayer !== null && w !== 'draw' && w !== this.localPlayer;
+      sound.playEvent(lost ? 'defeat' : 'victory');
+      haptic(lost ? [40, 60, 40] : [20, 40, 20, 40, 20]);
+    }
   }
 }

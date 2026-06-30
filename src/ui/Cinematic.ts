@@ -2,6 +2,18 @@ import type { GameEngine } from '../engine/game';
 import type { SceneController } from '../render/SceneController';
 import type { UnitInstance, Vec2 } from '../engine/types';
 import { aliveModels, unitCentroid, unitGap, inEngagementRange, unitGapToPoint } from '../engine/geometry';
+import { sound } from '../audio/SoundEngine';
+
+/** Pick a weapon-family shooting sound by inspecting the unit's ranged weapons. */
+function cineShootSound(unit: UnitInstance): string {
+  const ranged = unit.weapons.filter((w) => w.kind === 'ranged');
+  const text = ranged.map((w) => w.name.toLowerCase()).join(' ');
+  if (/gauss|tesla|flayer|disintegrat/.test(text)) return 'shoot_gauss';
+  if (/plasma|melta|fusion/.test(text)) return 'shoot_plasma';
+  if (ranged.some((w) => w.keywords.some((k) => k.t === 'heavy')) ||
+      /heavy|lascannon|autocannon|battle cannon|missile/.test(text)) return 'shoot_heavy';
+  return 'shoot_bolter';
+}
 
 /**
  * Cinematic AI-vs-AI director: plays a full battle with both sides controlled by
@@ -164,13 +176,16 @@ export class Cinematic {
         if (!target) continue;
         await this.focusPair(u, target, 0.62);
         this.scene.playShoot(u.id, target.id, { volleys: 4 });
+        sound.playEvent(cineShootSound(u));
         await wait(420);
         const before = this.wounds(target);
+        const beforeModels = aliveModels(target).length;
         this.engine.shoot(u, target);
         const lost = before - this.wounds(target);
         if (lost > 0) {
           this.scene.playImpact(target.id, Math.min(2, lost / 3));
           this.scene.flashDamage(target.id, lost);
+          this.deathSound(target, beforeModels);
         }
         this.scene.sync(this.engine.state);
         await wait(560);
@@ -185,7 +200,10 @@ export class Cinematic {
         if (!tgts.length) continue;
         await this.focusPair(u, tgts[0], 0.7);
         const res = this.engine.charge(u, tgts[0]);
-        if (res.success) this.lower('CHARGE!');
+        if (res.success) {
+          this.lower('CHARGE!');
+          sound.playEvent('charge');
+        }
         this.scene.sync(this.engine.state);
         await wait(520);
         this.hideLower();
@@ -201,12 +219,16 @@ export class Cinematic {
         if (!enemy) continue;
         await this.focusPair(u, enemy, 0.8);
         this.scene.playMelee(u.id, enemy.id);
+        sound.playEvent('melee_swing');
         const before = this.wounds(enemy);
+        const beforeModels = aliveModels(enemy).length;
         this.engine.fight(u, enemy);
         const lost = before - this.wounds(enemy);
         if (lost > 0) {
+          sound.playEvent('melee_hit');
           this.scene.playImpact(enemy.id, Math.min(2, lost / 3));
           this.scene.flashDamage(enemy.id, lost);
+          this.deathSound(enemy, beforeModels);
         }
         this.scene.sync(this.engine.state);
         await wait(620);
@@ -218,6 +240,13 @@ export class Cinematic {
   // --------------------------------------------------------------- helpers
   private wounds(u: UnitInstance): number {
     return aliveModels(u).reduce((a, m) => a + m.wounds, 0);
+  }
+
+  /** Casualty audio for the cinematic: wipe-out knell, death cry, or thud. */
+  private deathSound(target: UnitInstance, beforeModels: number): void {
+    if (!this.engine.isAlive(target)) sound.playEvent('unit_destroyed');
+    else if (aliveModels(target).length < beforeModels) sound.playEvent('model_death');
+    else sound.playEvent('wound_thud');
   }
 
   private async focusPair(a: UnitInstance, b: UnitInstance, polar: number): Promise<void> {

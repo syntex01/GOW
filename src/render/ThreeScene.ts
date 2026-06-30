@@ -2162,7 +2162,7 @@ export class ThreeScene implements SceneController {
       models.push(mv);
 
       if (entry) {
-        this.loadRealModelBody(unit.id, mv, proxy, entry);
+        this.loadRealModelBody(unit.id, mv, proxy, entry, m.baseRadius);
       }
     }
 
@@ -2191,6 +2191,7 @@ export class ThreeScene implements SceneController {
     mv: ModelVisual,
     proxy: ProxyDescriptor,
     entry: ModelRegistryEntry,
+    baseRadius: number,
   ): void {
     this.modelLibrary.instantiate(
       entry.url,
@@ -2201,6 +2202,19 @@ export class ThreeScene implements SceneController {
         if (this.disposed) {
           this.disposeObject(clone);
           return;
+        }
+        // Keep the figure within its base footprint so neighbours never clip:
+        // if the model is wider than its base, scale it down uniformly to fit
+        // (the base is always drawn a touch larger than the model). Measured on
+        // the XZ plane; height follows uniformly so it still rests on the base.
+        clone.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(clone);
+        const halfX = Math.max(Math.abs(box.min.x), Math.abs(box.max.x));
+        const halfZ = Math.max(Math.abs(box.min.z), Math.abs(box.max.z));
+        const footprint = Math.max(halfX, halfZ);
+        const limit = baseRadius * 0.92; // base reads slightly larger than the model
+        if (footprint > limit && footprint > 1e-4) {
+          clone.scale.multiplyScalar(limit / footprint);
         }
         // Rest the model on top of the base disc.
         clone.position.y = 0.18;

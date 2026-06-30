@@ -5,6 +5,7 @@
    Styles live under the `/* === MAIN MENU === *\/` block in styles.css.
    ========================================================================= */
 import { FACTIONS, SAMPLE_ARMIES, DATASHEETS } from '../engine/data/index';
+import { sound } from '../audio/SoundEngine';
 
 export interface GameSettings {
   diceSpeed: number; // 0.25 (fast) .. 2 (slow); 1 = normal
@@ -61,6 +62,26 @@ export class Menu {
     this.root.setAttribute('data-accent', ACCENT[this.aFaction] ?? '');
     this.root.appendChild(this.buildScroll());
     parent.appendChild(this.root);
+
+    // Delegated menu UI feedback (click on press, soft tick on hover).
+    this.root.addEventListener('pointerdown', (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest('button');
+      if (!btn || (btn as HTMLButtonElement).disabled) return;
+      sound.unlock();
+      sound.playEvent('ui_click');
+    });
+    this.root.addEventListener(
+      'pointerover',
+      (e) => {
+        const btn = (e.target as HTMLElement | null)?.closest('button');
+        if (btn && !(btn as HTMLButtonElement).disabled &&
+            !(e.relatedTarget && btn.contains(e.relatedTarget as Node))) {
+          sound.playEvent('ui_hover');
+        }
+      },
+      true,
+    );
+
     this.syncMode();
     this.renderRoster('A');
     this.renderRoster('B');
@@ -96,6 +117,7 @@ export class Menu {
     scroll.appendChild(this.buildFactions());
     scroll.appendChild(this.buildMode());
     scroll.appendChild(this.buildSettings());
+    scroll.appendChild(this.buildAudio());
     scroll.appendChild(this.buildDeploy());
     return scroll;
   }
@@ -367,6 +389,84 @@ export class Menu {
     });
     aiRow.appendChild(this.aiToggle);
     grid.appendChild(aiRow);
+
+    sec.appendChild(grid);
+    return sec;
+  }
+
+  /* --- Section 4b: audio ---------------------------------------------- */
+  private buildAudio(): HTMLElement {
+    const sec = el('section', 'menu-sec');
+    sec.appendChild(this.secHead('IV.', 'Vox & War-Hymns'));
+    const grid = el('div', 'settings-grid');
+
+    // A labelled volume slider (0..1) bound to a sound bus. Tweaking it plays a
+    // click so the level change is audible.
+    const volRow = (label: string, bus: 'master' | 'sfx' | 'music'): HTMLElement => {
+      const row = el('div', 'set-row');
+      row.innerHTML = `<label class="set-label">${label}</label>`;
+      const slider = el('input', 'set-slider') as HTMLInputElement;
+      slider.type = 'range';
+      slider.min = '0';
+      slider.max = '100';
+      slider.value = String(Math.round(sound.getVolume(bus) * 100));
+      const val = el('span', 'set-val', `${slider.value}%`);
+      slider.addEventListener('input', () => {
+        const v = Number(slider.value) / 100;
+        sound.setVolume(bus, v);
+        val.textContent = `${slider.value}%`;
+      });
+      // Audition the level on release (not while dragging) to avoid spamming.
+      slider.addEventListener('change', () => {
+        sound.unlock();
+        sound.playEvent(bus === 'music' ? 'phase_change' : 'ui_click');
+      });
+      const wrap = el('div', 'slider-wrap');
+      wrap.appendChild(slider);
+      wrap.appendChild(val);
+      row.appendChild(wrap);
+      return row;
+    };
+
+    grid.appendChild(volRow('Master Volume', 'master'));
+    grid.appendChild(volRow('Battle SFX', 'sfx'));
+    grid.appendChild(volRow('War-Hymns (Music)', 'music'));
+
+    // Mute-all breaker switch.
+    const muteRow = el('div', 'set-row');
+    muteRow.innerHTML = `<label class="set-label">Silence All</label>`;
+    const muteTog = el('button', 'toggle');
+    muteTog.type = 'button';
+    muteTog.setAttribute('role', 'switch');
+    muteTog.innerHTML = `<span class="tog-knob"></span>`;
+    muteTog.classList.toggle('on', sound.isMuted());
+    muteTog.setAttribute('aria-checked', String(sound.isMuted()));
+    muteTog.addEventListener('click', () => {
+      const on = !sound.isMuted();
+      sound.setMuted(on);
+      muteTog.classList.toggle('on', on);
+      muteTog.setAttribute('aria-checked', String(on));
+    });
+    muteRow.appendChild(muteTog);
+    grid.appendChild(muteRow);
+
+    // Music on/off breaker switch.
+    const musicRow = el('div', 'set-row');
+    musicRow.innerHTML = `<label class="set-label">War-Hymns</label>`;
+    const musicTog = el('button', 'toggle');
+    musicTog.type = 'button';
+    musicTog.setAttribute('role', 'switch');
+    musicTog.innerHTML = `<span class="tog-knob"></span>`;
+    musicTog.classList.toggle('on', sound.isMusicEnabled());
+    musicTog.setAttribute('aria-checked', String(sound.isMusicEnabled()));
+    musicTog.addEventListener('click', () => {
+      const on = !sound.isMusicEnabled();
+      sound.setMusicEnabled(on);
+      musicTog.classList.toggle('on', on);
+      musicTog.setAttribute('aria-checked', String(on));
+    });
+    musicRow.appendChild(musicTog);
+    grid.appendChild(musicRow);
 
     sec.appendChild(grid);
     return sec;

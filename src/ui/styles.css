@@ -2279,3 +2279,22 @@
   transition: none !important;
   animation: none !important;
 }
+
+/* =========================================================================
+   AUDIO SETTINGS  (Vox & War-Hymns menu section)
+   Reuses the shared .settings-grid / .set-row / .set-slider / .toggle styling;
+   these rules just keep the multiple volume sliders aligned and add a faint
+   divider before the breaker switches so the section reads clearly.
+   ========================================================================= */
+.set-row .set-slider { min-width: 140px; }
+/* Right-align the percentage readout to a fixed gutter so sliders line up. */
+.set-row .slider-wrap .set-val { min-width: 52px; }
+/* Subtle separator above the two switch rows (mute + music). */
+.settings-grid .set-row:has(.toggle) {
+  padding-top: 12px;
+  border-top: 1px solid rgba(196, 162, 90, 0.18);
+}
+.settings-grid .set-row:has(.toggle) + .set-row:has(.toggle) {
+  padding-top: 0;
+  border-top: 0;
+}
