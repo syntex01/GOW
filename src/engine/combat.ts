@@ -34,6 +34,12 @@ export interface AttackOptions {
    * invuln by taking the better (lower) of the two. Does not mutate the unit.
    */
   bonusInvuln?: number;
+  /**
+   * Reduce the attacking weapon's AP by this many points for this attack only
+   * (e.g. Armour of Contempt: -1 AP). Floors the effective AP at 0; does not
+   * mutate the weapon.
+   */
+  apReduction?: number;
 }
 
 /** The actual dice rolled at each step, for animated dice display. */
@@ -194,8 +200,9 @@ export function resolveWeapon(
     opts.bonusInvuln !== undefined
       ? Math.min(opts.bonusInvuln, printedInvuln ?? opts.bonusInvuln)
       : printedInvuln;
-  let effectiveArmour = armour + weapon.ap;
-  if (opts.cover && !(weapon.ap === 0 && armour <= 3)) {
+  const effectiveAp = Math.max(0, weapon.ap - (opts.apReduction ?? 0));
+  let effectiveArmour = armour + effectiveAp;
+  if (opts.cover && !(effectiveAp === 0 && armour <= 3)) {
     // Cover improves the armour save by 1, but not for AP0 vs Sv 3+ or better.
     effectiveArmour -= 1;
   }
@@ -243,6 +250,27 @@ export function resolveWeapon(
 
   for (let i = 0; i < unsaved; i++) applyOne();
   for (let i = 0; i < devWounds; i++) applyOne();
+
+  // --- Hazardous ---
+  // After firing/fighting, roll a D6 per firing model with a Hazardous weapon;
+  // on a 1 the attacker suffers: a multi-wound model takes 3 mortal wounds,
+  // otherwise a single model is destroyed. Mutates the attacker.
+  if (findKeyword(weapon, 'hazardous')) {
+    for (let i = 0; i < firingModels; i++) {
+      const roll = rng.die();
+      if (roll !== 1) continue;
+      const victim = nextTargetModel(attacker);
+      if (!victim) break;
+      if (victim.maxWounds >= 3) {
+        victim.wounds = Math.max(0, victim.wounds - 3);
+        if (victim.wounds === 0) victim.alive = false;
+      } else {
+        victim.wounds = 0;
+        victim.alive = false;
+      }
+      log.push(`${attacker.name} suffers a Hazardous mishap (rolled 1).`);
+    }
+  }
 
   log.push(
     `${attacker.name} fires ${weapon.name} at ${target.name}: ` +

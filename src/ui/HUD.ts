@@ -3,6 +3,7 @@ import type { SceneController, PickResult } from '../render/SceneController';
 import type { UnitInstance, Phase, Vec2, Weapon, PlayerId } from '../engine/types';
 import { aliveModels, unitCentroid, inEngagementRange } from '../engine/geometry';
 import { runAiTurn } from '../engine/ai';
+import { DiceTray } from './DiceTray';
 
 const PHASES: Phase[] = ['command', 'movement', 'shooting', 'charge', 'fight', 'end'];
 const PHASE_LABEL: Record<Phase, string> = {
@@ -75,12 +76,15 @@ export class GameUI {
     backdrop: document.createElement('div'),
   };
 
+  private dice: DiceTray;
+
   constructor(
     private scene: SceneController,
     private root: HTMLElement,
     private cb: HUDCallbacks,
   ) {
     this.build();
+    this.dice = new DiceTray(this.root);
     this.scene.onPick((r) => this.handlePick(r));
     this.scene.onHover((r) => this.handleHover(r));
   }
@@ -608,8 +612,10 @@ export class GameUI {
       if (unit && unit.ownerId === this.engine.active && this.engine.canShoot(unit))
         return this.selectForShooting(unit);
       const sel = this.selected();
-      if (sel && unit && unit.ownerId !== this.engine.active && this.targets.includes(unit.id))
-        return this.doShoot(sel, unit);
+      if (sel && unit && unit.ownerId !== this.engine.active && this.targets.includes(unit.id)) {
+        void this.doShoot(sel, unit);
+        return;
+      }
       return;
     }
 
@@ -624,7 +630,10 @@ export class GameUI {
     if (phase === 'fight') {
       if (unit && unit.ownerId === this.engine.active) return this.selectForFight(unit);
       const sel = this.selected();
-      if (sel && unit && unit.ownerId !== this.engine.active) return this.doFight(sel, unit);
+      if (sel && unit && unit.ownerId !== this.engine.active) {
+        void this.doFight(sel, unit);
+        return;
+      }
       return;
     }
   }
@@ -687,12 +696,13 @@ export class GameUI {
     if (this.targets.length === 0) this.toast('No targets in range', true);
   }
 
-  private doShoot(attacker: UnitInstance, target: UnitInstance): void {
+  private async doShoot(attacker: UnitInstance, target: UnitInstance): Promise<void> {
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     const results = this.engine.shoot(attacker, target);
-    const dmg = results.reduce((a, r) => a + r.damageInflicted, 0);
+    // Animate the actual dice that were rolled, then reveal the casualties.
+    await this.dice.rollResults(results, { title: `${attacker.name} shoots ${target.name}` });
     const after = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
-    if (dmg > 0) this.scene.flashDamage(target.id, before - after || dmg);
+    if (before - after > 0) this.scene.flashDamage(target.id, before - after);
     this.deselect();
     this.refresh();
   }
@@ -726,19 +736,21 @@ export class GameUI {
     if (this.targets.length === 0) this.toast('Not in engagement range', true);
   }
 
-  private doFight(attacker: UnitInstance, target: UnitInstance): void {
+  private async doFight(attacker: UnitInstance, target: UnitInstance): Promise<void> {
     if (!this.engine.canFight(attacker, target)) {
       this.toast('Cannot fight that unit', true);
       return;
     }
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
-    this.engine.fight(attacker, target);
+    const results = this.engine.fight(attacker, target);
+    await this.dice.rollResults(results, { title: `${attacker.name} fights ${target.name}` });
     const after = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     if (before - after > 0) this.scene.flashDamage(target.id, before - after);
     // Retaliation: the target strikes back if still able.
     if (this.engine.canFight(target, attacker)) {
       const tb = aliveModels(attacker).reduce((a, m) => a + m.wounds, 0);
-      this.engine.fight(target, attacker);
+      const retal = this.engine.fight(target, attacker);
+      await this.dice.rollResults(retal, { title: `${target.name} strikes back` });
       const ta = aliveModels(attacker).reduce((a, m) => a + m.wounds, 0);
       if (tb - ta > 0) this.scene.flashDamage(attacker.id, tb - ta);
     }
@@ -780,6 +792,19 @@ export class GameUI {
   /** Public toast for host-driven messages (e.g. stratagem results). */
   notify(message: string, warn = false): void {
     this.toast(message, warn);
+  }
+
+  /** Dev/demo hook: play a representative dice sequence through the real tray. */
+  demoDice(): Promise<void> {
+    return this.dice.roll(
+      {
+        hit: [5, 2, 6, 4, 1, 6, 3, 5, 2, 4],
+        wound: [4, 6, 2, 5, 3, 1, 6],
+        save: [2, 5, 1, 4, 6],
+        damage: [1, 2, 1],
+      },
+      { hitTarget: 3, woundTarget: 4, saveTarget: 3, title: 'Bolt Rifle — 10 shots' },
+    );
   }
 
   /** Draw 9" no-deploy rings around every enemy unit (deep-strike guidance). */

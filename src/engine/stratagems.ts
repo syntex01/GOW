@@ -115,7 +115,25 @@ export const CORE_STRATAGEMS: Stratagem[] = [
     phase: 'fight',
     when: 'either',
     detail:
-      "No-op approximation: a Character issues a challenge (precision). The engine cannot redirect melee onto an attached character, so this only logs.",
+      "A Character unit gains the Precision ability for its melee attacks this fight, letting it pick off an attached enemy Character.",
+  },
+  {
+    id: 'rapid_ingress',
+    name: 'Rapid Ingress',
+    cost: 1,
+    phase: 'movement',
+    when: 'opponents-turn',
+    detail:
+      "At the end of the opponent's Movement phase, a unit in Reserves can arrive (Deep Strike) early, more than 9\" from enemies.",
+  },
+  {
+    id: 'armour_of_contempt',
+    name: 'Armour of Contempt',
+    cost: 1,
+    phase: 'any',
+    when: 'opponents-turn',
+    detail:
+      "A targeted unit shrugs off enemy fire: incoming attacks suffer -1 AP against it until your next turn.",
   },
 ];
 

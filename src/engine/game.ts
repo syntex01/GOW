@@ -19,6 +19,7 @@ import {
   isBelowHalfStrength,
   hasLineOfSight,
   unitInCover,
+  isCoherent,
   ENGAGEMENT_RANGE,
 } from './geometry';
 import { CORE_STRATAGEMS, findStratagem, Stratagem } from './stratagems';
@@ -133,6 +134,9 @@ export class GameEngine {
     // the start of their command phase from battle round 4 onward are destroyed.
     this.destroyOverdueReserves();
 
+    // Reset per-turn secondary tracking for the active player.
+    p.enemyUnitsKilledThisTurn = 0;
+
     // Reset per-turn unit status for the active player.
     for (const u of this.unitsOf(this.active)) {
       u.moveState = 'none';
@@ -146,6 +150,7 @@ export class GameEngine {
       if (u.defensiveFlagRound !== undefined && u.defensiveFlagRound < this.state.round) {
         u.goToGround = false;
         u.smokescreen = false;
+        u.armourOfContempt = false;
         u.defensiveFlagRound = undefined;
       }
     }
@@ -274,7 +279,31 @@ export class GameEngine {
       `${u.name} ${mode === 'fallBack' ? 'falls back' : mode === 'advance' ? 'advances' : 'moves'} ` +
         `${moved.toFixed(1)}".`,
     );
+    // Desperate Escape: a Battle-shocked unit that Falls Back tests each model.
+    if (mode === 'fallBack' && u.isBattleShocked) this.desperateEscape(u);
     return true;
+  }
+
+  /**
+   * Desperate Escape: when a Battle-shocked unit Falls Back, roll one D6 per
+   * living model; on a 1 or 2 that model is destroyed. Mutates the unit and
+   * logs the result. Returns the number of models lost.
+   */
+  desperateEscape(u: UnitInstance): number {
+    let lost = 0;
+    for (const m of aliveModels(u)) {
+      const roll = this.rng.die();
+      if (roll <= 2) {
+        m.wounds = 0;
+        m.alive = false;
+        lost += 1;
+      }
+    }
+    if (lost > 0) {
+      this.log(`${u.name} suffers Desperate Escape: ${lost} model(s) destroyed falling back.`);
+      this.cleanupDestroyed();
+    }
+    return lost;
   }
 
   remainStationary(u: UnitInstance): void {
@@ -286,6 +315,91 @@ export class GameEngine {
       m.position.x = Math.max(m.baseRadius, Math.min(this.state.board.width - m.baseRadius, m.position.x));
       m.position.y = Math.max(m.baseRadius, Math.min(this.state.board.height - m.baseRadius, m.position.y));
     }
+  }
+
+  /**
+   * Move a single model of a unit to `to`. The move is legal only if (a) the
+   * model travels no further than its unit's normal Move allowance, and (b) the
+   * unit remains in coherency afterwards. Returns false and changes nothing if
+   * either check fails. Complements the rigid whole-unit moveUnit.
+   */
+  moveModel(unitId: string, modelId: string, to: Vec2): boolean {
+    const u = this.state.units[unitId];
+    if (!u) return false;
+    const m = u.models.find((mm) => mm.id === modelId && mm.alive);
+    if (!m) return false;
+    const allowance = u.statline.move;
+    if (dist(m.position, to) > allowance + 1e-6) return false;
+    const from = m.position;
+    m.position = { x: to.x, y: to.y };
+    if (!isCoherent(u)) {
+      m.position = from; // revert
+      return false;
+    }
+    this.clampToBoard(u);
+    return true;
+  }
+
+  /**
+   * Step each living model of `u` up to `maxInches` straight toward the closest
+   * enemy model. Shared by Pile-in and Consolidate. A model never overshoots its
+   * target's base (it stops at engagement range). Returns the total distance
+   * the unit's models collectively moved.
+   */
+  private moveTowardClosestEnemy(u: UnitInstance, maxInches: number): number {
+    const enemies = this.enemiesOf(u.ownerId);
+    let moved = 0;
+    for (const m of aliveModels(u)) {
+      // Find the closest enemy model centre.
+      let target: Vec2 | undefined;
+      let bd = Infinity;
+      for (const e of enemies) {
+        for (const em of aliveModels(e)) {
+          const d = dist(m.position, em.position) - m.baseRadius - em.baseRadius;
+          if (d < bd) {
+            bd = d;
+            target = em.position;
+          }
+        }
+      }
+      if (!target) break;
+      const dx = target.x - m.position.x;
+      const dy = target.y - m.position.y;
+      const d = Math.hypot(dx, dy) || 1;
+      // Don't move past engagement range into the model; leave a small gap.
+      const desired = Math.max(0, bd - ENGAGEMENT_RANGE * 0.5);
+      const step = Math.min(maxInches, desired);
+      if (step <= 1e-6) continue;
+      m.position = { x: m.position.x + (dx / d) * step, y: m.position.y + (dy / d) * step };
+      moved += step;
+    }
+    this.clampToBoard(u);
+    return moved;
+  }
+
+  /**
+   * Pile-in: at the start of a unit's fight, each model may move up to 3" and
+   * must end closer to the closest enemy model. Modelled by stepping each model
+   * straight toward its nearest enemy. Returns the distance moved.
+   */
+  pileIn(unitId: string): number {
+    const u = this.state.units[unitId];
+    if (!u || !this.isAlive(u)) return 0;
+    const moved = this.moveTowardClosestEnemy(u, 3);
+    if (moved > 1e-6) this.log(`${u.name} piles in.`);
+    return moved;
+  }
+
+  /**
+   * Consolidate: after a unit fights, each model may move up to 3" toward the
+   * closest enemy model, ending in engagement range where possible.
+   */
+  consolidate(unitId: string): number {
+    const u = this.state.units[unitId];
+    if (!u || !this.isAlive(u)) return 0;
+    const moved = this.moveTowardClosestEnemy(u, 3);
+    if (moved > 1e-6) this.log(`${u.name} consolidates.`);
+    return moved;
   }
 
   // ---------------------------------------------------------------- shooting
@@ -340,6 +454,7 @@ export class GameEngine {
         cover: (cover && !ignoresCover) || false,
         firingModels: aliveModels(attacker).length,
         ...(bonusInvuln !== undefined ? { bonusInvuln } : {}),
+        ...(target.armourOfContempt ? { apReduction: 1 } : {}),
         ...this.attackerAbilityMods(attacker, 'shooting'),
         ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
         ...(optsByWeapon?.[w.id] ?? {}),
@@ -421,6 +536,7 @@ export class GameEngine {
     for (const w of weapons) {
       const opts: AttackOptions = {
         firingModels: aliveModels(attacker).length,
+        ...(target.armourOfContempt ? { apReduction: 1 } : {}),
         ...this.attackerAbilityMods(attacker, 'fight'),
         ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
       };
@@ -458,10 +574,48 @@ export class GameEngine {
     if (vp > 0) this.log(`${p.name} scores ${vp}VP (holds ${held} objective(s)). Total ${p.victoryPoints}.`);
   }
 
+  /**
+   * Score two generic secondary objectives for the active player and fold the
+   * result into their victory points (tracked separately in
+   * secondaryVictoryPoints). Additive to scoreEndOfTurn: callers invoke this
+   * explicitly (e.g. in the end phase) so primary-only scoring stays unchanged.
+   *   - "Take and Hold": +5VP if the active player controls more objectives
+   *     than the enemy this turn.
+   *   - "Bring It Down": +5VP if the active player destroyed at least one enemy
+   *     unit this turn (capped contribution, generic).
+   * Returns the secondary VP awarded this call.
+   */
+  scoreSecondaries(): number {
+    computeObjectiveControl(this.state.objectives, this.state.units);
+    const p = this.state.players[this.active];
+    const enemy: PlayerId = this.active === 'A' ? 'B' : 'A';
+    const mine = this.state.objectives.filter((o) => o.controlledBy === this.active).length;
+    const theirs = this.state.objectives.filter((o) => o.controlledBy === enemy).length;
+    let secondary = 0;
+    if (mine > theirs) {
+      secondary += 5;
+      this.log(`${p.name} scores 5VP — Take and Hold (holds ${mine} vs ${theirs}).`);
+    }
+    if ((p.enemyUnitsKilledThisTurn ?? 0) > 0) {
+      secondary += 5;
+      this.log(`${p.name} scores 5VP — Bring It Down (destroyed an enemy unit this turn).`);
+    }
+    if (secondary > 0) {
+      p.secondaryVictoryPoints = (p.secondaryVictoryPoints ?? 0) + secondary;
+      p.victoryPoints += secondary;
+    }
+    return secondary;
+  }
+
   private cleanupDestroyed(): void {
     for (const u of Object.values(this.state.units)) {
-      if (!this.isAlive(u) && !u.inReserves) {
-        // Leave the record for history; renderers should hide empty units.
+      if (!this.isAlive(u) && !u.inReserves && !u.deathCredited) {
+        // Credit the kill to the enemy of the destroyed unit's owner (the active
+        // attacker), for "kill a unit this turn"-style secondaries.
+        u.deathCredited = true;
+        const killer = u.ownerId === 'A' ? 'B' : 'A';
+        const ks = this.state.players[killer];
+        ks.enemyUnitsKilledThisTurn = (ks.enemyUnitsKilledThisTurn ?? 0) + 1;
       }
     }
     computeObjectiveControl(this.state.objectives, this.state.units);
@@ -590,9 +744,40 @@ export class GameEngine {
         this.cleanupDestroyed();
         return { ok: true, message: `${unit.name} throws grenades at ${target.name}: ${inflicted} wound(s).` };
       }
-      case 'heroic_intervention':
-      case 'tank_shock':
+      case 'armour_of_contempt': {
+        if (!unit) return { ok: false, message: 'Armour of Contempt needs a unit (ctx.unitId).' };
+        spend();
+        unit.armourOfContempt = true;
+        unit.defensiveFlagRound = this.state.round;
+        return { ok: true, message: `${unit.name} gains Armour of Contempt (-1 AP to incoming attacks).` };
+      }
+      case 'rapid_ingress': {
+        if (!unit) return { ok: false, message: 'Rapid Ingress needs a unit (ctx.unitId).' };
+        if (!unit.inReserves) return { ok: false, message: `${unit.name} is not in Reserves.` };
+        spend();
+        // Place near the unit's stored target or, failing that, the board centre;
+        // deepStrikeArrive enforces the >9"-from-enemies and on-board rules.
+        const at = ctx?.targetUnitId
+          ? unitCentroid(this.state.units[ctx.targetUnitId])
+          : { x: this.state.board.width / 2, y: this.state.board.height / 2 };
+        const res = this.deepStrikeArrive(unit.id, at);
+        if (res.ok) unit.rapidIngressRound = this.state.round;
+        return { ok: res.ok, message: res.message };
+      }
       case 'epic_challenge': {
+        if (!unit) return { ok: false, message: 'Epic Challenge needs a unit (ctx.unitId).' };
+        if (!unit.isCharacter) return { ok: false, message: `${unit.name} is not a Character.` };
+        spend();
+        // Grant Precision to the Character's melee weapons for this fight.
+        for (const w of unit.weapons) {
+          if (w.kind === 'melee' && !w.keywords.some((k) => k.t === 'precision')) {
+            w.keywords.push({ t: 'precision' });
+          }
+        }
+        return { ok: true, message: `${unit.name} issues an Epic Challenge (melee gains Precision).` };
+      }
+      case 'heroic_intervention':
+      case 'tank_shock': {
         // Listed for completeness; the engine has no faithful hook for these, so
         // they spend CP and log intent only (documented no-ops).
         spend();

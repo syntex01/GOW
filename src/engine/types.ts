@@ -201,6 +201,13 @@ export interface UnitInstance {
   /** Command Re-roll: a one-shot "re-roll all hits" granted to this unit's
    *  next shooting/fight attack. Consumed by the next resolveWeapon. */
   pendingRerollHits?: boolean;
+  /** Armour of Contempt: incoming attacks suffer -1 AP against this unit until
+   *  its controller's next turn. Honoured by shoot()/fight() via AttackOptions. */
+  armourOfContempt?: boolean;
+  /** Rapid Ingress: this unit arrived from Reserves during the opponent's turn. */
+  rapidIngressRound?: number;
+  /** Set once a unit's destruction has been credited to a player's kill tally. */
+  deathCredited?: boolean;
 }
 
 export interface Objective {
@@ -240,6 +247,10 @@ export interface PlayerState {
   faction: string;
   commandPoints: number;
   victoryPoints: number;
+  /** Secondary-objective VP, tracked separately and folded into victoryPoints. */
+  secondaryVictoryPoints?: number;
+  /** Count of enemy units this player has destroyed this turn (for secondaries). */
+  enemyUnitsKilledThisTurn?: number;
 }
 
 export interface LogEntry {

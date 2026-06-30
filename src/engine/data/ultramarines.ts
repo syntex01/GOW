@@ -183,3 +183,256 @@ export const ultramarinesCaptain: Datasheet = {
     heightInches: 1.8, // slightly taller than rank-and-file Intercessors
   },
 };
+
+// source: wahapedia.ru/wh40k10ed/factions/space-marines/Assault-Intercessor-Squad (10th ed)
+export const assaultIntercessors: Datasheet = {
+  id: 'ultramarines_assault_intercessors',
+  name: 'Assault Intercessor Squad',
+  faction: 'ultramarines',
+  keywords: [
+    'INFANTRY',
+    'BATTLELINE',
+    'GRENADES',
+    'IMPERIUM',
+    'TACTICUS',
+    'ASSAULT INTERCESSOR SQUAD',
+    'ADEPTUS ASTARTES',
+  ],
+  statline: {
+    move: 6,
+    toughness: 4,
+    save: 3, // 3+
+    wounds: 2,
+    leadership: 6, // 6+
+    objectiveControl: 2,
+  },
+  weapons: [
+    {
+      id: 'heavy_bolt_pistol',
+      name: 'Heavy Bolt Pistol',
+      kind: 'ranged',
+      range: 18,
+      attacks: 1,
+      skill: 3, // BS 3+
+      strength: 4,
+      ap: 1, // AP -1
+      damage: 1,
+      keywords: [{ t: 'pistol' }],
+    },
+    {
+      id: 'astartes_chainsword',
+      name: 'Astartes Chainsword',
+      kind: 'melee',
+      range: 0,
+      attacks: 4,
+      skill: 3, // WS 3+
+      strength: 4,
+      ap: 1, // AP -1
+      damage: 1,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Oath of Moment',
+      text: 'Each turn pick one enemy unit; this unit re-rolls hits and wounds against it.',
+      effect: { t: 'oathOfMoment' },
+    },
+    {
+      name: 'Shock Assault',
+      text: 'This unit re-rolls Wound rolls of 1 in melee.',
+      effect: { t: 'reroll', phase: 'wound', scope: 'ones' },
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Assault Intercessor Sergeant',
+      min: 1,
+      max: 1,
+      defaultWeaponIds: ['heavy_bolt_pistol', 'astartes_chainsword'],
+    },
+    {
+      modelName: 'Assault Intercessor',
+      min: 4,
+      max: 9,
+      defaultWeaponIds: ['heavy_bolt_pistol', 'astartes_chainsword'],
+    },
+  ],
+  baseSizeMm: 32,
+  isCharacter: false,
+  points: 75, // 5 models
+  proxy: {
+    silhouette: 'infantry',
+    primary: '#2f5cc4',
+    secondary: '#c0392b', // red accents
+    metalness: 0.4,
+    heightInches: 1.5,
+  },
+};
+
+// source: wahapedia.ru/wh40k10ed/factions/space-marines/Terminator-Squad (10th ed)
+// Default loadout: Storm Bolter + Power Fist (Sergeant carries a Power Fist too).
+export const terminatorSquad: Datasheet = {
+  id: 'ultramarines_terminators',
+  name: 'Terminator Squad',
+  faction: 'ultramarines',
+  keywords: ['INFANTRY', 'TERMINATOR', 'IMPERIUM', 'TERMINATOR SQUAD', 'ADEPTUS ASTARTES'],
+  statline: {
+    move: 5,
+    toughness: 5,
+    save: 2, // 2+
+    invuln: 4, // 4+
+    wounds: 3,
+    leadership: 6, // 6+
+    objectiveControl: 1,
+  },
+  weapons: [
+    {
+      id: 'storm_bolter',
+      name: 'Storm Bolter',
+      kind: 'ranged',
+      range: 24,
+      attacks: 2,
+      skill: 3, // BS 3+
+      strength: 4,
+      ap: 0,
+      damage: 1,
+      keywords: [{ t: 'rapidFire', x: 2 }],
+    },
+    {
+      id: 'terminator_power_fist',
+      name: 'Power Fist',
+      kind: 'melee',
+      range: 0,
+      attacks: 3,
+      skill: 3, // WS 3+
+      strength: 8,
+      ap: 2, // AP -2
+      damage: 2,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Oath of Moment',
+      text: 'Each turn pick one enemy unit; re-roll hits and wounds against it.',
+      effect: { t: 'oathOfMoment' },
+    },
+    {
+      name: 'Deep Strike',
+      text: 'This unit can be set up in Reserves and arrive by Deep Strike.',
+      effect: { t: 'deepStrike' },
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Terminator Sergeant',
+      min: 1,
+      max: 1,
+      defaultWeaponIds: ['storm_bolter', 'terminator_power_fist'],
+    },
+    {
+      modelName: 'Terminator',
+      min: 4,
+      max: 9,
+      defaultWeaponIds: ['storm_bolter', 'terminator_power_fist'],
+    },
+  ],
+  baseSizeMm: 40,
+  isCharacter: false,
+  points: 170, // 5 models
+  proxy: {
+    silhouette: 'infantry',
+    primary: '#2f5cc4',
+    secondary: '#e8c46a',
+    metalness: 0.6,
+    heightInches: 1.9,
+  },
+};
+
+// source: wahapedia.ru/wh40k10ed/factions/space-marines/Hellblaster-Squad (10th ed)
+// Default loadout: supercharged Plasma Incinerators (Hazardous).
+export const hellblasterSquad: Datasheet = {
+  id: 'ultramarines_hellblasters',
+  name: 'Hellblaster Squad',
+  faction: 'ultramarines',
+  keywords: ['INFANTRY', 'IMPERIUM', 'TACTICUS', 'HELLBLASTER SQUAD', 'ADEPTUS ASTARTES'],
+  statline: {
+    move: 6,
+    toughness: 4,
+    save: 3, // 3+
+    wounds: 2,
+    leadership: 6, // 6+
+    objectiveControl: 1,
+  },
+  weapons: [
+    {
+      id: 'plasma_incinerator_super',
+      name: 'Plasma Incinerator (Supercharge)',
+      kind: 'ranged',
+      range: 24,
+      attacks: 2,
+      skill: 3, // BS 3+
+      strength: 8,
+      ap: 3, // AP -3
+      damage: 2,
+      keywords: [{ t: 'assault' }, { t: 'heavy' }, { t: 'hazardous' }],
+    },
+    {
+      id: 'hellblaster_bolt_pistol',
+      name: 'Bolt Pistol',
+      kind: 'ranged',
+      range: 12,
+      attacks: 1,
+      skill: 3, // BS 3+
+      strength: 4,
+      ap: 0,
+      damage: 1,
+      keywords: [{ t: 'pistol' }],
+    },
+    {
+      id: 'hellblaster_ccw',
+      name: 'Close Combat Weapon',
+      kind: 'melee',
+      range: 0,
+      attacks: 3,
+      skill: 3, // WS 3+
+      strength: 4,
+      ap: 0,
+      damage: 1,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Oath of Moment',
+      text: 'Each turn pick one enemy unit; re-roll hits and wounds against it.',
+      effect: { t: 'oathOfMoment' },
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Hellblaster Sergeant',
+      min: 1,
+      max: 1,
+      defaultWeaponIds: ['plasma_incinerator_super', 'hellblaster_bolt_pistol', 'hellblaster_ccw'],
+    },
+    {
+      modelName: 'Hellblaster',
+      min: 4,
+      max: 9,
+      defaultWeaponIds: ['plasma_incinerator_super', 'hellblaster_bolt_pistol', 'hellblaster_ccw'],
+    },
+  ],
+  baseSizeMm: 32,
+  isCharacter: false,
+  points: 110, // 5 models
+  proxy: {
+    silhouette: 'infantry',
+    primary: '#2f5cc4',
+    secondary: '#3fe0d0', // plasma glow
+    metalness: 0.4,
+    glow: '#3fe0d0',
+    heightInches: 1.5,
+  },
+};

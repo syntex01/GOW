@@ -34,6 +34,8 @@ class App {
     });
     this.buildBattle();
     window.addEventListener('resize', () => this.scene.resize());
+    // Dev-only hook used by the screenshot harness to showcase the dice tray.
+    if (import.meta.env.DEV) (window as Window & { __demoDice?: () => void }).__demoDice = () => void this.ui.demoDice();
   }
 
   private buildBattle(): void {

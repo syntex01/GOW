@@ -194,3 +194,194 @@ export const necronOverlord: Datasheet = {
     heightInches: 2.0, // a bit taller than rank-and-file Warriors
   },
 };
+
+// source: wahapedia.ru/wh40k10ed/factions/necrons/Immortals (10th ed)
+// Default loadout: Gauss Blasters.
+export const necronImmortals: Datasheet = {
+  id: 'necron_immortals',
+  name: 'Immortals',
+  faction: 'necrons',
+  keywords: ['INFANTRY', 'IMMORTALS', 'NECRONS'],
+  statline: {
+    move: 5,
+    toughness: 5,
+    save: 3, // 3+
+    wounds: 1,
+    leadership: 7, // 7+
+    objectiveControl: 2,
+  },
+  weapons: [
+    {
+      id: 'gauss_blaster',
+      name: 'Gauss Blaster',
+      kind: 'ranged',
+      range: 24,
+      attacks: 2,
+      skill: 3, // BS 3+
+      strength: 5,
+      ap: 1, // AP -1
+      damage: 1,
+      keywords: [{ t: 'lethalHits' }],
+    },
+    {
+      id: 'immortal_ccw',
+      name: 'Close Combat Weapon',
+      kind: 'melee',
+      range: 0,
+      attacks: 2,
+      skill: 3, // WS 3+
+      strength: 4,
+      ap: 0,
+      damage: 1,
+      keywords: [],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Reanimation Protocols',
+      text: 'At the end of your Command phase this unit reanimates D3 wounds, restoring slain models.',
+      effect: { t: 'reanimation', wounds: 3 },
+    },
+    {
+      name: 'Implacable Eradication',
+      text: 'This unit re-rolls Wound rolls of 1 with its ranged weapons.',
+      effect: { t: 'reroll', phase: 'wound', scope: 'ones' },
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Immortal',
+      min: 5,
+      max: 10,
+      defaultWeaponIds: ['gauss_blaster', 'immortal_ccw'],
+    },
+  ],
+  baseSizeMm: 32,
+  isCharacter: false,
+  points: 70, // 5 models
+  proxy: {
+    silhouette: 'infantry',
+    primary: '#b8c0c8',
+    secondary: '#39ff7a',
+    metalness: 0.9,
+    glow: '#39ff7a',
+    heightInches: 1.5,
+  },
+};
+
+// source: wahapedia.ru/wh40k10ed/factions/necrons/Lychguard (10th ed)
+// Default loadout: Warscythes (no shield -> no extra invuln).
+export const necronLychguard: Datasheet = {
+  id: 'necron_lychguard',
+  name: 'Lychguard',
+  faction: 'necrons',
+  keywords: ['INFANTRY', 'LYCHGUARD', 'NECRONS'],
+  statline: {
+    move: 5,
+    toughness: 5,
+    save: 3, // 3+
+    wounds: 2,
+    leadership: 7, // 7+
+    objectiveControl: 1,
+  },
+  weapons: [
+    {
+      id: 'warscythe',
+      name: 'Warscythe',
+      kind: 'melee',
+      range: 0,
+      attacks: 2,
+      skill: 3, // WS 3+
+      strength: 8,
+      ap: 3, // AP -3
+      damage: 2,
+      keywords: [{ t: 'devastatingWounds' }],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Reanimation Protocols',
+      text: 'At the end of your Command phase this unit reanimates D3 wounds, restoring slain models.',
+      effect: { t: 'reanimation', wounds: 3 },
+    },
+    {
+      name: 'Guardian Protocols',
+      text: 'A bodyguard escort for Necron Nobles, soaking hits meant for the warlord.',
+      // Damage-redirection not modelled; descriptive only.
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Lychguard',
+      min: 5,
+      max: 10,
+      defaultWeaponIds: ['warscythe'],
+    },
+  ],
+  baseSizeMm: 32,
+  isCharacter: false,
+  points: 85, // 5 models
+  proxy: {
+    silhouette: 'infantry',
+    primary: '#b8c0c8',
+    secondary: '#39ff7a',
+    metalness: 0.9,
+    glow: '#39ff7a',
+    heightInches: 1.7,
+  },
+};
+
+// source: wahapedia.ru/wh40k10ed/factions/necrons/Canoptek-Scarab-Swarms (10th ed)
+export const necronScarabs: Datasheet = {
+  id: 'necron_scarabs',
+  name: 'Canoptek Scarab Swarms',
+  faction: 'necrons',
+  keywords: ['SWARM', 'FLY', 'CANOPTEK', 'SCARAB SWARMS', 'NECRONS'],
+  statline: {
+    move: 10,
+    toughness: 2,
+    save: 6, // 6+
+    wounds: 4,
+    leadership: 8, // 8+
+    objectiveControl: 0,
+  },
+  weapons: [
+    {
+      id: 'feeder_mandibles',
+      name: 'Feeder Mandibles',
+      kind: 'melee',
+      range: 0,
+      attacks: 6,
+      skill: 5, // WS 5+
+      strength: 2,
+      ap: 0,
+      damage: 1,
+      keywords: [{ t: 'lethalHits' }],
+    },
+  ],
+  abilities: [
+    {
+      name: 'Swarm',
+      text: 'Fast, expendable Canoptek constructs that screen and tie up the enemy.',
+    },
+  ],
+  composition: [
+    {
+      modelName: 'Canoptek Scarab Swarm',
+      min: 3,
+      max: 6,
+      defaultWeaponIds: ['feeder_mandibles'],
+    },
+  ],
+  baseSizeMm: 40,
+  isCharacter: false,
+  points: 40, // 3 models
+  proxy: {
+    silhouette: 'monster',
+    primary: '#7a8088',
+    secondary: '#39ff7a',
+    metalness: 0.8,
+    glow: '#39ff7a',
+    heightInches: 0.8,
+  },
+};
