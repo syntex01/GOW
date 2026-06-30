@@ -2,40 +2,69 @@ import './ui/styles.css';
 import { ThreeScene } from './render/ThreeScene';
 import { GameEngine } from './engine/game';
 import { GameUI } from './ui/HUD';
+import { Menu, showLoading, hideLoading, type StartConfig } from './ui/Menu';
 import { createGame, type ArmyList, type GameConfig } from './engine/factory';
 import { DATASHEETS, FACTIONS, SAMPLE_ARMIES } from './engine/data/index';
 import { importRosterText } from './import/rosterImport';
 import { SAMPLE_ROSTERS } from './import/sampleRosters';
 import { CORE_STRATAGEMS } from './engine/stratagems';
+import { NetController } from './net/NetController';
+import { PeerTransport } from './net/PeerTransport';
 import type { PlayerId } from './engine/types';
 
 /**
- * App shell: owns the renderer, the engine and the UI, and knows how to start a
- * fresh battle from two army lists (including ones imported from army-builder
- * text exports). Everything below the engine is faithful to the tabletop; this
- * layer is just orchestration.
+ * App shell: owns the menu and, per battle, a fresh renderer + engine + UI.
+ * The menu drives everything (faction select, mode, settings, online). Each
+ * battle is torn down before the next so nothing leaks between games.
  */
 class App {
   private container = document.getElementById('app') as HTMLElement;
-  private scene = new ThreeScene();
+  private gameRoot = document.createElement('div');
+  private menu!: Menu;
+  private scene: ThreeScene | null = null;
   private engine!: GameEngine;
   private ui!: GameUI;
-
-  // Current army lists; either side can be swapped via import.
+  private net: NetController | null = null;
   private lists: Record<PlayerId, ArmyList> = {
     A: SAMPLE_ARMIES.necrons,
     B: SAMPLE_ARMIES.ultramarines,
   };
 
   start(): void {
-    this.ui = new GameUI(this.scene, this.container, {
-      onImportArmy: (p) => this.openImport(p),
-      onNewBattle: () => this.newBattle(),
-    });
+    this.gameRoot.style.cssText = 'position:absolute;inset:0;';
+    this.container.appendChild(this.gameRoot);
+    this.menu = new Menu(this.container);
+    this.menu.onStart((cfg) => this.beginBattle(cfg));
+    window.addEventListener('resize', () => this.scene?.resize());
+  }
+
+  private armyFor(faction: string): ArmyList {
+    return (SAMPLE_ARMIES as Record<string, ArmyList>)[faction] ?? SAMPLE_ARMIES.necrons;
+  }
+
+  // ---------------------------------------------------------------- battle lifecycle
+  private async beginBattle(cfg: StartConfig): Promise<void> {
+    showLoading('Deploying forces…');
+    this.teardown();
+    this.lists = { A: this.armyFor(cfg.aFaction), B: this.armyFor(cfg.bFaction) };
     this.buildBattle();
-    window.addEventListener('resize', () => this.scene.resize());
-    // Dev-only hook used by the screenshot harness to showcase the dice tray.
-    if (import.meta.env.DEV) (window as Window & { __demoDice?: () => void }).__demoDice = () => void this.ui.demoDice();
+    this.ui.setDiceSpeed(cfg.settings.diceSpeed);
+    this.ui.setAi(cfg.mode === 'ai' ? cfg.settings.aiPlayer ?? 'B' : null);
+
+    if (cfg.mode === 'online' && cfg.online) {
+      this.setupOnline(cfg);
+    } else {
+      this.menu.hide();
+      hideLoading();
+    }
+  }
+
+  private teardown(): void {
+    this.net?.close();
+    this.net = null;
+    this.scene?.dispose();
+    this.scene = null;
+    this.gameRoot.innerHTML = '';
   }
 
   private buildBattle(): void {
@@ -47,25 +76,52 @@ class App {
       },
     };
     const state = createGame(config, DATASHEETS, this.lists.A, this.lists.B);
+    this.scene = new ThreeScene();
     this.engine = new GameEngine(state);
-    this.scene.init(this.container, state);
+    this.scene.init(this.gameRoot, state);
     this.engine.startGame();
+    this.ui = new GameUI(this.scene, this.gameRoot, {
+      onImportArmy: (p) => this.openImport(p),
+      onNewBattle: () => this.menu.show(),
+    });
     this.ui.bind(this.engine);
     this.wireStratagems();
     this.scene.frameBoard();
+    if (import.meta.env.DEV)
+      (window as Window & { __demoDice?: () => void }).__demoDice = () => void this.ui.demoDice();
   }
 
-  private newBattle(): void {
-    this.lists = { A: SAMPLE_ARMIES.necrons, B: SAMPLE_ARMIES.ultramarines };
-    this.buildBattle();
+  // ---------------------------------------------------------------- online
+  private setupOnline(cfg: StartConfig): void {
+    const action = cfg.online!.action;
+    const transport = new PeerTransport(action === 'host' ? 'host' : 'guest', cfg.online!.code);
+    const net = new NetController(transport);
+    this.net = net;
+    this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
+    net.onRemoteState((s) => this.ui.applyRemoteState(s));
+    net.onStatus((st) => {
+      this.menu.setOnlineStatus(
+        st === 'connected'
+          ? 'Connected — battle on!'
+          : st === 'connecting'
+            ? 'Connecting…'
+            : st === 'error'
+              ? 'Connection failed. Check the code and try again.'
+              : 'Disconnected.',
+      );
+      if (st === 'connected') {
+        this.menu.hide();
+        hideLoading();
+        // Host is authoritative: push the opening state to the guest.
+        if (net.localPlayer === 'A') this.ui.refresh();
+      }
+    });
+    if (action === 'host') this.menu.setRoomCode(transport.roomCode);
+    this.menu.setOnlineStatus('Connecting…');
+    void net.connect();
   }
 
-  /**
-   * Feed the full core-stratagem list to the HUD panel. The HUD gates each entry
-   * by the current phase and the active player's CP; activation spends CP and
-   * applies the effect via the engine, using the player's current selection as
-   * context (the chosen friendly unit, and a highlighted enemy as the target).
-   */
+  // ---------------------------------------------------------------- stratagems
   private wireStratagems(): void {
     const entries = CORE_STRATAGEMS.map((s) => ({
       id: s.id,
@@ -85,10 +141,9 @@ class App {
   private openImport(player: PlayerId): void {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop show';
-    const sample =
-      this.lists[player].faction.toLowerCase().includes('necron')
-        ? SAMPLE_ROSTERS.necrons
-        : SAMPLE_ROSTERS.ultramarines;
+    const sample = this.lists[player].faction.toLowerCase().includes('necron')
+      ? SAMPLE_ROSTERS.necrons
+      : SAMPLE_ROSTERS.ultramarines;
     backdrop.innerHTML = `
       <div class="modal">
         <h3>Import army for Player ${player}</h3>
@@ -112,7 +167,7 @@ class App {
       const res = importRosterText(ta.value, { nameToId: undefined });
       if (res.army.entries.length === 0) {
         warn.textContent =
-          'No units matched. Supported units right now: ' +
+          'No units matched. Supported units: ' +
           Object.values(FACTIONS)
             .flatMap((f) => f.datasheetIds)
             .map((id) => DATASHEETS[id]?.name)
@@ -120,7 +175,6 @@ class App {
             .join(', ');
         return;
       }
-      // Keep the imported faction's name; fall back to a sensible default.
       this.lists[player] = {
         name: res.army.name || `Player ${player}`,
         faction: res.army.faction || this.lists[player].faction,
@@ -128,8 +182,7 @@ class App {
       };
       close();
       this.buildBattle();
-      if (res.unmatched.length)
-        console.warn('Unmatched roster units (skipped):', res.unmatched);
+      if (res.unmatched.length) console.warn('Unmatched roster units (skipped):', res.unmatched);
     };
     backdrop.onclick = (e) => {
       if (e.target === backdrop) close();

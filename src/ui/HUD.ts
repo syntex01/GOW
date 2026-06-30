@@ -4,6 +4,7 @@ import type { UnitInstance, Phase, Vec2, Weapon, PlayerId } from '../engine/type
 import { aliveModels, unitCentroid, inEngagementRange } from '../engine/geometry';
 import { runAiTurn } from '../engine/ai';
 import { DiceTray } from './DiceTray';
+import { Rng } from '../engine/dice';
 
 const PHASES: Phase[] = ['command', 'movement', 'shooting', 'charge', 'fight', 'end'];
 const PHASE_LABEL: Record<Phase, string> = {
@@ -55,6 +56,12 @@ export class GameUI {
 
   /** When set, the next table click deep-strikes this reserve unit. */
   private deepStrikeUnitId: string | null = null;
+
+  // --- online multiplayer (null localPlayer = local/hotseat/AI controls both) ---
+  private localPlayer: PlayerId | null = null;
+  private broadcaster: ((state: unknown) => void) | null = null;
+  private applyingRemote = false;
+  private hasReceivedRemote = false;
 
   // Stratagem shell state (presentation only).
   private stratagems: StratagemEntry[] = [];
@@ -233,6 +240,42 @@ export class GameUI {
     this.renderStratagems();
     this.scene.sync(this.engine.state);
     this.checkVictory();
+    // Online: push our authoritative state to the peer after any local change.
+    // Host (A) may broadcast from the start; guest (B) only after it has first
+    // received the host's state, so it never clobbers the initial sync.
+    if (
+      this.broadcaster &&
+      !this.applyingRemote &&
+      (this.localPlayer === 'A' || this.hasReceivedRemote)
+    ) {
+      this.broadcaster(this.engine.state);
+    }
+  }
+
+  // -------------------------------------------------------------- online API
+  /** Put the HUD into online mode: input is gated to `local`'s turns, and every
+   *  local change is sent via `broadcast`. */
+  setOnline(local: PlayerId, broadcast: (state: unknown) => void): void {
+    this.localPlayer = local;
+    this.broadcaster = broadcast;
+    this.aiPlayer = null; // online play has no local AI
+  }
+
+  /** Apply an authoritative GameState received from the peer. */
+  applyRemoteState(state: unknown): void {
+    this.applyingRemote = true;
+    this.hasReceivedRemote = true;
+    this.engine.state = state as GameEngine['state'];
+    this.engine.rng = new Rng((state as { rngSeed: number }).rngSeed);
+    this.deselect();
+    this.deepStrikeUnitId = null;
+    this.refresh();
+    this.applyingRemote = false;
+  }
+
+  /** True when the local player is allowed to act right now. */
+  private canLocalAct(): boolean {
+    return this.localPlayer === null || this.engine.active === this.localPlayer;
   }
 
   /** Derive an accent theme from the active player's faction. */
@@ -557,6 +600,10 @@ export class GameUI {
 
   // ---------------------------------------------------------------- flow
   nextPhase(): void {
+    if (!this.canLocalAct()) {
+      this.toast('Waiting for the other player…');
+      return;
+    }
     // Auto-resolve fights left on the board when leaving the fight phase.
     if (this.engine.state.phase === 'fight') this.autoResolveFights(true);
     this.engine.advancePhase();
@@ -570,6 +617,16 @@ export class GameUI {
     }
     if (this.engine.state.phase === 'command') this.toast(`${this.engine.state.players[this.engine.active].name}'s turn`);
     this.refresh();
+  }
+
+  /** Set which side the AI plays (null = hotseat/no AI). */
+  setAi(player: PlayerId | null): void {
+    this.aiPlayer = player;
+  }
+
+  /** Set the dice-animation speed multiplier (>1 faster). */
+  setDiceSpeed(mult: number): void {
+    this.dice.setSpeed(mult);
   }
 
   /** Toggle the AI opponent on player B (off = hotseat). */
@@ -586,6 +643,7 @@ export class GameUI {
 
   // ---------------------------------------------------------------- picking
   private handlePick(r: PickResult): void {
+    if (!this.canLocalAct()) return; // not our turn in online play
     const phase = this.engine.state.phase;
     if (phase === 'command' || phase === 'end') return;
     const unit = r.unitId ? this.engine.state.units[r.unitId] : undefined;
