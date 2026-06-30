@@ -3,6 +3,24 @@ import type { ModelInstance, UnitInstance, Vec2, Objective, PlayerId, TerrainPie
 export const ENGAGEMENT_RANGE = 1; // inches
 export const COHERENCY_DISTANCE = 2; // inches between models in a unit
 
+/** Fallback model height (inches) when an instance doesn't specify one. */
+export const DEFAULT_MODEL_HEIGHT = 1.4;
+
+/** A model's physical height in inches (for terrain clearance checks). */
+export function modelHeight(m: ModelInstance): number {
+  return m.heightInches ?? DEFAULT_MODEL_HEIGHT;
+}
+
+/** Max model height (inches) allowed within a terrain footprint (0 = solid). */
+function terrainClearance(t: TerrainPiece): number {
+  return t.clearance ?? 0;
+}
+
+/** Does this terrain piece keep `m` out of its footprint (too tall to fit)? */
+export function terrainBlocksModel(m: ModelInstance, t: TerrainPiece): boolean {
+  return modelHeight(m) > terrainClearance(t) + 1e-6;
+}
+
 export function dist(a: Vec2, b: Vec2): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -197,6 +215,99 @@ export function unitInCover(u: UnitInstance, terrain: TerrainPiece[]): boolean {
   return terrain.some((t) =>
     aliveModels(u).some((m) => pointInRect(m.position, footprint(t), m.baseRadius)),
   );
+}
+
+/* ----------------------------- base / clipping --------------------------- *
+ * Tabletop-faithful spacing: every model occupies a round base of `baseRadius`
+ * inches. Bases may not overlap each other, and may not overlap terrain a model
+ * is too tall to enter (solid ruins by default). `resolveCollisions` nudges
+ * overlapping/clipping models apart with a few relaxation passes — gentle, so it
+ * only moves models that are actually intersecting and otherwise leaves legal
+ * layouts untouched. Called after deployment and after movement.
+ * ------------------------------------------------------------------------- */
+
+/** Push a model's base outside terrain `t`'s footprint if it overlaps it. */
+function pushOutOfTerrain(m: ModelInstance, t: TerrainPiece): void {
+  const r = footprint(t);
+  const cx = Math.max(r.minX, Math.min(m.position.x, r.maxX));
+  const cy = Math.max(r.minY, Math.min(m.position.y, r.maxY));
+  const inside = cx === m.position.x && cy === m.position.y;
+  if (inside) {
+    // Centre is within the rect: eject along the nearest edge (smallest push).
+    const left = m.position.x - r.minX;
+    const right = r.maxX - m.position.x;
+    const down = m.position.y - r.minY;
+    const up = r.maxY - m.position.y;
+    const min = Math.min(left, right, down, up);
+    if (min === left) m.position.x = r.minX - m.baseRadius;
+    else if (min === right) m.position.x = r.maxX + m.baseRadius;
+    else if (min === down) m.position.y = r.minY - m.baseRadius;
+    else m.position.y = r.maxY + m.baseRadius;
+    return;
+  }
+  // Centre outside: only act if the base disc still clips the rect edge.
+  const dx = m.position.x - cx;
+  const dy = m.position.y - cy;
+  const d = Math.hypot(dx, dy);
+  if (d < m.baseRadius && d > 1e-6) {
+    const push = (m.baseRadius - d) / d;
+    m.position.x += dx * push;
+    m.position.y += dy * push;
+  }
+}
+
+/**
+ * Relax model positions so no two bases overlap and no base clips terrain it is
+ * too tall to enter. Mutates positions in place. Iterative (a few passes is
+ * plenty for the small model counts here); each pass also clamps to the board.
+ */
+export function resolveCollisions(
+  units: Record<string, UnitInstance>,
+  terrain: TerrainPiece[],
+  board: { width: number; height: number },
+  iterations = 6,
+): void {
+  const models: ModelInstance[] = [];
+  for (const u of Object.values(units)) for (const m of aliveModels(u)) models.push(m);
+  if (models.length === 0) return;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    // Separate overlapping bases (split the overlap between the two models).
+    for (let i = 0; i < models.length; i++) {
+      for (let j = i + 1; j < models.length; j++) {
+        const a = models[i];
+        const b = models[j];
+        const minD = a.baseRadius + b.baseRadius;
+        if (minD <= 0) continue;
+        let dx = b.position.x - a.position.x;
+        let dy = b.position.y - a.position.y;
+        let d = Math.hypot(dx, dy);
+        if (d >= minD - 1e-6) continue;
+        if (d < 1e-6) {
+          // Coincident: nudge apart on a deterministic axis derived from index.
+          dx = ((i + j) % 2 === 0 ? 1 : 0) || 1;
+          dy = (i + j) % 2 === 0 ? 0 : 1;
+          d = 1;
+        }
+        const push = (minD - d) / 2 / d;
+        a.position.x -= dx * push;
+        a.position.y -= dy * push;
+        b.position.x += dx * push;
+        b.position.y += dy * push;
+      }
+    }
+    // Eject from terrain too tall to enter.
+    for (const m of models) {
+      for (const t of terrain) {
+        if (terrainBlocksModel(m, t)) pushOutOfTerrain(m, t);
+      }
+    }
+    // Keep everyone on the table.
+    for (const m of models) {
+      m.position.x = Math.max(m.baseRadius, Math.min(board.width - m.baseRadius, m.position.x));
+      m.position.y = Math.max(m.baseRadius, Math.min(board.height - m.baseRadius, m.position.y));
+    }
+  }
 }
 
 /** Number of living models in a unit at/under half its starting strength? */

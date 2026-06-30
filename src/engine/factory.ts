@@ -9,9 +9,23 @@ import type {
   Characteristics,
   TerrainPiece,
 } from './types';
+import { resolveCollisions } from './geometry';
 
 const MM_PER_INCH = 25.4;
 export const baseRadiusInches = (mm: number): number => mm / 2 / MM_PER_INCH;
+
+/** Default physical model heights (inches) by silhouette, for clipping/terrain. */
+const SILHOUETTE_HEIGHT: Record<NonNullable<Datasheet['proxy']>['silhouette'], number> = {
+  infantry: 1.4,
+  character: 1.9,
+  monster: 3.2,
+  vehicle: 3.6,
+};
+
+/** Physical height (inches) of a datasheet's models for clearance checks. */
+function modelHeightFor(ds: Datasheet): number {
+  return ds.proxy?.heightInches ?? SILHOUETTE_HEIGHT[ds.proxy?.silhouette ?? 'infantry'];
+}
 
 /** One unit in an army list: a datasheet plus how many models to field. */
 export interface ArmyListEntry {
@@ -57,8 +71,10 @@ export function instantiateUnit(
   facingDir: 1 | -1,
 ): UnitInstance {
   const radius = baseRadiusInches(ds.baseSizeMm);
+  const height = modelHeightFor(ds);
   const models: ModelInstance[] = [];
   const perRow = Math.max(1, Math.ceil(Math.sqrt(modelCount)));
+  // Bases must not overlap, so space models a touch more than one base apart.
   const spacing = radius * 2 + 0.4;
   for (let i = 0; i < modelCount; i++) {
     const row = Math.floor(i / perRow);
@@ -75,6 +91,7 @@ export function instantiateUnit(
       position: offset,
       alive: true,
       baseRadius: radius,
+      heightInches: height,
     });
   }
   return {
@@ -133,6 +150,7 @@ export function defaultTerrain(board: { width: number; height: number }): Terrai
     depth: dd,
     height: 4,
     obscuring: true,
+    clearance: 0, // solid structure: no model base may overlap its footprint
   });
   const crater = (id: string, x: number, y: number, r: number): TerrainPiece => ({
     id,
@@ -142,6 +160,7 @@ export function defaultTerrain(board: { width: number; height: number }): Terrai
     depth: r * 2,
     height: 0.4,
     obscuring: false,
+    clearance: 99, // shallow depression: any model may stand in it
   });
   return [
     ruin('r_center', w / 2, h / 2, 9, 6),
@@ -247,6 +266,10 @@ export function createGame(
   linkAttachment(listA);
   linkAttachment(listB);
 
+  // Settle deployment so no bases overlap each other or solid terrain.
+  const terrain = defaultTerrain(board);
+  resolveCollisions(units, terrain, board);
+
   return {
     round: 1,
     activePlayer: 'A',
@@ -258,7 +281,7 @@ export function createGame(
     },
     units,
     objectives: defaultObjectives(board),
-    terrain: defaultTerrain(board),
+    terrain,
     board,
     log: [],
     rngSeed: config.seed,

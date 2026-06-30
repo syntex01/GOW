@@ -139,7 +139,14 @@ export interface ModelInstance {
   maxWounds: number;
   position: Vec2;
   alive: boolean;
-  baseRadius: number; // inches
+  baseRadius: number; // inches — round base radius (the model's tabletop footprint)
+  /**
+   * Physical model height in inches (tip of the model above the base). Used by
+   * the clipping/terrain system: a model taller than a terrain piece's clearance
+   * cannot move under/into it. Optional; geometry falls back to a silhouette
+   * default when absent.
+   */
+  heightInches?: number;
 }
 
 export type MoveState =
@@ -234,6 +241,15 @@ export interface TerrainPiece {
   depth: number; // y extent (inches)
   height: number; // visual height (inches)
   obscuring: boolean; // blocks line of sight when true
+  /**
+   * Max model height (inches) that may stand within / pass under this piece.
+   * Models taller than this are kept out of the footprint (their bases cannot
+   * overlap it) — i.e. you can't move a too-big model under/into solid terrain.
+   * Solid structures (ruins) use 0 (nothing fits); low cover (craters) uses a
+   * large value (anything can occupy it). Optional; defaults to 0 (solid) when
+   * absent so existing terrain reads as impassable to bases.
+   */
+  clearance?: number;
 }
 
 export type Phase =

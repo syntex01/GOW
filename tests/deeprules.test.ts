@@ -87,8 +87,22 @@ describe('per-model movement', () => {
     // A 2" nudge: within the 6" allowance and small enough to stay coherent.
     const ok = e.moveModel(u.id, m.id, { x: start.x + 2, y: start.y });
     expect(ok).toBe(true);
-    expect(m.position.x).toBeCloseTo(start.x + 2);
+    // The model advances toward the target; the base-collision pass may settle it
+    // a fraction short so it never overlaps a neighbour's base. It should still
+    // have moved most of the way and stayed within its 6" allowance.
+    expect(m.position.x).toBeGreaterThan(start.x + 1.5);
+    expect(Math.hypot(m.position.x - start.x, m.position.y - start.y)).toBeLessThanOrEqual(6 + 1e-6);
     expect(isCoherent(u)).toBe(true);
+    // No two living bases of the unit overlap after settling.
+    const live = u.models.filter((mm) => mm.alive);
+    for (let i = 0; i < live.length; i++)
+      for (let j = i + 1; j < live.length; j++) {
+        const gap = Math.hypot(
+          live[i].position.x - live[j].position.x,
+          live[i].position.y - live[j].position.y,
+        );
+        expect(gap).toBeGreaterThan(live[i].baseRadius + live[j].baseRadius - 1e-3);
+      }
   });
 
   it('rejects a move beyond the movement allowance', () => {

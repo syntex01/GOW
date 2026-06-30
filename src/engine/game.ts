@@ -21,6 +21,7 @@ import {
   unitInCover,
   isCoherent,
   ENGAGEMENT_RANGE,
+  resolveCollisions,
 } from './geometry';
 import { CORE_STRATAGEMS, findStratagem, Stratagem } from './stratagems';
 
@@ -275,6 +276,7 @@ export class GameEngine {
 
     u.moveState = mode === 'advance' ? 'advanced' : mode === 'fallBack' ? 'fellBack' : 'normal';
     this.clampToBoard(u);
+    this.settlePositions();
     this.log(
       `${u.name} ${mode === 'fallBack' ? 'falls back' : mode === 'advance' ? 'advances' : 'moves'} ` +
         `${moved.toFixed(1)}".`,
@@ -318,6 +320,15 @@ export class GameEngine {
   }
 
   /**
+   * Settle every model base so none overlaps another base or solid terrain it is
+   * too tall to enter. Called after any move so the board never shows clipping
+   * figures and the tabletop "bases can't overlap" rule always holds.
+   */
+  private settlePositions(): void {
+    resolveCollisions(this.state.units, this.state.terrain, this.state.board);
+  }
+
+  /**
    * Move a single model of a unit to `to`. The move is legal only if (a) the
    * model travels no further than its unit's normal Move allowance, and (b) the
    * unit remains in coherency afterwards. Returns false and changes nothing if
@@ -337,6 +348,7 @@ export class GameEngine {
       return false;
     }
     this.clampToBoard(u);
+    this.settlePositions();
     return true;
   }
 
@@ -374,6 +386,7 @@ export class GameEngine {
       moved += step;
     }
     this.clampToBoard(u);
+    this.settlePositions();
     return moved;
   }
 
