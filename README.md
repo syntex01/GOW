@@ -6,8 +6,14 @@ and develop strategies. It mirrors the rules of the current edition of the
 sequence, objectives and scoring — reproduced 1:1 with the tabletop math
 (validated against published profiles and verified by an automated test suite).
 
-This is an early but **fully playable** vertical slice. The general systems are
-built once and faction-agnostic; the slice ships **2 factions with 2 units each**
+It is **fully playable** solo (vs an AI), hotseat, or **online** (peer-to-peer,
+no server), on desktop and smartphone, with a "Battle Forge" menu for picking
+warhosts and settings, animated dice, three factions, and custom-model import.
+The general systems are built once and faction-agnostic; it currently ships
+**three factions** (Necrons, Ultramarines, Orks) and is
+
+<!-- legacy note -->
+The original slice shipped **2 factions with 2 units each**
 (Necrons: Warriors + Overlord — Ultramarines: Intercessors + Captain) and is
 designed to expand to the whole game.
 
@@ -31,6 +37,12 @@ designed to expand to the whole game.
   cards, a stratagem panel, and a **mobile / touch** responsive layout (PWA)
 - ✅ **Solo AI opponent** (toggle in the action bar) so one player can test a
   list against the machine; deterministic heuristic play
+- ✅ **Online play**: peer-to-peer (WebRTC via PeerJS, no server) with a
+  shareable room code and authoritative full-state sync
+- ✅ **"Battle Forge" menu**: faction/army select for both sides, mode, and
+  settings (dice speed, graphics, AI); loading splash; installable PWA
+- ✅ **Animated dice**: the actual rolled d6s tumble and settle in combat
+- ✅ **Import your own 3D models** in-app (glTF/GLB/OBJ/STL, public URL or file)
 - ✅ **Army importer**: paste an army-list text export (Warhammer app / New
   Recruit / BattleScribe) and deploy it
 - ✅ **Custom model import** slot (glTF / GLB / OBJ / STL) for publicly available models
