@@ -2822,6 +2822,14 @@ export class ThreeScene implements SceneController {
     this.targetPolar = 0.95;
   }
 
+  /** Move the camera to a close, low-angle view of a table point (e.g. a unit). */
+  frameUnit(center: Vec2, radiusInches = 8): void {
+    const w = this.tableToWorld(center);
+    this.targetPivot.set(w.x, 1.5, w.z);
+    this.targetRadius = clamp(radiusInches * 2.2 + 6, this.orbitMinRadius, this.orbitMaxRadius);
+    this.targetPolar = 1.18; // lower, near eye-level for a miniatures look
+  }
+
   resize(): void {
     if (!this.renderer) return;
     const w = this.container.clientWidth || window.innerWidth;

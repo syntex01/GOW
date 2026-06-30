@@ -87,8 +87,25 @@ class App {
     this.ui.bind(this.engine);
     this.wireStratagems();
     this.scene.frameBoard();
-    if (import.meta.env.DEV)
-      (window as Window & { __demoDice?: () => void }).__demoDice = () => void this.ui.demoDice();
+    if (import.meta.env.DEV) {
+      const w = window as Window & { __demoDice?: () => void; __frameBiggest?: () => void };
+      w.__demoDice = () => void this.ui.demoDice();
+      // Frame the squad with the most models (for showing off the figures).
+      w.__frameBiggest = () => {
+        const units = Object.values(this.engine.state.units).filter((u) =>
+          u.models.some((m) => m.alive) && !u.inReserves,
+        );
+        let best = units[0];
+        for (const u of units) {
+          if (u.models.filter((m) => m.alive).length > best.models.filter((m) => m.alive).length) best = u;
+        }
+        if (!best) return;
+        const alive = best.models.filter((m) => m.alive);
+        const cx = alive.reduce((a, m) => a + m.position.x, 0) / alive.length;
+        const cy = alive.reduce((a, m) => a + m.position.y, 0) / alive.length;
+        this.scene!.frameUnit({ x: cx, y: cy }, 9);
+      };
+    }
   }
 
   // ---------------------------------------------------------------- online

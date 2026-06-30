@@ -83,6 +83,9 @@ export interface SceneController {
   /** Frame the camera on the whole board. */
   frameBoard(): void;
 
+  /** Move the camera to a close, low-angle view centred on a table point. */
+  frameUnit(center: Vec2, radiusInches?: number): void;
+
   /**
    * Replace a unit's visual with a user-supplied model loaded from a URL (e.g. a
    * publicly hosted glTF) or a local File. Lets players bring in their own
