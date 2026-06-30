@@ -36,6 +36,14 @@ export interface AttackOptions {
   bonusInvuln?: number;
 }
 
+/** The actual dice rolled at each step, for animated dice display. */
+export interface DiceRolls {
+  hit: number[];
+  wound: number[];
+  save: number[];
+  damage: number[];
+}
+
 export interface AttackResult {
   weaponName: string;
   attacks: number;
@@ -46,6 +54,8 @@ export interface AttackResult {
   damageInflicted: number; // total wounds lost by the target after FNP
   modelsSlain: number;
   log: string[];
+  /** Individual kept dice for each step (hit/wound/save d6s, damage totals). */
+  rolls: DiceRolls;
 }
 
 const clampMod = (m: number): number => Math.max(-1, Math.min(1, m));
@@ -116,6 +126,7 @@ export function resolveWeapon(
   opts: AttackOptions = {},
 ): AttackResult {
   const log: string[] = [];
+  const rolls: DiceRolls = { hit: [], wound: [], save: [], damage: [] };
   const firingModels = opts.firingModels ?? aliveModels(attacker).length;
   const targetModels = aliveModels(target);
   const targetCount = targetModels.length;
@@ -143,6 +154,7 @@ export function resolveWeapon(
   } else {
     for (let i = 0; i < attacks; i++) {
       const roll = rollWithReroll(rng, weapon.skill, opts.rerollHits);
+      rolls.hit.push(roll);
       const isCrit = roll === 6;
       const success = roll !== 1 && (roll === 6 || roll + hitMod >= weapon.skill);
       if (!success) continue;
@@ -163,6 +175,7 @@ export function resolveWeapon(
   let devWounds = 0;
   for (let i = 0; i < normalHits; i++) {
     const roll = rollWithReroll(rng, wt, twin ? 'all' : opts.rerollWounds);
+    rolls.wound.push(roll);
     const critByRoll = roll === 6;
     const critByAnti = !!antiApplies && roll >= anti!.x;
     const success = roll !== 1 && (critByRoll || critByAnti || roll + woundMod >= wt);
@@ -191,6 +204,7 @@ export function resolveWeapon(
   let unsaved = 0;
   for (let i = 0; i < saveableWounds; i++) {
     const roll = rng.die();
+    rolls.save.push(roll);
     const saved = roll !== 1 && roll >= saveTarget;
     if (!saved) unsaved += 1;
   }
@@ -204,6 +218,7 @@ export function resolveWeapon(
     // Roll damage for this unsaved/dev wound.
     let dmg = rollAttackValue(weapon.damage, rng);
     if (melta && opts.halfRange) dmg += melta.x;
+    rolls.damage.push(dmg);
     // Feel No Pain reduces damage point-by-point.
     if (fnp !== undefined) {
       let prevented = 0;
@@ -246,6 +261,7 @@ export function resolveWeapon(
     damageInflicted,
     modelsSlain,
     log,
+    rolls,
   };
 }
 
