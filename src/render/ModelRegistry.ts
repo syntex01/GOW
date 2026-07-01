@@ -97,6 +97,8 @@ export const MONSTER_ENTRY: ModelRegistryEntry = {
   heightScale: 1.25,
   yaw: 0,
   fitToBase: false, // a walker's stance overhangs its base — keep it at scale
+  poseClip: 'idle', // it ships with a T-pose bind; freeze a grounded idle frame
+  poseFreezeAt: 0.4,
 };
 
 /**
@@ -119,9 +121,11 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   // bouncy loop so a battle line reads as deliberate and braced.
   {
     keywords: ['necrons'],
-    url: 'models/factions/necron.glb',
+    url: 'models/factions/necron.glb', // animated CC0 skeleton (poses via Idle clip)
     heightScale: 1.0,
     yaw: 0,
+    poseClip: 'idle', // freeze a grounded idle frame instead of the T-pose bind
+    poseFreezeAt: 0.5,
   }, // skeletal
   {
     keywords: ['chaos', 'heretic astartes'],

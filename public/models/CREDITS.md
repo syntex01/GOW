@@ -27,3 +27,5 @@ Source: https://poly.pizza (Quaternius, CC0). No Games Workshop assets are used.
 
 - tank.glb — CC0 / Public Domain sci-fi tank (Quaternius, via poly.pizza /m/VSxUAFhzbA). Used for all 'vehicle' silhouette units, faction-tinted.
 - walker.glb — CC0 / Public Domain sci-fi walker/mech (via poly.pizza /m/5EGWBMpuXq). Used for all 'monster' silhouette units, faction-tinted.
+- necron.glb — replaced with a CC0/Public-Domain animated skeleton (via poly.pizza /m/5vO2YJsPEf), posed via its Idle clip (the previous static model T-posed).
+- ultramarine.glb — replaced with a fuller CC-BY armoured-soldier figure (via poly.pizza /m/21aeTUI2PMw); the previous 39 KB model was only a breastplate. Attribution: see the model page.
