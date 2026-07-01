@@ -11,7 +11,7 @@ import {
   shootReachField,
   unitBlockers,
 } from '../engine/geometry';
-import { runAiTurn } from '../engine/ai';
+import { aiStep } from '../engine/ai';
 import { DiceTray } from './DiceTray';
 import { Rng } from '../engine/dice';
 import { setAssignment, fileToDataUrl, formatFromName, type ModelFormat } from '../render/ModelAssignments';
@@ -92,6 +92,8 @@ export class GameUI {
   private selectedId: string | null = null;
   /** Set once the player is warned about ending a phase early; re-tap confirms. */
   private endPhaseConfirmed = false;
+  /** True while the enemy turn is being animated — locks the player's input. */
+  private aiThinking = false;
   private moveMode: MoveMode = 'normal';
   private targets: string[] = [];
 
@@ -700,6 +702,7 @@ export class GameUI {
 
   // ---------------------------------------------------------------- flow
   nextPhase(): void {
+    if (this.aiThinking) return; // enemy turn in progress
     if (!this.canLocalAct()) {
       this.toast('Waiting for the other player…');
       return;
@@ -728,12 +731,39 @@ export class GameUI {
     this.deselect();
     this.deepStrikeUnitId = null;
     this.scene.clearOverlays();
-    // If the turn just passed to the AI player, let it play its whole turn.
+    // If the turn just passed to the AI player, play it out VISIBLY (phase by
+    // phase with pauses + refreshes) instead of teleporting to the end.
     if (this.aiPlayer && this.engine.active === this.aiPlayer && this.engine.winner() === undefined) {
-      this.toast(`${this.engine.state.players[this.aiPlayer].name} is taking their turn…`);
-      runAiTurn(this.engine);
+      void this.runAiTurnAnimated(this.aiPlayer);
+      return;
     }
     if (this.engine.state.phase === 'command') this.toast(`${this.engine.state.players[this.engine.active].name}'s turn`);
+    this.refresh();
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((res) => window.setTimeout(res, ms));
+  }
+
+  /** Show the enemy's turn unfolding phase by phase. */
+  private async runAiTurnAnimated(ai: PlayerId): Promise<void> {
+    this.aiThinking = true;
+    this.refresh();
+    let guard = 0;
+    while (this.aiPlayer && this.engine.active === ai && this.engine.winner() === undefined && guard < 60) {
+      const phase = this.engine.state.phase;
+      this.toast(`${this.engine.state.players[ai].name} — ${phase} phase`);
+      const cont = aiStep(this.engine);
+      this.refresh(); // reveal the moves / casualties from this phase
+      // Linger longer on phases with visible consequences (shots, melee).
+      await this.delay(phase === 'shooting' || phase === 'fight' ? 950 : 550);
+      guard += 1;
+      if (!cont) break;
+    }
+    this.aiThinking = false;
+    if (this.engine.state.phase === 'command') {
+      this.toast(`${this.engine.state.players[this.engine.active].name}'s turn`);
+    }
     this.refresh();
   }
 
@@ -761,6 +791,7 @@ export class GameUI {
 
   // ---------------------------------------------------------------- picking
   private handlePick(r: PickResult): void {
+    if (this.aiThinking) return; // the enemy is taking its turn
     if (!this.canLocalAct()) return; // not our turn in online play
     this.endPhaseConfirmed = false; // any board action re-arms the end-phase guard
     const phase = this.engine.state.phase;

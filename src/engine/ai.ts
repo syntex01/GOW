@@ -133,3 +133,15 @@ export function runAiTurn(e: GameEngine): void {
     if (e.winner() !== undefined) break;
   }
 }
+
+/**
+ * Play the AI's CURRENT phase and advance one step. Returns true while it is
+ * still the same player's turn — the UI calls this in a loop with a delay and a
+ * refresh between calls so the enemy turn is visibly played out, not teleported.
+ */
+export function aiStep(e: GameEngine): boolean {
+  const me = e.active;
+  playPhase(e);
+  e.advancePhase();
+  return e.active === me && e.winner() === undefined;
+}
