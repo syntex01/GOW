@@ -917,6 +917,7 @@ export class GameUI {
     this.scene.setTargets([]);
     this.scene.setCoverIndicators({});
     this.scene.showReachField(null, []);
+    this.scene.setHoverActive(false);
     this.scene.clearOverlays();
   }
 
@@ -1164,6 +1165,10 @@ export class GameUI {
   private updateSelectionRange(): void {
     const sel = this.selected();
     const phase = this.engine.state.phase;
+    // Hover raycasting is only needed for the movement/charge path preview.
+    this.scene.setHoverActive(
+      !!sel && sel.ownerId === this.engine.active && (phase === 'movement' || phase === 'charge'),
+    );
     if (!sel || sel.ownerId !== this.engine.active || !this.canLocalAct()) {
       this.scene.showReachField(null, []);
       return;

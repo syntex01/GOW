@@ -37,6 +37,9 @@ export interface SceneController {
    *  points; pass center=null to hide. */
   showReachField(center: Vec2 | null, rim: Vec2[], color?: number): void;
 
+  /** Enable/disable per-move hover raycasting (only needed for the move path preview). */
+  setHoverActive(on: boolean): void;
+
   /** Draw the movement raycast: green from `from` to `reach`, red on to `to`. */
   showPath(from: Vec2, to: Vec2, reach: Vec2, blocked: boolean): void;
 

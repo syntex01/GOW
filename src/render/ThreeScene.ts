@@ -286,6 +286,9 @@ export class ThreeScene implements SceneController {
   private bokehPass: BokehPass | null = null;
   /** SMAA pass (stored so the perf governor can disable it under load). */
   private smaaPass: SMAAPass | null = null;
+  /** Only raycast on hover when the UI wants it (a movable unit is selected). */
+  private hoverActive = false;
+  private lastHoverPickMs = 0;
   /** Governor has shed the expensive DoF + SMAA passes (first load-shed step). */
   private perfHeavyPostDropped = false;
   /** Cheap final grimdark grade (vignette + desaturation + optional grain). */
@@ -2675,6 +2678,12 @@ export class ThreeScene implements SceneController {
    * Not an overlay, so hovering (which clears the path preview) leaves it up.
    * Pass center=null (or radius 0) to hide it.
    */
+  /** Enable per-move hover raycasting (path preview). Off by default so idle
+   *  mouse movement never raycasts the scene. */
+  setHoverActive(on: boolean): void {
+    this.hoverActive = on;
+  }
+
   showReachField(center: Vec2 | null, rim: Vec2[], color = 0x46ff8c): void {
     if (!this.rangeRing) {
       this.rangeRing = new THREE.Group();
@@ -3544,11 +3553,18 @@ export class ThreeScene implements SceneController {
       return;
     }
 
-    // Hover handler regardless of drag (but skip while actively dragging camera).
+    // Hover pick (path preview). This raycasts every model mesh — expensive,
+    // ESPECIALLY skinned/animated ones — so only do it when the UI actually wants
+    // hover (a movable unit is selected) and at most ~30 Hz. Doing it on every
+    // raw pointermove was the PC stutter (CPU-bound, not GPU).
     if (this.dragMode === 'none') {
-      if (this.hoverHandler) {
-        const res = this.computePick(e.clientX, e.clientY);
-        if (res) this.hoverHandler(res);
+      if (this.hoverHandler && this.hoverActive) {
+        const now = performance.now();
+        if (now - this.lastHoverPickMs >= 32) {
+          this.lastHoverPickMs = now;
+          const res = this.computePick(e.clientX, e.clientY);
+          if (res) this.hoverHandler(res);
+        }
       }
       return;
     }
