@@ -344,7 +344,7 @@ export class ThreeScene implements SceneController {
     // grade: deeper shadows, slightly crushed highlights so firelight/plasma
     // glow reads as hot light rather than a washed-out scene.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
+    this.renderer.toneMappingExposure = 0.98;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.quality.shadowMapSize > 0;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -475,7 +475,7 @@ export class ThreeScene implements SceneController {
     // Cold steel rim/back light from behind to carve model silhouettes out of
     // the dark board — bumped a little to keep figures readable now that the
     // ambient is darker. This is the cool counterpoint to the warm key.
-    const rim = new THREE.DirectionalLight(0x9cc0ff, 0.95);
+    const rim = new THREE.DirectionalLight(0x9cc0ff, 1.18);
     rim.position.set(-this.board.width * 0.45, this.board.width * 0.55, -this.board.height * 0.6);
     this.scene.add(rim);
 
