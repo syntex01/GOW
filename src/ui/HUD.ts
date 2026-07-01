@@ -881,16 +881,22 @@ export class GameUI {
     const reqDist = Math.hypot(dest.x - from.x, dest.y - from.y);
     if (reqDist < 1e-6) return;
     const dir = { x: (dest.x - from.x) / reqDist, y: (dest.y - from.y) / reqDist };
-    // Raycast the straight path: the unit can only travel until a wall / too-low
-    // terrain (or the board edge) stops it, then no further this step.
+    // Raycast the straight path, capped at the REMAINING move budget (matching
+    // the hover preview): the unit travels until a wall / too-low terrain / the
+    // board edge or its budget runs out — clicking past range moves it to the
+    // max reach rather than rejecting the whole move.
     const { terrain, board } = this.engine.state;
-    const clear = unitPathClearDistance(u, dir, reqDist, terrain, board);
+    const remaining = this.engine.remainingMove(u, this.moveMode);
+    const clear = unitPathClearDistance(u, dir, Math.min(reqDist, remaining), terrain, board);
     if (clear < 0.15) {
-      this.toast('Blocked — a wall or obstacle is in the way', true);
+      this.toast(
+        remaining < 0.15 ? `${u.name} has no movement left` : 'Blocked — a wall or obstacle is in the way',
+        true,
+      );
       sound.playEvent('error');
       return;
     }
-    const dist = Math.min(reqDist, clear);
+    const dist = clear;
     const delta = { x: dir.x * dist, y: dir.y * dist };
     const ok = this.engine.moveUnit(u, this.moveMode, delta);
     if (!ok) {

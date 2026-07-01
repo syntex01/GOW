@@ -1830,6 +1830,7 @@ export class ThreeScene implements SceneController {
     let g = this.geoCache.get(key);
     if (!g) {
       g = make();
+      g.userData.shared = true; // owned by the cache — overlays must not dispose it
       this.geoCache.set(key, g);
     }
     return g;
@@ -2852,7 +2853,9 @@ export class ThreeScene implements SceneController {
   private disposeObject(o: THREE.Object3D): void {
     o.traverse((child) => {
       const mesh = child as THREE.Mesh & THREE.Line & THREE.Sprite;
-      if (mesh.geometry) mesh.geometry.dispose();
+      // Don't dispose cache-owned geometry (shared across overlays) — that would
+      // free a live buffer and force a GPU re-upload every hover.
+      if (mesh.geometry && !mesh.geometry.userData?.shared) mesh.geometry.dispose();
       const mat = (mesh as unknown as { material?: THREE.Material | THREE.Material[] }).material;
       if (mat) {
         if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());

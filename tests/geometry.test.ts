@@ -234,3 +234,21 @@ describe('raycast pathing + cover', () => {
     expect(coverState(a, b, [])).toBe('none');
   });
 });
+
+describe('raycast pathing — confirmed edge cases', () => {
+  const wall = (x: number, y: number, w: number, d: number): TerrainPiece => ({
+    id: 'w', kind: 'ruin', center: { x, y }, width: w, depth: d, height: 4, obscuring: true, clearance: 0,
+  });
+  it('blocks a base grazing a wall face parallel to the ray (Minkowski)', () => {
+    // Base radius 1 at y=4.7 skims a wall whose face is y=5 — the disc overlaps.
+    const board = { width: 60, height: 44 };
+    const clear = pathClearDistance({ x: 0, y: 4.7 }, { x: 1, y: 0 }, 30, 1, 1.4, [wall(11, 10, 2, 10)], board);
+    expect(clear).toBeLessThan(30); // stopped, not passing through
+  });
+  it('does not freeze a model whose centre is inside a footprint (can move out)', () => {
+    const board = { width: 60, height: 44 };
+    // Centre sitting inside the wall; moving away must report clear distance.
+    const clear = pathClearDistance({ x: 11, y: 10 }, { x: 0, y: 1 }, 6, 0.5, 3.5, [wall(11, 10, 2, 4)], board);
+    expect(clear).toBeGreaterThan(3); // free to leave, not clamped to ~0
+  });
+});

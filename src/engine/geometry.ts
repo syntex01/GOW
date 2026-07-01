@@ -240,8 +240,11 @@ function rayRectEntry(o: Vec2, d: Vec2, r: Rect): number | null {
       if (tmin > tmax) return null;
     }
   }
-  if (tmax < 0) return null;
-  return tmin >= 0 ? tmin : 0; // 0 means the ray starts inside the rect
+  // Origin already inside the rect (tmin < 0 < tmax): return null so a model
+  // that overlaps a footprint can still move OUT of it (the base-collision pass
+  // ejects it); only forward motion INTO a wall from outside is blocked.
+  if (tmax < 0 || tmin < 0) return null;
+  return tmin;
 }
 
 /**
@@ -259,17 +262,28 @@ export function pathClearDistance(
   terrain: TerrainPiece[],
   board: { width: number; height: number },
 ): number {
+  if (Math.hypot(dir.x, dir.y) < 1e-9) return 0; // undefined direction => no travel
   let best = maxDist;
   // Board edges: the base centre must stay within [baseRadius, size-baseRadius].
   if (dir.x > 1e-9) best = Math.min(best, (board.width - baseRadius - from.x) / dir.x);
   else if (dir.x < -1e-9) best = Math.min(best, (baseRadius - from.x) / dir.x);
   if (dir.y > 1e-9) best = Math.min(best, (board.height - baseRadius - from.y) / dir.y);
   else if (dir.y < -1e-9) best = Math.min(best, (baseRadius - from.y) / dir.y);
-  // Terrain the model is too tall to enter blocks the path at its near edge.
+  // Terrain the model is too tall to enter blocks the path. Minkowski-expand the
+  // footprint by baseRadius so the whole disc is tested (this correctly handles
+  // parallel grazes, corner clips and diagonal approaches — the entry distance is
+  // then exact, so no separate `- baseRadius` is needed).
   for (const t of terrain) {
     if (heightInches <= (t.clearance ?? 0) + 1e-6) continue; // low enough to pass
-    const entry = rayRectEntry(from, dir, footprint(t));
-    if (entry !== null) best = Math.min(best, Math.max(0, entry - baseRadius));
+    const f = footprint(t);
+    const grown: Rect = {
+      minX: f.minX - baseRadius,
+      maxX: f.maxX + baseRadius,
+      minY: f.minY - baseRadius,
+      maxY: f.maxY + baseRadius,
+    };
+    const entry = rayRectEntry(from, dir, grown);
+    if (entry !== null) best = Math.min(best, entry);
   }
   return Math.max(0, Math.min(best, maxDist));
 }
@@ -308,7 +322,9 @@ export function coverState(
   terrain: TerrainPiece[],
 ): 'none' | 'partial' | 'full' {
   if (!hasLineOfSight(shooter, target, terrain)) return 'full';
-  if (unitInCover(target, terrain)) return 'partial';
+  // Benefit of Cover comes from terrain OR the Go-to-Ground / Smokescreen
+  // stratagems — match what shoot() actually applies so the badge never lies.
+  if (unitInCover(target, terrain) || target.goToGround || target.smokescreen) return 'partial';
   return 'none';
 }
 
