@@ -213,6 +213,8 @@ export class ThreeScene implements SceneController {
   private targetRings = new Map<string, THREE.Mesh>();
   /** Soft green markers under friendly units that can still act this phase. */
   private readyRings = new Map<string, THREE.Mesh>();
+  /** Floating cover badges over enemies relative to the selected shooter. */
+  private coverBadges = new Map<string, THREE.Mesh>();
   private floatingNumbers: FloatingNumber[] = [];
 
   /* --- combat FX --- */
@@ -2645,6 +2647,63 @@ export class ThreeScene implements SceneController {
     }
   }
 
+  /* --- movement raycast path + cover badges --- */
+
+  private static readonly COVER_COLOR = { none: 0x39ff7a, partial: 0xffb038, full: 0xff3b3b };
+
+  showPath(from: Vec2, to: Vec2, reach: Vec2, blocked: boolean): void {
+    const y = 0.24;
+    const a = this.tableToWorld(from, y);
+    const rp = this.tableToWorld(reach, y);
+    const b = this.tableToWorld(to, y);
+    const mkLine = (p1: THREE.Vector3, p2: THREE.Vector3, color: number, opacity: number) => {
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([p1, p2]),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }),
+      );
+      line.userData.overlayKind = 'path';
+      line.renderOrder = 3;
+      this.overlayGroup.add(line);
+    };
+    // Reachable segment (green), then the unreachable/blocked remainder (red).
+    mkLine(a, rp, 0x46ff8c, 0.95);
+    if (b.distanceTo(rp) > 0.05) mkLine(rp, b, 0xff4d4d, 0.6);
+    // Marker at the stop point: a ring (amber when a wall stopped it, else green).
+    const ringGeo = this.getGeometry('pathMark', () => this.flatRingGeo(0.55, 0.85));
+    const mat = new THREE.MeshBasicMaterial({
+      color: blocked ? 0xff5533 : 0x46ff8c,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mark = new THREE.Mesh(ringGeo, mat);
+    mark.position.set(rp.x, 0.2, rp.z);
+    mark.userData.overlayKind = 'path';
+    mark.renderOrder = 4;
+    this.overlayGroup.add(mark);
+  }
+
+  setCoverIndicators(states: Record<string, 'none' | 'partial' | 'full'>): void {
+    // Hide badges no longer present.
+    for (const [id, badge] of this.coverBadges) {
+      if (!(id in states)) badge.visible = false;
+    }
+    const geo = this.getGeometry('coverBadge', () => this.flatRingGeo(0.35, 0.7));
+    for (const id of Object.keys(states)) {
+      let badge = this.coverBadges.get(id);
+      if (!badge) {
+        badge = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }));
+        badge.rotation.x = -Math.PI / 2; // lay flat, floats above the unit
+        badge.userData.billboardBadge = true;
+        this.overlayGroup.add(badge);
+        this.coverBadges.set(id, badge);
+      }
+      (badge.material as THREE.MeshBasicMaterial).color.setHex(ThreeScene.COVER_COLOR[states[id]]);
+      badge.visible = true;
+    }
+  }
+
   /** Re-centre highlight/target rings under the relevant units each sync. */
   private updateAttachedRings(state: GameState): void {
     if (this.highlightRing && this.highlightedUnit) {
@@ -2667,6 +2726,14 @@ export class ThreeScene implements SceneController {
       const c = this.unitCenterWorld(state, id);
       if (c) ring.position.set(c.x, 0.14, c.z);
       else ring.visible = false;
+    }
+    // Cover badges float above each enemy and billboard toward the camera.
+    for (const [id, badge] of this.coverBadges) {
+      if (!badge.visible) continue;
+      const c = this.unitCenterWorld(state, id);
+      if (!c) { badge.visible = false; continue; }
+      badge.position.set(c.x, 2.6, c.z);
+      badge.quaternion.copy(this.camera.quaternion); // face the camera
     }
   }
 
@@ -2774,7 +2841,7 @@ export class ThreeScene implements SceneController {
     const toRemove: THREE.Object3D[] = [];
     for (const child of this.overlayGroup.children) {
       const kind = child.userData.overlayKind;
-      if (kind === 'measurement' || kind === 'range') toRemove.push(child);
+      if (kind === 'measurement' || kind === 'range' || kind === 'path') toRemove.push(child);
     }
     for (const c of toRemove) {
       this.overlayGroup.remove(c);

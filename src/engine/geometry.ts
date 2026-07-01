@@ -217,6 +217,101 @@ export function unitInCover(u: UnitInstance, terrain: TerrainPiece[]): boolean {
   );
 }
 
+/* ------------------------- raycast pathing + cover ----------------------- */
+
+/** Smallest t>=0 at which the ray from `o` along unit `d` ENTERS rect `r`, or
+ *  null if it never does (slab method). t is a distance since `d` is unit. */
+function rayRectEntry(o: Vec2, d: Vec2, r: Rect): number | null {
+  let tmin = -Infinity;
+  let tmax = Infinity;
+  const axes: Array<[number, number, number, number]> = [
+    [o.x, d.x, r.minX, r.maxX],
+    [o.y, d.y, r.minY, r.maxY],
+  ];
+  for (const [oi, di, lo, hi] of axes) {
+    if (Math.abs(di) < 1e-9) {
+      if (oi < lo || oi > hi) return null; // parallel and outside the slab
+    } else {
+      let t1 = (lo - oi) / di;
+      let t2 = (hi - oi) / di;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return null;
+    }
+  }
+  if (tmax < 0) return null;
+  return tmin >= 0 ? tmin : 0; // 0 means the ray starts inside the rect
+}
+
+/**
+ * How far a base of `baseRadius` and physical `heightInches` can travel from
+ * `from` along unit direction `dir`, before it is stopped by the board edge or
+ * by a terrain footprint it is too tall to enter (a wall / a too-low ceiling).
+ * Capped at `maxDist`. This is the straight-line movement raycast.
+ */
+export function pathClearDistance(
+  from: Vec2,
+  dir: Vec2,
+  maxDist: number,
+  baseRadius: number,
+  heightInches: number,
+  terrain: TerrainPiece[],
+  board: { width: number; height: number },
+): number {
+  let best = maxDist;
+  // Board edges: the base centre must stay within [baseRadius, size-baseRadius].
+  if (dir.x > 1e-9) best = Math.min(best, (board.width - baseRadius - from.x) / dir.x);
+  else if (dir.x < -1e-9) best = Math.min(best, (baseRadius - from.x) / dir.x);
+  if (dir.y > 1e-9) best = Math.min(best, (board.height - baseRadius - from.y) / dir.y);
+  else if (dir.y < -1e-9) best = Math.min(best, (baseRadius - from.y) / dir.y);
+  // Terrain the model is too tall to enter blocks the path at its near edge.
+  for (const t of terrain) {
+    if (heightInches <= (t.clearance ?? 0) + 1e-6) continue; // low enough to pass
+    const entry = rayRectEntry(from, dir, footprint(t));
+    if (entry !== null) best = Math.min(best, Math.max(0, entry - baseRadius));
+  }
+  return Math.max(0, Math.min(best, maxDist));
+}
+
+/**
+ * Furthest a whole unit can rigidly translate along `dir` (unit vector) before
+ * ANY of its models is blocked — the unit only moves as far as its most-blocked
+ * model. Used to clamp a movement destination to the first obstacle.
+ */
+export function unitPathClearDistance(
+  u: UnitInstance,
+  dir: Vec2,
+  maxDist: number,
+  terrain: TerrainPiece[],
+  board: { width: number; height: number },
+): number {
+  let best = maxDist;
+  for (const m of aliveModels(u)) {
+    best = Math.min(
+      best,
+      pathClearDistance(m.position, dir, maxDist, m.baseRadius, modelHeight(m), terrain, board),
+    );
+  }
+  return best;
+}
+
+/**
+ * Cover of `target` relative to `shooter`:
+ *  - 'full'    — no line of sight (fully obscured; can't be targeted),
+ *  - 'partial' — visible but standing in/behind cover (gets Benefit of Cover),
+ *  - 'none'    — in the open.
+ */
+export function coverState(
+  shooter: UnitInstance,
+  target: UnitInstance,
+  terrain: TerrainPiece[],
+): 'none' | 'partial' | 'full' {
+  if (!hasLineOfSight(shooter, target, terrain)) return 'full';
+  if (unitInCover(target, terrain)) return 'partial';
+  return 'none';
+}
+
 /* ----------------------------- base / clipping --------------------------- *
  * Tabletop-faithful spacing: every model occupies a round base of `baseRadius`
  * inches. Bases may not overlap each other, and may not overlap terrain a model

@@ -32,6 +32,12 @@ export interface SceneController {
   /** Mark friendly units that can still act this phase (green ground ring). */
   setReadyUnits(unitIds: string[]): void;
 
+  /** Draw the movement raycast: green from `from` to `reach`, red on to `to`. */
+  showPath(from: Vec2, to: Vec2, reach: Vec2, blocked: boolean): void;
+
+  /** Show a cover badge over each enemy relative to the selected shooter. */
+  setCoverIndicators(states: Record<string, 'none' | 'partial' | 'full'>): void;
+
   /** Draw a measuring tape / range indicator between two table points. */
   showMeasurement(from: Vec2, to: Vec2, label?: string): void;
 

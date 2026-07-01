@@ -6,6 +6,7 @@ import type {
   Objective,
   PlayerId,
   Vec2,
+  TerrainPiece,
 } from '../src/engine/types';
 import {
   modelGap,
@@ -14,6 +15,8 @@ import {
   computeObjectiveControl,
   isBelowHalfStrength,
   unitObjectiveControl,
+  pathClearDistance,
+  coverState,
 } from '../src/engine/geometry';
 
 const STAT: Characteristics = {
@@ -203,5 +206,31 @@ describe('isBelowHalfStrength', () => {
     expect(isBelowHalfStrength(u)).toBe(true);
     m.wounds = 4; // 8 > 6
     expect(isBelowHalfStrength(u)).toBe(false);
+  });
+});
+
+describe('raycast pathing + cover', () => {
+  const wall = (x: number, y: number, w: number, d: number): TerrainPiece => ({
+    id: 'w', kind: 'ruin', center: { x, y }, width: w, depth: d, height: 4, obscuring: true, clearance: 0,
+  });
+  it('pathClearDistance stops the model at a wall (minus its base)', () => {
+    // Model at x=0 moving +x; a solid wall spanning x in [10,12].
+    const clear = pathClearDistance({ x: 0, y: 0 }, { x: 1, y: 0 }, 30, 0.5, 1.4,
+      [wall(11, 0, 2, 4)], { width: 60, height: 44 });
+    // Near edge of the wall is x=10; minus the 0.5" base => ~9.5".
+    expect(clear).toBeCloseTo(9.5, 1);
+  });
+  it('pathClearDistance passes UNDER low terrain the model fits below', () => {
+    // Same wall but with clearance 2" and a short (1.4") model — not blocked.
+    const t = { ...wall(11, 0, 2, 4), clearance: 2 } as TerrainPiece;
+    const clear = pathClearDistance({ x: 0, y: 0 }, { x: 1, y: 0 }, 8, 0.5, 1.4, [t], { width: 60, height: 44 });
+    expect(clear).toBeCloseTo(8, 1); // full requested distance, no block
+  });
+  it('coverState: full when LoS is blocked, none in the open', () => {
+    const a = unit([model({ x: 0, y: 0 })], 'A');
+    const b = unit([model({ x: 0, y: 20 })], 'B');
+    const blocker = [wall(0, 10, 6, 4)];
+    expect(coverState(a, b, blocker)).toBe('full');
+    expect(coverState(a, b, [])).toBe('none');
   });
 });

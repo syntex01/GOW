@@ -1,7 +1,13 @@
 import type { GameEngine } from '../engine/game';
 import type { SceneController, PickResult } from '../render/SceneController';
 import type { UnitInstance, Phase, Vec2, Weapon, PlayerId } from '../engine/types';
-import { aliveModels, unitCentroid, inEngagementRange } from '../engine/geometry';
+import {
+  aliveModels,
+  unitCentroid,
+  inEngagementRange,
+  unitPathClearDistance,
+  coverState,
+} from '../engine/geometry';
 import { runAiTurn } from '../engine/ai';
 import { DiceTray } from './DiceTray';
 import { Rng } from '../engine/dice';
@@ -835,11 +841,20 @@ export class GameUI {
       const d = Math.hypot(r.point.x - from.x, r.point.y - from.y);
       this.scene.clearOverlays();
       if (phase === 'movement') {
-        // Show the REMAINING move budget (it shrinks as the unit repositions).
-        const allow = this.engine.remainingMove(sel, this.moveMode);
-        this.scene.showRange(from, allow, d <= allow ? 0x39ff7a : 0xd6483b);
+        // Raycast the straight path to the cursor: green up to where the unit can
+        // actually reach (limited by remaining move AND by walls / too-low
+        // terrain), red beyond, with a marker at the stop point.
+        const remaining = this.engine.remainingMove(sel, this.moveMode);
+        const dir = d > 1e-6 ? { x: (r.point.x - from.x) / d, y: (r.point.y - from.y) / d } : { x: 1, y: 0 };
+        const { terrain, board } = this.engine.state;
+        const clear = unitPathClearDistance(sel, dir, remaining, terrain, board);
+        const reach = Math.min(d, clear);
+        const reachPoint = { x: from.x + dir.x * reach, y: from.y + dir.y * reach };
+        const blockedByWall = clear < Math.min(d, remaining) - 1e-3;
+        this.scene.showPath(from, r.point, reachPoint, blockedByWall);
+      } else {
+        this.scene.showMeasurement(from, r.point, `${d.toFixed(1)}"`);
       }
-      this.scene.showMeasurement(from, r.point, `${d.toFixed(1)}"`);
     }
   }
 
@@ -857,12 +872,26 @@ export class GameUI {
     this.targets = [];
     this.scene.highlightUnit(null);
     this.scene.setTargets([]);
+    this.scene.setCoverIndicators({});
     this.scene.clearOverlays();
   }
 
   private doMove(u: UnitInstance, dest: Vec2): void {
     const from = unitCentroid(u);
-    const delta = { x: dest.x - from.x, y: dest.y - from.y };
+    const reqDist = Math.hypot(dest.x - from.x, dest.y - from.y);
+    if (reqDist < 1e-6) return;
+    const dir = { x: (dest.x - from.x) / reqDist, y: (dest.y - from.y) / reqDist };
+    // Raycast the straight path: the unit can only travel until a wall / too-low
+    // terrain (or the board edge) stops it, then no further this step.
+    const { terrain, board } = this.engine.state;
+    const clear = unitPathClearDistance(u, dir, reqDist, terrain, board);
+    if (clear < 0.15) {
+      this.toast('Blocked — a wall or obstacle is in the way', true);
+      sound.playEvent('error');
+      return;
+    }
+    const dist = Math.min(reqDist, clear);
+    const delta = { x: dir.x * dist, y: dir.y * dist };
     const ok = this.engine.moveUnit(u, this.moveMode, delta);
     if (!ok) {
       this.toast(this.engine.moveBlockReason(u, this.moveMode, delta) ?? 'Illegal move', true);
@@ -891,8 +920,20 @@ export class GameUI {
       .map((e) => e.id);
     this.scene.highlightUnit(u.id);
     this.scene.setTargets(this.targets);
+    // Classify EVERY enemy's cover relative to this shooter and show a badge over
+    // each: full (no line of sight — can't be hit), partial (visible but in
+    // cover), or open. Lets the player read the firing solution at a glance.
+    const cover: Record<string, 'none' | 'partial' | 'full'> = {};
+    let inCover = 0;
+    for (const e of this.engine.enemiesOf(this.engine.active)) {
+      if (this.engine.isProtectedLeader(e)) continue;
+      cover[e.id] = coverState(u, e, this.engine.state.terrain);
+      if (cover[e.id] !== 'none') inCover += 1;
+    }
+    this.scene.setCoverIndicators(cover);
     this.refresh();
-    if (this.targets.length === 0) this.toast('No targets in range', true);
+    if (this.targets.length === 0) this.toast('No targets in line of sight', true);
+    else if (inCover > 0) this.toast(`${this.targets.length} target(s) · ${inCover} in cover`);
   }
 
   private async doShoot(attacker: UnitInstance, target: UnitInstance): Promise<void> {
