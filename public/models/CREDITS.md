@@ -26,3 +26,4 @@ Legitimate CC0 (Public Domain) models by Quaternius, sourced via poly.pizza:
 Source: https://poly.pizza (Quaternius, CC0). No Games Workshop assets are used.
 
 - tank.glb — CC0 / Public Domain sci-fi tank (Quaternius, via poly.pizza /m/VSxUAFhzbA). Used for all 'vehicle' silhouette units, faction-tinted.
+- walker.glb — CC0 / Public Domain sci-fi walker/mech (via poly.pizza /m/5EGWBMpuXq). Used for all 'monster' silhouette units, faction-tinted.

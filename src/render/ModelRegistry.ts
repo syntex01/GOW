@@ -86,6 +86,20 @@ export const VEHICLE_ENTRY: ModelRegistryEntry = {
 };
 
 /**
+ * Generic CC0 sci-fi WALKER/MECH (public domain, via poly.pizza) for any unit
+ * whose proxy silhouette is 'monster' (dreadnoughts, war-walkers, big beasts),
+ * across factions (faction-tinted). Replaces the procedural monster body — a
+ * striding mech reads far better than a box for a walker-class model.
+ */
+export const MONSTER_ENTRY: ModelRegistryEntry = {
+  keywords: [],
+  url: 'models/factions/walker.glb',
+  heightScale: 1.25,
+  yaw: 0,
+  fitToBase: false, // a walker's stance overhangs its base — keep it at scale
+};
+
+/**
  * Faction -> model table. Necrons use the robot; Adeptus Astartes / Ultramarines
  * use the marine. Extend by adding rows (most specific first if they overlap).
  */
@@ -144,7 +158,7 @@ export function resolveModelEntry(unit: UnitInstance): ModelRegistryEntry | null
   // Vehicles use the shared tank hull (selected by silhouette). Monsters keep
   // the procedural body for now (no fitting CC0 creature sourced yet).
   if (sil === 'vehicle') return VEHICLE_ENTRY;
-  if (sil === 'monster') return null;
+  if (sil === 'monster') return MONSTER_ENTRY;
   const kw = (unit.keywords ?? []).map((k) => k.toLowerCase());
   for (const entry of MODEL_REGISTRY) {
     if (entry.keywords.some((k) => kw.includes(k.toLowerCase()))) return entry;
