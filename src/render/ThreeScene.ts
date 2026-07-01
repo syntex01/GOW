@@ -284,6 +284,10 @@ export class ThreeScene implements SceneController {
   private bloomPass: UnrealBloomPass | null = null;
   /** Depth-of-field pass — the tilt-shift "real photographed miniatures" look. */
   private bokehPass: BokehPass | null = null;
+  /** SMAA pass (stored so the perf governor can disable it under load). */
+  private smaaPass: SMAAPass | null = null;
+  /** Governor has shed the expensive DoF + SMAA passes (first load-shed step). */
+  private perfHeavyPostDropped = false;
   /** Cheap final grimdark grade (vignette + desaturation + optional grain). */
   private gradePass: ShaderPass | null = null;
 
@@ -573,7 +577,9 @@ export class ThreeScene implements SceneController {
       // the low tier to save fill rate.
       if (this.quality.tier !== 'low') {
         try {
-          composer.addPass(new SMAAPass(w, h));
+          const smaa = new SMAAPass(w, h);
+          composer.addPass(smaa);
+          this.smaaPass = smaa;
         } catch {
           /* AA is a nice-to-have; never break the scene over it */
         }
@@ -3641,7 +3647,7 @@ export class ThreeScene implements SceneController {
     if (this.manualMode) return; // capture uses a virtual clock — never govern
     // Exponential moving average of frame time in milliseconds.
     this.perfFrameMs = this.perfFrameMs * 0.9 + dt * 1000 * 0.1;
-    if (t < 3) return; // warm-up: ignore asset decode / shader compile spikes
+    if (t < 1.5) return; // brief warm-up: ignore asset decode / shader compile spikes
 
     this.perfAccum += dt;
     if (this.perfAccum < 1) return; // evaluate about once per second
@@ -3652,7 +3658,15 @@ export class ThreeScene implements SceneController {
 
     if (slow) {
       this.perfGoodHolds = 0;
-      if (this.perfScale > 0.62) {
+      if (!this.perfHeavyPostDropped && (this.bokehPass || this.smaaPass)) {
+        // First load-shed step: disable the depth-of-field + SMAA passes. They're
+        // the heaviest per-frame cost (an extra depth+gather pass) for the least
+        // essential effect — dropping them recovers a lot of FPS before we start
+        // sacrificing resolution.
+        if (this.bokehPass) this.bokehPass.enabled = false;
+        if (this.smaaPass) this.smaaPass.enabled = false;
+        this.perfHeavyPostDropped = true;
+      } else if (this.perfScale > 0.62) {
         this.perfScale = Math.max(0.6, this.perfScale - 0.15);
         this.applyEffectivePixelRatio();
       } else if (this.composer && !this.perfBloomDropped) {

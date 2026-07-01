@@ -867,7 +867,13 @@ export class GameUI {
     }
   }
 
+  private lastHoverMs = 0;
   private handleHover(r: PickResult): void {
+    // Throttle to ~30 Hz — pointermove fires far faster and each hover rebuilds
+    // the path/measurement overlays, which was churning the GC on PC.
+    const now = performance.now();
+    if (now - this.lastHoverMs < 32) return;
+    this.lastHoverMs = now;
     const phase = this.engine.state.phase;
     const sel = this.selected();
     if (!sel) return;
