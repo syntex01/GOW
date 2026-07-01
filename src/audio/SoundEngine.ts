@@ -398,19 +398,24 @@ export const SOUND_LIBRARY: Record<string, SoundDef> = {
   // --- flow / structure ---
   phase_change: {
     layers: [
-      { osc: 'sine', freq: 196, freqEnd: 294, dur: 0.5, attack: 0.02, decay: 0.46, gain: 0.22 },
-      { osc: 'triangle', freq: 98, dur: 0.5, gain: 0.16 },
+      // D3 → A3 fifth swell, over a struck low D bell — a ceremonial cue in-key
+      // with the score (Gravewater Pulse is D minor).
+      { osc: 'sine', freq: 146.83, freqEnd: 220, dur: 0.5, attack: 0.02, decay: 0.46, gain: 0.2 },
+      { osc: 'triangle', freq: 73.42, dur: 0.5, gain: 0.16 },
+      { osc: 'sine', freq: 130, dur: 0.9, attack: 0.002, decay: 0.88, gain: 0.12 },
       { osc: 'noise', freq: 600, freqEnd: 200, dur: 0.4, gain: 0.05 },
     ],
-    space: 0.3,
+    space: 0.35,
   },
   turn_start: {
     layers: [
-      { osc: 'saw', freq: 70, freqEnd: 110, dur: 0.7, attack: 0.04, decay: 0.6, gain: 0.2, filter: { type: 'lowpass', freq: 700, q: 4 } },
-      { osc: 'sine', freq: 140, dur: 0.7, gain: 0.16 },
-      { osc: 'sine', freq: 210, dur: 0.6, delay: 0.06, gain: 0.1 },
+      { osc: 'saw', freq: 73.42, freqEnd: 110, dur: 0.7, attack: 0.04, decay: 0.6, gain: 0.2, filter: { type: 'lowpass', freq: 700, q: 4 } },
+      { osc: 'sine', freq: 146.83, dur: 0.7, gain: 0.16 },
+      { osc: 'sine', freq: 220, dur: 0.6, delay: 0.06, gain: 0.1 },
+      // distant war-horn swell rising a fifth
+      { osc: 'saw', freq: 98, freqEnd: 146.83, dur: 0.85, delay: 0.05, attack: 0.12, decay: 0.7, gain: 0.12, filter: { type: 'lowpass', freq: 900, q: 2 } },
     ],
-    space: 0.45,
+    space: 0.5,
   },
   command_point: {
     layers: [
@@ -475,10 +480,13 @@ export const SOUND_LIBRARY: Record<string, SoundDef> = {
   },
   shoot_bolter: {
     layers: [
+      // sharp mechanical crack of the mass-reactive round detonating
+      { osc: 'noise', freq: 5200, freqEnd: 1800, dur: 0.05, attack: 0.0005, decay: 0.045, gain: 0.22, filter: { type: 'highpass', freq: 2600 } },
       { osc: 'square', freq: 160, freqEnd: 70, dur: 0.16, attack: 0.001, decay: 0.14, gain: 0.26 },
       { osc: 'noise', freq: 2200, freqEnd: 500, dur: 0.14, gain: 0.2, filter: { type: 'bandpass', freq: 1600, q: 0.8 } },
-      { osc: 'saw', freq: 90, freqEnd: 50, dur: 0.16, gain: 0.12 },
+      { osc: 'saw', freq: 90, freqEnd: 44, dur: 0.18, gain: 0.14, filter: { type: 'lowpass', freq: 600 } },
     ],
+    space: 0.15,
   },
   shoot_plasma: {
     layers: [
@@ -493,8 +501,10 @@ export const SOUND_LIBRARY: Record<string, SoundDef> = {
       { osc: 'square', freq: 90, freqEnd: 45, dur: 0.4, attack: 0.002, decay: 0.38, gain: 0.3 },
       { osc: 'saw', freq: 60, freqEnd: 35, dur: 0.4, gain: 0.18, filter: { type: 'lowpass', freq: 500, q: 2 } },
       { osc: 'noise', freq: 1400, freqEnd: 300, dur: 0.35, gain: 0.16 },
+      // deep sub-boom recoil tail
+      { osc: 'sine', freq: 70, freqEnd: 30, dur: 0.55, delay: 0.02, attack: 0.004, decay: 0.5, gain: 0.24 },
     ],
-    space: 0.35,
+    space: 0.4,
   },
 
   // --- melee ---
@@ -509,8 +519,10 @@ export const SOUND_LIBRARY: Record<string, SoundDef> = {
       { osc: 'square', freq: 240, freqEnd: 90, dur: 0.16, attack: 0.001, decay: 0.14, gain: 0.26 },
       { osc: 'noise', freq: 3200, freqEnd: 700, dur: 0.1, gain: 0.18, filter: { type: 'highpass', freq: 1200 } },
       { osc: 'saw', freq: 70, dur: 0.18, gain: 0.14 },
+      // metallic ring of blade-on-armour
+      { osc: 'square', freq: 1760, freqEnd: 1560, dur: 0.24, delay: 0.005, attack: 0.001, decay: 0.23, gain: 0.1, filter: { type: 'bandpass', freq: 2100, q: 9 } },
     ],
-    space: 0.2,
+    space: 0.28,
   },
   save_clang: {
     layers: [
@@ -575,20 +587,24 @@ export const SOUND_LIBRARY: Record<string, SoundDef> = {
   // --- terminal ---
   victory: {
     layers: [
-      { osc: 'sine', freq: 196, freqEnd: 392, dur: 1.4, attack: 0.05, decay: 1.3, gain: 0.24 },
-      { osc: 'triangle', freq: 98, dur: 1.4, gain: 0.18 },
-      { osc: 'sine', freq: 294, dur: 1.2, delay: 0.18, gain: 0.16 },
-      { osc: 'sine', freq: 392, dur: 1.0, delay: 0.36, gain: 0.14 },
+      // a rising, resolving D-major fanfare (the one bright cadence)
+      { osc: 'sine', freq: 146.83, freqEnd: 293.66, dur: 1.4, attack: 0.05, decay: 1.3, gain: 0.24 },
+      { osc: 'triangle', freq: 73.42, dur: 1.5, gain: 0.18 },
+      { osc: 'sine', freq: 220, dur: 1.2, delay: 0.16, gain: 0.16 }, // A
+      { osc: 'triangle', freq: 369.99, dur: 1.1, delay: 0.32, gain: 0.13 }, // F# (major third)
+      { osc: 'sine', freq: 587.33, dur: 1.0, delay: 0.5, gain: 0.12 }, // D5
     ],
-    space: 0.7,
+    space: 0.75,
   },
   defeat: {
     layers: [
-      { osc: 'sine', freq: 196, freqEnd: 110, dur: 1.6, attack: 0.05, decay: 1.5, gain: 0.24 },
-      { osc: 'saw', freq: 98, freqEnd: 55, dur: 1.6, gain: 0.16, filter: { type: 'lowpass', freq: 600, q: 3 } },
-      { osc: 'sine', freq: 130, freqEnd: 73, dur: 1.4, delay: 0.2, gain: 0.16 },
+      // a sinking D-minor descent with a mourning cracked-bell partial
+      { osc: 'sine', freq: 174.61, freqEnd: 110, dur: 1.6, attack: 0.05, decay: 1.5, gain: 0.24 }, // F → A fall
+      { osc: 'saw', freq: 98, freqEnd: 55, dur: 1.7, gain: 0.16, filter: { type: 'lowpass', freq: 600, q: 3 } },
+      { osc: 'sine', freq: 146.83, freqEnd: 73.42, dur: 1.5, delay: 0.2, gain: 0.16 }, // D3 → D2
+      { osc: 'sine', freq: 130, dur: 2.0, delay: 0.1, attack: 0.003, decay: 1.9, gain: 0.1 }, // dark bell hum
     ],
-    space: 0.7,
+    space: 0.75,
   },
   error: {
     layers: [

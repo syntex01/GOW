@@ -1,120 +1,99 @@
 /* =========================================================================
-   SOUNDTRACK — procedural grimdark ambient drone.
+   SOUNDTRACK — "Gravewater Pulse", a looping grimdark cinematic score.
 
-   A slowly evolving dark pad: a stack of detuned low oscillators fed through a
-   shared lowpass that breathes under a slow LFO, plus a faint sub. Over the top,
-   an occasional distant "toll" (a struck, decaying bell-like tone through
-   reverb) and a low percussive heartbeat punctuate the drone.
+   This replaces the old ambient drone with a fully-arranged, continuously
+   synthesised track: D natural minor at 84 BPM, the Axis minor vamp
+   (Dm–Bb–F–Am7), a signature arch hook with its minor-6th leap, a dark
+   drone/bell/choir palette "behind glass", a modern sidechain pump locked to the
+   kick, and a full section form (theme → build → drop → peak → bridge → final →
+   outro) that loops seamlessly. It is a live port of an offline numpy/scipy
+   synth spec; nothing is sampled, so it stays fully IP-safe.
 
-   It loops seamlessly because it is *continuous* synthesis — nothing is sample-
-   looped, so there are no seams or clicks. It is cheap: a handful of persistent
-   nodes plus one timer that schedules sparse events; no per-frame allocation.
-   Everything is routed through the music bus passed in by SoundEngine.
+   Architecture: it owns a small internal mix — a sidechained "bed" bus (pads,
+   hook, bass, palette), an un-ducked drum bus, and a shared convolution reverb —
+   all summed through one fade gain into the music bus SoundEngine passes in. The
+   note-level arrangement lives in music.ts (the look-ahead scheduler); the voice
+   synthesis in voices.ts. Cheap to stop/start and click-free.
    ========================================================================= */
+
+import { makeNoiseBuffer, makeReverbIR } from './dsp';
+import { Music, type MusicNodes } from './music';
+import type { Rig } from './voices';
 
 export class Soundtrack {
   private playing = false;
-  /** Persistent drone voices + their shaping nodes, torn down on stop(). */
-  private nodes: AudioNode[] = [];
-  private oscs: OscillatorNode[] = [];
-  private lfo: OscillatorNode | null = null;
+  private music: Music | null = null;
   private out: GainNode | null = null;
-  /** Reverb send for distant tolls. */
-  private space: GainNode | null = null;
-  /** Timer that schedules the next sparse punctuation event. */
-  private eventTimer: ReturnType<typeof setTimeout> | null = null;
+  private bed: GainNode | null = null;
+  private teardown: AudioNode[] = [];
 
   constructor(
     private ctx: AudioContext,
     private bus: GainNode,
   ) {}
 
-  /** Start the drone (idempotent). */
+  /** Start the score (idempotent), fading in click-free. */
   start(): void {
     if (this.playing) return;
     this.playing = true;
     const ctx = this.ctx;
     const now = ctx.currentTime;
 
-    // Master fade-in node for the whole soundtrack (click-free start).
+    // Master fade-in for the whole soundtrack. Peaks below unity to leave the
+    // engine's master headroom for the SFX bus summed alongside it.
     const out = ctx.createGain();
     out.gain.setValueAtTime(0.0001, now);
-    out.gain.exponentialRampToValueAtTime(0.9, now + 4);
+    out.gain.exponentialRampToValueAtTime(0.8, now + 4);
     out.connect(this.bus);
     this.out = out;
 
-    // A breathing lowpass shared by the drone stack.
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 420;
-    filter.Q.value = 6;
-    filter.connect(out);
-    this.nodes.push(filter);
+    // Shared convolution reverb — the dark, damped space the palette sits in.
+    const conv = ctx.createConvolver();
+    conv.buffer = makeReverbIR(ctx, 3.4, 3.0);
+    const reverbIn = ctx.createGain();
+    const reverbReturn = ctx.createGain();
+    reverbReturn.gain.value = 0.9;
+    reverbIn.connect(conv);
+    conv.connect(reverbReturn);
+    reverbReturn.connect(out);
 
-    // Slow LFO modulating the filter cutoff (the "breath", ~0.05 Hz).
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.05;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 260; // ±260 Hz sweep around the 420 Hz base
-    lfo.connect(lfoGain);
-    lfoGain.connect(filter.frequency);
-    lfo.start(now);
-    this.lfo = lfo;
-    this.nodes.push(lfoGain);
+    // Sidechained bed (pads/hook/bass/palette) + un-ducked drum bus.
+    const bed = ctx.createGain();
+    bed.gain.value = 1;
+    bed.connect(out);
+    const drums = ctx.createGain();
+    drums.connect(out);
+    this.bed = bed;
+    this.teardown.push(conv, reverbReturn, reverbIn, bed, drums);
 
-    // Detuned low oscillator stack: a brooding D minor-ish drone (D2/A2/F3),
-    // each voice slightly detuned for a wide, unsettled chorus.
-    const drone: Array<{ f: number; type: OscillatorType; detune: number; g: number }> = [
-      { f: 73.42, type: 'sawtooth', detune: -7, g: 0.16 }, // D2
-      { f: 73.42, type: 'sawtooth', detune: 8, g: 0.16 }, // D2 (detuned twin)
-      { f: 110.0, type: 'triangle', detune: -4, g: 0.13 }, // A2
-      { f: 174.61, type: 'sine', detune: 5, g: 0.09 }, // F3
-      { f: 36.71, type: 'sine', detune: 0, g: 0.22 }, // D1 sub
-    ];
-    for (const v of drone) {
-      const osc = ctx.createOscillator();
-      osc.type = v.type;
-      osc.frequency.value = v.f;
-      osc.detune.value = v.detune;
-      const g = ctx.createGain();
-      g.gain.value = v.g;
-      osc.connect(g);
-      // The sub bypasses the breathing filter so the low end stays steady.
-      g.connect(v.f < 50 ? out : filter);
-      osc.start(now);
-      this.oscs.push(osc);
-      this.nodes.push(g);
-    }
-
-    // A small feedback-delay "space" for the distant tolls.
-    const space = ctx.createGain();
-    const delay = ctx.createDelay(1.5);
-    delay.delayTime.value = 0.37;
-    const fb = ctx.createGain();
-    fb.gain.value = 0.55;
-    const tone = ctx.createBiquadFilter();
-    tone.type = 'lowpass';
-    tone.frequency.value = 1200;
-    space.connect(delay);
-    delay.connect(tone);
-    tone.connect(fb);
-    fb.connect(delay);
-    delay.connect(out);
-    this.space = space;
-    this.nodes.push(delay, fb, tone);
-
-    this.scheduleEvent();
+    const rig: Rig = { ctx, noise: makeNoiseBuffer(ctx, 2) };
+    const nodes: MusicNodes = {
+      bed,
+      drums,
+      reverb: reverbIn,
+      duck: (when) => this.duck(when),
+    };
+    this.music = new Music(rig, nodes);
+    this.music.start();
   }
 
-  /** Stop the drone with a short fade so there is no click. */
+  /** Sidechain pump: dip the bed on a kick, then recover — the modern "breath". */
+  private duck(when: number): void {
+    if (!this.bed) return;
+    const g = this.bed.gain;
+    const floor = 0.45;
+    g.setValueAtTime(1.0, when);
+    g.linearRampToValueAtTime(floor, when + 0.006);
+    g.linearRampToValueAtTime(1.0, when + 0.22);
+  }
+
+  /** Stop with a short fade so there is no click. */
   stop(): void {
     if (!this.playing) return;
     this.playing = false;
-    if (this.eventTimer) {
-      clearTimeout(this.eventTimer);
-      this.eventTimer = null;
-    }
+    this.music?.stop();
+    this.music = null;
+
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const out = this.out;
@@ -123,130 +102,23 @@ export class Soundtrack {
       out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), now);
       out.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
     }
-    const stopAt = now + 1.3;
-    for (const o of this.oscs) {
-      try {
-        o.stop(stopAt);
-      } catch {
-        /* already stopped */
-      }
-    }
-    if (this.lfo) {
-      try {
-        this.lfo.stop(stopAt);
-      } catch {
-        /* ignore */
-      }
-    }
-    // Disconnect everything a beat after the fade completes.
-    const nodes = this.nodes.slice();
-    const oscs = this.oscs.slice();
+    const nodes = this.teardown.slice();
     window.setTimeout(() => {
       for (const n of nodes) {
         try {
           n.disconnect();
         } catch {
-          /* ignore */
+          /* already gone */
         }
       }
-      for (const o of oscs) {
-        try {
-          o.disconnect();
-        } catch {
-          /* ignore */
-        }
-      }
-    }, 1500);
-    this.nodes = [];
-    this.oscs = [];
-    this.lfo = null;
-    this.out = null;
-    this.space = null;
-  }
-
-  /** Schedule the next sparse punctuation (toll or heartbeat) and re-arm. */
-  private scheduleEvent(): void {
-    if (!this.playing) return;
-    // 7–16s between events keeps it sparse and oppressive.
-    const wait = 7000 + Math.random() * 9000;
-    this.eventTimer = setTimeout(() => {
-      if (!this.playing) return;
-      if (Math.random() < 0.6) this.toll();
-      else this.heartbeat();
-      this.scheduleEvent();
-    }, wait);
-  }
-
-  /** A distant, decaying struck tone (bell-ish) sent through the space delay. */
-  private toll(): void {
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-    // A low fundamental with a couple of inharmonic partials for a dark bell.
-    const partials = [
-      { f: 98 + Math.random() * 8, g: 0.18 },
-      { f: 196, g: 0.08 },
-      { f: 263, g: 0.05 },
-    ];
-    const mix = ctx.createGain();
-    mix.gain.value = 1;
-    if (this.space) mix.connect(this.space);
-    if (this.out) mix.connect(this.out);
-    for (const p of partials) {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = p.f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(p.g, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 3.2);
-      osc.connect(g);
-      g.connect(mix);
-      osc.start(now);
-      osc.stop(now + 3.3);
-      osc.onended = () => {
-        try {
-          osc.disconnect();
-          g.disconnect();
-        } catch {
-          /* ignore */
-        }
-      };
-    }
-    window.setTimeout(() => {
       try {
-        mix.disconnect();
+        out?.disconnect();
       } catch {
         /* ignore */
       }
-    }, 3600);
-  }
-
-  /** A low, dull percussive heartbeat (two soft thumps). */
-  private heartbeat(): void {
-    const ctx = this.ctx;
-    const base = ctx.currentTime;
-    for (const offset of [0, 0.34]) {
-      const t = base + offset;
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(70, t);
-      osc.frequency.exponentialRampToValueAtTime(38, t + 0.18);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-      osc.connect(g);
-      if (this.out) g.connect(this.out);
-      osc.start(t);
-      osc.stop(t + 0.32);
-      osc.onended = () => {
-        try {
-          osc.disconnect();
-          g.disconnect();
-        } catch {
-          /* ignore */
-        }
-      };
-    }
+    }, 1500);
+    this.teardown = [];
+    this.out = null;
+    this.bed = null;
   }
 }
