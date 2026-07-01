@@ -215,6 +215,8 @@ export class ThreeScene implements SceneController {
   private readyRings = new Map<string, THREE.Mesh>();
   /** Floating cover badges over enemies relative to the selected shooter. */
   private coverBadges = new Map<string, THREE.Mesh>();
+  /** Persistent range ring around the selected unit (walk / weapon radius). */
+  private rangeRing: THREE.Group | null = null;
   private floatingNumbers: FloatingNumber[] = [];
 
   /* --- combat FX --- */
@@ -2651,6 +2653,48 @@ export class ThreeScene implements SceneController {
   /* --- movement raycast path + cover badges --- */
 
   private static readonly COVER_COLOR = { none: 0x39ff7a, partial: 0xffb038, full: 0xff3b3b };
+
+  /**
+   * Persistent range ring around the selected unit — the walk radius in the
+   * Movement phase, the weapon range in Shooting, the 12" threat in Charge.
+   * Not an overlay, so hovering (which clears the path preview) leaves it up.
+   * Pass center=null (or radius 0) to hide it.
+   */
+  showRangeRing(center: Vec2 | null, radius = 0, color = 0x39ff7a): void {
+    if (!this.rangeRing) {
+      this.rangeRing = new THREE.Group();
+      this.overlayGroup.add(this.rangeRing);
+    }
+    for (const c of [...this.rangeRing.children]) {
+      this.rangeRing.remove(c);
+      this.disposeObject(c);
+    }
+    if (!center || radius <= 0.1) {
+      this.rangeRing.visible = false;
+      return;
+    }
+    this.rangeRing.visible = true;
+    const world = this.tableToWorld(center, 0.13);
+    // Faint filled disc (reads the covered area) + a bright rim (the radius).
+    const discGeo = new THREE.CircleGeometry(radius, 72);
+    discGeo.rotateX(-Math.PI / 2);
+    const disc = new THREE.Mesh(
+      discGeo,
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    disc.position.copy(world);
+    disc.renderOrder = 1;
+    this.rangeRing.add(disc);
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(Math.max(0.05, radius - 0.3), radius, 96),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.position.copy(world);
+    rim.position.y += 0.02;
+    rim.renderOrder = 2;
+    this.rangeRing.add(rim);
+  }
 
   showPath(from: Vec2, to: Vec2, reach: Vec2, blocked: boolean): void {
     const y = 0.24;

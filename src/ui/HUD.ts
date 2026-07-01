@@ -311,6 +311,7 @@ export class GameUI {
     this.scene.setReadyUnits(
       this.selectedId || !this.canLocalAct() ? [] : this.actionableUnits().map((u) => u.id),
     );
+    this.updateSelectionRange();
     this.scene.sync(this.engine.state);
     this.detectStateSounds();
     this.checkVictory();
@@ -873,6 +874,7 @@ export class GameUI {
     this.scene.highlightUnit(null);
     this.scene.setTargets([]);
     this.scene.setCoverIndicators({});
+    this.scene.showRangeRing(null);
     this.scene.clearOverlays();
   }
 
@@ -1097,6 +1099,31 @@ export class GameUI {
         );
       default:
         return [];
+    }
+  }
+
+  /**
+   * Draw the persistent radius around the selected unit: the walk range in
+   * Movement (shrinks as it repositions), the max weapon range in Shooting, and
+   * the 12" charge threat in Charge. Cleared when nothing is selected.
+   */
+  private updateSelectionRange(): void {
+    const sel = this.selected();
+    const phase = this.engine.state.phase;
+    if (!sel || sel.ownerId !== this.engine.active || !this.canLocalAct()) {
+      this.scene.showRangeRing(null);
+      return;
+    }
+    const c = unitCentroid(sel);
+    if (phase === 'movement') {
+      this.scene.showRangeRing(c, this.engine.remainingMove(sel, this.moveMode), 0x46ff8c);
+    } else if (phase === 'shooting') {
+      const ranges = sel.weapons.filter((w) => w.kind === 'ranged').map((w) => w.range);
+      this.scene.showRangeRing(c, ranges.length ? Math.max(...ranges) : 0, 0xffb038);
+    } else if (phase === 'charge') {
+      this.scene.showRangeRing(c, 12, 0xff7a3c);
+    } else {
+      this.scene.showRangeRing(null);
     }
   }
 
