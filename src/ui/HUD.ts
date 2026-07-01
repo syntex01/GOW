@@ -5,8 +5,11 @@ import {
   aliveModels,
   unitCentroid,
   inEngagementRange,
-  unitPathClearDistance,
   coverState,
+  moveReachField,
+  moveReachDistance,
+  shootReachField,
+  unitBlockers,
 } from '../engine/geometry';
 import { runAiTurn } from '../engine/ai';
 import { DiceTray } from './DiceTray';
@@ -847,8 +850,10 @@ export class GameUI {
         // terrain), red beyond, with a marker at the stop point.
         const remaining = this.engine.remainingMove(sel, this.moveMode);
         const dir = d > 1e-6 ? { x: (r.point.x - from.x) / d, y: (r.point.y - from.y) / d } : { x: 1, y: 0 };
-        const { terrain, board } = this.engine.state;
-        const clear = unitPathClearDistance(sel, dir, remaining, terrain, board);
+        const { terrain, board, units } = this.engine.state;
+        const radius = Math.max(...sel.models.map((m) => m.baseRadius));
+        const height = Math.max(...sel.models.map((m) => m.heightInches ?? 1.4));
+        const clear = moveReachDistance(from, dir, remaining, radius, height, terrain, unitBlockers(units, sel.id), board);
         const reach = Math.min(d, clear);
         const reachPoint = { x: from.x + dir.x * reach, y: from.y + dir.y * reach };
         const blockedByWall = clear < Math.min(d, remaining) - 1e-3;
@@ -874,7 +879,7 @@ export class GameUI {
     this.scene.highlightUnit(null);
     this.scene.setTargets([]);
     this.scene.setCoverIndicators({});
-    this.scene.showRangeRing(null);
+    this.scene.showReachField(null, []);
     this.scene.clearOverlays();
   }
 
@@ -887,9 +892,21 @@ export class GameUI {
     // the hover preview): the unit travels until a wall / too-low terrain / the
     // board edge or its budget runs out — clicking past range moves it to the
     // max reach rather than rejecting the whole move.
-    const { terrain, board } = this.engine.state;
+    const { terrain, board, units } = this.engine.state;
     const remaining = this.engine.remainingMove(u, this.moveMode);
-    const clear = unitPathClearDistance(u, dir, Math.min(reqDist, remaining), terrain, board);
+    const radius = Math.max(...u.models.map((m) => m.baseRadius));
+    const height = Math.max(...u.models.map((m) => m.heightInches ?? 1.4));
+    // Same reach raycast that draws the ring (blocked by terrain AND other units).
+    const clear = moveReachDistance(
+      from,
+      dir,
+      Math.min(reqDist, remaining),
+      radius,
+      height,
+      terrain,
+      unitBlockers(units, u.id),
+      board,
+    );
     if (clear < 0.15) {
       this.toast(
         remaining < 0.15 ? `${u.name} has no movement left` : 'Blocked — a wall or obstacle is in the way',
@@ -1111,19 +1128,24 @@ export class GameUI {
     const sel = this.selected();
     const phase = this.engine.state.phase;
     if (!sel || sel.ownerId !== this.engine.active || !this.canLocalAct()) {
-      this.scene.showRangeRing(null);
+      this.scene.showReachField(null, []);
       return;
     }
     const c = unitCentroid(sel);
-    if (phase === 'movement') {
-      this.scene.showRangeRing(c, this.engine.remainingMove(sel, this.moveMode), 0x46ff8c);
+    const { terrain, board, units } = this.engine.state;
+    const radius = Math.max(...sel.models.map((m) => m.baseRadius));
+    const height = Math.max(...sel.models.map((m) => m.heightInches ?? 1.4));
+    if (phase === 'movement' || phase === 'charge') {
+      const max = phase === 'charge' ? 12 : this.engine.remainingMove(sel, this.moveMode);
+      const rim = moveReachField(c, radius, height, max, terrain, unitBlockers(units, sel.id), board);
+      this.scene.showReachField(c, rim, phase === 'charge' ? 0xff7a3c : 0x46ff8c);
     } else if (phase === 'shooting') {
       const ranges = sel.weapons.filter((w) => w.kind === 'ranged').map((w) => w.range);
-      this.scene.showRangeRing(c, ranges.length ? Math.max(...ranges) : 0, 0xffb038);
-    } else if (phase === 'charge') {
-      this.scene.showRangeRing(c, 12, 0xff7a3c);
+      const max = ranges.length ? Math.max(...ranges) : 0;
+      const rim = max > 0 ? shootReachField(c, max, terrain, board) : [];
+      this.scene.showReachField(max > 0 ? c : null, rim, 0xffb038);
     } else {
-      this.scene.showRangeRing(null);
+      this.scene.showReachField(null, []);
     }
   }
 

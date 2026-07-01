@@ -2177,11 +2177,20 @@ export class ThreeScene implements SceneController {
     group.name = `unit:${unit.id}`;
     const models: ModelVisual[] = [];
 
+    // Face the whole unit toward the middle of the board (the front line), from
+    // wherever it deployed — robust for either side (the old per-owner 0/π was
+    // backwards for the bottom army, leaving it facing off-table).
+    const alive0 = unit.models.filter((m) => m.alive);
+    const uc = (alive0.length ? alive0 : unit.models).reduce(
+      (a, m) => ({ x: a.x + m.position.x / (alive0.length || unit.models.length), y: a.y + m.position.y / (alive0.length || unit.models.length) }),
+      { x: 0, y: 0 },
+    );
+    const faceYaw = Math.atan2(this.board.width / 2 - uc.x, -(this.board.height / 2 - uc.y));
+
     for (const m of unit.models) {
       // Per-model group: holds the base ring + a swappable body.
       const modelGroup = new THREE.Group();
-      // Face direction by owner: A faces +Z, B faces -Z.
-      modelGroup.rotation.y = unit.ownerId === 'A' ? 0 : Math.PI;
+      modelGroup.rotation.y = faceYaw; // face the centre of the board
 
       // Base is always present and shows immediately.
       const base = this.buildBase(proxy, m.baseRadius);
@@ -2660,7 +2669,7 @@ export class ThreeScene implements SceneController {
    * Not an overlay, so hovering (which clears the path preview) leaves it up.
    * Pass center=null (or radius 0) to hide it.
    */
-  showRangeRing(center: Vec2 | null, radius = 0, color = 0x39ff7a): void {
+  showReachField(center: Vec2 | null, rim: Vec2[], color = 0x46ff8c): void {
     if (!this.rangeRing) {
       this.rangeRing = new THREE.Group();
       this.overlayGroup.add(this.rangeRing);
@@ -2669,31 +2678,39 @@ export class ThreeScene implements SceneController {
       this.rangeRing.remove(c);
       this.disposeObject(c);
     }
-    if (!center || radius <= 0.1) {
+    if (!center || rim.length < 3) {
       this.rangeRing.visible = false;
       return;
     }
     this.rangeRing.visible = true;
-    const world = this.tableToWorld(center, 0.13);
-    // Faint filled disc (reads the covered area) + a bright rim (the radius).
-    const discGeo = new THREE.CircleGeometry(radius, 72);
-    discGeo.rotateX(-Math.PI / 2);
-    const disc = new THREE.Mesh(
-      discGeo,
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }),
+    const y = 0.13;
+    const c = this.tableToWorld(center, y);
+    const rw = rim.map((p) => this.tableToWorld(p, y));
+    // Filled reach area (triangle fan from centre) — a disc with BITES taken out
+    // wherever a wall/unit shortened a ray. Faint so figures stay readable.
+    const verts: number[] = [];
+    for (let i = 0; i < rw.length; i++) {
+      const p = rw[i];
+      const q = rw[(i + 1) % rw.length];
+      verts.push(c.x, c.y, c.z, p.x, p.y, p.z, q.x, q.y, q.z);
+    }
+    const fillGeo = new THREE.BufferGeometry();
+    fillGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    const fill = new THREE.Mesh(
+      fillGeo,
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }),
     );
-    disc.position.copy(world);
-    disc.renderOrder = 1;
-    this.rangeRing.add(disc);
-    const rim = new THREE.Mesh(
-      new THREE.RingGeometry(Math.max(0.05, radius - 0.3), radius, 96),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }),
+    fill.renderOrder = 1;
+    this.rangeRing.add(fill);
+    // Bright rim tracing the (bitten) boundary.
+    const loop = rw.map((p) => new THREE.Vector3(p.x, y + 0.03, p.z));
+    if (loop.length) loop.push(loop[0].clone());
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(loop),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }),
     );
-    rim.rotation.x = -Math.PI / 2;
-    rim.position.copy(world);
-    rim.position.y += 0.02;
-    rim.renderOrder = 2;
-    this.rangeRing.add(rim);
+    line.renderOrder = 2;
+    this.rangeRing.add(line);
   }
 
   showPath(from: Vec2, to: Vec2, reach: Vec2, blocked: boolean): void {

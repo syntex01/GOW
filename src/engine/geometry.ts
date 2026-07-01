@@ -328,6 +328,118 @@ export function coverState(
   return 'none';
 }
 
+/* ------------------------ radial reach / visibility ---------------------- */
+
+/** A circular obstacle for the reach raycast (another model's base). */
+export interface Blocker {
+  x: number;
+  y: number;
+  r: number;
+}
+
+/** Distance from `from` along unit `dir` until a blocker circle (expanded by our
+ *  own `radius`) is hit, capped at `maxDist`. */
+function rayCircleDist(from: Vec2, dir: Vec2, maxDist: number, radius: number, blockers: Blocker[]): number {
+  let best = maxDist;
+  for (const b of blockers) {
+    const cx = b.x - from.x;
+    const cy = b.y - from.y;
+    const proj = cx * dir.x + cy * dir.y; // distance to closest approach
+    if (proj <= 0) continue; // blocker is behind the ray
+    const R = b.r + radius;
+    const perp2 = cx * cx + cy * cy - proj * proj;
+    if (perp2 > R * R) continue; // ray misses the (expanded) circle
+    const t = proj - Math.sqrt(R * R - perp2);
+    if (t >= 0 && t < best) best = t;
+  }
+  return best;
+}
+
+/** Blocker circles from every alive model of `units`, excluding unit `exceptId`. */
+export function unitBlockers(units: Record<string, UnitInstance>, exceptId: string): Blocker[] {
+  const out: Blocker[] = [];
+  for (const u of Object.values(units)) {
+    if (u.id === exceptId) continue;
+    for (const m of aliveModels(u)) out.push({ x: m.position.x, y: m.position.y, r: m.baseRadius });
+  }
+  return out;
+}
+
+/**
+ * The MOVEMENT reach polygon: for `samples` directions around `from`, how far a
+ * base of `radius`/`heightInches` can travel (blocked by terrain it can't enter,
+ * other units' bases, the board edge), capped at `maxDist`. Returns the rim
+ * points — a star that has bites taken out of the circle wherever the path is
+ * blocked. This is the SAME raycast that governs whether a move is legal.
+ */
+/** Distance a base can move along `dir` — blocked by terrain, units and edge.
+ *  The single source of truth for both the reach ring AND move legality. */
+export function moveReachDistance(
+  from: Vec2,
+  dir: Vec2,
+  maxDist: number,
+  radius: number,
+  heightInches: number,
+  terrain: TerrainPiece[],
+  blockers: Blocker[],
+  board: { width: number; height: number },
+): number {
+  const d = pathClearDistance(from, dir, maxDist, radius, heightInches, terrain, board);
+  return Math.min(d, rayCircleDist(from, dir, d, radius, blockers));
+}
+
+export function moveReachField(
+  from: Vec2,
+  radius: number,
+  heightInches: number,
+  maxDist: number,
+  terrain: TerrainPiece[],
+  blockers: Blocker[],
+  board: { width: number; height: number },
+  samples = 96,
+): Vec2[] {
+  const pts: Vec2[] = [];
+  for (let i = 0; i < samples; i++) {
+    const a = (i / samples) * Math.PI * 2;
+    const dir = { x: Math.cos(a), y: Math.sin(a) };
+    const d = moveReachDistance(from, dir, maxDist, radius, heightInches, terrain, blockers, board);
+    pts.push({ x: from.x + dir.x * d, y: from.y + dir.y * d });
+  }
+  return pts;
+}
+
+/**
+ * The SHOOTING visibility polygon: for `samples` directions, how far a clean
+ * line of sight reaches before an OBSCURING terrain piece cuts it, capped at the
+ * weapon `maxDist` and the board. Same LoS raycast used to decide targeting.
+ */
+export function shootReachField(
+  from: Vec2,
+  maxDist: number,
+  terrain: TerrainPiece[],
+  board: { width: number; height: number },
+  samples = 96,
+): Vec2[] {
+  const pts: Vec2[] = [];
+  for (let i = 0; i < samples; i++) {
+    const a = (i / samples) * Math.PI * 2;
+    const dir = { x: Math.cos(a), y: Math.sin(a) };
+    let d = maxDist;
+    // Clamp to the board edge.
+    if (dir.x > 1e-9) d = Math.min(d, (board.width - from.x) / dir.x);
+    else if (dir.x < -1e-9) d = Math.min(d, (0 - from.x) / dir.x);
+    if (dir.y > 1e-9) d = Math.min(d, (board.height - from.y) / dir.y);
+    else if (dir.y < -1e-9) d = Math.min(d, (0 - from.y) / dir.y);
+    for (const t of terrain) {
+      if (!t.obscuring) continue;
+      const e = rayRectEntry(from, dir, footprint(t));
+      if (e !== null) d = Math.min(d, e);
+    }
+    pts.push({ x: from.x + dir.x * Math.max(0, d), y: from.y + dir.y * Math.max(0, d) });
+  }
+  return pts;
+}
+
 /* ----------------------------- base / clipping --------------------------- *
  * Tabletop-faithful spacing: every model occupies a round base of `baseRadius`
  * inches. Bases may not overlap each other, and may not overlap terrain a model

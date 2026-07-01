@@ -32,8 +32,10 @@ export interface SceneController {
   /** Mark friendly units that can still act this phase (green ground ring). */
   setReadyUnits(unitIds: string[]): void;
 
-  /** Persistent range ring around the selected unit (walk / weapon / charge radius). */
-  showRangeRing(center: Vec2 | null, radius?: number, color?: number): void;
+  /** Reach/visibility field around the selected unit — a disc with bites removed
+   *  where terrain/units block a clean line. `rim` are the table-space boundary
+   *  points; pass center=null to hide. */
+  showReachField(center: Vec2 | null, rim: Vec2[], color?: number): void;
 
   /** Draw the movement raycast: green from `from` to `reach`, red on to `to`. */
   showPath(from: Vec2, to: Vec2, reach: Vec2, blocked: boolean): void;
