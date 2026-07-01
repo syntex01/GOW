@@ -613,7 +613,7 @@ export class ThreeScene implements SceneController {
           uTime: { value: 0 },
           uVignette: { value: 0.62 }, // 0 = none, 1 = heavy corners
           uDesat: { value: 0.26 }, // pull toward grey/steel
-          uGrain: { value: grain * 0.05 }, // grain amplitude
+          uGrain: { value: grain * 0.022 }, // grain amplitude (kept subtle)
           uTint: { value: new THREE.Color(0x8088a0) }, // cold steel/ash tint
         },
         vertexShader: /* glsl */ `

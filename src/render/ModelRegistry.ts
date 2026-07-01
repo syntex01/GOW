@@ -421,12 +421,14 @@ function tintMaterial(
   const out = src.clone();
   // Only standard-like materials carry colour/PBR fields; guard with a cast.
   const std = out as THREE.MeshStandardMaterial;
+  const hasTexture = !!(std as unknown as { map?: unknown }).map;
   if (std.color) {
-    // Blend the model's own colour toward the grim faction tone (stronger pull
-    // than before so the bright source albedo is overpowered), then a final
-    // dark ambient wash deepens recesses for a shaded, dirty look.
-    std.color.lerp(grimPrimary, 0.7);
-    std.color.multiplyScalar(0.82); // subtle dark wash — sink the midtones
+    // Blend toward the grim faction tone, but GENTLY when the model has a real
+    // texture (so its sculpted detail survives instead of being painted a solid
+    // faction colour). Flat/untextured models get a stronger pull so they still
+    // read as the faction rather than raw white/grey.
+    std.color.lerp(grimPrimary, hasTexture ? 0.3 : 0.5);
+    std.color.multiplyScalar(0.88); // light dark wash — sink the midtones a touch
   }
   if ('metalness' in std) {
     std.metalness = THREE.MathUtils.clamp(metalness, 0, 1);
@@ -441,12 +443,14 @@ function tintMaterial(
     std.envMapIntensity = 0.45;
   }
   if (std.emissive) {
-    if (glow) {
-      // Necron: cold undying glow survives and blooms.
-      std.emissive.copy(glow);
-      std.emissiveIntensity = 0.7;
+    // Only parts that were ALREADY emissive in the source (eyes / energy cells)
+    // keep a glow. Copying the faction glow onto EVERY material is what turned
+    // whole models (e.g. Necrons) a solid glowing green.
+    const wasEmissive = std.emissive.r + std.emissive.g + std.emissive.b > 0.03;
+    if (glow && wasEmissive) {
+      std.emissive.copy(glow); // cold undying glow survives and blooms
+      std.emissiveIntensity = 0.6;
     } else {
-      // Everyone else is gritty and non-emissive — kill any baked glow.
       std.emissive.setRGB(0, 0, 0);
       std.emissiveIntensity = 0;
     }
