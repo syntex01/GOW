@@ -406,9 +406,12 @@ function tintModel(root: THREE.Object3D, proxy: ProxyDescriptor): void {
 function grimdarkify(c: THREE.Color): THREE.Color {
   const hsl = { h: 0, s: 0, l: 0 };
   c.getHSL(hsl);
-  // Desaturate hard and crush the value into the lower-mid range (weathered).
-  const s = hsl.s * 0.55;
-  const l = THREE.MathUtils.clamp(hsl.l * 0.62, 0.05, 0.42);
+  // Desaturate and crush the value into the lower-mid range (weathered), but
+  // hold a saturation/lightness FLOOR so distinct factions never collapse into
+  // the same dark steel — a "bright blue" and a "bright red" must still read as
+  // blue and red, only battle-worn.
+  const s = THREE.MathUtils.clamp(hsl.s * 0.8, 0.34, 0.9);
+  const l = THREE.MathUtils.clamp(hsl.l * 0.72, 0.09, 0.5);
   return new THREE.Color().setHSL(hsl.h, s, l);
 }
 
@@ -431,20 +434,29 @@ function tintMaterial(
     // texture (so its sculpted detail survives instead of being painted a solid
     // faction colour). Flat/untextured models get a stronger pull so they still
     // read as the faction rather than raw white/grey.
-    std.color.lerp(grimPrimary, hasTexture ? 0.3 : 0.5);
+    std.color.lerp(grimPrimary, hasTexture ? 0.45 : 0.62);
     std.color.multiplyScalar(0.88); // light dark wash — sink the midtones a touch
   }
+  // Near-binary metalness: preserve genuinely-metallic source parts (push them
+  // to a firm metal value) and force dielectrics (cloth/skin/plastic) fully to
+  // 0. Forcing a flat 0.55 on EVERY mesh was the "injection-moulded plastic"
+  // look — half-metal reads as neither metal nor dielectric.
+  const wasMetallic = 'metalness' in std ? (std.metalness as number) : 0;
+  const isMetal = wasMetallic > 0.5;
   if ('metalness' in std) {
-    std.metalness = THREE.MathUtils.clamp(metalness, 0, 1);
+    std.metalness = isMetal ? THREE.MathUtils.clamp(metalness, 0.6, 1.0) : 0.0;
   }
   if ('roughness' in std && typeof std.roughness === 'number') {
-    // Push toward a high-roughness, weathered finish — never glossy/plastic, but
-    // not fully matte so the cold rim light still catches edges.
-    std.roughness = THREE.MathUtils.clamp(std.roughness * 1.15 + 0.2, 0.55, 0.96);
+    // Metal gets a lower roughness floor so it catches a crisp specular streak
+    // off the rim/key; dielectrics stay high-roughness and matte.
+    std.roughness = isMetal
+      ? THREE.MathUtils.clamp(std.roughness * 1.1 + 0.05, 0.35, 0.7)
+      : THREE.MathUtils.clamp(std.roughness * 1.15 + 0.22, 0.6, 0.96);
   }
-  // Keep reflections cold and restrained so figures stay grounded, not chromed.
+  // Feed metal specular from the (now brighter) environment map; keep dielectrics
+  // grounded so they don't pick up a chromed sheen.
   if ('envMapIntensity' in std) {
-    std.envMapIntensity = 0.45;
+    std.envMapIntensity = isMetal ? 0.9 : 0.25;
   }
   if (std.emissive) {
     // Only parts that were ALREADY emissive in the source (eyes / energy cells)
@@ -453,7 +465,9 @@ function tintMaterial(
     const wasEmissive = std.emissive.r + std.emissive.g + std.emissive.b > 0.03;
     if (glow && wasEmissive) {
       std.emissive.copy(glow); // cold undying glow survives and blooms
-      std.emissiveIntensity = 0.6;
+      // Pushed into HDR so it clears the bloom threshold cleanly and reads as a
+      // genuine hot emitter (eyes / energy cells), not a warm-grey panel.
+      std.emissiveIntensity = 1.4;
     } else {
       std.emissive.setRGB(0, 0, 0);
       std.emissiveIntensity = 0;

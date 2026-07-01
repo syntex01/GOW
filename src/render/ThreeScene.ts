@@ -21,6 +21,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 /**
@@ -286,6 +287,8 @@ export class ThreeScene implements SceneController {
   private bokehPass: BokehPass | null = null;
   /** SMAA pass (stored so the perf governor can disable it under load). */
   private smaaPass: SMAAPass | null = null;
+  /** GTAO ambient-occlusion pass — high tier only; first casualty of the governor. */
+  private gtaoPass: GTAOPass | null = null;
   /** Only raycast on hover when the UI wants it (a movable unit is selected). */
   private hoverActive = false;
   private lastHoverPickMs = 0;
@@ -355,7 +358,10 @@ export class ThreeScene implements SceneController {
     // grade: deeper shadows, slightly crushed highlights so firelight/plasma
     // glow reads as hot light rather than a washed-out scene.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.98;
+    // Nudged above the 1.0 neutral: darkness is triple-stacked elsewhere (low
+    // ambient, vignette, desat, ACES toe), so a small exposure lift recovers
+    // midtone/figure legibility while the ACES shoulder still protects highlights.
+    this.renderer.toneMappingExposure = 1.12;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.quality.shadowMapSize > 0;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -376,7 +382,9 @@ export class ThreeScene implements SceneController {
     this.setupEnvironment();
 
     /* camera */
-    this.camera = new THREE.PerspectiveCamera(50, cw / ch, 0.1, 1000);
+    // Tighter clip planes (was 0.1/1000) give better depth precision for the
+    // DoF circle-of-confusion ramp; board diagonal ~74in, orbit max ~220.
+    this.camera = new THREE.PerspectiveCamera(50, cw / ch, 1, 400);
 
     /* lights */
     this.setupLights();
@@ -440,7 +448,10 @@ export class ThreeScene implements SceneController {
       // Keep reflections subtle/cold so they read as grimdark, not showroom.
       // Trimmed a touch for the moodier grade — metal catches just a cold
       // sheen, never a bright studio reflection.
-      this.scene.environmentIntensity = 0.28;
+      // Raised to feed metal specular (pairs with the near-binary metalness
+      // material fix); the hemi/fill cuts keep net ambient down so shadows stay
+      // dark while metal edges catch a cold sheen.
+      this.scene.environmentIntensity = 0.4;
       pmrem.dispose();
       // RoomEnvironment builds throwaway geometry/materials; free them.
       this.disposeObject(envScene);
@@ -460,39 +471,50 @@ export class ThreeScene implements SceneController {
     // Hemisphere fill: cold steel sky, dim ember-warm ground bounce. Pulled
     // down hard for grimdark — ambient barely lifts the blacks so the key light
     // carves dramatic, deep shadows and the board sinks into murk at the edges.
-    const hemi = new THREE.HemisphereLight(0x424e63, 0x140d06, 0.34);
+    const hemi = new THREE.HemisphereLight(0x3a4658, 0x140d06, 0.24);
     this.scene.add(hemi);
 
     // Key directional light with shadows — warm firelight, raking angle for
     // drama. Slightly hotter/oranger than before so lit faces read as torch or
     // furnace light against the cold dark.
-    const key = new THREE.DirectionalLight(0xffdcaa, 2.7);
-    key.position.set(this.board.width * 0.4, this.board.width * 0.9, this.board.height * 0.5);
+    const key = new THREE.DirectionalLight(0xffce93, 3.0);
+    // Low raking angle (~30° elevation vs the old near-overhead ~59°): long
+    // directional shadows + side-lit models are the single biggest drama lever.
+    key.position.set(this.board.width * 0.62, this.board.width * 0.45, this.board.height * 0.62);
     key.castShadow = this.quality.shadowMapSize > 0;
     const sm = Math.max(512, this.quality.shadowMapSize);
     key.shadow.mapSize.set(sm, sm);
-    const span = Math.max(this.board.width, this.board.height) * 0.75;
+    // Snug frustum that hugs the board (was 0.75 → a ~90-unit area on a 60×44
+    // board, wasting most of the map on empty margin). ~2× texel density on the
+    // models for crisper, better-grounded shadows at no extra memory.
+    const span = Math.max(this.board.width, this.board.height) * 0.55;
     const cam = key.shadow.camera;
     cam.left = -span;
     cam.right = span;
     cam.top = span;
     cam.bottom = -span;
-    cam.near = 1;
-    cam.far = this.board.width * 3;
-    key.shadow.bias = -0.0004;
-    key.shadow.normalBias = 0.02;
+    cam.near = this.board.width * 0.4;
+    cam.far = this.board.width * 2.2;
+    cam.updateProjectionMatrix();
+    key.shadow.bias = -0.00025;
+    key.shadow.normalBias = 0.035;
+    // Soft penumbra (honoured by PCFSoftShadowMap): crisp at contact, soft at
+    // the shadow tips. Lighter on the low tier to save fill.
+    key.shadow.radius = this.quality.tier === 'low' ? 2 : 3.5;
     this.scene.add(key);
 
     // Cold steel rim/back light from behind to carve model silhouettes out of
     // the dark board — bumped a little to keep figures readable now that the
     // ambient is darker. This is the cool counterpoint to the warm key.
-    const rim = new THREE.DirectionalLight(0x9cc0ff, 1.18);
-    rim.position.set(-this.board.width * 0.45, this.board.width * 0.55, -this.board.height * 0.6);
+    const rim = new THREE.DirectionalLight(0x8fb4ff, 1.5);
+    // Lower and further behind = a grazing silhouette rim that carves edges,
+    // not a top-down wash.
+    rim.position.set(-this.board.width * 0.5, this.board.width * 0.3, -this.board.height * 0.8);
     this.scene.add(rim);
 
     // Subtle cool fill from the opposite low side, no shadows — lifts the
     // deepest shadows just enough to keep detail without killing contrast.
-    const fill = new THREE.DirectionalLight(0x4a5f96, 0.3);
+    const fill = new THREE.DirectionalLight(0x435780, 0.22);
     fill.position.set(-this.board.width * 0.5, this.board.width * 0.3, this.board.height * 0.3);
     this.scene.add(fill);
 
@@ -500,8 +522,8 @@ export class ThreeScene implements SceneController {
     // firelight that warms the middle of the battlefield and falls off into the
     // cold dark, the "embers of warm light" of the grimdark grade. No shadow
     // (cheap), modest range so it never flattens the contrast.
-    const ember = new THREE.PointLight(0xff8a3c, 0.55, this.board.width * 0.9, 2.0);
-    ember.position.set(0, 6, 0);
+    const ember = new THREE.PointLight(0xff7a2c, 0.85, this.board.width * 0.7, 2.0);
+    ember.position.set(0, 4, 0);
     this.scene.add(ember);
   }
 
@@ -535,15 +557,54 @@ export class ThreeScene implements SceneController {
       const composer = new EffectComposer(this.renderer);
       composer.addPass(new RenderPass(this.scene, this.camera));
 
+      // Ground-truth ambient occlusion (GTAO) — darkens crevices, contact seams
+      // and the pooled shadow where models meet the mat, giving real depth. High
+      // tier only (a depth+normal G-buffer + Poisson denoise is the heaviest
+      // addition), inserted BEFORE bloom so AO darkens the beauty pass before the
+      // bloom threshold reads it. Wrapped so a failure never breaks the scene.
+      // NOTE: world units are inches (board 60×44, bases ~1-2in), so the r169
+      // default radius (0.25) is invisible here — we use ~1.6.
+      if (this.quality.tier === 'high') {
+        try {
+          const gtao = new GTAOPass(this.scene, this.camera, w, h);
+          gtao.output = GTAOPass.OUTPUT.Default;
+          gtao.blendIntensity = 0.85;
+          gtao.updateGtaoMaterial({
+            radius: 1.6,
+            distanceExponent: 1.0,
+            thickness: 1.0,
+            scale: 1.0,
+            samples: 8,
+            screenSpaceRadius: false,
+          });
+          gtao.updatePdMaterial({
+            lumaPhi: 10,
+            depthPhi: 2,
+            normalPhi: 3,
+            radius: 4,
+            radiusExponent: 1,
+            rings: 2,
+            samples: 8,
+          });
+          composer.addPass(gtao);
+          this.gtaoPass = gtao;
+        } catch {
+          this.gtaoPass = null;
+        }
+      }
+
       // Tuned so glow reads as firelight/plasma, not neon: a softer strength
       // with a wide, hazy radius and a high threshold so ONLY the hottest
       // emissive (objective relics, Necron glow, muzzle/plasma FX) blooms — the
       // rest of the desaturated board stays grounded and dark.
+      // Bloom runs PRE-tonemap, so the old 0.86 threshold clipped the intended
+      // 0.4–0.6 emissive glow entirely. Lower threshold + stronger, tighter
+      // radius = a hot firelight core with controlled falloff, not neon.
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(bw, bh),
-        0.48, // strength (gentle halo, not a neon wash)
-        0.85, // radius (wide, soft — reads as glow in haze)
-        0.86, // threshold (only the brightest hot spots bloom)
+        0.9, // strength (hot core)
+        0.72, // radius (tighter, controlled falloff)
+        0.62, // threshold (lets genuine emitters through, grounds the rest)
       );
       composer.addPass(bloom);
 
@@ -562,7 +623,7 @@ export class ThreeScene implements SceneController {
           const bokeh = new BokehPass(this.scene, this.camera, {
             focus: this.orbitRadius,
             aperture: 0.00055, // subtle — a shallow miniatures DoF, not a blur wall
-            maxblur: 0.006,
+            maxblur: 0.011, // let the far board/frame actually soften (tilt-shift)
           });
           composer.addPass(bokeh);
           this.bokehPass = bokeh;
@@ -598,6 +659,7 @@ export class ThreeScene implements SceneController {
       console.warn('[ThreeScene] bloom composer unavailable, rendering directly', err);
       this.composer = null;
       this.bloomPass = null;
+      this.gtaoPass = null;
     }
   }
 
@@ -620,14 +682,22 @@ export class ThreeScene implements SceneController {
       // Grain is the only per-pixel-random work; disable it on 'low' so phones
       // pay nothing for it. The vignette + desaturation are effectively free.
       const grain = this.quality.tier === 'low' ? 0.0 : 1.0;
+      const size = new THREE.Vector2();
+      this.renderer.getSize(size);
       const shader = {
         uniforms: {
           tDiffuse: { value: null as THREE.Texture | null },
           uTime: { value: 0 },
           uVignette: { value: 0.62 }, // 0 = none, 1 = heavy corners
-          uDesat: { value: 0.26 }, // pull toward grey/steel
+          uDesat: { value: 0.18 }, // neutral desat (was 0.26; the split-tone now carries the cast)
           uGrain: { value: grain * 0.022 }, // grain amplitude (kept subtle)
-          uTint: { value: new THREE.Color(0x8088a0) }, // cold steel/ash tint
+          // Split-tone: cool shadows, warm highlights — THE cinematic grimdark
+          // cue. The *2.0 renormalises mid-grey back toward unity so exposure is
+          // preserved (the old `l * uTint` secretly multiplied the frame ~0.5).
+          uShadowTint: { value: new THREE.Color(0x33465e) }, // cool blue-steel shadows
+          uHiTint: { value: new THREE.Color(0xffd9a8) }, // warm firelit highlights
+          uSplit: { value: 0.35 }, // split-tone strength
+          uResolution: { value: new THREE.Vector2(size.x || 1, size.y || 1) },
         },
         vertexShader: /* glsl */ `
           varying vec2 vUv;
@@ -642,7 +712,10 @@ export class ThreeScene implements SceneController {
           uniform float uVignette;
           uniform float uDesat;
           uniform float uGrain;
-          uniform vec3 uTint;
+          uniform vec3 uShadowTint;
+          uniform vec3 uHiTint;
+          uniform float uSplit;
+          uniform vec2 uResolution;
           varying vec2 vUv;
           // cheap hash for grain
           float hash(vec2 p) {
@@ -650,19 +723,24 @@ export class ThreeScene implements SceneController {
           }
           void main() {
             vec4 col = texture2D(tDiffuse, vUv);
-            // Desaturate toward luma, then bias the grey toward a cold tint so
-            // the whole frame settles into desaturated steel/ash.
             float l = dot(col.rgb, vec3(0.299, 0.587, 0.114));
-            vec3 steel = mix(vec3(l), l * uTint, 0.5);
-            col.rgb = mix(col.rgb, steel, uDesat);
-            // Radial vignette: darken corners into murk.
-            vec2 d = vUv - 0.5;
-            float v = smoothstep(0.8, 0.18, dot(d, d) * 2.0);
-            col.rgb *= mix(1.0, v, uVignette);
-            // Faint animated film grain (amplitude 0 on low tier).
+            // Neutral desat first (no darkening), then luminance-driven split-tone:
+            // shadows go cool blue-steel, highlights go warm firelit.
+            vec3 base = mix(col.rgb, vec3(l), uDesat);
+            vec3 toneMul = mix(uShadowTint * 2.0, uHiTint * 2.0, smoothstep(0.15, 0.85, l));
+            base = mix(base, base * toneMul, uSplit);
+            col.rgb = base;
+            // Aspect-correct radial vignette; corners fall toward a cool near-black
+            // instead of pure black so the murk stays in-palette.
+            float aspect = uResolution.x / max(uResolution.y, 1.0);
+            vec2 dv = (vUv - 0.5) * vec2(aspect, 1.0);
+            float v = smoothstep(0.85, 0.35, length(dv));
+            col.rgb = mix(uShadowTint * 0.4, col.rgb, mix(1.0, v, uVignette));
+            // Faint animated film grain, weighted into the shadows, using the real
+            // canvas resolution (fixes the old hardcoded 1920x1080 dependency).
             if (uGrain > 0.0) {
-              float g = hash(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 100.0);
-              col.rgb += (g - 0.5) * uGrain;
+              float g = hash(vUv * uResolution + fract(uTime) * 100.0);
+              col.rgb += (g - 0.5) * uGrain * (1.3 - l);
             }
             gl_FragColor = col;
           }
@@ -1909,7 +1987,7 @@ export class ThreeScene implements SceneController {
     // shadow-map cost) and reads as ambient occlusion. Skipped on lowest budget.
     if (this.quality.contactShadows) {
       const blobGeo = this.getGeometry(`blob:${baseRadius.toFixed(2)}`, () => {
-        const cg = new THREE.CircleGeometry(baseRadius * 1.55, 32);
+        const cg = new THREE.CircleGeometry(baseRadius * 1.35, 32);
         cg.rotateX(-Math.PI / 2);
         return cg;
       });
@@ -1917,13 +1995,17 @@ export class ThreeScene implements SceneController {
         return new THREE.MeshBasicMaterial({
           map: this.makeContactShadowTexture(),
           transparent: true,
-          opacity: 0.55,
+          opacity: 0.7,
           depthWrite: false,
           color: 0x000000,
         });
       });
       const blob = new THREE.Mesh(blobGeo, blobMat);
-      blob.position.y = 0.045; // just above the mat to avoid z-fighting
+      // Smear the contact shadow away from the raking key light (key is at
+      // +X/+Z, so the shadow pools toward −X/+Z) for a grounded, directional AO
+      // read rather than a symmetric halo.
+      blob.scale.set(1.25, 1, 1.25);
+      blob.position.set(-baseRadius * 0.35, 0.045, baseRadius * 0.35);
       blob.renderOrder = -1;
       g.add(blob);
     }
@@ -2009,8 +2091,10 @@ export class ThreeScene implements SceneController {
     const ctx = c.getContext('2d')!;
     const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
     // White at center = full opacity (multiplied by material opacity); fades out.
-    g.addColorStop(0, 'rgba(255,255,255,0.9)');
-    g.addColorStop(0.55, 'rgba(255,255,255,0.35)');
+    // Tighter core so the shadow reads dense right under the feet then falls off
+    // quickly — welds the model to the mat instead of a wide soft halo.
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
     g.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
@@ -2440,8 +2524,8 @@ export class ThreeScene implements SceneController {
         color: 0x5c4a24,
         roughness: 0.45,
         metalness: 0.92,
-        emissive: 0x140d03,
-        emissiveIntensity: 0.5,
+        emissive: 0x2a1c06,
+        emissiveIntensity: 1.4,
         envMapIntensity: 0.9,
       }),
     );
@@ -3674,7 +3758,11 @@ export class ThreeScene implements SceneController {
 
     if (slow) {
       this.perfGoodHolds = 0;
-      if (!this.perfHeavyPostDropped && (this.bokehPass || this.smaaPass)) {
+      if (this.gtaoPass && this.gtaoPass.enabled) {
+        // GTAO is the heaviest single pass (depth+normal G-buffer + denoise) —
+        // shed it first, one step before the DoF/SMAA drop.
+        this.gtaoPass.enabled = false;
+      } else if (!this.perfHeavyPostDropped && (this.bokehPass || this.smaaPass)) {
         // First load-shed step: disable the depth-of-field + SMAA passes. They're
         // the heaviest per-frame cost (an extra depth+gather pass) for the least
         // essential effect — dropping them recovers a lot of FPS before we start
@@ -3803,6 +3891,12 @@ export class ThreeScene implements SceneController {
     // Keep the composer + bloom render targets in sync with the canvas.
     if (this.composer) this.composer.setSize(w, h);
     if (this.bloomPass) this.bloomPass.setSize(w, h);
+    if (this.gtaoPass) this.gtaoPass.setSize(w, h);
+    // Keep the grade pass's resolution (drives aspect-correct vignette + grain).
+    if (this.gradePass) {
+      const res = this.gradePass.uniforms.uResolution;
+      if (res) (res.value as THREE.Vector2).set(w, h);
+    }
   }
 
   /* ============================== animation ============================== */
@@ -3883,7 +3977,12 @@ export class ThreeScene implements SceneController {
     // (the orbit pivot), so the framed figures stay crisp as you zoom/orbit.
     if (this.bokehPass) {
       const u = (this.bokehPass as unknown as { uniforms?: Record<string, { value: number }> }).uniforms;
-      if (u && u.focus) u.focus.value = this.camera.position.distanceTo(this.orbitTarget);
+      const dist = this.camera.position.distanceTo(this.orbitTarget);
+      // Bias focus onto the front rank so the nearest figures are tack-sharp, and
+      // drive aperture by distance so the DoF thickness stays constant instead of
+      // going razor-thin zoomed-in / flat zoomed-out (CoC divides by focus).
+      if (u && u.focus) u.focus.value = dist * 0.92;
+      if (u && u.aperture) u.aperture.value = 0.00055 * (dist / 70);
     }
 
     // Render through the bloom composer when available, else direct.
@@ -4057,6 +4156,8 @@ export class ThreeScene implements SceneController {
     this.fxGlowTex?.dispose();
     this.fxSparkTex?.dispose();
     this.composer?.dispose();
+    this.gtaoPass?.dispose?.();
+    this.gtaoPass = null;
     this.gradePass = null;
     this.envTexture?.dispose();
     this.contactShadowTex?.dispose();
