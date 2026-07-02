@@ -57,9 +57,11 @@ const TAU = Math.PI * 2;
 
 /* ------------------------------ tuning knobs ------------------------------ */
 
-/** Dome radius as a multiple of board width (60" board -> 120" dome — sits
- *  beyond the orbit cap and the fog far plane, inside the 400 camera far). */
-const DOME_RADIUS_MUL = 2.0;
+/** Dome radius as a multiple of board width. MUST exceed the max orbit radius
+ *  (220 ≈ 3.67x a 60" board) or the camera exits the BackSide dome at wide zoom
+ *  and the sky vanishes to the near-black background. 4.5x = 270" > 220 gives
+ *  margin; the camera far plane is widened to 700 to clear the far hemisphere. */
+const DOME_RADIUS_MUL = 4.5;
 /** Azimuth of the war-glow / key-light corner: toward world (+x, +z). */
 const KEY_AZ = Math.PI / 4;
 /** War-glow band: centre/sigma in "sky v" (0 = horizon, 1 = zenith). */

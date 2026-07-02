@@ -331,7 +331,13 @@ function buildWallShell(
 
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth: TH,
-    bevelEnabled: false,
+    // A small bevel chamfers the broken-top, window and door arrises (they share
+    // this one geometry) so collapsed masonry stops reading laser-cut. Pushes
+    // the outer face ~0.03in proud — within the module's 0.3in footprint slack.
+    bevelEnabled: true,
+    bevelThickness: 0.03,
+    bevelSize: 0.03,
+    bevelSegments: 1,
     curveSegments,
     steps: 1,
   });
@@ -491,6 +497,8 @@ export function buildTerrain(
     const stoneSet: PBRSet = makeStoneSet(q, seed + 101);
     const metalSet: PBRSet = makeMetalSet(q, seed + 211);
     disposables.push(stoneSet, metalSet);
+    for (const set of [stoneSet, metalSet])
+      for (const tx of [set.map, set.normalMap, set.roughnessMap]) tx.anisotropy = 8;
 
     // The shared ashlar map is authored dark (cold grey-blue ~#33353a); this
     // >1 linear tint lifts it into warm mid plascrete (~#5d5648 average) so
@@ -518,7 +526,7 @@ export function buildTerrain(
       roughness: 0.5,
       envMapIntensity: 0.7,
     });
-    metalMat.color.setRGB(2.9, 2.2, 1.35);
+    metalMat.color.setRGB(1.5, 1.5, 1.6);
 
     const bk = makeBannerKit(q, seed + 307);
     disposables.push(bk);
@@ -986,8 +994,8 @@ export function buildTerrain(
     const jr = new Float32Array(seg * rings);
     const jy = new Float32Array(seg * rings);
     for (let i = 0; i < seg * rings; i++) {
-      jr[i] = (rng() - 0.5) * 0.12;
-      jy[i] = (rng() - 0.5) * 0.08;
+      jr[i] = (rng() - 0.5) * 0.30;
+      jy[i] = (rng() - 0.5) * 0.20;
     }
     const lpos = lathe.getAttribute('position') as THREE.BufferAttribute;
     for (let v = 0; v < lpos.count; v++) {
@@ -1097,14 +1105,17 @@ export function buildTerrain(
     }
     const embers = mergeParts(emberParts);
     if (embers) {
-      const mesh = new THREE.Mesh(embers, emberMat);
+      // Each crater gets its OWN ember material clone. Three only re-uploads a
+      // material's diffuse colour when material.id changes; with a single shared
+      // material every ember mesh keeps the FIRST crater's phase (the sort draws
+      // them consecutively, so the per-draw colour write is skipped). One cheap
+      // material per crater restores independent per-crater pulsing.
+      const emat = (emberMat as THREE.MeshBasicMaterial).clone();
+      disposables.push(emat);
+      const mesh = new THREE.Mesh(embers, emat);
       mesh.name = `${piece.id}:embers`;
       mesh.matrixAutoUpdate = false;
-      // Per-crater pulse phase on the SHARED material: uniforms are refreshed
-      // per draw, so writing the colour just before this mesh renders gives
-      // each crater its own phase with zero extra materials or allocations.
       const phase = rng() * TAU;
-      const emat = emberMat;
       mesh.onBeforeRender = () => {
         emat.color.setScalar(EMBER_GAIN * (0.8 + 0.2 * Math.sin(now * 2 + phase)));
       };

@@ -165,8 +165,10 @@ export function buildBoard(
   // the crack/tread detail legible into the distance. gfx/textures leaves
   // anisotropy to consumers, and three clamps it to the device max, so a
   // constant is safe without renderer access (which this module doesn't get).
-  for (const tx of [groundSet.map, groundSet.normalMap, groundSet.roughnessMap]) {
-    tx.anisotropy = 8;
+  // Cover the tiling stone/metal sets too (walls, plinth, rails) or they alias
+  // and blur at the grazing angles the raked camera constantly presents.
+  for (const set of [groundSet, stoneSet, metalSet]) {
+    for (const tx of [set.map, set.normalMap, set.roughnessMap]) tx.anisotropy = 8;
   }
 
   /* -------------------------- ground height field -------------------------- */

@@ -386,7 +386,9 @@ export class ThreeScene implements SceneController {
     /* camera */
     // Tighter clip planes (was 0.1/1000) give better depth precision for the
     // DoF circle-of-confusion ramp; board diagonal ~74in, orbit max ~220.
-    this.camera = new THREE.PerspectiveCamera(50, cw / ch, 1, 400);
+    // far=700 clears the sky dome's far hemisphere (radius 270 + orbit 220 =
+    // 490) so the sky stays drawn at max zoom-out.
+    this.camera = new THREE.PerspectiveCamera(50, cw / ch, 1, 700);
 
     /* lights */
     this.setupLights();

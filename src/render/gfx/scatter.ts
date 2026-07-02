@@ -75,7 +75,7 @@ const Y_JITTER = 0.02;
 const COUNTS: Record<GfxQuality['tier'], {
   rubble: number; slab: number; stake: number; casing: number; pebble: number;
 }> = {
-  high: { rubble: 360, slab: 170, stake: 55, casing: 80, pebble: 35 },
+  high: { rubble: 220, slab: 120, stake: 55, casing: 80, pebble: 35 },
   medium: { rubble: 185, slab: 90, stake: 30, casing: 0, pebble: 45 },
   low: { rubble: 65, slab: 28, stake: 10, casing: 0, pebble: 17 },
 };
@@ -167,6 +167,8 @@ function makeSlabGeo(): THREE.BufferGeometry {
   // Extrusion runs along +z; stand the slab flat with thickness on y.
   geo.rotateX(-Math.PI / 2);
   geo.center();
+  // Fracture the perfect rectangle so slabs read as broken rockcrete, not tiles.
+  jitterVertices(geo, 0.06, 21);
   return geo;
 }
 
@@ -358,7 +360,7 @@ export function buildScatter(
   {
     const rng = sRNG(seed + 1);
     const baseHSL = { h: 0, s: 0, l: 0 };
-    new THREE.Color('#4a4438').getHSL(baseHSL);
+    new THREE.Color('#3c3f45').getHSL(baseHSL);
     const mesh = makeKit(
       'scatter-rubble',
       makeRubbleGeo(),
@@ -390,7 +392,7 @@ export function buildScatter(
   {
     const rng = sRNG(seed + 2);
     const baseHSL = { h: 0, s: 0, l: 0 };
-    new THREE.Color('#5d564a').getHSL(baseHSL);
+    new THREE.Color('#4c4f55').getHSL(baseHSL);
     const mesh = makeKit(
       'scatter-slabs',
       makeSlabGeo(),
@@ -407,7 +409,7 @@ export function buildScatter(
       const yaw = rng() * TAU;
       const tilt = rng() * 18 * DEG;
       const az = rng() * TAU;
-      S.set(s, s, s);
+      S.set(s * (0.7 + rng() * 0.8), s * (0.8 + rng() * 0.4), s * (0.5 + rng() * 1.0));
       Q2.setFromAxisAngle(YUP, yaw);
       AXIS.set(Math.cos(az), 0, Math.sin(az));
       QT.setFromAxisAngle(AXIS, tilt).multiply(Q2);
@@ -418,7 +420,7 @@ export function buildScatter(
       // 30% stacked pairs: second plate dropped on top, yawed 20–60 deg.
       if (n < counts.slab && rng() < 0.3) {
         const s2 = s * (0.8 + rng() * 0.25);
-        S.set(s2, s2, s2);
+        S.set(s2 * (0.7 + rng() * 0.8), s2, s2 * (0.5 + rng() * 1.0));
         Q2.setFromAxisAngle(YUP, yaw + (20 + rng() * 40) * DEG * (rng() < 0.5 ? 1 : -1));
         AXIS.set(Math.cos(az + 1.7), 0, Math.sin(az + 1.7));
         QT.setFromAxisAngle(AXIS, rng() * 10 * DEG).multiply(Q2);
@@ -526,7 +528,7 @@ export function buildScatter(
       QT.setFromAxisAngle(YUP, rng() * TAU);
       // Clump origin at ground level => lower halves buried in the ash.
       P.set(wx(pos.x), -0.02 * s + (rng() * 2 - 1) * Y_JITTER, wz(pos.y));
-      setHSL(0.09 + (rng() * 2 - 1) * 0.015, 0.03 + rng() * 0.05, 0.14 + rng() * 0.1);
+      setHSL(0.60 + (rng() * 2 - 1) * 0.015, 0.03 + rng() * 0.05, 0.14 + rng() * 0.1);
       n = put(mesh, n);
     }
     mesh.count = n;

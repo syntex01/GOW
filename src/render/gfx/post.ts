@@ -75,7 +75,8 @@ const DOF_FOCUS_BIAS = 0.92; // bias focus onto the front rank of figures
 const DOF_MAX_BLUR = 0.011;
 
 /** Grade: the grimdark split-tone finish. */
-const GRADE_VIGNETTE = 0.62; // 0 = none, 1 = heavy corners
+const GRADE_VIGNETTE = 0.45; // 0 = none, 1 = heavy corners (softened so wide-board
+// left/right deployment-edge units aren't buried; corners still fall dark)
 const GRADE_DESAT = 0.18; // neutral desat; the split-tone carries the cast
 const GRADE_GRAIN = 0.022; // grain amplitude (0 on low tier)
 const GRADE_SHADOW_TINT = 0x33465e; // cool blue-steel shadows
@@ -171,7 +172,11 @@ function buildGradePass(width: number, height: number, tier: GfxTier): ShaderPas
           // Neutral desat first (no darkening), then luminance-driven split-tone:
           // shadows go cool blue-steel, highlights go warm firelit.
           vec3 base = mix(col.rgb, vec3(l), uDesat);
-          vec3 toneMul = mix(uShadowTint * 2.0, uHiTint * 2.0, smoothstep(0.15, 0.85, l));
+          // The grade runs BEFORE tonemap (linear space), so mid-grey lands at
+          // luminance ~0.21, not 0.5. Window the split on the linear ash band
+          // (0.04..0.35) so shadows go cool but mid-bright terrain isn't forced
+          // cold — otherwise the whole board reads as a flat cold cast.
+          vec3 toneMul = mix(uShadowTint * 2.0, uHiTint * 2.0, smoothstep(0.04, 0.35, l));
           base = mix(base, base * toneMul, uSplit);
           col.rgb = base;
           // Filmic toe lift: gentle near-black crush toward a film response
@@ -179,12 +184,12 @@ function buildGradePass(width: number, height: number, tier: GfxTier): ShaderPas
           col.rgb = col.rgb * (1.0 - uToe) + uToe * pow(max(col.rgb, vec3(0.0)), vec3(1.35));
           // Highlight-only warm glow bias: a faint amber lift on true
           // highlights, tying emitters into the warm key light.
-          col.rgb += uHiTint * uHiGlow * smoothstep(0.75, 1.0, l);
+          col.rgb += uHiTint * uHiGlow * smoothstep(0.55, 0.85, l);
           // Aspect-correct radial vignette; corners fall toward a cool near-black
           // instead of pure black so the murk stays in-palette.
           float aspect = uResolution.x / max(uResolution.y, 1.0);
           vec2 dv = (vUv - 0.5) * vec2(aspect, 1.0);
-          float v = smoothstep(0.85, 0.35, length(dv));
+          float v = smoothstep(1.05, 0.6, length(dv));
           col.rgb = mix(uShadowTint * 0.4, col.rgb, mix(1.0, v, uVignette));
           // Faint animated film grain, weighted into the shadows, using the real
           // canvas resolution (no hardcoded 1920x1080 dependency).
