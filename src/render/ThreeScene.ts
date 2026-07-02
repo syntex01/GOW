@@ -15,14 +15,17 @@ import {
 } from './ModelRegistry';
 import { loadModel } from './ModelImport';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { buildBoard } from './gfx/board';
+import { buildTerrain } from './gfx/terrain';
+import { buildScatter } from './gfx/scatter';
+import { buildAtmosphere } from './gfx/sky';
+import { buildLights } from './gfx/lights';
+import { buildPostChain, type PostChain } from './gfx/post';
+import type { Built, GfxQuality, AvoidRect } from './gfx/contract';
 
 /**
  * Three.js implementation of the renderer contract.
@@ -200,6 +203,10 @@ export class ThreeScene implements SceneController {
   /* --- board --- */
   private board = { width: 60, height: 44 };
   private boardGroup = new THREE.Group();
+  /** Modular visual builds (board/terrain/scatter/sky/lights) — updated + disposed uniformly. */
+  private gfx: Built[] = [];
+  /** The modular post-processing chain (composer + tuned passes). */
+  private postChain: PostChain | null = null;
 
   /* --- units / objectives --- */
   private unitVisuals = new Map<string, UnitVisual>();
@@ -282,7 +289,6 @@ export class ThreeScene implements SceneController {
 
   /* --- postprocessing (gentle bloom so glow/objectives pop) --- */
   private composer: EffectComposer | null = null;
-  private bloomPass: UnrealBloomPass | null = null;
   /** Depth-of-field pass — the tilt-shift "real photographed miniatures" look. */
   private bokehPass: BokehPass | null = null;
   /** SMAA pass (stored so the perf governor can disable it under load). */
@@ -295,7 +301,6 @@ export class ThreeScene implements SceneController {
   /** Governor has shed the expensive DoF + SMAA passes (first load-shed step). */
   private perfHeavyPostDropped = false;
   /** Cheap final grimdark grade (vignette + desaturation + optional grain). */
-  private gradePass: ShaderPass | null = null;
 
   /* --- quality / mobile-perf --- */
   private quality!: QualitySettings;
@@ -317,13 +322,6 @@ export class ThreeScene implements SceneController {
   private envTexture: THREE.Texture | null = null;
   /** Animated objective groups (holo-ring spin + bob). */
   private objectiveGroups: THREE.Group[] = [];
-  /** Faint ground-haze plane (additive) drifting just above the mat. */
-  private haze: THREE.Mesh | null = null;
-  /** Cheap additive dust-mote points; null/empty on 'low' tier. */
-  private dustMotes: THREE.Points | null = null;
-  /** Per-mote base data for the slow drift animation (xz extent + speeds). */
-  private dustData: { baseY: Float32Array; phase: Float32Array; speed: Float32Array } | null =
-    null;
   /** Local idle mixers for imported skinned models (driven in the render loop). */
   private importedMixers: THREE.AnimationMixer[] = [];
   /** Reusable scratch vectors to avoid per-frame allocation in pan/update. */
@@ -467,64 +465,20 @@ export class ThreeScene implements SceneController {
    * soft shadows, a cold rim/back light to carve silhouettes against the dark
    * board, and a dim cool fill. Hemisphere adds a touch of sky/ground bounce.
    */
+  /** Tuned grimdark light rig, built by the gfx/lights module. */
   private setupLights(): void {
-    // Hemisphere fill: cold steel sky, dim ember-warm ground bounce. Pulled
-    // down hard for grimdark — ambient barely lifts the blacks so the key light
-    // carves dramatic, deep shadows and the board sinks into murk at the edges.
-    const hemi = new THREE.HemisphereLight(0x3a4658, 0x140d06, 0.24);
-    this.scene.add(hemi);
+    const l = buildLights(this.board, this.quality.shadowMapSize, this.quality.tier);
+    this.gfx.push(l);
+    this.scene.add(l.group);
+  }
 
-    // Key directional light with shadows — warm firelight, raking angle for
-    // drama. Slightly hotter/oranger than before so lit faces read as torch or
-    // furnace light against the cold dark.
-    const key = new THREE.DirectionalLight(0xffce93, 3.0);
-    // Low raking angle (~30° elevation vs the old near-overhead ~59°): long
-    // directional shadows + side-lit models are the single biggest drama lever.
-    key.position.set(this.board.width * 0.62, this.board.width * 0.45, this.board.height * 0.62);
-    key.castShadow = this.quality.shadowMapSize > 0;
-    const sm = Math.max(512, this.quality.shadowMapSize);
-    key.shadow.mapSize.set(sm, sm);
-    // Snug frustum that hugs the board (was 0.75 → a ~90-unit area on a 60×44
-    // board, wasting most of the map on empty margin). ~2× texel density on the
-    // models for crisper, better-grounded shadows at no extra memory.
-    const span = Math.max(this.board.width, this.board.height) * 0.55;
-    const cam = key.shadow.camera;
-    cam.left = -span;
-    cam.right = span;
-    cam.top = span;
-    cam.bottom = -span;
-    cam.near = this.board.width * 0.4;
-    cam.far = this.board.width * 2.2;
-    cam.updateProjectionMatrix();
-    key.shadow.bias = -0.00025;
-    key.shadow.normalBias = 0.035;
-    // Soft penumbra (honoured by PCFSoftShadowMap): crisp at contact, soft at
-    // the shadow tips. Lighter on the low tier to save fill.
-    key.shadow.radius = this.quality.tier === 'low' ? 2 : 3.5;
-    this.scene.add(key);
-
-    // Cold steel rim/back light from behind to carve model silhouettes out of
-    // the dark board — bumped a little to keep figures readable now that the
-    // ambient is darker. This is the cool counterpoint to the warm key.
-    const rim = new THREE.DirectionalLight(0x8fb4ff, 1.5);
-    // Lower and further behind = a grazing silhouette rim that carves edges,
-    // not a top-down wash.
-    rim.position.set(-this.board.width * 0.5, this.board.width * 0.3, -this.board.height * 0.8);
-    this.scene.add(rim);
-
-    // Subtle cool fill from the opposite low side, no shadows — lifts the
-    // deepest shadows just enough to keep detail without killing contrast.
-    const fill = new THREE.DirectionalLight(0x435780, 0.22);
-    fill.position.set(-this.board.width * 0.5, this.board.width * 0.3, this.board.height * 0.3);
-    this.scene.add(fill);
-
-    // Warm ember point light low over the board centre — a faint pool of
-    // firelight that warms the middle of the battlefield and falls off into the
-    // cold dark, the "embers of warm light" of the grimdark grade. No shadow
-    // (cheap), modest range so it never flattens the contrast.
-    const ember = new THREE.PointLight(0xff7a2c, 0.85, this.board.width * 0.7, 2.0);
-    ember.position.set(0, 4, 0);
-    this.scene.add(ember);
+  /** Quality knobs shared with the gfx modules. */
+  private gfxQuality(): GfxQuality {
+    return {
+      tier: this.quality.tier,
+      texturePx: this.quality.battlematPx,
+      ringSegments: this.quality.ringSegments,
+    };
   }
 
   /**
@@ -534,226 +488,34 @@ export class ThreeScene implements SceneController {
    * headless contexts), we silently fall back to direct rendering — the scene
    * still looks good thanks to tuned emissive/lighting.
    */
+  /** Post chain (GTAO/bloom/grade/DoF/SMAA) built by the gfx/post module. The
+   *  pass references are mirrored onto the legacy fields so the adaptive
+   *  governor and capture paths keep working unchanged. */
   private setupComposer(): void {
-    // Quality gate: low-end / flaky WebGL contexts skip bloom entirely and render
-    // directly. Tuned emissive + the environment map keep the look strong.
     if (!this.quality.bloom) {
       this.composer = null;
-      this.bloomPass = null;
       return;
     }
-    try {
-      const size = new THREE.Vector2();
-      this.renderer.getSize(size);
-      const w = Math.max(1, size.x);
-      const h = Math.max(1, size.y);
-      // Optional bloom downscale: the bloom render targets run at a fraction of
-      // the canvas resolution on lower tiers — a big mobile-fill-rate win that is
-      // visually almost free because bloom is a soft, low-frequency effect.
-      const ds = Math.max(1, this.quality.bloomDownscale);
-      const bw = Math.max(1, Math.floor(w / ds));
-      const bh = Math.max(1, Math.floor(h / ds));
-
-      const composer = new EffectComposer(this.renderer);
-      composer.addPass(new RenderPass(this.scene, this.camera));
-
-      // Ground-truth ambient occlusion (GTAO) — darkens crevices, contact seams
-      // and the pooled shadow where models meet the mat, giving real depth. High
-      // tier only (a depth+normal G-buffer + Poisson denoise is the heaviest
-      // addition), inserted BEFORE bloom so AO darkens the beauty pass before the
-      // bloom threshold reads it. Wrapped so a failure never breaks the scene.
-      // NOTE: world units are inches (board 60×44, bases ~1-2in), so the r169
-      // default radius (0.25) is invisible here — we use ~1.6.
-      if (this.quality.tier === 'high') {
-        try {
-          const gtao = new GTAOPass(this.scene, this.camera, w, h);
-          gtao.output = GTAOPass.OUTPUT.Default;
-          gtao.blendIntensity = 0.85;
-          gtao.updateGtaoMaterial({
-            radius: 1.6,
-            distanceExponent: 1.0,
-            thickness: 1.0,
-            scale: 1.0,
-            samples: 8,
-            screenSpaceRadius: false,
-          });
-          gtao.updatePdMaterial({
-            lumaPhi: 10,
-            depthPhi: 2,
-            normalPhi: 3,
-            radius: 4,
-            radiusExponent: 1,
-            rings: 2,
-            samples: 8,
-          });
-          composer.addPass(gtao);
-          this.gtaoPass = gtao;
-        } catch {
-          this.gtaoPass = null;
-        }
-      }
-
-      // Tuned so glow reads as firelight/plasma, not neon: a softer strength
-      // with a wide, hazy radius and a high threshold so ONLY the hottest
-      // emissive (objective relics, Necron glow, muzzle/plasma FX) blooms — the
-      // rest of the desaturated board stays grounded and dark.
-      // Bloom runs PRE-tonemap, so the old 0.86 threshold clipped the intended
-      // 0.4–0.6 emissive glow entirely. Lower threshold + stronger, tighter
-      // radius = a hot firelight core with controlled falloff, not neon.
-      const bloom = new UnrealBloomPass(
-        new THREE.Vector2(bw, bh),
-        0.9, // strength (hot core)
-        0.72, // radius (tighter, controlled falloff)
-        0.62, // threshold (lets genuine emitters through, grounds the rest)
-      );
-      composer.addPass(bloom);
-
-      // Cheap grimdark grade pass (vignette + desaturation toward steel/ash +
-      // faint film grain). Wrapped in its own try/catch inside; on any failure
-      // it is simply skipped and bloom still renders.
-      this.addGradePass(composer);
-
-      // Depth of field — the SINGLE biggest "this is a real photographed
-      // miniatures diorama" cue. The focal plane tracks the board centre (set
-      // each frame from the orbit distance), so figures near the pivot are crisp
-      // while the far/near board falls softly out of focus. High tier only — it
-      // renders an extra depth pass, so phones/low GPUs skip it.
-      if (this.quality.tier === 'high') {
-        try {
-          const bokeh = new BokehPass(this.scene, this.camera, {
-            focus: this.orbitRadius,
-            aperture: 0.00055, // subtle — a shallow miniatures DoF, not a blur wall
-            maxblur: 0.011, // let the far board/frame actually soften (tilt-shift)
-          });
-          composer.addPass(bokeh);
-          this.bokehPass = bokeh;
-        } catch {
-          this.bokehPass = null;
-        }
-      }
-
-      // OutputPass applies tone mapping + colour space conversion correctly when
-      // rendering through a composer.
-      composer.addPass(new OutputPass());
-
-      // SMAA — clean sub-pixel edge antialiasing (MSAA is unavailable through the
-      // composer). Final pass so it cleans the fully-composited image. Skipped on
-      // the low tier to save fill rate.
-      if (this.quality.tier !== 'low') {
-        try {
-          const smaa = new SMAAPass(w, h);
-          composer.addPass(smaa);
-          this.smaaPass = smaa;
-        } catch {
-          /* AA is a nice-to-have; never break the scene over it */
-        }
-      }
-
-      composer.setPixelRatio(this.quality.pixelRatioCap);
-      composer.setSize(w, h);
-
-      this.composer = composer;
-      this.bloomPass = bloom;
-    } catch (err) {
-      // Robust fallback: no composer, render directly. Never break the scene.
-      console.warn('[ThreeScene] bloom composer unavailable, rendering directly', err);
+    const size = new THREE.Vector2();
+    this.renderer.getSize(size);
+    const chain = buildPostChain(this.renderer, this.scene, this.camera, {
+      tier: this.quality.tier,
+      width: Math.max(1, size.x),
+      height: Math.max(1, size.y),
+      bloomDownscale: Math.max(1, this.quality.bloomDownscale),
+    });
+    if (!chain) {
       this.composer = null;
-      this.bloomPass = null;
-      this.gtaoPass = null;
+      return;
     }
+    chain.setPixelRatio(this.quality.pixelRatioCap);
+    this.postChain = chain;
+    this.composer = chain.composer;
+    this.gtaoPass = chain.gtao;
+    this.bokehPass = chain.bokeh;
+    this.smaaPass = chain.smaa;
   }
 
-  /**
-   * Add a single, cheap full-screen grade pass to the composer for a cinematic
-   * grimdark finish:
-   *  - radial VIGNETTE (deepens the corners into murk),
-   *  - global DESATURATION pulled toward a steel/ash tint (kills the bright,
-   *    "video-game" colour and unifies the palette),
-   *  - faint animated FILM GRAIN (skipped on 'low' tier — phones get a static
-   *    cheaper path) so the image reads as gritty film, not clean CG.
-   *
-   * One extra fragment pass over the canvas: a few math ops per pixel, no
-   * texture fetches beyond the input — robust on the swiftshader headless
-   * renderer and cheap on mobile. Entirely wrapped: any failure leaves the
-   * composer with just bloom + output (the scene still renders).
-   */
-  private addGradePass(composer: EffectComposer): void {
-    try {
-      // Grain is the only per-pixel-random work; disable it on 'low' so phones
-      // pay nothing for it. The vignette + desaturation are effectively free.
-      const grain = this.quality.tier === 'low' ? 0.0 : 1.0;
-      const size = new THREE.Vector2();
-      this.renderer.getSize(size);
-      const shader = {
-        uniforms: {
-          tDiffuse: { value: null as THREE.Texture | null },
-          uTime: { value: 0 },
-          uVignette: { value: 0.62 }, // 0 = none, 1 = heavy corners
-          uDesat: { value: 0.18 }, // neutral desat (was 0.26; the split-tone now carries the cast)
-          uGrain: { value: grain * 0.022 }, // grain amplitude (kept subtle)
-          // Split-tone: cool shadows, warm highlights — THE cinematic grimdark
-          // cue. The *2.0 renormalises mid-grey back toward unity so exposure is
-          // preserved (the old `l * uTint` secretly multiplied the frame ~0.5).
-          uShadowTint: { value: new THREE.Color(0x33465e) }, // cool blue-steel shadows
-          uHiTint: { value: new THREE.Color(0xffd9a8) }, // warm firelit highlights
-          uSplit: { value: 0.35 }, // split-tone strength
-          uResolution: { value: new THREE.Vector2(size.x || 1, size.y || 1) },
-        },
-        vertexShader: /* glsl */ `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          uniform sampler2D tDiffuse;
-          uniform float uTime;
-          uniform float uVignette;
-          uniform float uDesat;
-          uniform float uGrain;
-          uniform vec3 uShadowTint;
-          uniform vec3 uHiTint;
-          uniform float uSplit;
-          uniform vec2 uResolution;
-          varying vec2 vUv;
-          // cheap hash for grain
-          float hash(vec2 p) {
-            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-          }
-          void main() {
-            vec4 col = texture2D(tDiffuse, vUv);
-            float l = dot(col.rgb, vec3(0.299, 0.587, 0.114));
-            // Neutral desat first (no darkening), then luminance-driven split-tone:
-            // shadows go cool blue-steel, highlights go warm firelit.
-            vec3 base = mix(col.rgb, vec3(l), uDesat);
-            vec3 toneMul = mix(uShadowTint * 2.0, uHiTint * 2.0, smoothstep(0.15, 0.85, l));
-            base = mix(base, base * toneMul, uSplit);
-            col.rgb = base;
-            // Aspect-correct radial vignette; corners fall toward a cool near-black
-            // instead of pure black so the murk stays in-palette.
-            float aspect = uResolution.x / max(uResolution.y, 1.0);
-            vec2 dv = (vUv - 0.5) * vec2(aspect, 1.0);
-            float v = smoothstep(0.85, 0.35, length(dv));
-            col.rgb = mix(uShadowTint * 0.4, col.rgb, mix(1.0, v, uVignette));
-            // Faint animated film grain, weighted into the shadows, using the real
-            // canvas resolution (fixes the old hardcoded 1920x1080 dependency).
-            if (uGrain > 0.0) {
-              float g = hash(vUv * uResolution + fract(uTime) * 100.0);
-              col.rgb += (g - 0.5) * uGrain * (1.3 - l);
-            }
-            gl_FragColor = col;
-          }
-        `,
-      };
-      const pass = new ShaderPass(shader);
-      composer.addPass(pass);
-      this.gradePass = pass;
-    } catch (err) {
-      console.warn('[ThreeScene] grade pass unavailable, skipping', err);
-      this.gradePass = null;
-    }
-  }
 
   /* ============================ coordinate maps ============================ */
 
@@ -767,326 +529,18 @@ export class ThreeScene implements SceneController {
 
   /* ============================== board build ============================= */
 
+  /** Displaced PBR ground + gothic-industrial war table (gfx/board). */
   private buildBoard(): void {
-    const { width, height } = this.board;
-
-    // Procedural battlemat: albedo (ash/rubble + painted deployment zones + a
-    // faint measured grid) plus a matching roughness map for cheap surface
-    // variation, so wet/scorched patches catch the light differently.
-    const built = this.makeBattlematTextures(width, height);
-    const mat = new THREE.MeshStandardMaterial({
-      map: built.albedo,
-      roughnessMap: built.roughness ?? undefined,
-      roughness: 0.95,
-      metalness: 0.0,
-      color: 0xffffff,
-      // Environment reflections are very subtle on the mat; keep it matte.
-      envMapIntensity: 0.25,
-    });
-    const boardGeo = new THREE.PlaneGeometry(width, height, 1, 1);
-    boardGeo.rotateX(-Math.PI / 2); // lie flat on XZ
-    const boardMesh = new THREE.Mesh(boardGeo, mat);
-    boardMesh.receiveShadow = true;
-    boardMesh.name = 'battlemat';
-    this.boardGroup.add(boardMesh);
-
-    // A raised plinth/table beneath the mat: a dark, slightly inset slab plus a
-    // beveled metal frame around it, so the board reads as a real gaming table
-    // rather than a floating plane.
-    const plinthH = 1.6;
-    const plinthOver = 2.6; // how far the plinth extends past the play area
-    const plinthMat = new THREE.MeshStandardMaterial({
-      color: 0x0c0e12,
-      roughness: 0.85,
-      metalness: 0.1,
-      envMapIntensity: 0.3,
-    });
-    const plinth = new THREE.Mesh(
-      new THREE.BoxGeometry(width + plinthOver * 2, plinthH, height + plinthOver * 2),
-      plinthMat,
-    );
-    plinth.position.y = -plinthH / 2 - 0.02;
-    plinth.receiveShadow = true;
-    this.boardGroup.add(plinth);
-
-    // Gothic-industrial war-table edge: chamfered brass-and-iron rails with
-    // repeating engraved panels, corner bastion blocks, rivets and a faint
-    // hazard-stripe inlay. Built as a frame strictly OUTSIDE the play area so it
-    // never overlaps the mat or any terrain footprint.
-    this.buildWarTableFrame(width, height);
+    const b = buildBoard(this.board, this.gfxQuality(), 1337);
+    this.gfx.push(b);
+    this.boardGroup.add(b.group);
   }
 
-  /**
-   * Gothic-industrial war-table frame surrounding the play surface. All original
-   * motifs (chamfered iron rails, engraved recessed panels, corner bastion
-   * blocks, rivet rows, hazard-stripe inlay) — no real-world / GW iconography.
-   *
-   * Geometry budget scales with the quality tier: rivets and per-panel engraving
-   * are dropped on 'low' so phones stay light. The frame lives entirely beyond
-   * ±width/2 / ±height/2, so it can never cover the mat or a terrain footprint.
-   */
-  private buildWarTableFrame(width: number, height: number): void {
-    const frame = new THREE.Group();
-    frame.name = 'warTableFrame';
-
-    const lowTier = this.quality.tier === 'low';
-    const railT = 2.0; // rail thickness (outward from play edge)
-    const railH = 1.15; // rail height
-    const innerLipH = 0.35; // a slim raised inner lip kissing the mat edge
-
-    // --- shared materials (cached so frames across rebuilds share state) ---
-    const ironMat = this.getMaterial('frameIron', () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x1c2026,
-        roughness: 0.55,
-        metalness: 0.85,
-        envMapIntensity: 0.9,
-      }),
-    );
-    const brassMat = this.getMaterial('frameBrass', () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x6e5a2e,
-        roughness: 0.42,
-        metalness: 0.95,
-        emissive: 0x140e04,
-        emissiveIntensity: 0.4,
-        envMapIntensity: 1.0,
-      }),
-    );
-    const panelMat = this.getMaterial('framePanel', () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x101216,
-        roughness: 0.7,
-        metalness: 0.6,
-        envMapIntensity: 0.5,
-      }),
-    );
-    const hazardMat = this.getMaterial('frameHazard', () => {
-      const m = new THREE.MeshStandardMaterial({
-        roughness: 0.6,
-        metalness: 0.3,
-        map: this.makeHazardStripeTexture(),
-        envMapIntensity: 0.4,
-      });
-      return m;
-    });
-
-    // half extents of the play surface; rails are centred on the lines just
-    // outside these so the inner face sits flush with the mat edge.
-    const hw = width / 2;
-    const hh = height / 2;
-
-    /**
-     * Build one chamfered rail of length `len` running along an axis. Returned in
-     * local space (long axis = X, thickness = Z, height = Y) so callers rotate +
-     * position it. The chamfer is faked with a wider base box + a narrower bevel
-     * cap, plus a brass top fillet and recessed engraved panels along its face.
-     */
-    const makeRail = (len: number): THREE.Group => {
-      const g = new THREE.Group();
-      // Lower iron body (slightly wider, the structural rail).
-      const body = new THREE.Mesh(
-        this.getGeometry(`railBody:${len.toFixed(1)}:${railT}:${railH}`, () =>
-          new THREE.BoxGeometry(len, railH, railT),
-        ),
-        ironMat,
-      );
-      body.position.y = railH / 2 - 0.02;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      g.add(body);
-
-      // Chamfered iron cap (narrower in Z, sits on top) -> reads as a bevel.
-      const cap = new THREE.Mesh(
-        this.getGeometry(`railCap:${len.toFixed(1)}:${railT}:${railH}`, () =>
-          new THREE.BoxGeometry(len, railH * 0.28, railT * 0.62),
-        ),
-        ironMat,
-      );
-      cap.position.y = railH - 0.02;
-      cap.castShadow = true;
-      g.add(cap);
-
-      // Brass top fillet running the rail length (the warm metal highlight).
-      const fillet = new THREE.Mesh(
-        this.getGeometry(`railFillet:${len.toFixed(1)}`, () =>
-          new THREE.BoxGeometry(len, railH * 0.12, railT * 0.3),
-        ),
-        brassMat,
-      );
-      fillet.position.y = railH + railH * 0.1 - 0.02;
-      g.add(fillet);
-
-      // Hazard-stripe inlay strip on the outer top face (faint, painted look).
-      const hazard = new THREE.Mesh(
-        this.getGeometry(`railHazard:${len.toFixed(1)}`, () => {
-          const hg = new THREE.PlaneGeometry(len, railT * 0.22);
-          hg.rotateX(-Math.PI / 2);
-          return hg;
-        }),
-        hazardMat,
-      );
-      hazard.position.set(0, railH + 0.02, railT * 0.34);
-      hazard.receiveShadow = true;
-      g.add(hazard);
-
-      // Repeating engraved recessed panels along the inner face. On 'low' tier we
-      // skip these to save draw calls — the rail still reads as a frame.
-      if (!lowTier) {
-        const panelW = 3.4;
-        const gap = 1.0;
-        const pitch = panelW + gap;
-        const count = Math.max(1, Math.floor((len - gap) / pitch));
-        const used = count * pitch - gap;
-        const start = -used / 2 + panelW / 2;
-        const panelGeo = this.getGeometry('framePanelGeo', () =>
-          new THREE.BoxGeometry(panelW, railH * 0.5, 0.12),
-        );
-        const brassGeo = this.getGeometry('framePanelStud', () =>
-          new THREE.BoxGeometry(panelW * 0.18, railH * 0.5 * 0.7, 0.16),
-        );
-        for (let i = 0; i < count; i++) {
-          const px = start + i * pitch;
-          const panel = new THREE.Mesh(panelGeo, panelMat);
-          // recessed slightly into the inner face (toward -Z, the play side)
-          panel.position.set(px, railH * 0.5, -railT / 2 + 0.05);
-          g.add(panel);
-          // a slim central brass stud/boss for the engraved motif accent
-          const stud = new THREE.Mesh(brassGeo, brassMat);
-          stud.position.set(px, railH * 0.5, -railT / 2 + 0.02);
-          g.add(stud);
-        }
-      }
-
-      // Rivet rows along the top edge (additive detail; skipped on 'low').
-      if (!lowTier) {
-        const rivetGeo = this.getGeometry('frameRivet', () =>
-          new THREE.SphereGeometry(0.12, 6, 5),
-        );
-        const rivetPitch = 2.4;
-        const n = Math.max(2, Math.floor(len / rivetPitch));
-        for (let i = 0; i <= n; i++) {
-          const rx = -len / 2 + (i / n) * len;
-          const rivet = new THREE.Mesh(rivetGeo, brassMat);
-          rivet.position.set(rx, railH - 0.02, -railT * 0.28);
-          g.add(rivet);
-        }
-      }
-
-      return g;
-    };
-
-    // Long rails span the full width plus the corner bastions; place them just
-    // outside the top/bottom play edges.
-    const railLen = width; // inner face flush; bastions cover the corners
-    const top = makeRail(railLen);
-    top.position.set(0, 0, hh + railT / 2);
-    frame.add(top);
-
-    const bottom = makeRail(railLen);
-    bottom.rotation.y = Math.PI; // engraved face still points inward
-    bottom.position.set(0, 0, -hh - railT / 2);
-    frame.add(bottom);
-
-    const left = makeRail(height);
-    left.rotation.y = Math.PI / 2;
-    left.position.set(-hw - railT / 2, 0, 0);
-    frame.add(left);
-
-    const right = makeRail(height);
-    right.rotation.y = -Math.PI / 2;
-    right.position.set(hw + railT / 2, 0, 0);
-    frame.add(right);
-
-    // Corner bastion blocks: taller chamfered towers anchoring each corner,
-    // capped with a brass boss. They sit fully outside the play area.
-    const bastionGeo = this.getGeometry('frameBastion', () =>
-      new THREE.BoxGeometry(railT * 1.7, railH * 1.7, railT * 1.7),
-    );
-    const bastionCapGeo = this.getGeometry('frameBastionCap', () =>
-      new THREE.BoxGeometry(railT * 1.2, railH * 0.3, railT * 1.2),
-    );
-    const bossGeo = this.getGeometry('frameBoss', () =>
-      new THREE.CylinderGeometry(railT * 0.34, railT * 0.42, railH * 0.45, 6),
-    );
-    const cornerX = hw + railT / 2;
-    const cornerZ = hh + railT / 2;
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        const b = new THREE.Mesh(bastionGeo, ironMat);
-        b.position.set(sx * cornerX, (railH * 1.7) / 2 - 0.02, sz * cornerZ);
-        b.castShadow = true;
-        b.receiveShadow = true;
-        frame.add(b);
-        const cap = new THREE.Mesh(bastionCapGeo, ironMat);
-        cap.position.set(sx * cornerX, railH * 1.7 - 0.02, sz * cornerZ);
-        frame.add(cap);
-        const boss = new THREE.Mesh(bossGeo, brassMat);
-        boss.position.set(sx * cornerX, railH * 1.7 + railH * 0.18, sz * cornerZ);
-        frame.add(boss);
-      }
-    }
-
-    // A slim raised inner lip hugging the mat edge so the play surface reads as
-    // recessed within the frame (kept just outside the mat to avoid z-fighting).
-    const lipMat = ironMat;
-    const makeLip = (w: number, d: number, x: number, z: number) => {
-      const lip = new THREE.Mesh(
-        this.getGeometry(`frameLip:${w.toFixed(1)}:${d.toFixed(1)}`, () =>
-          new THREE.BoxGeometry(w, innerLipH, d),
-        ),
-        lipMat,
-      );
-      lip.position.set(x, innerLipH / 2 + 0.01, z);
-      lip.receiveShadow = true;
-      frame.add(lip);
-    };
-    const lipT = 0.5;
-    makeLip(width + lipT * 2, lipT, 0, hh + lipT / 2);
-    makeLip(width + lipT * 2, lipT, 0, -hh - lipT / 2);
-    makeLip(lipT, height, hw + lipT / 2, 0);
-    makeLip(lipT, height, -hw - lipT / 2, 0);
-
-    this.boardGroup.add(frame);
-  }
 
   /**
    * Procedural hazard-stripe texture (dark/brass diagonal caution stripes) for
    * the faint rim inlay. Cached + low-res; reads as worn painted metal.
    */
-  private hazardStripeTex: THREE.Texture | null = null;
-  private makeHazardStripeTexture(): THREE.Texture {
-    if (this.hazardStripeTex) return this.hazardStripeTex;
-    const c = document.createElement('canvas');
-    c.width = 256;
-    c.height = 32;
-    const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#15171b';
-    ctx.fillRect(0, 0, c.width, c.height);
-    // diagonal brass/iron stripes
-    const stripeW = 22;
-    ctx.lineWidth = stripeW;
-    ctx.strokeStyle = '#5a4a24';
-    for (let x = -c.height; x < c.width + c.height; x += stripeW * 2) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x + c.height, c.height);
-      ctx.stroke();
-    }
-    // grime/scratch overlay so the paint looks worn, not pristine
-    for (let i = 0; i < 60; i++) {
-      ctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.12})`;
-      ctx.fillRect(Math.random() * c.width, Math.random() * c.height, 1 + Math.random() * 6, 1);
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.repeat.set(12, 1);
-    tex.needsUpdate = true;
-    this.hazardStripeTex = tex;
-    return tex;
-  }
 
   /* ============================== atmosphere ============================== */
 
@@ -1100,484 +554,29 @@ export class ThreeScene implements SceneController {
    * objects under boardGroup) and are kept subtle so models/objectives stay
    * readable. All per-frame cost is a single attribute write + matrix update.
    */
+  /** Sky dome, horizon war-glow, smoke, haze and dust motes (gfx/sky). */
   private buildAtmosphere(): void {
-    const { width, height } = this.board;
-
-    // --- ground haze: a big soft additive quad hovering low over the mat ---
-    const hazeGeo = new THREE.PlaneGeometry(width * 1.1, height * 1.1, 1, 1);
-    hazeGeo.rotateX(-Math.PI / 2);
-    const hazeMat = new THREE.MeshBasicMaterial({
-      map: this.makeHazeTexture(),
-      transparent: true,
-      opacity: this.quality.tier === 'low' ? 0.1 : 0.16,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      color: 0x2a3340, // cold blue-grey haze, kept dim so contrast holds
-      fog: false,
-    });
-    const haze = new THREE.Mesh(hazeGeo, hazeMat);
-    haze.position.y = 0.8;
-    haze.renderOrder = 2; // draw after the mat/terrain
-    this.haze = haze;
-    this.boardGroup.add(haze);
-
-    // --- dust motes: cheap additive points, capped, skipped on 'low' tier ---
-    if (this.quality.tier === 'low') {
-      this.dustMotes = null;
-      this.dustData = null;
-      return;
-    }
-    const count = this.quality.tier === 'high' ? 280 : 150;
-    const positions = new Float32Array(count * 3);
-    const baseY = new Float32Array(count);
-    const phase = new Float32Array(count);
-    const speed = new Float32Array(count);
-    const spanX = width * 0.95;
-    const spanZ = height * 0.95;
-    const ceiling = 9; // motes drift between ~0.4 and 9 inches up
-    for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * spanX;
-      const y = 0.4 + Math.random() * ceiling;
-      positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * spanZ;
-      baseY[i] = y;
-      phase[i] = Math.random() * TAU;
-      speed[i] = 0.15 + Math.random() * 0.35;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({
-      map: this.makeMoteTexture(),
-      size: 0.5,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 0.5,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      color: 0xb9c4d6,
-      fog: true,
-    });
-    const points = new THREE.Points(geo, mat);
-    points.renderOrder = 3;
-    points.frustumCulled = false;
-    this.dustMotes = points;
-    this.dustData = { baseY, phase, speed };
-    this.boardGroup.add(points);
+    const a = buildAtmosphere(this.board, this.gfxQuality(), 6011);
+    this.gfx.push(a);
+    this.scene.add(a.group);
   }
 
   /** Soft radial haze texture (bright centre -> transparent edge), cached. */
-  private hazeTex: THREE.Texture | null = null;
-  private makeHazeTexture(): THREE.Texture {
-    if (this.hazeTex) return this.hazeTex;
-    const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    const ctx = c.getContext('2d')!;
-    const g = ctx.createRadialGradient(128, 128, 10, 128, 128, 128);
-    g.addColorStop(0, 'rgba(255,255,255,0.5)');
-    g.addColorStop(0.5, 'rgba(255,255,255,0.22)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 256, 256);
-    // a little large-scale blotch so the haze isn't a perfect disc
-    for (let i = 0; i < 14; i++) {
-      const x = Math.random() * 256;
-      const y = Math.random() * 256;
-      const r = 20 + Math.random() * 60;
-      const bg = ctx.createRadialGradient(x, y, 2, x, y, r);
-      bg.addColorStop(0, 'rgba(255,255,255,0.06)');
-      bg.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = bg;
-      ctx.fillRect(x - r, y - r, r * 2, r * 2);
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.needsUpdate = true;
-    this.hazeTex = tex;
-    return tex;
-  }
 
   /** Tiny soft circular sprite for dust motes (white core -> transparent). */
-  private moteTex: THREE.Texture | null = null;
-  private makeMoteTexture(): THREE.Texture {
-    if (this.moteTex) return this.moteTex;
-    const c = document.createElement('canvas');
-    c.width = c.height = 32;
-    const ctx = c.getContext('2d')!;
-    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-    g.addColorStop(0, 'rgba(255,255,255,1)');
-    g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 32, 32);
-    const tex = new THREE.CanvasTexture(c);
-    tex.needsUpdate = true;
-    this.moteTex = tex;
-    return tex;
-  }
 
-  /**
-   * Procedural battlemat texture set. Returns an albedo map (urban ash/rubble
-   * with faintly painted deployment zones, a measured grid and a soft edge
-   * vignette) and, when the tier affords it, a roughness map derived from the
-   * same noise so scorched/wet patches vary their gloss. All canvas work runs
-   * once at init; resolution scales with the quality tier.
-   */
-  private makeBattlematTextures(
-    width: number,
-    height: number,
-  ): { albedo: THREE.Texture; roughness: THREE.Texture | null } {
-    const px = this.quality.battlematPx;
-    const cw = px;
-    const ch = Math.round(px * (height / width));
-    const pxPerInchX = cw / width;
-    const pxPerInchY = ch / height;
-
-    /* ---- albedo ---- */
-    const canvas = document.createElement('canvas');
-    canvas.width = cw;
-    canvas.height = ch;
-    const ctx = canvas.getContext('2d')!;
-
-    // Base dark urban/ash tone with a faint vertical tonal gradient.
-    const baseGrad = ctx.createLinearGradient(0, 0, 0, ch);
-    baseGrad.addColorStop(0, '#171a20');
-    baseGrad.addColorStop(0.5, '#131519');
-    baseGrad.addColorStop(1, '#16181d');
-    ctx.fillStyle = baseGrad;
-    ctx.fillRect(0, 0, cw, ch);
-
-    // Painted deployment zones: two large, soft translucent bands at the short
-    // edges (player A near +Y short edge, player B near -Y), tinted by the
-    // default faction colours but kept low-opacity so they read as paint.
-    const zoneDepth = ch * 0.22;
-    const paintZone = (top: number, h: number, col: string) => {
-      const g = ctx.createLinearGradient(0, top, 0, top + h);
-      g.addColorStop(0, col.replace('ALPHA', '0.0'));
-      g.addColorStop(0.6, col.replace('ALPHA', '0.16'));
-      g.addColorStop(1, col.replace('ALPHA', '0.22'));
-      ctx.fillStyle = g;
-      ctx.fillRect(0, top, cw, h);
-      // dashed boundary line
-      ctx.strokeStyle = col.replace('ALPHA', '0.5');
-      ctx.lineWidth = Math.max(2, cw * 0.0025);
-      ctx.setLineDash([cw * 0.02, cw * 0.014]);
-      const ly = top < ch / 2 ? top + h : top;
-      ctx.beginPath();
-      ctx.moveTo(0, ly);
-      ctx.lineTo(cw, ly);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    };
-    // top band (table Y near max) and bottom band; "rgba(r,g,b,ALPHA)" template.
-    paintZone(0, zoneDepth, 'rgba(58,123,255,ALPHA)');
-    paintZone(ch - zoneDepth, zoneDepth, 'rgba(255,64,48,ALPHA)');
-
-    // Procedural mottling for an ashen, weathered look (rubble flecks).
-    const flecks = Math.round(2600 * (px / 1024));
-    for (let i = 0; i < flecks; i++) {
-      const r = Math.random();
-      const shade = 18 + Math.floor(Math.random() * 26);
-      ctx.fillStyle = `rgba(${shade},${shade + 2},${shade + 6},${0.04 + r * 0.06})`;
-      const x = Math.random() * cw;
-      const y = Math.random() * ch;
-      const s = (2 + Math.random() * 26) * (px / 1024);
-      ctx.beginPath();
-      ctx.arc(x, y, s, 0, TAU);
-      ctx.fill();
-    }
-    // Scattered rubble chunks (small angular highlights) for texture.
-    for (let i = 0; i < Math.round(220 * (px / 1024)); i++) {
-      const x = Math.random() * cw;
-      const y = Math.random() * ch;
-      const s = (3 + Math.random() * 7) * (px / 1024);
-      ctx.fillStyle = `rgba(${60 + Math.random() * 30 | 0},${58 + Math.random() * 28 | 0},${
-        54 + Math.random() * 26 | 0
-      },0.18)`;
-      ctx.fillRect(x, y, s, s * (0.5 + Math.random()));
-    }
-    // A few rust/ember streaks.
-    for (let i = 0; i < 40; i++) {
-      ctx.strokeStyle = `rgba(120,60,30,${0.03 + Math.random() * 0.05})`;
-      ctx.lineWidth = (1 + Math.random() * 3) * (px / 1024);
-      ctx.beginPath();
-      const x = Math.random() * cw;
-      const y = Math.random() * ch;
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + (Math.random() - 0.5) * 120, y + (Math.random() - 0.5) * 120);
-      ctx.stroke();
-    }
-
-    // Scorch blast marks: soft dark radial burns with a faint ember-warm core,
-    // as if shells and plasma have cooked the rockcrete. Deterministic count
-    // scaled to resolution; reads as battle damage, not noise.
-    const scorchN = Math.round(16 * (px / 1024));
-    for (let i = 0; i < scorchN; i++) {
-      const x = Math.random() * cw;
-      const y = Math.random() * ch;
-      const r = (16 + Math.random() * 64) * (px / 1024);
-      const sg = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
-      sg.addColorStop(0, 'rgba(10,8,6,0.5)');
-      sg.addColorStop(0.4, 'rgba(14,11,8,0.32)');
-      sg.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = sg;
-      ctx.fillRect(x - r, y - r, r * 2, r * 2);
-      // a faint warm rim where the burn cooled
-      ctx.strokeStyle = `rgba(110,52,22,${0.05 + Math.random() * 0.05})`;
-      ctx.lineWidth = (1 + Math.random() * 2) * (px / 1024);
-      ctx.beginPath();
-      ctx.arc(x, y, r * (0.5 + Math.random() * 0.3), 0, TAU);
-      ctx.stroke();
-    }
-
-    // Blood-rust pools: dark oxidised crimson stains soaking into the ash.
-    const stainN = Math.round(20 * (px / 1024));
-    for (let i = 0; i < stainN; i++) {
-      const x = Math.random() * cw;
-      const y = Math.random() * ch;
-      const r = (8 + Math.random() * 34) * (px / 1024);
-      const bg = ctx.createRadialGradient(x, y, 1, x, y, r);
-      const a = 0.05 + Math.random() * 0.08;
-      bg.addColorStop(0, `rgba(74,18,12,${a})`);
-      bg.addColorStop(0.7, `rgba(52,14,10,${a * 0.6})`);
-      bg.addColorStop(1, 'rgba(40,12,8,0)');
-      ctx.fillStyle = bg;
-      ctx.beginPath();
-      // irregular blob via a few overlapping arcs
-      for (let k = 0; k < 3; k++) {
-        const ox = (Math.random() - 0.5) * r;
-        const oy = (Math.random() - 0.5) * r;
-        ctx.moveTo(x + ox + r, y + oy);
-        ctx.arc(x + ox, y + oy, r * (0.5 + Math.random() * 0.5), 0, TAU);
-      }
-      ctx.fill();
-    }
-
-    // Oil / promethium slicks: low-frequency dark glossy smears (the matching
-    // roughness map below also dips here so they catch the light wet).
-    for (let i = 0; i < Math.round(10 * (px / 1024)); i++) {
-      const x = Math.random() * cw;
-      const y = Math.random() * ch;
-      const w = (30 + Math.random() * 90) * (px / 1024);
-      const h = (10 + Math.random() * 30) * (px / 1024);
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.random() * TAU);
-      const og = ctx.createRadialGradient(0, 0, 1, 0, 0, w / 2);
-      og.addColorStop(0, 'rgba(6,7,9,0.4)');
-      og.addColorStop(1, 'rgba(6,7,9,0)');
-      ctx.fillStyle = og;
-      ctx.scale(1, h / w);
-      ctx.beginPath();
-      ctx.arc(0, 0, w / 2, 0, TAU);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Faint stencilled deployment chevrons + unit-marking ticks near the zone
-    // boundaries — worn painted directional markings, original geometry only.
-    const drawChevron = (cxp: number, cyp: number, size: number, col: string, up: boolean) => {
-      ctx.strokeStyle = col;
-      ctx.lineWidth = Math.max(2, size * 0.16);
-      ctx.lineCap = 'round';
-      const dir = up ? -1 : 1;
-      ctx.beginPath();
-      ctx.moveTo(cxp - size, cyp + dir * size * 0.5);
-      ctx.lineTo(cxp, cyp - dir * size * 0.5);
-      ctx.lineTo(cxp + size, cyp + dir * size * 0.5);
-      ctx.stroke();
-    };
-    const chevSize = cw * 0.018;
-    const chevCols = ['rgba(70,90,130,0.10)', 'rgba(150,50,40,0.10)'];
-    for (let band = 0; band < 2; band++) {
-      const yBase = band === 0 ? ch * 0.14 : ch * 0.86;
-      const col = chevCols[band];
-      const up = band === 0;
-      for (let i = 0; i < 3; i++) {
-        const cxp = cw * (0.18 + i * 0.32);
-        for (let r = 0; r < 3; r++) {
-          drawChevron(cxp, yBase + r * chevSize * 1.1 * (up ? 1 : -1), chevSize, col, up);
-        }
-      }
-    }
-    // Cracked plating: scatter darker fault lines for depth.
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    for (let i = 0; i < 70; i++) {
-      ctx.lineWidth = (0.5 + Math.random() * 1.5) * (px / 1024);
-      ctx.beginPath();
-      let x = Math.random() * cw;
-      let y = Math.random() * ch;
-      ctx.moveTo(x, y);
-      const segs = 2 + Math.floor(Math.random() * 4);
-      for (let s = 0; s < segs; s++) {
-        x += (Math.random() - 0.5) * 90 * (px / 1024);
-        y += (Math.random() - 0.5) * 90 * (px / 1024);
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-
-    // Faint measured grid every 6 inches (minor) and 12 inches (major).
-    const drawGrid = (step: number, style: string, lw: number) => {
-      ctx.strokeStyle = style;
-      ctx.lineWidth = lw;
-      for (let gx = 0; gx <= width + 0.001; gx += step) {
-        const x = gx * pxPerInchX;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, ch);
-        ctx.stroke();
-      }
-      for (let gy = 0; gy <= height + 0.001; gy += step) {
-        const y = gy * pxPerInchY;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(cw, y);
-        ctx.stroke();
-      }
-    };
-    drawGrid(6, 'rgba(120,140,170,0.05)', 1);
-    drawGrid(12, 'rgba(130,150,180,0.12)', 1);
-
-    // Vignette: radial edge darkening so the board reads as a lit arena.
-    const cx = cw / 2;
-    const cy = ch / 2;
-    const grad = ctx.createRadialGradient(
-      cx,
-      cy,
-      Math.min(cx, cy) * 0.4,
-      cx,
-      cy,
-      Math.max(cx, cy) * 1.05,
-    );
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(0.72, 'rgba(0,0,0,0.16)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.62)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, cw, ch);
-
-    const albedo = new THREE.CanvasTexture(canvas);
-    albedo.colorSpace = THREE.SRGBColorSpace;
-    albedo.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-    albedo.needsUpdate = true;
-
-    // Low tier skips the roughness map to save memory + a texture fetch.
-    if (this.quality.tier === 'low') {
-      return { albedo, roughness: null };
-    }
-
-    /* ---- roughness map: blotchy, so scorched/wet patches vary gloss ---- */
-    const rCanvas = document.createElement('canvas');
-    // Roughness can be lower-res; it's low frequency.
-    rCanvas.width = Math.max(256, Math.floor(cw / 2));
-    rCanvas.height = Math.max(256, Math.floor(ch / 2));
-    const rctx = rCanvas.getContext('2d')!;
-    rctx.fillStyle = '#d8d8d8'; // mostly rough (0.85-ish)
-    rctx.fillRect(0, 0, rCanvas.width, rCanvas.height);
-    for (let i = 0; i < 600; i++) {
-      const x = Math.random() * rCanvas.width;
-      const y = Math.random() * rCanvas.height;
-      const s = 6 + Math.random() * 60;
-      // Darker = smoother (wet/scorched glossy patches).
-      const v = 120 + Math.floor(Math.random() * 80);
-      rctx.fillStyle = `rgba(${v},${v},${v},0.25)`;
-      rctx.beginPath();
-      rctx.arc(x, y, s, 0, TAU);
-      rctx.fill();
-    }
-    const roughness = new THREE.CanvasTexture(rCanvas);
-    roughness.needsUpdate = true;
-    return { albedo, roughness };
-  }
 
   /**
    * Draw the engine's terrain pieces 1:1 — what you see is exactly the footprint
    * the rules use for line of sight and cover. Ruins are rendered as broken-wall
    * shells (so you can see models inside), craters as sunken discs.
    */
+  /** Ruined gothic shells + crater bowls for the rules terrain (gfx/terrain).
+   *  Footprints are rules geometry — the module fills but never exceeds them. */
   private buildTerrain(state: GameState): void {
-    const terrainGroup = new THREE.Group();
-
-    // Weathered concrete ruin material with a procedural noise texture so the
-    // walls read as cast plascrete rather than flat boxes. Shared across ruins.
-    const ruinTex = this.makeConcreteTexture();
-    const ruinMat = new THREE.MeshStandardMaterial({
-      color: 0x6a6253,
-      map: ruinTex,
-      roughness: 0.92,
-      metalness: 0.05,
-      envMapIntensity: 0.4,
-    });
-    const craterMat = new THREE.MeshStandardMaterial({
-      color: 0x14110d,
-      roughness: 1.0,
-      metalness: 0.0,
-    });
-    const padMat = new THREE.MeshStandardMaterial({
-      color: 0x2f2b24,
-      roughness: 0.96,
-      metalness: 0.0,
-    });
-
-    for (const t of state.terrain) {
-      const c = this.tableToWorld(t.center);
-      if (t.kind === 'crater') {
-        // Sunken crater: a dark bowl ring plus a debris lip, deterministic.
-        const r = Math.max(t.width, t.depth) / 2;
-        const bowl = new THREE.Mesh(
-          new THREE.CylinderGeometry(r * 0.78, r * 1.08, 0.5, this.quality.ringSegments),
-          craterMat,
-        );
-        bowl.position.set(c.x, -0.05, c.z);
-        bowl.receiveShadow = true;
-        terrainGroup.add(bowl);
-        // raised debris lip torus for readability + shadow catch
-        const lip = new THREE.Mesh(
-          new THREE.TorusGeometry(r * 0.95, 0.22, 6, this.quality.ringSegments),
-          ruinMat,
-        );
-        lip.rotation.x = -Math.PI / 2;
-        lip.position.set(c.x, 0.18, c.z);
-        lip.castShadow = true;
-        lip.receiveShadow = true;
-        terrainGroup.add(lip);
-        continue;
-      }
-
-      // Ruin: the SAME four wall segments + gaps as before (LoS/cover footprint
-      // must not change), but each wall is now a broken-top shell with window
-      // cut-outs. We build the wall from stacked blocks so the silhouette is
-      // jagged and (for tall walls) punched with windows — purely visual; the
-      // footprint rectangle each wall occupies is identical to the old box.
-      const hw = t.width / 2;
-      const hd = t.depth / 2;
-      const th = 0.6; // wall thickness
-      const walls: Array<[number, number, number, number]> = [
-        [0, hd, t.width, th], // back
-        [0, -hd, t.width * 0.55, th], // front (gap)
-        [-hw, 0, th, t.depth], // left
-        [hw, 0, th, t.depth * 0.55], // right (gap)
-      ];
-      // Deterministic per-piece RNG so terrain looks identical every render.
-      let seed = this.hashId(t.id);
-      const rng = () => {
-        // xorshift32 — stable, no allocations.
-        seed ^= seed << 13;
-        seed ^= seed >>> 17;
-        seed ^= seed << 5;
-        return ((seed >>> 0) % 10000) / 10000;
-      };
-      for (const [ox, oz, ww, dd] of walls) {
-        const wall = this.buildRuinWall(ww, t.height, dd, ruinMat, rng);
-        wall.position.set(c.x + ox, 0, c.z - oz);
-        terrainGroup.add(wall);
-      }
-      // A faint floor pad to read the footprint from above.
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(t.width, 0.12, t.depth), padMat);
-      pad.position.set(c.x, 0.07, c.z);
-      pad.receiveShadow = true;
-      terrainGroup.add(pad);
-    }
-
-    this.boardGroup.add(terrainGroup);
+    const t = buildTerrain(state.terrain, this.board, this.gfxQuality(), 2029);
+    this.gfx.push(t);
+    this.boardGroup.add(t.group);
   }
 
   /**
@@ -1595,314 +594,30 @@ export class ThreeScene implements SceneController {
    * Budget scales with tier: skipped entirely on 'low'; a modest count on
    * 'medium'; more on 'high'. Geometry + materials are cached/shared.
    */
+  /** Instanced battlefield litter, kept out of terrain footprints, objective
+   *  areas and the two deployment bands (gfx/scatter). Skipped on low tier. */
   private buildScatter(state: GameState): void {
     if (this.quality.tier === 'low') return;
-    const group = new THREE.Group();
-    group.name = 'scatter';
-
-    const { width, height } = this.board;
-    // Forbidden rectangles (in table coords) = terrain footprints, padded.
-    const blocked = state.terrain.map((t) => ({
-      x: t.center.x,
-      y: t.center.y,
-      hw: t.width / 2 + 1.0,
-      hd: t.depth / 2 + 1.0,
-    }));
-    // Deployment-zone depth mirrors the painted bands on the mat (~22%).
-    const zoneDepth = height * 0.22;
-
-    // Seeded RNG (xorshift32) keyed off board dims so layout is identical every
-    // load but varies between boards. No allocations in the loop.
-    let seed = this.hashId(`scatter:${width}x${height}`);
-    const rng = () => {
-      seed ^= seed << 13;
-      seed ^= seed >>> 17;
-      seed ^= seed << 5;
-      return ((seed >>> 0) % 100000) / 100000;
-    };
-    const free = (x: number, y: number, pad: number): boolean => {
-      if (x < pad || x > width - pad || y < pad || y > height - pad) return false;
-      if (y < zoneDepth || y > height - zoneDepth) return false; // keep zones clear
-      for (const b of blocked) {
-        if (Math.abs(x - b.x) < b.hw + pad && Math.abs(y - b.y) < b.hd + pad) return false;
-      }
-      return true;
-    };
-
-    // --- shared low-poly materials (cached) ---
-    const rubbleMat = this.getMaterial('scatterRubble', () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x4a4438,
-        roughness: 0.95,
-        metalness: 0.04,
-        envMapIntensity: 0.3,
-      }),
-    );
-    const ironMat = this.getMaterial('scatterIron', () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x20242b,
-        roughness: 0.6,
-        metalness: 0.8,
-        envMapIntensity: 0.7,
-      }),
-    );
-    const boneMat = this.getMaterial('scatterBone', () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x6e6450,
-        roughness: 0.85,
-        metalness: 0.02,
-        envMapIntensity: 0.25,
-      }),
-    );
-    const clothMat = this.getMaterial('scatterCloth', () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x4a1410,
-        roughness: 0.95,
-        metalness: 0.0,
-        side: THREE.DoubleSide,
-        envMapIntensity: 0.15,
-      }),
-    );
-
-    const seg = Math.max(6, Math.round(this.quality.ringSegments * 0.3));
-    const rubbleGeo = this.getGeometry('scatterRock', () =>
-      new THREE.DodecahedronGeometry(0.5, 0),
-    );
-
-    const placeRubbleCluster = (x: number, y: number): void => {
-      const w = this.tableToWorld({ x, y });
-      const n = 2 + Math.floor(rng() * 3);
-      for (let i = 0; i < n; i++) {
-        const rock = new THREE.Mesh(rubbleGeo, rubbleMat);
-        const s = 0.3 + rng() * 0.6;
-        rock.scale.set(s, s * (0.5 + rng() * 0.4), s);
-        rock.position.set(
-          w.x + (rng() - 0.5) * 1.6,
-          s * 0.3,
-          w.z + (rng() - 0.5) * 1.6,
-        );
-        rock.rotation.set(rng() * TAU, rng() * TAU, rng() * TAU);
-        rock.castShadow = true;
-        rock.receiveShadow = true;
-        group.add(rock);
-      }
-    };
-
-    const placeSpike = (x: number, y: number): void => {
-      const w = this.tableToWorld({ x, y });
-      // A leaning iron spike/stake driven into the ground (original shape).
-      const spike = new THREE.Mesh(
-        this.getGeometry('scatterSpike', () =>
-          new THREE.ConeGeometry(0.18, 2.6, 5),
-        ),
-        ironMat,
-      );
-      spike.position.set(w.x, 1.0, w.z);
-      spike.rotation.z = (rng() - 0.5) * 0.5;
-      spike.rotation.x = (rng() - 0.5) * 0.4;
-      spike.castShadow = true;
-      group.add(spike);
-      // a rubble collar at its base
-      placeRubbleCluster(x, y);
-    };
-
-    const placeBanner = (x: number, y: number): void => {
-      const w = this.tableToWorld({ x, y });
-      const pole = new THREE.Mesh(
-        this.getGeometry('scatterPole', () =>
-          new THREE.CylinderGeometry(0.08, 0.1, 4.2, 6),
-        ),
-        ironMat,
-      );
-      const lean = (rng() - 0.5) * 0.35;
-      pole.position.set(w.x, 2.0, w.z);
-      pole.rotation.z = lean;
-      pole.castShadow = true;
-      group.add(pole);
-      // crossbar
-      const bar = new THREE.Mesh(
-        this.getGeometry('scatterBannerBar', () =>
-          new THREE.CylinderGeometry(0.05, 0.05, 1.5, 5),
-        ),
-        ironMat,
-      );
-      bar.position.set(w.x + Math.sin(lean) * 1.6, 3.5, w.z);
-      bar.rotation.z = Math.PI / 2 + lean;
-      group.add(bar);
-      // tattered hanging cloth (a thin tapered slab, ragged via a notched clip)
-      const cloth = new THREE.Mesh(
-        this.getGeometry('scatterBannerCloth', () => {
-          const g = new THREE.PlaneGeometry(1.3, 2.0, 1, 1);
-          return g;
-        }),
-        clothMat,
-      );
-      cloth.position.set(w.x + Math.sin(lean) * 1.6, 2.5, w.z + 0.02);
-      cloth.rotation.z = lean;
-      cloth.castShadow = true;
-      group.add(cloth);
-    };
-
-    const placeCairn = (x: number, y: number): void => {
-      const w = this.tableToWorld({ x, y });
-      // A low mound of pale rounded forms — a battlefield cairn / bone-pile,
-      // built from clustered spheres (original, abstracted — no GW skull motif).
-      const n = 4 + Math.floor(rng() * 4);
-      const boneGeo = this.getGeometry('scatterBoneBall', () =>
-        new THREE.SphereGeometry(0.26, seg, Math.max(4, seg - 2)),
-      );
-      for (let i = 0; i < n; i++) {
-        const b = new THREE.Mesh(boneGeo, boneMat);
-        const s = 0.6 + rng() * 0.7;
-        b.scale.setScalar(s);
-        b.position.set(
-          w.x + (rng() - 0.5) * 1.4,
-          0.2 + rng() * 0.5,
-          w.z + (rng() - 0.5) * 1.4,
-        );
-        b.castShadow = true;
-        b.receiveShadow = true;
-        group.add(b);
-      }
-    };
-
-    // Target counts by tier.
-    const counts =
-      this.quality.tier === 'high'
-        ? { rubble: 14, spike: 5, banner: 3, cairn: 3 }
-        : { rubble: 8, spike: 3, banner: 2, cairn: 2 };
-
-    const place = (kind: 'rubble' | 'spike' | 'banner' | 'cairn', want: number) => {
-      let placed = 0;
-      let tries = 0;
-      const pad = kind === 'rubble' ? 1.4 : 2.0;
-      while (placed < want && tries < want * 12) {
-        tries++;
-        const x = rng() * width;
-        const y = rng() * height;
-        if (!free(x, y, pad)) continue;
-        if (kind === 'rubble') placeRubbleCluster(x, y);
-        else if (kind === 'spike') placeSpike(x, y);
-        else if (kind === 'banner') placeBanner(x, y);
-        else placeCairn(x, y);
-        placed++;
-      }
-    };
-    place('rubble', counts.rubble);
-    place('spike', counts.spike);
-    place('banner', counts.banner);
-    place('cairn', counts.cairn);
-
-    this.boardGroup.add(group);
+    const zd = this.board.height * 0.22;
+    const avoid: AvoidRect[] = [
+      ...state.terrain.map((t) => ({ x: t.center.x, y: t.center.y, w: t.width, d: t.depth })),
+      ...state.objectives.map((o) => ({
+        x: o.position.x,
+        y: o.position.y,
+        w: (o.radius + 1) * 2,
+        d: (o.radius + 1) * 2,
+      })),
+      { x: this.board.width / 2, y: zd / 2, w: this.board.width, d: zd },
+      { x: this.board.width / 2, y: this.board.height - zd / 2, w: this.board.width, d: zd },
+    ];
+    const s = buildScatter(this.board, avoid, this.gfxQuality(), 4099);
+    this.gfx.push(s);
+    this.boardGroup.add(s.group);
   }
 
-  /** Stable 32-bit hash of a string id, for deterministic terrain detailing. */
-  private hashId(id: string): number {
-    let h = 2166136261 >>> 0;
-    for (let i = 0; i < id.length; i++) {
-      h ^= id.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    // Ensure non-zero for xorshift.
-    return (h || 0x9e3779b9) >>> 0;
-  }
 
-  /**
-   * Build one ruined wall segment that occupies exactly a (ww × dd) footprint
-   * and `height` tall — but as a broken shell: the wall is split into a few
-   * vertical merlons of varying height (jagged broken top) and, when tall
-   * enough, has window cut-outs left as gaps between blocks. The visual stays
-   * within the wall's footprint so line-of-sight/cover read is unchanged.
-   */
-  private buildRuinWall(
-    ww: number,
-    height: number,
-    dd: number,
-    mat: THREE.Material,
-    rng: () => number,
-  ): THREE.Group {
-    const g = new THREE.Group();
-    // The wall runs along its longer horizontal axis.
-    const along = Math.max(ww, dd);
-    const horizontal = ww >= dd; // true: spans X, false: spans Z
-    const segCount = clamp(Math.round(along / 2.2), 2, 6);
-    const segLen = along / segCount;
-    const hasWindows = height >= 1.6;
 
-    for (let i = 0; i < segCount; i++) {
-      // Jagged broken top: each merlon gets a fraction of full height.
-      const frac = 0.55 + rng() * 0.45;
-      const segH = height * frac;
-      const center = -along / 2 + segLen * (i + 0.5);
-      const segThk = horizontal ? dd : ww;
 
-      if (hasWindows && i % 2 === 1 && rng() > 0.35) {
-        // Punch a window: build the merlon as a bottom sill + a lintel above,
-        // leaving a gap in the middle. Stays inside footprint.
-        const sillH = segH * 0.38;
-        const lintelH = segH * 0.22;
-        const sill = new THREE.Mesh(this.wallBlockGeo(segLen * 0.92, sillH, segThk), mat);
-        const lintel = new THREE.Mesh(this.wallBlockGeo(segLen * 0.92, lintelH, segThk), mat);
-        if (horizontal) {
-          sill.position.set(center, sillH / 2, 0);
-          lintel.position.set(center, segH - lintelH / 2, 0);
-        } else {
-          sill.position.set(0, sillH / 2, center);
-          lintel.position.set(0, segH - lintelH / 2, center);
-        }
-        for (const m of [sill, lintel]) {
-          m.castShadow = true;
-          m.receiveShadow = true;
-          g.add(m);
-        }
-      } else {
-        const block = new THREE.Mesh(this.wallBlockGeo(segLen * 0.96, segH, segThk), mat);
-        if (horizontal) block.position.set(center, segH / 2, 0);
-        else block.position.set(0, segH / 2, center);
-        block.castShadow = true;
-        block.receiveShadow = true;
-        g.add(block);
-      }
-    }
-    return g;
-  }
-
-  /** Cached box geometry for ruin wall blocks (keyed + rounded to share). */
-  private wallBlockGeo(w: number, h: number, d: number): THREE.BufferGeometry {
-    const key = `wall:${w.toFixed(1)}:${h.toFixed(1)}:${d.toFixed(1)}`;
-    return this.getGeometry(key, () => new THREE.BoxGeometry(w, h, d));
-  }
-
-  /** Small procedural concrete/plascrete texture for ruin walls (cached). */
-  private makeConcreteTexture(): THREE.Texture {
-    const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#5f584a';
-    ctx.fillRect(0, 0, 256, 256);
-    // speckle + grime
-    for (let i = 0; i < 1400; i++) {
-      const v = 70 + Math.floor(Math.random() * 60);
-      ctx.fillStyle = `rgba(${v},${v - 6},${v - 16},0.12)`;
-      ctx.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 2);
-    }
-    // dark streaks (water staining)
-    for (let i = 0; i < 30; i++) {
-      ctx.strokeStyle = 'rgba(20,18,14,0.18)';
-      ctx.lineWidth = 1 + Math.random() * 3;
-      const x = Math.random() * 256;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x + (Math.random() - 0.5) * 30, 256);
-      ctx.stroke();
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(2, 1);
-    tex.needsUpdate = true;
-    return tex;
-  }
 
   /* ============================ shared resources ========================== */
 
@@ -3889,14 +2604,8 @@ export class ThreeScene implements SceneController {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     // Keep the composer + bloom render targets in sync with the canvas.
-    if (this.composer) this.composer.setSize(w, h);
-    if (this.bloomPass) this.bloomPass.setSize(w, h);
-    if (this.gtaoPass) this.gtaoPass.setSize(w, h);
-    // Keep the grade pass's resolution (drives aspect-correct vignette + grain).
-    if (this.gradePass) {
-      const res = this.gradePass.uniforms.uResolution;
-      if (res) (res.value as THREE.Vector2).set(w, h);
-    }
+    // The chain owns resizing every pass (composer, bloom, GTAO, grade res).
+    if (this.postChain) this.postChain.setSize(w, h);
   }
 
   /* ============================== animation ============================== */
@@ -3969,20 +2678,9 @@ export class ThreeScene implements SceneController {
       }
     }
 
-    // Advance the grade pass's grain time (only when grain is active).
-    if (this.gradePass) {
-      this.gradePass.uniforms.uTime.value = t;
-    }
-    // Keep the depth-of-field focal plane on whatever the camera is looking at
-    // (the orbit pivot), so the framed figures stay crisp as you zoom/orbit.
-    if (this.bokehPass) {
-      const u = (this.bokehPass as unknown as { uniforms?: Record<string, { value: number }> }).uniforms;
-      const dist = this.camera.position.distanceTo(this.orbitTarget);
-      // Bias focus onto the front rank so the nearest figures are tack-sharp, and
-      // drive aperture by distance so the DoF thickness stays constant instead of
-      // going razor-thin zoomed-in / flat zoomed-out (CoC divides by focus).
-      if (u && u.focus) u.focus.value = dist * 0.92;
-      if (u && u.aperture) u.aperture.value = 0.00055 * (dist / 70);
+    // Advance the post chain (grain time, zoom-adaptive depth of field).
+    if (this.postChain) {
+      this.postChain.updatePerFrame(t, this.camera.position.distanceTo(this.orbitTarget));
     }
 
     // Render through the bloom composer when available, else direct.
@@ -4017,29 +2715,10 @@ export class ThreeScene implements SceneController {
    * breathes its opacity; motes do one bob/sway attribute write per frame. No
    * work at all when motes are disabled ('low' tier) or reduced motion is on.
    */
+  /** Advance the modular visual builds (sky drift, smoke, ember flicker…). */
   private updateAtmosphere(dt: number, t: number): void {
-    if (this.haze) {
-      this.haze.rotation.y = t * 0.012;
-      const base = this.quality.tier === 'low' ? 0.1 : 0.16;
-      (this.haze.material as THREE.MeshBasicMaterial).opacity =
-        base + Math.sin(t * 0.5) * 0.025;
-    }
     if (this.reducedMotion) return;
-    const motes = this.dustMotes;
-    const data = this.dustData;
-    if (!motes || !data) return;
-    const attr = motes.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const arr = attr.array as Float32Array;
-    const n = data.baseY.length;
-    for (let i = 0; i < n; i++) {
-      const ph = data.phase[i];
-      const sp = data.speed[i];
-      // gentle vertical bob + slow horizontal sway (no per-mote allocation)
-      arr[i * 3 + 1] = data.baseY[i] + Math.sin(t * sp + ph) * 0.5;
-      arr[i * 3] += Math.sin(t * sp * 0.5 + ph) * dt * 0.4;
-      arr[i * 3 + 2] += Math.cos(t * sp * 0.4 + ph) * dt * 0.4;
-    }
-    attr.needsUpdate = true;
+    for (const g of this.gfx) g.update?.(t, dt);
   }
 
   /* ========================= imported-model hook ========================= */
@@ -4155,18 +2834,14 @@ export class ThreeScene implements SceneController {
     this.fxParticleCount = 0;
     this.fxGlowTex?.dispose();
     this.fxSparkTex?.dispose();
-    this.composer?.dispose();
-    this.gtaoPass?.dispose?.();
+    this.postChain?.dispose();
+    this.postChain = null;
+    this.composer = null;
     this.gtaoPass = null;
-    this.gradePass = null;
+    for (const g of this.gfx) g.dispose();
+    this.gfx = [];
     this.envTexture?.dispose();
     this.contactShadowTex?.dispose();
-    // Atmosphere + frame textures.
-    this.hazardStripeTex?.dispose();
-    this.hazeTex?.dispose();
-    this.moteTex?.dispose();
-    if (this.haze) this.disposeObject(this.haze);
-    if (this.dustMotes) this.disposeObject(this.dustMotes);
     this.renderer?.dispose();
     if (el && el.parentElement) el.parentElement.removeChild(el);
   }
