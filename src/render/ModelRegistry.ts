@@ -465,9 +465,10 @@ function tintMaterial(
     const wasEmissive = std.emissive.r + std.emissive.g + std.emissive.b > 0.03;
     if (glow && wasEmissive) {
       std.emissive.copy(glow); // cold undying glow survives and blooms
-      // Pushed into HDR so it clears the bloom threshold cleanly and reads as a
-      // genuine hot emitter (eyes / energy cells), not a warm-grey panel.
-      std.emissiveIntensity = 1.4;
+      // Just above the bloom threshold so eyes/energy-cells read as a hot emitter
+      // without the whole model blowing out. (1.4 over-bloomed, esp. Necrons whose
+      // GLB authors large emissive areas.)
+      std.emissiveIntensity = 0.8;
     } else {
       std.emissive.setRGB(0, 0, 0);
       std.emissiveIntensity = 0;
