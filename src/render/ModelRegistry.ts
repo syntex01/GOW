@@ -447,16 +447,17 @@ function tintMaterial(
     std.metalness = isMetal ? THREE.MathUtils.clamp(metalness, 0.6, 1.0) : 0.0;
   }
   if ('roughness' in std && typeof std.roughness === 'number') {
-    // Metal gets a lower roughness floor so it catches a crisp specular streak
-    // off the rim/key; dielectrics stay high-roughness and matte.
+    // Metal reads as weathered gunmetal, NOT chrome: a higher roughness floor
+    // spreads the specular into a soft sheen instead of a sharp mirror flare at
+    // grazing angles (which looked unrealistically shiny on the Necrons).
     std.roughness = isMetal
-      ? THREE.MathUtils.clamp(std.roughness * 1.1 + 0.05, 0.35, 0.7)
+      ? THREE.MathUtils.clamp(std.roughness * 1.1 + 0.14, 0.48, 0.78)
       : THREE.MathUtils.clamp(std.roughness * 1.15 + 0.22, 0.6, 0.96);
   }
-  // Feed metal specular from the (now brighter) environment map; keep dielectrics
-  // grounded so they don't pick up a chromed sheen.
+  // Metal catches a restrained cold environment sheen; dielectrics stay grounded.
+  // Kept modest so figures never read as polished/mirror-finished.
   if ('envMapIntensity' in std) {
-    std.envMapIntensity = isMetal ? 0.9 : 0.25;
+    std.envMapIntensity = isMetal ? 0.5 : 0.22;
   }
   if (std.emissive) {
     // Only parts that were ALREADY emissive in the source (eyes / energy cells)
