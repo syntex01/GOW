@@ -192,6 +192,9 @@ class App {
               ? 'Connection failed. Check the code and try again.'
               : 'Disconnected.',
       );
+      // On failure/disconnect, drop the loading overlay so the player isn't stuck
+      // on "Deploying forces…" — the menu stays up with the error so they can retry.
+      if (st === 'error' || st === 'disconnected') hideLoading();
       if (st === 'connected') {
         this.menu.hide();
         hideLoading();

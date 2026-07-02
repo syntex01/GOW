@@ -7,6 +7,15 @@
 import { FACTIONS, SAMPLE_ARMIES, DATASHEETS } from '../engine/data/index';
 import { sound } from '../audio/SoundEngine';
 
+/** Short, unambiguous room code (no confusable chars). Matches the peer id the
+ *  host registers under, so the code shown here IS the one guests dial. */
+function genRoomCode(len = 6): string {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
+}
+
 export interface GameSettings {
   diceSpeed: number; // 0.25 (fast) .. 2 (slow); 1 = normal
   quality: 'auto' | 'low' | 'high';
@@ -45,6 +54,9 @@ export class Menu {
   private bFaction = 'ultramarines';
   private mode: Mode = 'hotseat';
   private onlineAction: 'host' | 'join' = 'host';
+  /** Pre-generated host room code, shown the moment "Host War" is picked so it
+   *  can be copied/shared before the battle starts (no broker needed to show it). */
+  private hostCode = '';
   private settings: GameSettings = { diceSpeed: 1, quality: 'auto', aiPlayer: null };
 
   // Re-render hooks for live regions.
@@ -246,6 +258,12 @@ export class Menu {
       b.textContent = act === 'host' ? 'Host War' : 'Join War';
       b.addEventListener('click', () => {
         this.onlineAction = act;
+        // Generate + show the room code up front so the host can copy and send
+        // it before starting the battle (it's also passed through as the peer id).
+        if (act === 'host') {
+          if (!this.hostCode) this.hostCode = genRoomCode();
+          this.setRoomCode(this.hostCode);
+        }
         this.syncOnline();
       });
       onlineSeg.appendChild(b);
@@ -314,6 +332,11 @@ export class Menu {
     });
     this.onlinePane.classList.toggle('is-host', this.onlineAction === 'host');
     this.onlinePane.classList.toggle('is-join', this.onlineAction === 'join');
+    // Always have a code visible in host mode so it can be shared immediately.
+    if (this.onlineAction === 'host') {
+      if (!this.hostCode) this.hostCode = genRoomCode();
+      this.setRoomCode(this.hostCode);
+    }
   }
 
   /* --- Section 4: settings -------------------------------------------- */
@@ -490,9 +513,13 @@ export class Menu {
       settings: { ...this.settings },
     };
     if (this.mode === 'online') {
+      if (this.onlineAction === 'host' && !this.hostCode) this.hostCode = genRoomCode();
       cfg.online = {
         action: this.onlineAction,
-        ...(this.onlineAction === 'join' ? { code: this.codeInput.value.trim() } : {}),
+        code:
+          this.onlineAction === 'join'
+            ? this.codeInput.value.trim().toUpperCase()
+            : this.hostCode,
       };
     }
     this.startCb?.(cfg);

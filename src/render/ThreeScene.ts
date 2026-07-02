@@ -106,12 +106,17 @@ function detectQuality(width: number, height: number, gl: THREE.WebGLRenderer): 
   if (phone) {
     return {
       tier: 'low',
-      pixelRatioCap: Math.min(dpr, 1.5),
-      shadowMapSize: 1024,
-      bloom: isWebGL2, // skip bloom on flaky WebGL1 mobile contexts
+      // Phones are fill-rate bound. Render at 1x device pixels (never 1.5x —
+      // that's 2.25x the pixels for imperceptible sharpness on a small screen),
+      // skip the multi-pass bloom composer entirely (the single biggest mobile
+      // win; tonemapping + emissive still carry the look), use a smaller shadow
+      // map + battlemat texture. This is what keeps phones at a smooth frame rate.
+      pixelRatioCap: Math.min(dpr, 1),
+      shadowMapSize: 768,
+      bloom: false,
       bloomDownscale: 2,
-      battlematPx: 1024,
-      ringSegments: 28,
+      battlematPx: 768,
+      ringSegments: 24,
       contactShadows: true,
     };
   }
