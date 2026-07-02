@@ -371,7 +371,11 @@ export class ThreeScene implements SceneController {
      * into murk sooner, reading as a battlefield swallowed by ash and dark. */
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x070809);
-    this.scene.fog = new THREE.Fog(0x080a0d, this.board.width * 0.8, this.board.width * 2.3);
+    // Far plane must sit BEYOND the max orbit radius (220) or the whole board
+    // fades to the fog colour at full zoom-out (a black void). Near keeps a
+    // gentle ash haze at the board edges; far ~330 keeps corners legible even
+    // at max zoom while still dimming the deep distance.
+    this.scene.fog = new THREE.Fog(0x080a0d, this.board.width * 1.2, this.board.width * 5.5);
 
     /* procedural environment: gives PBR materials real, subtle reflections and
      * a soft cool ambient. Built once via PMREM from RoomEnvironment, tinted
