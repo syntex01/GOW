@@ -340,7 +340,11 @@ export class ThreeScene implements SceneController {
 
     /* renderer */
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      // MSAA is wasted here: we composite through EffectComposer and antialias
+      // with SMAA as the final pass. A full-res MSAA backbuffer would just burn
+      // VRAM + fill rate for no visible gain. (The rare composer-failed direct
+      // path falls back to no-AA, an acceptable degraded case.)
+      antialias: false,
       powerPreference: 'high-performance',
     });
 
@@ -1306,6 +1310,7 @@ export class ThreeScene implements SceneController {
     holo.position.y = 2.6;
     holo.userData.holo = true;
     group.add(holo);
+    group.userData.holo = holo; // cached so frame() skips a per-frame subtree walk
 
     // A short central beacon stub so the holo reads as projected from the relic.
     const beacon = new THREE.Mesh(
@@ -1434,6 +1439,7 @@ export class ThreeScene implements SceneController {
         inner.name = 'inner';
         inner.position.y = 0.005;
         ring.add(inner);
+        ring.userData.inner = inner; // cached so frame() skips a per-frame subtree walk
         this.overlayGroup.add(ring);
         this.targetRings.set(id, ring);
       }
@@ -2500,12 +2506,29 @@ export class ThreeScene implements SceneController {
         this.perfBloomDropped = true;
         this.composer = null;
       }
-    } else if (fast && this.perfScale < 1 && !this.perfBloomDropped) {
-      // Recover slowly (only after several good seconds) to avoid oscillation.
+    } else if (fast && !this.perfBloomDropped) {
+      // Sustained headroom (>~50fps). Recover ONE quality step per few good
+      // seconds, cheapest-perceptual-loss first, so we never oscillate:
+      //   1) pixel resolution back to full,
+      //   2) re-enable SMAA+DoF if a load-shed turned them off,
+      //   3) enable GTAO (opt-in: off at startup until the GPU proves itself),
+      //   4) enable DoF/Bokeh.
+      // A weak desktop mis-classified 'high' simply never reaches steps 3–4, so
+      // it stays smooth instead of paying ~3 scene renders/frame up front.
       if (++this.perfGoodHolds >= 4) {
-        this.perfScale = Math.min(1, this.perfScale + 0.1);
-        this.applyEffectivePixelRatio();
         this.perfGoodHolds = 0;
+        if (this.perfScale < 1) {
+          this.perfScale = Math.min(1, this.perfScale + 0.1);
+          this.applyEffectivePixelRatio();
+        } else if (this.perfHeavyPostDropped) {
+          if (this.smaaPass) this.smaaPass.enabled = true;
+          if (this.bokehPass) this.bokehPass.enabled = true;
+          this.perfHeavyPostDropped = false;
+        } else if (this.gtaoPass && !this.gtaoPass.enabled) {
+          this.gtaoPass.enabled = true;
+        } else if (this.bokehPass && !this.bokehPass.enabled) {
+          this.bokehPass.enabled = true;
+        }
       }
     } else {
       this.perfGoodHolds = 0;
@@ -2672,12 +2695,12 @@ export class ThreeScene implements SceneController {
       const s = 1 + Math.sin(t * 6) * 0.06;
       ring.scale.set(s, 1, s);
       ring.rotation.y = t * 0.6;
-      const inner = ring.getObjectByName('inner');
+      const inner = ring.userData.inner as THREE.Object3D | undefined;
       if (inner) inner.rotation.y = -t * 1.1;
     }
     // Objective holo-rings: slow spin + gentle vertical bob over the relic.
     for (const g of this.objectiveGroups) {
-      const holo = g.getObjectByName('objHolo');
+      const holo = g.userData.holo as THREE.Object3D | undefined;
       if (holo) {
         holo.rotation.y = t * 0.7;
         holo.position.y = 2.6 + Math.sin(t * 1.4 + g.position.x) * 0.16;

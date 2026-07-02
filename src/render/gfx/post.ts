@@ -261,6 +261,11 @@ export function buildPostChain(
           samples: 8,
         });
         composer.addPass(pass);
+        // Opt-in: start disabled. GTAO is a full depth+normal G-buffer pass, so
+        // running it unconditionally on every "high"-classified desktop (some are
+        // weak) costs a scene render before the machine has proven it can afford
+        // it. The governor re-enables it once sustained headroom is measured.
+        pass.enabled = false;
         gtao = pass;
       } catch {
         gtao = null;
@@ -300,6 +305,9 @@ export function buildPostChain(
           maxblur: DOF_MAX_BLUR, // let the far board/frame actually soften (tilt-shift)
         });
         composer.addPass(pass);
+        // Opt-in: start disabled (a Bokeh depth prepass is another full scene
+        // render). Re-enabled by the governor after GTAO, once headroom holds.
+        pass.enabled = false;
         bokeh = pass;
         // Capture the uniform objects ONCE so updatePerFrame never allocates
         // (and never repeats the untyped-uniforms cast per frame).
