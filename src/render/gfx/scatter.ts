@@ -415,7 +415,7 @@ export function buildScatter(
       QT.setFromAxisAngle(AXIS, tilt).multiply(Q2);
       // Rest below half-thickness: the low edge digs into the ash.
       P.set(wx(pos.x), 0.06 * s + (rng() * 2 - 1) * Y_JITTER, wz(pos.y));
-      setHSL(baseHSL.h + (rng() * 2 - 1) * 0.01, 0.08 + rng() * 0.06, 0.16 + rng() * 0.12);
+      setHSL(baseHSL.h + (rng() * 2 - 1) * 0.01, 0.08 + rng() * 0.06, 0.10 + rng() * 0.08);
       n = put(mesh, n);
       // 30% stacked pairs: second plate dropped on top, yawed 20–60 deg.
       if (n < counts.slab && rng() < 0.3) {
@@ -429,7 +429,7 @@ export function buildScatter(
           0.06 * s + 0.15 * s2,
           wz(pos.y) + (rng() * 2 - 1) * 0.15,
         );
-        setHSL(baseHSL.h + (rng() * 2 - 1) * 0.01, 0.08 + rng() * 0.06, 0.16 + rng() * 0.12);
+        setHSL(baseHSL.h + (rng() * 2 - 1) * 0.01, 0.08 + rng() * 0.06, 0.10 + rng() * 0.08);
         n = put(mesh, n);
       }
     }
