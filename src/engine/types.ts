@@ -276,6 +276,11 @@ export interface PlayerState {
   /** Oath of Moment: the enemy unit id this player's OATH-capable units re-roll
    *  hits and wounds against this turn (auto-designated each Command phase). */
   oathTarget?: string;
+  /** Waaagh!: once-per-game Ork army buff. `waaaghUsed` locks it to one call;
+   *  `waaaghRound` is the battle round it is active in (+1 melee Attack & Charge
+   *  on the Ork turn; 5+ invuln to Ork units that round). */
+  waaaghUsed?: boolean;
+  waaaghRound?: number;
 }
 
 export interface LogEntry {

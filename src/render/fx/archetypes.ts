@@ -70,22 +70,30 @@ function clampInt(v: number, lo: number, hi: number): number {
 /* ------------------------------------------------------------------ */
 
 /**
- * Map a weapon's name + keywords to an archetype. First match wins, so more
- * specific / signature terms are tested before generic fallbacks (e.g. a
- * "heavy bolter" resolves to `heavy` because weight dominates its read).
+ * Map a weapon's name + keywords to an archetype. Specific SIGNATURE weapon
+ * names are tested before the generic "heavy" bucket, so a "Heavy Bolt Pistol"
+ * reads as kinetic bolt fire and a "Heavy Onslaught Gatling Cannon" as rapid
+ * dakka — not as a lascannon lance. (Previously the 'heavy' rule keyword and the
+ * word "heavy" in a name hijacked everything, and Ork sluggas/shootas + gatlings
+ * had no coverage.)
  */
 export function classifyWeapon(name: string, keywords: string[]): WeaponArchetype {
   const hay = `${name} ${keywords.join(' ')}`.toLowerCase();
   const has = (...terms: string[]): boolean => terms.some((t) => hay.includes(t));
 
-  if (has('gauss', 'tesla', 'flayer', 'flay')) return 'gauss';
+  if (has('gauss', 'tesla', 'flayer', 'flay', 'staff of light')) return 'gauss';
   if (has('plasma')) return 'plasma';
   if (has('melta', 'fusion', 'inferno')) return 'melta';
-  if (has('flame', 'flamer', 'torrent', 'burna')) return 'flamer';
-  if (has('lascannon', 'heavy', 'autocannon', 'battlecannon', 'volcano')) return 'heavy';
-  if (has('missile', 'rocket', 'krak', 'frag', 'launcher')) return 'missile';
-  if (has('sniper', 'longrifle', 'rail', 'railgun', 'las-fusil')) return 'sniper';
-  if (has('bolt', 'bolter', 'gun', 'stubber')) return 'bolter';
+  if (has('flame', 'flamer', 'torrent', 'burna', 'skorcha')) return 'flamer';
+  // Snipers / rail-type single shots — before 'heavy' so a Synaptic Disintegrator
+  // or Tachyon Arrow reads as a precise beam, not artillery.
+  if (has('sniper', 'longrifle', 'rail', 'synaptic', 'disintegrator', 'tachyon', 'arrow')) return 'sniper';
+  // Rapid multi-shot dakka (gatling, Ork guns) — before 'heavy' so a gatling
+  // cannon fans out tracers instead of firing one lance.
+  if (has('gatling', 'onslaught', 'shoota', 'slugga', 'shoot', 'dakka', 'blasta', 'kannon', 'caster', 'bolt', 'bolter', 'gun', 'stubber')) return 'bolter';
+  if (has('missile', 'rocket', 'krak', 'frag', 'launcher', 'icarus')) return 'missile';
+  // Genuine heavy artillery / anti-tank lances (checked last).
+  if (has('lascannon', 'autocannon', 'battlecannon', 'volcano', 'doomsday', 'cannon', 'heavy')) return 'heavy';
   return 'generic';
 }
 

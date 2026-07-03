@@ -42,6 +42,8 @@ export interface AttackOptions {
    * mutate the weapon.
    */
   apReduction?: number;
+  /** Extra attacks per firing model, e.g. the Waaagh! +1 melee attack. */
+  bonusAttacks?: number;
 }
 
 /** The actual dice rolled at each step, for animated dice display. */
@@ -95,11 +97,12 @@ export function computeAttacks(
   const rapid = findKeyword(weapon, 'rapidFire');
   const blast = findKeyword(weapon, 'blast');
   const blastBonus = blast ? Math.floor(targetModelCount / 5) : 0;
+  const bonus = opts.bonusAttacks ?? 0; // e.g. Waaagh! +1 melee attack per model
   let total = 0;
   for (let i = 0; i < firingModels; i++) {
     let a = rollAttackValue(weapon.attacks, rng);
     if (rapid && opts.halfRange) a += rapid.x;
-    a += blastBonus;
+    a += blastBonus + bonus;
     total += a;
   }
   return total;

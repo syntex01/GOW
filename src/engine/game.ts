@@ -108,6 +108,15 @@ export class GameEngine {
     return u.abilities.some((a) => a.effect?.t === t);
   }
 
+  /** Is `unit` currently benefiting from a called Waaagh! (an Ork unit whose
+   *  army called the Waaagh! this battle round)? */
+  private waaaghActive(unit: UnitInstance): boolean {
+    return (
+      unit.keywords.includes('ORKS') &&
+      this.state.players[unit.ownerId].waaaghRound === this.state.round
+    );
+  }
+
   // ---------------------------------------------------------------- phase flow
   /** Advance to the next phase, wrapping into the next player's turn. */
   advancePhase(): void {
@@ -187,6 +196,23 @@ export class GameEngine {
         p.oathTarget = best.id;
         this.log(`${p.name} swears the Oath of Moment against ${best.name}.`);
       }
+    }
+
+    // Waaagh!: a once-per-game Ork army buff. With no "call the Waaagh!" button
+    // we auto-call it from battle round 2 the first time the Orks have a unit
+    // within charge threat of an enemy — the natural green-tide timing. For that
+    // battle round Ork units gain +1 melee Attack, +1 to Advance/Charge, and a
+    // 5+ invulnerable save.
+    if (
+      !p.waaaghUsed &&
+      this.state.round >= 2 &&
+      this.unitsOf(this.active).some(
+        (u) => this.isAlive(u) && u.keywords.includes('ORKS') && this.enemiesOf(this.active).some((e) => unitGap(u, e) <= 12),
+      )
+    ) {
+      p.waaaghUsed = true;
+      p.waaaghRound = this.state.round;
+      this.log(`${p.name} calls the WAAAGH! (+1 melee Attack, +1 Advance/Charge, 5+ invuln this round).`);
     }
 
     // Reanimation-style abilities restore wounds at the start of the turn.
@@ -590,7 +616,13 @@ export class GameEngine {
       // angle). Go to Ground / Smokescreen still grant cover from any direction.
       const cover =
         coverState(attacker, tgt, this.state.terrain) !== 'none' || !!tgt.goToGround || !!tgt.smokescreen;
-      const bonusInvuln = tgt.goToGround || tgt.smokescreen ? 6 : undefined;
+      // Best (lowest) transient invuln: 6+ from Go to Ground/Smokescreen, 5+ from
+      // a called Waaagh! on an Ork target — take the better of the two.
+      const transientInvulns = [
+        tgt.goToGround || tgt.smokescreen ? 6 : undefined,
+        this.waaaghActive(tgt) ? 5 : undefined,
+      ].filter((v): v is number => v !== undefined);
+      const bonusInvuln = transientInvulns.length ? Math.min(...transientInvulns) : undefined;
       const halfRange = unitGap(attacker, tgt) <= w.range / 2;
       const ignoresCover = w.keywords.some((k) => k.t === 'ignoresCover');
       // Heavy: +1 to hit if the firing unit Remained Stationary this turn.
@@ -668,7 +700,8 @@ export class GameEngine {
    * bring the unit into engagement range, the unit is moved straight in.
    */
   charge(u: UnitInstance, target: UnitInstance): { roll: number; success: boolean } {
-    const roll = this.rollCharge();
+    // Waaagh! adds +1 to the charge distance for Ork units the turn it is called.
+    const roll = this.rollCharge() + (this.waaaghActive(u) ? 1 : 0);
     const gap = unitGap(u, target);
     const needed = Math.max(0, gap - ENGAGEMENT_RANGE);
     if (roll + 1e-6 >= needed) {
@@ -724,9 +757,14 @@ export class GameEngine {
       if (leader) this.log(`${attacker.name}'s ${w.name} strikes the attached ${leader.name} (Precision).`);
       // Lance: +1 to wound if this unit made a Charge move this turn.
       const lanceBonus = w.keywords.some((k) => k.t === 'lance') && attacker.hasChargedThisTurn ? 1 : 0;
+      // Waaagh!: +1 melee attack per model; a Waaagh!-benefiting defender has a 5+ invuln.
+      const waaaghAtk = this.waaaghActive(attacker) ? 1 : 0;
+      const defInvuln = this.waaaghActive(tgt) ? 5 : undefined;
       const opts: AttackOptions = {
         firingModels: aliveModels(attacker).length,
         ...(lanceBonus ? { woundModifier: lanceBonus } : {}),
+        ...(waaaghAtk ? { bonusAttacks: waaaghAtk } : {}),
+        ...(defInvuln !== undefined ? { bonusInvuln: defInvuln } : {}),
         ...(tgt.armourOfContempt ? { apReduction: 1 } : {}),
         ...this.attackerAbilityMods(attacker, 'fight', tgt),
         ...(rerollFlag ? { rerollHits: 'all' as const } : {}),

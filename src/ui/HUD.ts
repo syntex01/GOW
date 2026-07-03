@@ -1179,7 +1179,13 @@ export class GameUI {
     // Tracers fly while the dice tumble; impact + casualties reveal after. The
     // firing weapon's name/keywords pick the effect archetype (gauss beam,
     // plasma bolt, heavy shell, …) so each weapon reads distinctly.
-    const rw = attacker.weapons.find((w) => w.kind === 'ranged') ?? attacker.weapons[0];
+    // Pick the SIGNATURE fired weapon (the unit resolves all its guns, but the
+    // FX should read as its heaviest one): highest-strength ranged weapon,
+    // preferring a non-pistol, so a Redemptor shows plasma not its bolt pistol.
+    const rangedW = attacker.weapons.filter((w) => w.kind === 'ranged');
+    const nonPistol = rangedW.filter((w) => !w.keywords.some((k) => k.t === 'pistol'));
+    const pool = nonPistol.length ? nonPistol : rangedW;
+    const rw = pool.slice().sort((a, b) => b.strength - a.strength)[0] ?? attacker.weapons[0];
     this.scene.playShoot(attacker.id, target.id, {
       weapon: rw ? { name: rw.name, keywords: rw.keywords.map((k) => k.t) } : undefined,
     });
