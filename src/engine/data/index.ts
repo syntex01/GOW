@@ -32,6 +32,18 @@ import {
   chaosHelbrute,
   chaosMasterOfPossession,
 } from './chaos';
+import {
+  orkGretchin,
+  orkMeganobz,
+  orkKillaKans,
+  orkDeffkoptas,
+  necronDeathmarks,
+  necronFlayedOnes,
+  ultramarinesAggressors,
+  ultramarinesInceptors,
+  chaosPossessed,
+  chaosSpawn,
+} from './expansion';
 
 /** Every authored datasheet, keyed by its stable id. */
 export const DATASHEETS: Record<string, Datasheet> = {
@@ -64,6 +76,17 @@ export const DATASHEETS: Record<string, Datasheet> = {
   [chaosRaptors.id]: chaosRaptors,
   [chaosHelbrute.id]: chaosHelbrute,
   [chaosMasterOfPossession.id]: chaosMasterOfPossession,
+  // Roster expansion.
+  [orkGretchin.id]: orkGretchin,
+  [orkMeganobz.id]: orkMeganobz,
+  [orkKillaKans.id]: orkKillaKans,
+  [orkDeffkoptas.id]: orkDeffkoptas,
+  [necronDeathmarks.id]: necronDeathmarks,
+  [necronFlayedOnes.id]: necronFlayedOnes,
+  [ultramarinesAggressors.id]: ultramarinesAggressors,
+  [ultramarinesInceptors.id]: ultramarinesInceptors,
+  [chaosPossessed.id]: chaosPossessed,
+  [chaosSpawn.id]: chaosSpawn,
 };
 
 /** Faction groupings, listing the datasheet ids available to each. */
@@ -80,6 +103,8 @@ export const FACTIONS: Record<string, { name: string; datasheetIds: string[] }> 
       necronWraiths.id,
       necronDoomsdayArk.id,
       necronRoyalWarden.id,
+      necronDeathmarks.id,
+      necronFlayedOnes.id,
     ],
   },
   ultramarines: {
@@ -94,11 +119,22 @@ export const FACTIONS: Record<string, { name: string; datasheetIds: string[] }> 
       bladeguardVeterans.id,
       ultramarinesLieutenant.id,
       eradicatorSquad.id,
+      ultramarinesAggressors.id,
+      ultramarinesInceptors.id,
     ],
   },
   orks: {
     name: 'Orks',
-    datasheetIds: [orkBoyz.id, orkNobz.id, orkWarboss.id, orkTrukk.id],
+    datasheetIds: [
+      orkBoyz.id,
+      orkNobz.id,
+      orkWarboss.id,
+      orkTrukk.id,
+      orkGretchin.id,
+      orkMeganobz.id,
+      orkKillaKans.id,
+      orkDeffkoptas.id,
+    ],
   },
   chaos: {
     name: 'Chaos Space Marines',
@@ -110,6 +146,8 @@ export const FACTIONS: Record<string, { name: string; datasheetIds: string[] }> 
       chaosRaptors.id,
       chaosHelbrute.id,
       chaosMasterOfPossession.id,
+      chaosPossessed.id,
+      chaosSpawn.id,
     ],
   },
 };
