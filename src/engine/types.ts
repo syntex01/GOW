@@ -94,6 +94,34 @@ export type AbilityEffect =
   | { t: 'oathOfMoment' }
   | { t: 'rerollOcWhenBelowStartingStrength' };
 
+/**
+ * A single wargear choice within an option group. Applying it swaps the unit's
+ * weapon set: every id in `remove` is dropped from the default loadout and every
+ * id in `add` is granted (weapon definitions come from the datasheet's weapon
+ * catalogue or the wargear `extraWeapons` pool). The stock choice has empty
+ * `add`/`remove`.
+ */
+export interface WargearChoice {
+  id: string;
+  label: string;
+  add: string[];
+  remove: string[];
+}
+
+/** A mutually-exclusive wargear decision offered by a datasheet. */
+export interface WargearOption {
+  id: string;
+  label: string; // e.g. "Sergeant's melee weapon"
+  choices: WargearChoice[];
+  defaultChoiceId: string;
+}
+
+/** A datasheet's wargear catalogue: extra weapon definitions plus option groups. */
+export interface WargearCatalogue {
+  extraWeapons: Weapon[];
+  options: WargearOption[];
+}
+
 /** One model type within a unit's composition. */
 export interface UnitCompositionEntry {
   modelName: string;

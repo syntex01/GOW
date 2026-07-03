@@ -6,6 +6,7 @@
    matched-play rules only. Emits an ArmyList back to the menu.
    ========================================================================= */
 import { FACTIONS, DATASHEETS } from '../engine/data/index';
+import { WARGEAR } from '../engine/data/wargear';
 import type { ArmyList, ArmyListEntry } from '../engine/factory';
 import { validateArmy, armyPoints, entryPoints, POINTS_LIMITS } from '../engine/armyValidation';
 
@@ -104,11 +105,25 @@ export function openArmyBuilder(opts: BuilderOpts): void {
           const stepper = multi
             ? `<span class="ab-step"><button type="button" data-dec="${i}">−</button><b>${n}</b><button type="button" data-inc="${i}">＋</button></span>`
             : `<span class="ab-single">${n} model${n > 1 ? 's' : ''}</span>`;
+          // Wargear: one dropdown per option group offered by the datasheet.
+          const opts = WARGEAR[e.datasheetId]?.options ?? [];
+          const loadoutHtml = opts.length
+            ? `<div class="ab-loadout">${opts
+                .map((opt) => {
+                  const cur = e.loadout?.[opt.id] ?? opt.defaultChoiceId;
+                  const choices = opt.choices
+                    .map((c) => `<option value="${c.id}"${c.id === cur ? ' selected' : ''}>${c.label}</option>`)
+                    .join('');
+                  return `<label class="ab-wg"><span>${opt.label}</span><select data-loadout="${i}" data-opt="${opt.id}">${choices}</select></label>`;
+                })
+                .join('')}</div>`
+            : '';
           return `<div class="ab-row">
             <span class="ab-rn">${ds.name}</span>
             ${stepper}
             <b class="ab-rp">${entryPoints(ds, n)}</b>
             <button class="ab-rem" type="button" data-rem="${i}" aria-label="Remove">✕</button>
+            ${loadoutHtml}
           </div>`;
         })
         .join('');
@@ -120,6 +135,13 @@ export function openArmyBuilder(opts: BuilderOpts): void {
       });
       listEl.querySelectorAll<HTMLButtonElement>('[data-dec]').forEach((b) => {
         b.onclick = () => { stepSize(Number(b.dataset.dec), -1); };
+      });
+      listEl.querySelectorAll<HTMLSelectElement>('select[data-loadout]').forEach((sel) => {
+        sel.onchange = () => {
+          const e = list.entries[Number(sel.dataset.loadout)];
+          const optId = sel.dataset.opt!;
+          e.loadout = { ...(e.loadout ?? {}), [optId]: sel.value };
+        };
       });
     }
     renderStatus();

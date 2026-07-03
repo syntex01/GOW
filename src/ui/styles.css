@@ -2457,6 +2457,11 @@
 .ab-single { font-size: 11px; color: var(--muted); }
 .ab-rem { width: 20px; height: 20px; border: 0; background: transparent; color: #c86; cursor: pointer; font-size: 13px; }
 .ab-rem:hover { color: #ff6a5a; }
+.ab-loadout { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 2px;
+  padding-top: 6px; border-top: 1px dashed var(--edge-soft, #2a2a2a); }
+.ab-wg { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted); }
+.ab-wg select { background: #0c1016; color: var(--ink); border: 1px solid var(--edge); border-radius: 5px;
+  padding: 2px 4px; font-size: 10.5px; max-width: 150px; }
 .ab-empty { font-size: 12px; color: var(--muted); padding: 14px 4px; }
 .ab-actions { margin-top: 12px; }
 .fc-edit { width: 100%; margin-top: 8px; }

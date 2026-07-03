@@ -8,8 +8,39 @@ import type {
   Vec2,
   Characteristics,
   TerrainPiece,
+  Weapon,
 } from './types';
 import { resolveCollisions } from './geometry';
+import { WARGEAR } from './data/wargear';
+
+/**
+ * Resolve a unit's actual weapons from its datasheet plus a chosen wargear
+ * loadout. Starts from the datasheet's default weapons, then for each of the
+ * datasheet's wargear options applies the picked choice (or its default),
+ * removing swapped-out weapons and adding swapped-in ones. Datasheets without a
+ * wargear catalogue simply return their default weapons. Never mutates inputs.
+ */
+export function resolveUnitWeapons(ds: Datasheet, loadout?: Record<string, string>): Weapon[] {
+  let weapons: Weapon[] = ds.weapons.map((w) => ({ ...w }));
+  const cat = WARGEAR[ds.id];
+  if (!cat) return weapons;
+  const pool = new Map<string, Weapon>();
+  for (const w of ds.weapons) pool.set(w.id, w);
+  for (const w of cat.extraWeapons) pool.set(w.id, w);
+  for (const opt of cat.options) {
+    const choiceId = loadout?.[opt.id] ?? opt.defaultChoiceId;
+    const choice =
+      opt.choices.find((c) => c.id === choiceId) ??
+      opt.choices.find((c) => c.id === opt.defaultChoiceId);
+    if (!choice) continue;
+    if (choice.remove.length) weapons = weapons.filter((w) => !choice.remove.includes(w.id));
+    for (const addId of choice.add) {
+      const def = pool.get(addId);
+      if (def && !weapons.some((w) => w.id === def.id)) weapons.push({ ...def });
+    }
+  }
+  return weapons;
+}
 
 const MM_PER_INCH = 25.4;
 export const baseRadiusInches = (mm: number): number => mm / 2 / MM_PER_INCH;
@@ -37,6 +68,9 @@ export interface ArmyListEntry {
   instanceId?: string;
   /** Start this unit in Strategic Reserves / Deep Strike (off the table). */
   inReserves?: boolean;
+  /** Chosen wargear: maps a datasheet WargearOption id to the picked choice id.
+   *  Options left out fall back to their default choice (the stock loadout). */
+  loadout?: Record<string, string>;
 }
 
 export interface ArmyList {
@@ -69,6 +103,7 @@ export function instantiateUnit(
   modelCount: number,
   anchor: Vec2,
   facingDir: 1 | -1,
+  loadout?: Record<string, string>,
 ): UnitInstance {
   const radius = baseRadiusInches(ds.baseSizeMm);
   const height = modelHeightFor(ds);
@@ -101,7 +136,7 @@ export function instantiateUnit(
     ownerId: owner,
     models,
     statline: { ...ds.statline } as Characteristics,
-    weapons: ds.weapons.map((w) => ({ ...w })),
+    weapons: resolveUnitWeapons(ds, loadout),
     abilities: ds.abilities.map((a) => ({ ...a })),
     keywords: [...ds.keywords],
     isCharacter: ds.isCharacter,
@@ -215,7 +250,7 @@ export function createGame(
       const count = entry.modelCount ?? ds.composition[0]?.min ?? 1;
       const spread = list.entries.length;
       const x = board.width * ((i + 1) / (spread + 1));
-      const unit = instantiateUnit(ds, owner, count, { x, y: baseY }, facing);
+      const unit = instantiateUnit(ds, owner, count, { x, y: baseY }, facing, entry.loadout);
       if (entry.inReserves) {
         unit.inReserves = true;
         unit.deepStrike = true;
