@@ -1,0 +1,80 @@
+{
+  "findings": [
+    {
+      "area": "In-battle Import Model modal",
+      "what": "tap dismiss (× / cancel)",
+      "expected": "closes",
+      "actual": "modal still open",
+      "severity": "blocker",
+      "screenshot": "/home/user/GOW/screenshots/audit-menu/40-modal-ImportModel.png"
+    },
+    {
+      "area": "In-battle Import Army button",
+      "what": "measured button position",
+      "expected": "fully within 390x844 viewport",
+      "actual": "button at x=-102 (w=135) — center -34,708 clipped off LEFT; ~102px hidden",
+      "severity": "major"
+    },
+    {
+      "area": "In-battle Import Army modal",
+      "what": "tap dismiss (× / cancel)",
+      "expected": "closes",
+      "actual": "modal still open",
+      "severity": "blocker",
+      "screenshot": "/home/user/GOW/screenshots/audit-menu/42-modal-ImportArmy.png"
+    }
+  ],
+  "modals": {
+    "Import Model": {
+      "cls": "loading-splash",
+      "z": "60",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "fitsW": true,
+      "fitsH": true,
+      "overBottom": 0,
+      "overRight": 0,
+      "overTop": 0,
+      "scrollable": true,
+      "small": [],
+      "vw": 390,
+      "vH": 844
+    },
+    "Import Army": {
+      "cls": "loading-splash",
+      "z": "60",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "fitsW": true,
+      "fitsH": true,
+      "overBottom": 0,
+      "overRight": 0,
+      "overTop": 0,
+      "scrollable": true,
+      "small": [],
+      "vw": 390,
+      "vH": 844
+    }
+  },
+  "btn_Import Model": {
+    "x": 41,
+    "y": 686,
+    "w": 144,
+    "h": 44,
+    "cx": 113,
+    "cy": 708
+  },
+  "btn_Import Army": {
+    "x": -102,
+    "y": 686,
+    "w": 135,
+    "h": 44,
+    "cx": -34,
+    "cy": 708
+  },
+  "errors": []
+}

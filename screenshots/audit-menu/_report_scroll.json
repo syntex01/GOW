@@ -1,0 +1,18 @@
+{
+  "scroller": {
+    "scrollHeight": 2433,
+    "clientHeight": 844,
+    "canScroll": 1589,
+    "scrollTop0": 0
+  },
+  "afterProgrammatic": 1589,
+  "style": {
+    "menuOverflowY": "auto",
+    "menuTouchAction": "auto",
+    "menuPosition": "absolute",
+    "bodyOverflow": "hidden",
+    "htmlOverflow": "hidden",
+    "bodyHeight": "844px"
+  },
+  "afterTouchSwipe": 0
+}

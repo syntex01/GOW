@@ -1,0 +1,345 @@
+/**
+ * Core data model for the wargame engine.
+ *
+ * Two layers:
+ *  - Datasheet layer: static, faction-authored definitions of what a unit *is*
+ *    (its profile, weapons, abilities). Think of it as the printed datasheet.
+ *  - Instance layer: the live state of a unit on the battlefield during a game
+ *    (positions, wounds remaining, what it has done this turn).
+ *
+ * All distances are in inches and all positions are 2D table coordinates in
+ * inches with the origin at the bottom-left corner of the board. Stats follow
+ * tabletop conventions: a save/skill/leadership of N means "N+" on a D6.
+ */
+
+export type PlayerId = 'A' | 'B';
+
+export type Vec2 = { x: number; y: number };
+
+/** A dice expression: a flat number, or a string like "D6", "D3", "2D6", "D6+2". */
+export type DiceExpr = number | string;
+
+/** Model/unit characteristic profile (one line of the datasheet). */
+export interface Characteristics {
+  move: number; // inches
+  toughness: number;
+  save: number; // armour save, N means N+
+  invuln?: number; // invulnerable save, N means N+
+  feelNoPain?: number; // N means N+
+  wounds: number;
+  leadership: number; // N means N+
+  objectiveControl: number;
+}
+
+export type WeaponKind = 'ranged' | 'melee';
+
+/**
+ * Weapon special rules, modelled structurally so values travel with the rule.
+ * Names mirror the standard tabletop weapon-ability set.
+ */
+export type WeaponKeyword =
+  | { t: 'rapidFire'; x: number }
+  | { t: 'sustainedHits'; x: number }
+  | { t: 'lethalHits' }
+  | { t: 'devastatingWounds' }
+  | { t: 'twinLinked' }
+  | { t: 'anti'; keyword: string; x: number } // ANTI-keyword X+
+  | { t: 'blast' }
+  | { t: 'melta'; x: number }
+  | { t: 'heavy' }
+  | { t: 'assault' }
+  | { t: 'pistol' }
+  | { t: 'torrent' }
+  | { t: 'precision' }
+  | { t: 'lance' }
+  | { t: 'indirectFire' }
+  | { t: 'ignoresCover' }
+  | { t: 'hazardous' }
+  | { t: 'extraAttacks' }
+  | { t: 'oneShot' };
+
+export interface Weapon {
+  id: string;
+  name: string;
+  kind: WeaponKind;
+  range: number; // inches; melee weapons use 0
+  attacks: DiceExpr;
+  skill: number; // BS (ranged) or WS (melee); 0 means auto-hit (e.g. Torrent)
+  strength: number;
+  ap: number; // stored as a non-negative magnitude; AP -2 is { ap: 2 }
+  damage: DiceExpr;
+  keywords: WeaponKeyword[];
+}
+
+/** A datasheet ability. `effect` is a machine-readable hook used by the engine. */
+export interface Ability {
+  name: string;
+  text: string; // concise, original summary
+  effect?: AbilityEffect;
+}
+
+/** Structured ability effects the engine knows how to apply. */
+export type AbilityEffect =
+  | { t: 'leader'; canLeadDatasheetIds: string[] }
+  | { t: 'feelNoPain'; value: number }
+  | { t: 'invuln'; value: number }
+  | { t: 'reanimation'; wounds: number } // restore W worth of models each turn
+  | { t: 'deepStrike' }
+  | { t: 'scouts'; inches: number }
+  | { t: 'infiltrators' }
+  | { t: 'loneOperative' }
+  | { t: 'stealth' }
+  | { t: 'fightsFirst' }
+  | { t: 'reroll'; phase: 'hit' | 'wound'; scope: 'ones' | 'all' }
+  | { t: 'oathOfMoment' }
+  | { t: 'rerollOcWhenBelowStartingStrength' };
+
+/**
+ * A single wargear choice within an option group. Applying it swaps the unit's
+ * weapon set: every id in `remove` is dropped from the default loadout and every
+ * id in `add` is granted (weapon definitions come from the datasheet's weapon
+ * catalogue or the wargear `extraWeapons` pool). The stock choice has empty
+ * `add`/`remove`.
+ */
+export interface WargearChoice {
+  id: string;
+  label: string;
+  add: string[];
+  remove: string[];
+}
+
+/** A mutually-exclusive wargear decision offered by a datasheet. */
+export interface WargearOption {
+  id: string;
+  label: string; // e.g. "Sergeant's melee weapon"
+  choices: WargearChoice[];
+  defaultChoiceId: string;
+}
+
+/** A datasheet's wargear catalogue: extra weapon definitions plus option groups. */
+export interface WargearCatalogue {
+  extraWeapons: Weapon[];
+  options: WargearOption[];
+}
+
+/** One model type within a unit's composition. */
+export interface UnitCompositionEntry {
+  modelName: string;
+  min: number;
+  max: number;
+  /** Per-model characteristic overrides (e.g. a sergeant). Optional. */
+  characteristics?: Partial<Characteristics>;
+  /** Weapon ids (from the datasheet) this model carries by default. */
+  defaultWeaponIds?: string[];
+}
+
+export interface Datasheet {
+  id: string;
+  name: string;
+  faction: string;
+  keywords: string[]; // includes faction + unit-type keywords
+  statline: Characteristics;
+  weapons: Weapon[];
+  abilities: Ability[];
+  composition: UnitCompositionEntry[];
+  baseSizeMm: number; // round base diameter in millimetres
+  isCharacter: boolean;
+  points: number; // points for the default unit size
+  /** Rough visual proxy descriptor used by the renderer until a model is imported. */
+  proxy?: ProxyDescriptor;
+}
+
+export interface ProxyDescriptor {
+  silhouette: 'infantry' | 'character' | 'monster' | 'vehicle';
+  primary: string; // hex colour
+  secondary: string; // hex colour
+  metalness?: number;
+  glow?: string; // optional emissive hex
+  heightInches?: number;
+}
+
+/* ----------------------------- Instance layer ----------------------------- */
+
+export interface ModelInstance {
+  id: string;
+  modelName: string;
+  wounds: number; // current
+  maxWounds: number;
+  position: Vec2;
+  alive: boolean;
+  baseRadius: number; // inches — round base radius (the model's tabletop footprint)
+  /**
+   * Physical model height in inches (tip of the model above the base). Used by
+   * the clipping/terrain system: a model taller than a terrain piece's clearance
+   * cannot move under/into it. Optional; geometry falls back to a silhouette
+   * default when absent.
+   */
+  heightInches?: number;
+}
+
+export type MoveState =
+  | 'none'
+  | 'normal'
+  | 'advanced'
+  | 'fellBack'
+  | 'remainedStationary';
+
+export interface UnitInstance {
+  id: string;
+  datasheetId: string;
+  name: string;
+  ownerId: PlayerId;
+  models: ModelInstance[];
+  statline: Characteristics;
+  weapons: Weapon[];
+  abilities: Ability[];
+  keywords: string[];
+  isCharacter: boolean;
+  proxy?: ProxyDescriptor;
+
+  // Per-turn status
+  moveState: MoveState;
+  advanceRoll: number; // inches gained this turn from advancing
+  /** Inches of movement already spent this phase (a unit moves up to its Move
+   *  characteristic in total, optionally across several smaller repositionings). */
+  moveBudgetUsed?: number;
+  hasShot: boolean;
+  hasChargedThisTurn: boolean;
+  hasFought: boolean;
+  isBattleShocked: boolean;
+
+  // Reserves / deployment
+  inReserves: boolean;
+  deepStrike: boolean;
+
+  // Leader attachment
+  leadingUnitId?: string; // if this is a leader, the bodyguard unit it joined
+  attachedLeaderIds: string[]; // if this is a bodyguard, leaders attached to it
+
+  startingModelCount: number;
+
+  /* ---------------------------------------------------------------------- *
+   * Stratagem / transient defensive state (all optional & additive).        *
+   * These flags are set by activateStratagem and consumed/cleared by the    *
+   * relevant game step. They default to undefined (treated as false).       *
+   * ---------------------------------------------------------------------- */
+  /** Go to Ground: target counts as having the benefit of cover this turn. */
+  goToGround?: boolean;
+  /** Smokescreen: target has a 6+ invulnerable save vs shooting this turn. */
+  smokescreen?: boolean;
+  /** Battle round on which a defensive flag (goToGround/smokescreen) was set,
+   *  used to clear it at the start of the unit's following turn. */
+  defensiveFlagRound?: number;
+  /** Insane Bravery: the unit's next battle-shock test auto-passes. */
+  autoPassBattleshock?: boolean;
+  /** Counter-offensive: this unit fights next, out of the normal sequence. */
+  fightsNext?: boolean;
+  /** Fire Overwatch already used by this unit this battle round (1/round). */
+  overwatchUsedRound?: number;
+  /** Command Re-roll: a one-shot single-die hit re-roll granted to this unit's
+   *  next shooting/fight attack (one failed hit die is re-rolled, matching the
+   *  tabletop stratagem). Consumed by the next resolveWeapon. */
+  pendingRerollHits?: boolean;
+  /** Armour of Contempt: incoming attacks suffer -1 AP against this unit until
+   *  its controller's next turn. Honoured by shoot()/fight() via AttackOptions. */
+  armourOfContempt?: boolean;
+  /** Rapid Ingress: this unit arrived from Reserves during the opponent's turn. */
+  rapidIngressRound?: number;
+  /** Set once a unit's destruction has been credited to a player's kill tally. */
+  deathCredited?: boolean;
+  /** Dark Pacts: the unit's next attack this turn gains Lethal Hits. Consumed
+   *  by the next shoot()/fight(). */
+  lethalHitsNext?: boolean;
+  /** Epic Challenge: this Character's melee attacks gain Precision THIS turn
+   *  (cleared each Command phase — no longer a permanent weapon mutation). */
+  epicChallenge?: boolean;
+}
+
+export interface Objective {
+  id: string;
+  position: Vec2;
+  radius: number; // control radius in inches (objective marker = 3" default)
+  controlledBy?: PlayerId;
+}
+
+/**
+ * A terrain feature on the table. Footprints are axis-aligned rectangles in
+ * inches. Ruins are `obscuring` (they block line of sight) and grant the
+ * benefit of cover; craters grant cover only. The renderer draws exactly these
+ * pieces, so what you see is what the rules use.
+ */
+export interface TerrainPiece {
+  id: string;
+  kind: 'ruin' | 'crater';
+  center: Vec2;
+  width: number; // x extent (inches)
+  depth: number; // y extent (inches)
+  height: number; // visual height (inches)
+  obscuring: boolean; // blocks line of sight when true
+  /**
+   * Max model height (inches) that may stand within / pass under this piece.
+   * Models taller than this are kept out of the footprint (their bases cannot
+   * overlap it) — i.e. you can't move a too-big model under/into solid terrain.
+   * Solid structures (ruins) use 0 (nothing fits); low cover (craters) uses a
+   * large value (anything can occupy it). Optional; defaults to 0 (solid) when
+   * absent so existing terrain reads as impassable to bases.
+   */
+  clearance?: number;
+}
+
+export type Phase =
+  | 'command'
+  | 'movement'
+  | 'shooting'
+  | 'charge'
+  | 'fight'
+  | 'end';
+
+export interface PlayerState {
+  id: PlayerId;
+  name: string;
+  faction: string;
+  commandPoints: number;
+  victoryPoints: number;
+  /** Secondary-objective VP, tracked separately and folded into victoryPoints. */
+  secondaryVictoryPoints?: number;
+  /** Count of enemy units this player has destroyed this turn (for secondaries). */
+  enemyUnitsKilledThisTurn?: number;
+  /** Oath of Moment: the enemy unit id this player's OATH-capable units re-roll
+   *  hits and wounds against this turn (auto-designated each Command phase). */
+  oathTarget?: string;
+  /** Waaagh!: once-per-game Ork army buff. `waaaghUsed` locks it to one call;
+   *  `waaaghRound` is the battle round it is active in (+1 melee Attack & Charge
+   *  on the Ork turn; 5+ invuln to Ork units that round). */
+  waaaghUsed?: boolean;
+  waaaghRound?: number;
+}
+
+export interface LogEntry {
+  round: number;
+  phase: Phase;
+  player: PlayerId;
+  message: string;
+  detail?: string;
+}
+
+export interface BoardSize {
+  width: number; // inches (table X)
+  height: number; // inches (table Y)
+}
+
+export interface GameState {
+  round: number;
+  activePlayer: PlayerId;
+  phase: Phase;
+  firstPlayer: PlayerId;
+  players: Record<PlayerId, PlayerState>;
+  units: Record<string, UnitInstance>;
+  objectives: Objective[];
+  terrain: TerrainPiece[];
+  board: BoardSize;
+  log: LogEntry[];
+  rngSeed: number;
+  /** Monotonic counter used to mint unique ids deterministically. */
+  idCounter: number;
+}

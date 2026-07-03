@@ -1,0 +1,18 @@
+import { chromium } from 'playwright-core';
+const EXE = process.env.CHROME_EXE || '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell';
+const URL = process.env.URL || 'http://localhost:5173/';
+const OUT = process.env.OUT || '/home/user/GOW/screenshots';
+const b = await chromium.launch({ executablePath: EXE, headless: true, args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--no-sandbox'] });
+const p = await b.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 2 });
+const glb = []; p.on('response', (r)=>{ if(r.url().includes('.glb')) glb.push(r.status()+' '+r.url().split('/').pop()); });
+await p.goto(URL, { waitUntil: 'commit' });
+await p.getByText(/deploy/i).first().waitFor({ timeout: 30000 });
+await p.getByText(/deploy/i).first().click();
+await p.waitForSelector('canvas', { timeout: 20000 });
+await p.waitForTimeout(6000);
+await p.evaluate(() => window.__showcaseRow && window.__showcaseRow());
+await p.waitForTimeout(7000);
+await p.screenshot({ path: `${OUT}/ten-different.png` });
+console.log('GLB='+JSON.stringify([...new Set(glb)]));
+console.log('done');
+await b.close();

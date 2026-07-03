@@ -1,0 +1,81 @@
+{
+  "errors": [],
+  "findings": [
+    {
+      "area": "In-battle import army",
+      "what": "tap \"import army\" button",
+      "expected": "button reachable & opens modal",
+      "actual": "button not found/tappable (likely clipped off-screen left)",
+      "severity": "major",
+      "screenshot": "/home/user/GOW/screenshots/audit-menu/21-battle-importarmy.png"
+    },
+    {
+      "area": "In-battle import model",
+      "what": "tap \"import model\" button",
+      "expected": "button reachable & opens modal",
+      "actual": "button not found/tappable (likely clipped off-screen left)",
+      "severity": "major",
+      "screenshot": "/home/user/GOW/screenshots/audit-menu/22-battle-importmodel.png"
+    }
+  ],
+  "modals": {},
+  "canvas": true,
+  "actionBar": [
+    {
+      "txt": "Insane Bravery1 CP\n     ",
+      "x": 12,
+      "y": 1538,
+      "w": 366,
+      "h": 51,
+      "offLeft": false,
+      "offRight": false,
+      "clippedLeft": -12,
+      "clippedRight": -12
+    },
+    {
+      "txt": "Import Army ▾",
+      "x": -102,
+      "y": 686,
+      "w": 135,
+      "h": 44,
+      "offLeft": true,
+      "offRight": false,
+      "clippedLeft": 102,
+      "clippedRight": -357
+    },
+    {
+      "txt": "Import Model ▾",
+      "x": 41,
+      "y": 686,
+      "w": 144,
+      "h": 44,
+      "offLeft": false,
+      "offRight": false,
+      "clippedLeft": -41,
+      "clippedRight": -205
+    },
+    {
+      "txt": "New Battle",
+      "x": -185,
+      "y": 738,
+      "w": 370,
+      "h": 44,
+      "offLeft": true,
+      "offRight": false,
+      "clippedLeft": 185,
+      "clippedRight": -205
+    },
+    {
+      "txt": "vs Machine SpiritBattle ",
+      "x": 14,
+      "y": 1687,
+      "w": 361,
+      "h": 56,
+      "offLeft": false,
+      "offRight": false,
+      "clippedLeft": -14,
+      "clippedRight": -14
+    }
+  ],
+  "consoleErrors": []
+}

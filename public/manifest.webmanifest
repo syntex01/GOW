@@ -1,0 +1,15 @@
+{
+  "name": "Grimdark Tabletop — Wargame Simulator",
+  "short_name": "Grimdark",
+  "description": "A turn-based, tabletop-faithful grimdark wargame simulator for testing armies and developing strategies.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0a0c10",
+  "theme_color": "#0a0c10",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

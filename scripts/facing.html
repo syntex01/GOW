@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <base href="/" />
+  <style>
+    html,body{margin:0;background:#20242b;font-family:monospace}
+    #wrap{position:relative}
+    canvas{display:block}
+    .lbl{position:absolute;color:#ffd23f;font-size:13px;font-weight:bold;
+      text-shadow:0 1px 2px #000;pointer-events:none}
+    #done{position:fixed;top:0;left:0;color:#0f0}
+  </style>
+</head>
+<body>
+  <div id="wrap"><div id="labels"></div></div>
+  <div id="done"></div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { UNIT_MODELS, ModelLibrary } from '/src/render/ModelRegistry.ts';
+    import { DATASHEETS } from '/src/engine/data/index.ts';
+
+    // name(lower) -> proxy, so instantiate() sizes/tints like production.
+    const proxByName = new Map();
+    for (const d of Object.values(DATASHEETS)) proxByName.set(d.name.toLowerCase(), d.proxy);
+
+    const CELL = 320, COLS = 5;
+    const rows = Math.ceil(UNIT_MODELS.length / COLS);
+    const W = CELL * COLS, H = CELL * rows;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    renderer.setSize(W, H);
+    renderer.autoClear = false;
+    renderer.setScissorTest(true);
+    document.getElementById('wrap').prepend(renderer.domElement);
+
+    // Clear whole canvas once to the bg colour.
+    renderer.setScissorTest(false);
+    renderer.setClearColor(0x20242b, 1);
+    renderer.clear();
+    renderer.setScissorTest(true);
+
+    const lib = new ModelLibrary();
+    const labels = document.getElementById('labels');
+
+    function loadOne(entry) {
+      return new Promise((resolve) => {
+        const proxy = proxByName.get(entry.datasheet) ||
+          { silhouette: 'infantry', primary: '#8899aa', heightInches: 1.5 };
+        // Use each entry's REAL yaw to CONFIRM the corrected forward faces +Z.
+        lib.instantiate(entry.url, proxy, entry,
+          (group) => resolve(group), () => resolve(null));
+      });
+    }
+
+    (async () => {
+      for (let i = 0; i < UNIT_MODELS.length; i++) {
+        const entry = UNIT_MODELS[i];
+        const col = i % COLS, row = Math.floor(i / COLS);
+        // Cell pixel origin (top-left in DOM coords).
+        const px = col * CELL, py = row * CELL;
+        // WebGL viewport y is bottom-up.
+        const glY = H - (row + 1) * CELL;
+
+        const group = await loadOne(entry);
+        const scene = new THREE.Scene();
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x30343c, 1.4));
+        const key = new THREE.DirectionalLight(0xffffff, 1.6);
+        key.position.set(2, 4, 5); scene.add(key);
+
+        // Model bounds to frame the camera.
+        let h = 2, cy = 1;
+        if (group) {
+          scene.add(group);
+          const box = new THREE.Box3().setFromObject(group);
+          const sz = new THREE.Vector3(); box.getSize(sz);
+          const ctr = new THREE.Vector3(); box.getCenter(ctr);
+          h = Math.max(sz.x, sz.y, sz.z) || 2; cy = ctr.y;
+        }
+        // FRONT view: camera on +Z looking toward -Z. A model whose authored
+        // forward is +Z shows its FRONT (face/weapon) toward us.
+        const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+        const d = h * 2.4;
+        cam.position.set(0, cy + h * 0.15, d);
+        cam.lookAt(0, cy, 0);
+
+        // A blue +Z reference arrow (points toward camera = "forward").
+        const arrow = new THREE.ArrowHelper(
+          new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.01, 0),
+          h * 0.9, 0x3fa9ff, h * 0.25, h * 0.14);
+        scene.add(arrow);
+
+        renderer.setViewport(px, glY, CELL, CELL);
+        renderer.setScissor(px, glY, CELL, CELL);
+        renderer.setClearColor(((i % 2) ? 0x262b33 : 0x2c323b), 1);
+        renderer.clear(true, true, false);
+        renderer.render(scene, cam);
+
+        const lab = document.createElement('div');
+        lab.className = 'lbl';
+        lab.style.left = (px + 6) + 'px';
+        lab.style.top = (py + 6) + 'px';
+        lab.textContent = `${i}. ${entry.datasheet}${group ? '' : ' [FAIL]'}`;
+        labels.appendChild(lab);
+      }
+      document.getElementById('done').textContent = 'DONE ' + UNIT_MODELS.length;
+    })();
+  </script>
+</body>
+</html>

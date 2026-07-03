@@ -1,36 +1,102 @@
-# Phaser 3 TypeScript Platformer Example
+# Grimdark Tabletop — Wargame Simulator
 
-[![dependencies Status](https://david-dm.org/yandeu/phaser3-typescript-platformer-example/status.svg?style=flat-square)](https://david-dm.org/yandeu/phaser3-typescript-platformer-example)
-![GitHub](https://img.shields.io/github/license/yandeu/phaser3-typescript-platformer-example.svg?style=flat-square)
-![GitHub package.json version](https://img.shields.io/github/package-json/v/yandeu/phaser3-typescript-platformer-example.svg?style=flat-square)
-![GitHub last commit](https://img.shields.io/github/last-commit/yandeu/phaser3-typescript-platformer-example.svg?style=flat-square)
+A turn-based, **tabletop-faithful** grimdark wargame simulator built to test armies
+and develop strategies. It mirrors the rules of the current edition of the
+38th-millennium tabletop game: the full turn structure, the dice resolution
+sequence, objectives and scoring — reproduced 1:1 with the tabletop math
+(validated against published profiles and verified by an automated test suite).
 
-Built with the [**typescript phaser-project-template**](https://github.com/yandeu/phaser-project-template#readme) starter.
+It is **fully playable** solo (vs an AI), hotseat, or **online** (peer-to-peer,
+no server), on desktop and smartphone, with a "Battle Forge" menu for picking
+warhosts and settings, animated dice, three factions, and custom-model import.
+The general systems are built once and faction-agnostic; it currently ships
+**three factions** (Necrons, Ultramarines, Orks) and is
 
-## Play
+<!-- legacy note -->
+The original slice shipped **2 factions with 2 units each**
+(Necrons: Warriors + Overlord — Ultramarines: Intercessors + Captain) and is
+designed to expand to the whole game.
 
-[Play the game](https://s3.eu-central-1.amazonaws.com/phaser3-typescript/platformer-example/index.html) (Add it to the homescreen to test the PWA functionality)
+## Status
 
-[![phaser3-typescript-platformer](screenshots/nexus6-640x360.png)](https://s3.eu-central-1.amazonaws.com/phaser3-typescript/platformer-example/index.html)
+- ✅ Deterministic, seedable rules engine (pure TypeScript, headless-testable)
+- ✅ Full attack sequence: hit → wound (S-vs-T chart) → save (AP + invuln) →
+  damage → Feel No Pain, with weapon abilities (Rapid Fire, Sustained Hits,
+  Lethal Hits, Devastating Wounds, Twin-linked, Anti-X, Melta, Blast, Torrent…)
+- ✅ Five-phase turn: Command (CP, battle-shock, reanimation) → Movement
+  (move / advance / fall back) → Shooting → Charge (2D6) → Fight (chargers first)
+- ✅ Terrain with true-ish **line of sight** (ruins block LoS) and **cover** saves
+- ✅ **Stratagems + command points**, **reserves / deep strike** (>9" rule),
+  **overwatch**, and **leader attachment** (attached leaders are untargetable
+  while their bodyguard lives; auras conferred)
+- ✅ Objectives, objective control (OC), progressive scoring, win conditions
+- ✅ Graphically rich Three.js battlefield: **real glTF unit models**
+  (faction-tinted, bloom), PBR battlemat, terrain shells, glowing objectives,
+  measurement & range tools, damage popups, orbit/touch camera
+- ✅ Premium **grimdark-gothic HUD** with faction crests, datasheet-style unit
+  cards, a stratagem panel, and a **mobile / touch** responsive layout (PWA)
+- ✅ **Solo AI opponent** (toggle in the action bar) so one player can test a
+  list against the machine; deterministic heuristic play
+- ✅ **Online play**: peer-to-peer (WebRTC via PeerJS, no server) with a
+  shareable room code and authoritative full-state sync
+- ✅ **"Battle Forge" menu**: faction/army select for both sides, mode, and
+  settings (dice speed, graphics, AI); loading splash; installable PWA
+- ✅ **Animated dice**: the actual rolled d6s tumble and settle in combat
+- ✅ **Import your own 3D models** in-app (glTF/GLB/OBJ/STL, public URL or file)
+- ✅ **Army importer**: paste an army-list text export (Warhammer app / New
+  Recruit / BattleScribe) and deploy it
+- ✅ **Custom model import** slot (glTF / GLB / OBJ / STL) for publicly available models
+- ✅ 112 passing tests, incl. empirical-vs-analytic combat fidelity checks
 
-## How To Use
-
-To clone and run this game, you'll need [Git](https://git-scm.com) and [Node.js](https://nodejs.org/en/download/) (which comes with [npm](http://npmjs.com)) installed on your computer. From your command line:
+## Run
 
 ```bash
-# Clone this repository
-$ git clone --depth 1 https://github.com/yandeu/phaser3-typescript-platformer-example.git phaser3-platformer-example
-
-# Go into the repository
-$ cd phaser3-platformer-example
-
-# Install dependencies
-$ npm install
-
-# Start the local development server (on port 8080)
-$ npm start
-
-# Ready for production?
-# Build the production ready code to the /dist folder
-$ npm run build
+npm install
+npm run dev      # http://localhost:5173
+npm test         # rules + fidelity test suite
+npm run build    # production bundle
 ```
+
+## Architecture
+
+```
+src/
+  engine/      pure rules engine (no DOM) — the source of truth
+    types.ts       data model (datasheets + live instances)
+    dice.ts        seedable RNG + dice expressions
+    geometry.ts    distances, engagement, coherency, objective control
+    combat.ts      the attack sequence
+    game.ts        turn/phase state machine
+    factory.ts     army assembly + battlefield setup
+    data/          faction datasheets (Necrons, Ultramarines)
+  render/      Three.js renderer (implements SceneController)
+  ui/          interactive HUD + input wiring
+  import/      army-list text importer
+tests/         vitest suite (engine + fidelity)
+old/           the previous project, preserved
+```
+
+The renderer talks to the rest of the app only through `SceneController`, so it
+can evolve (or be swapped for mobile/2D) independently. The engine is fully
+deterministic given a seed, which is what makes the tabletop fidelity testable.
+
+## Play on your phone (GitHub Pages)
+
+The repo ships a deploy workflow (`.github/workflows/deploy.yml`) that builds the
+app and publishes it to GitHub Pages on every push. **One-time setup:** open
+**Settings → Pages → Build and deployment → Source: GitHub Actions**. After the
+next push (or re-run the "Deploy to GitHub Pages" workflow) the app is live at:
+
+```
+https://syntex01.github.io/GOW/
+```
+
+Open that on your phone and use the browser's **Add to Home Screen** — it
+installs as a fullscreen PWA with its own icon.
+
+## Roadmap
+
+Detachments & enhancements; per-model movement & pile-in/consolidate; deep-strike
+placement UI; mission deck & secondaries; more factions/units; online
+multiplayer; optional animations (model rigs are already loaded, ready to
+animate).

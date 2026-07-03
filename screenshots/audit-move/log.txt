@@ -1,0 +1,19 @@
+=== ROUND-1 COMMAND (entry) ===
+phase: Ultramarines Strike Force's Command
+metrics: {"docScrollW":390,"docClientW":390,"overflowX":0,"vw":390,"vh":844,"actionbar":{"x":-195,"y":632,"w":390,"h":212,"bottom":844,"right":195},"unitpanelShown":false,"unitpanel":{"x":0,"y":41,"w":390,"h":39,"bottom":80,"right":390},"moveButtons":["AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"],"datacardCoversActionbar":false,"topAtActionbarCenter":"CANVAS","topAtLowerBoard":"CANVAS","topAtMidBoard":"CANVAS"}
+
+=== SELECT in command, check Reserves button ===
+action buttons in command w/ selection: ["AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"]
+has "→ Reserves" button: false
+
+=== MOVEMENT (round 1) ===
+phase: Ultramarines Strike Force's Movement
+SELECTED metrics: {"docScrollW":390,"docClientW":390,"overflowX":0,"vw":390,"vh":844,"actionbar":{"x":-195,"y":528,"w":390,"h":316,"bottom":844,"right":195},"unitpanelShown":true,"unitpanel":{"x":0,"y":369,"w":390,"h":351,"bottom":720,"right":390},"moveButtons":["Move","Advance","Fall Back","Remain","AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"],"datacardCoversActionbar":true,"topAtActionbarCenter":"CANVAS","topAtLowerBoard":"CANVAS","topAtMidBoard":"CANVAS"}
+-> moveButtons present: ["Move","Advance","Fall Back","Remain","AI: On","Import Army ▾","Import Model ▾","New Battle","Next Phase ▸"] | datacardCoversActionbar: true | topAtActionbarCenter: CANVAS | topAtLowerBoard: CANVAS
+Advance button count (DOM): 1
+Advance visible: true box: {"x":-185.015625,"y":634,"width":92.265625,"height":44} (if y>vh it is below the fold / occluded)
+
+=== CAMERA pinch (zoom) on top canvas strip ===
+RUN ERROR: cdpSession.send: Target page, context or browser has been closed cdpSession.send: Target page, context or browser has been closed
+    at pinch (/home/user/GOW/scripts/_audit_move2.mjs:52:66)
+    at /home/user/GOW/scripts/async file:/home/user/GOW/scripts/_audit_move2.mjs:111:3

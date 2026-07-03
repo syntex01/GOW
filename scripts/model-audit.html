@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html,body{margin:0;background:#6b7078;font-family:monospace}
+    #lbl{position:fixed;top:2px;left:4px;color:#111;font-size:14px;font-weight:bold}
+    #done{position:fixed;top:2px;right:4px;color:#0a0}
+  </style>
+</head>
+<body>
+  <div id="lbl"></div><div id="done"></div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { UNIT_MODELS, ModelLibrary } from '/src/render/ModelRegistry.ts';
+    import { DATASHEETS } from '/src/engine/data/index.ts';
+
+    const params = new URLSearchParams(location.search);
+    const idx = Number(params.get('i') ?? 0);
+    const entry = UNIT_MODELS[idx];
+    const proxByName = new Map();
+    for (const d of Object.values(DATASHEETS)) proxByName.set(d.name.toLowerCase(), d.proxy);
+
+    const CELL = 440, VIEWS = 3;
+    const W = CELL * VIEWS, H = CELL;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1); renderer.setSize(W, H);
+    renderer.autoClear = false; renderer.setScissorTest(true);
+    document.body.prepend(renderer.domElement);
+    // Neutral mid-grey clear so an untextured/white model is obvious.
+    renderer.setScissorTest(false); renderer.setClearColor(0x6b7078, 1); renderer.clear(); renderer.setScissorTest(true);
+
+    const lib = new ModelLibrary();
+    document.getElementById('lbl').textContent = `${idx}. ${entry?.datasheet ?? '???'}`;
+
+    function load() {
+      return new Promise((res) => {
+        const proxy = proxByName.get(entry.datasheet) || { silhouette: 'infantry', primary: '#8899aa', heightInches: 1.5 };
+        lib.instantiate(entry.url, proxy, entry, (g) => res(g), () => res(null));
+      });
+    }
+    (async () => {
+      const group = await load();
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.5));
+      const key = new THREE.DirectionalLight(0xffffff, 1.8); key.position.set(3, 5, 4); scene.add(key);
+      let h = 2, cy = 1;
+      if (group) {
+        scene.add(group);
+        const box = new THREE.Box3().setFromObject(group); const sz = new THREE.Vector3(); box.getSize(sz);
+        const ctr = new THREE.Vector3(); box.getCenter(ctr); h = Math.max(sz.x, sz.y, sz.z) || 2; cy = ctr.y;
+      }
+      // Three angles: front(+Z), 3/4, back(-Z).
+      const angles = [0, Math.PI * 0.75, Math.PI];
+      const d = h * 2.5;
+      angles.forEach((a, i) => {
+        const cam = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+        cam.position.set(Math.sin(a) * d, cy + h * 0.2, Math.cos(a) * d);
+        cam.lookAt(0, cy, 0);
+        const px = i * CELL, glY = 0;
+        renderer.setViewport(px, glY, CELL, CELL); renderer.setScissor(px, glY, CELL, CELL);
+        renderer.setClearColor(0x6b7078, 1); renderer.clear(true, true, false);
+        renderer.render(scene, cam);
+      });
+      document.getElementById('done').textContent = 'DONE';
+    })();
+  </script>
+</body>
+</html>
