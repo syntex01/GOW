@@ -672,9 +672,12 @@ export class GameUI {
         <thead><tr><th>Weapon</th><th>R</th><th>A</th><th>Sk</th><th>S</th><th>AP</th><th>D</th></tr></thead>
         <tbody>${u.weapons.map(wpn).join('')}</tbody>
       </table>
-      <div class="status">${badges.join('') || '<span class="badge ready">ready</span>'}</div>`;
+      <div class="status">${badges.join('') || '<span class="badge ready">ready</span>'}</div>
+      <div class="dc-actions"><button class="dc-model" type="button" title="Use your own 3D model for this unit type">⬇ Set model</button></div>`;
     const close = panel.querySelector('.drawer-close') as HTMLButtonElement | null;
     if (close) close.onclick = () => this.closeDrawer();
+    const modelBtn = panel.querySelector('.dc-model') as HTMLButtonElement | null;
+    if (modelBtn) modelBtn.onclick = () => this.openModelImport();
   }
 
   private renderLog(): void {

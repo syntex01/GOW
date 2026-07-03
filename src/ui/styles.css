@@ -2461,3 +2461,12 @@
 .ab-actions { margin-top: 12px; }
 .fc-edit { width: 100%; margin-top: 8px; }
 @media (max-width: 640px) { .ab-cols { grid-template-columns: 1fr; } }
+
+/* Per-unit "use your own model" action in the datacard. */
+.dc-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
+.dc-model {
+  font-size: 11px; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+  background: rgba(255,255,255,0.04); color: var(--muted, #9aa);
+  border: 1px solid var(--edge, #333); letter-spacing: 0.5px;
+}
+.dc-model:hover { background: rgba(255,220,120,0.08); border-color: var(--brass, #c8a24a); color: var(--ink, #eee); }
