@@ -221,6 +221,9 @@ export interface UnitInstance {
   /** Dark Pacts: the unit's next attack this turn gains Lethal Hits. Consumed
    *  by the next shoot()/fight(). */
   lethalHitsNext?: boolean;
+  /** Epic Challenge: this Character's melee attacks gain Precision THIS turn
+   *  (cleared each Command phase — no longer a permanent weapon mutation). */
+  epicChallenge?: boolean;
 }
 
 export interface Objective {

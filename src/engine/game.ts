@@ -170,6 +170,7 @@ export class GameEngine {
       u.hasChargedThisTurn = false;
       u.hasFought = false;
       u.fightsNext = false;
+      u.epicChallenge = false; // Epic Challenge Precision lasts one turn only
       // Clear transient defensive flags set during the opponent's turn that
       // were meant to last "until your next turn".
       if (u.defensiveFlagRound !== undefined && u.defensiveFlagRound < this.state.round) {
@@ -218,7 +219,13 @@ export class GameEngine {
     // Reanimation-style abilities restore wounds at the start of the turn.
     for (const u of this.unitsOf(this.active)) {
       const eff = u.abilities.find((a) => a.effect?.t === 'reanimation')?.effect;
-      if (eff && eff.t === 'reanimation') this.reanimate(u, rollDice('D3', this.rng));
+      if (eff && eff.t === 'reanimation') {
+        // Their Number is Legion: re-roll the reanimation dice (take the better).
+        const legion = u.abilities.some((a) => /number is legion/i.test(a.name));
+        let restored = rollDice('D3', this.rng);
+        if (legion) restored = Math.max(restored, rollDice('D3', this.rng));
+        this.reanimate(u, restored);
+      }
     }
 
     // Battle-shock tests for units below half strength.
@@ -748,11 +755,10 @@ export class GameEngine {
     const rerollFlag = attacker.pendingRerollHits;
     const results: AttackResult[] = [];
     for (const w of weapons) {
-      // Precision (e.g. from Epic Challenge) lets these blows strike the attached
-      // leader directly instead of the bodyguard escorting it.
-      const leader = w.keywords.some((k) => k.t === 'precision')
-        ? this.attachedLeaderOf(target)
-        : undefined;
+      // Precision (printed, or granted this turn by Epic Challenge) lets these
+      // blows strike the attached leader directly instead of the bodyguard.
+      const hasPrecision = w.keywords.some((k) => k.t === 'precision') || !!attacker.epicChallenge;
+      const leader = hasPrecision ? this.attachedLeaderOf(target) : undefined;
       const tgt = leader ?? target;
       if (leader) this.log(`${attacker.name}'s ${w.name} strikes the attached ${leader.name} (Precision).`);
       // Lance: +1 to wound if this unit made a Charge move this turn.
@@ -1044,13 +1050,11 @@ export class GameEngine {
         if (!unit) return { ok: false, message: 'Epic Challenge needs a unit (ctx.unitId).' };
         if (!unit.isCharacter) return { ok: false, message: `${unit.name} is not a Character.` };
         spend();
-        // Grant Precision to the Character's melee weapons for this fight.
-        for (const w of unit.weapons) {
-          if (w.kind === 'melee' && !w.keywords.some((k) => k.t === 'precision')) {
-            w.keywords.push({ t: 'precision' });
-          }
-        }
-        return { ok: true, message: `${unit.name} issues an Epic Challenge (melee gains Precision).` };
+        // Grant Precision to the Character's melee attacks for THIS turn only (a
+        // transient flag honoured by fight(), cleared next Command phase) — no
+        // longer permanently mutating the weapon (which leaked Precision forever).
+        unit.epicChallenge = true;
+        return { ok: true, message: `${unit.name} issues an Epic Challenge (melee gains Precision this turn).` };
       }
       case 'dark_pact': {
         if (!unit) return { ok: false, message: 'Dark Pact needs a unit (ctx.unitId).' };

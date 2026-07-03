@@ -270,8 +270,11 @@ describe('new stratagems', () => {
     const hero = e.unitsOf('A')[0];
     const res = e.activateStratagem('epic_challenge', { unitId: hero.id });
     expect(res.ok).toBe(true);
+    // Epic Challenge sets a transient per-turn flag (cleared each Command phase)
+    // rather than permanently mutating the weapon's keywords.
+    expect(hero.epicChallenge).toBe(true);
     const blade = hero.weapons.find((w) => w.id === 'blade')!;
-    expect(blade.keywords.some((k) => k.t === 'precision')).toBe(true);
+    expect(blade.keywords.some((k) => k.t === 'precision')).toBe(false);
   });
 
   it('Rapid Ingress brings a reserve unit onto the board', () => {

@@ -289,7 +289,9 @@ describe('stratagem CP spend, phase, and affordability gating', () => {
     const res = e.activateStratagem('epic_challenge', { unitId: hero.id });
     expect(res.ok).toBe(true);
     expect(e.state.players.A.commandPoints).toBe(cpBefore - 1);
-    expect(hero.weapons.find((w) => w.id === 'blade')!.keywords.some((k) => k.t === 'precision')).toBe(true);
+    // Epic Challenge sets a transient per-turn flag rather than mutating the weapon.
+    expect(hero.epicChallenge).toBe(true);
+    expect(hero.weapons.find((w) => w.id === 'blade')!.keywords.some((k) => k.t === 'precision')).toBe(false);
   });
 });
 
