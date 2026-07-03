@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { Rng } from '../src/engine/dice';
 import { NetController } from '../src/net/NetController';
+import { createLoopbackPair } from '../src/net/LoopbackTransport';
 import type { NetMessage, NetStatus, Transport } from '../src/net/Transport';
 import { createGame } from '../src/engine/factory';
 import { GameEngine } from '../src/engine/game';
 import { DATASHEETS, SAMPLE_ARMIES } from '../src/engine/data/index';
+import type { ArmyList } from '../src/engine/factory';
 import type { GameState } from '../src/engine/types';
+
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 function sampleState(): GameState {
   return createGame(
@@ -66,6 +70,33 @@ describe('MP fix — sends survive a transient post-connection error', () => {
     t.emit('disconnected'); // real teardown
     ctl.broadcastState({});
     expect(t.sent.length, 'must stop sending once truly disconnected').toBe(2);
+  });
+});
+
+describe('MP fix — guest army handshake', () => {
+  it('delivers the guest army to the host so it can build the shared game', async () => {
+    const { host, guest } = createLoopbackPair('ROOM');
+    const hostCtl = new NetController(host);
+    const guestCtl = new NetController(guest);
+
+    let joined: { army: unknown; faction: string; name?: string } | null = null;
+    hostCtl.onJoin((j) => (joined = j));
+
+    await host.connect();
+    await guest.connect();
+    await flush();
+
+    const guestArmy: ArmyList = {
+      name: 'Guest Warhost',
+      faction: 'orks',
+      entries: [{ datasheetId: 'ork_boyz', modelCount: 10 }],
+    };
+    guestCtl.sendJoin(guestArmy, guestArmy.faction, guestArmy.name);
+    await flush();
+
+    expect(joined).not.toBeNull();
+    expect(joined!.faction).toBe('orks');
+    expect((joined!.army as ArmyList).entries[0].datasheetId).toBe('ork_boyz');
   });
 });
 

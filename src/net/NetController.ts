@@ -29,6 +29,7 @@ export class NetController {
   private statusCbs: Array<(s: NetStatus) => void> = [];
   private chatCbs: Array<(text: string) => void> = [];
   private syncReqCbs: Array<() => void> = [];
+  private joinCbs: Array<(join: { army: unknown; faction: string; name?: string; session?: string }) => void> = [];
   private _status: NetStatus = 'disconnected';
   /** True once we have ever been fully connected. Lets sends survive a transient
    *  post-connection 'error' (the DataConnection is usually still open), instead
@@ -57,6 +58,8 @@ export class NetController {
         // Peer asked for a fresh snapshot (joined, or missed one) — let the host
         // re-broadcast its authoritative state.
         for (const cb of this.syncReqCbs) cb();
+      } else if (m.t === 'join') {
+        for (const cb of this.joinCbs) cb({ army: m.army, faction: m.faction, name: m.name, session: m.session });
       }
       // 'hello' is informational; no controller-level handling needed for v1.
     });
@@ -89,6 +92,18 @@ export class NetController {
   /** Fired when the peer requests a fresh snapshot (answer with broadcastState). */
   onSyncRequest(cb: () => void): void {
     this.syncReqCbs.push(cb);
+  }
+
+  /** Guest → host: hand the host our chosen army so it can build the shared game
+   *  with the army we actually configured. `session` reclaims a seat on rejoin. */
+  sendJoin(army: unknown, faction: string, name?: string, session?: string): void {
+    if (!this.canSend()) return;
+    this.transport.send({ t: 'join', army, faction, name, session });
+  }
+
+  /** Host: fired when the guest sends its army (initial join or a reconnect). */
+  onJoin(cb: (join: { army: unknown; faction: string; name?: string; session?: string }) => void): void {
+    this.joinCbs.push(cb);
   }
 
   /** Send a chat line to the peer. */

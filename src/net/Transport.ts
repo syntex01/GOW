@@ -14,9 +14,19 @@ export type NetMessage =
   | { t: 'state'; state: unknown; seq: number }
   /** Greeting sent right after a connection opens (optional display name). */
   | { t: 'hello'; name?: string }
+  /** Guest → host: the guest's chosen army, sent once on join so the host builds
+   *  the shared game with the army the guest actually configured. `session`, if
+   *  present, is a returning player reclaiming their seat after a drop. */
+  | { t: 'join'; army: unknown; faction: string; name?: string; session?: string }
   /** "Send me your current full state" — used by a guest on connect and to
    *  recover from any dropped snapshot so the peers can never desync silently. */
   | { t: 'sync-request' }
+  /** Active → defender: a reaction window is open for the declared attack; the
+   *  defender may answer with a `reaction` before the attack resolves. */
+  | { t: 'reaction-window'; kind: 'shooting' | 'charge'; attackerId: string; targetId: string }
+  /** Defender → active: the reaction the defender chose (or 'none'). The active
+   *  (authoritative) client applies it, keeping a single writer. */
+  | { t: 'reaction'; stratId: string | 'none'; unitId?: string; targetUnitId?: string }
   /** Free-text chat line. */
   | { t: 'chat'; text: string };
 

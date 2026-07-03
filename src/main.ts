@@ -31,6 +31,10 @@ class App {
   private ui!: GameUI;
   private net: NetController | null = null;
   private netHeartbeat: number | null = null;
+  /** True once a battle's renderer + engine + UI are built and wired. Online
+   *  handlers guard on this because the HOST defers building the shared game
+   *  until the guest hands over its army. */
+  private uiReady = false;
   private lists: Record<PlayerId, ArmyList> = {
     A: SAMPLE_ARMIES.necrons,
     B: SAMPLE_ARMIES.ultramarines,
@@ -62,12 +66,23 @@ class App {
       A: cfg.aArmy && cfg.aArmy.entries.length ? cfg.aArmy : this.armyFor(cfg.aFaction),
       B: cfg.bArmy && cfg.bArmy.entries.length ? cfg.bArmy : this.armyFor(cfg.bFaction),
     };
+    const online = cfg.mode === 'online' && cfg.online ? cfg.online : null;
+
+    // Online HOST: defer building the shared game until the guest hands over its
+    // army (so the guest fields the army it configured, not a host default). The
+    // host waits on the room-code screen (no board yet), so drop the spinner.
+    if (online?.action === 'host') {
+      this.setupOnline(cfg);
+      hideLoading();
+      return;
+    }
+
     this.buildBattle();
     this.ui.setDiceSpeed(cfg.settings.diceSpeed);
     this.ui.setAi(cfg.mode === 'ai' ? cfg.settings.aiPlayer ?? 'B' : null);
 
-    if (cfg.mode === 'online' && cfg.online) {
-      this.setupOnline(cfg);
+    if (online) {
+      this.setupOnline(cfg); // guest — game already built provisionally
     } else {
       this.menu.hide();
       hideLoading();
@@ -82,6 +97,7 @@ class App {
     }
     this.net?.close();
     this.net = null;
+    this.uiReady = false;
     this.scene?.dispose();
     this.scene = null;
     this.gameRoot.innerHTML = '';
@@ -108,6 +124,7 @@ class App {
     this.wireStratagems();
     this.applyModelAssignments();
     this.scene.frameBoard();
+    this.uiReady = true;
     if (import.meta.env.DEV) {
       const w = window as Window & { __demoDice?: () => void; __frameBiggest?: () => void; __demoDeaths?: () => void };
       w.__demoDice = () => void this.ui.demoDice();
@@ -203,37 +220,62 @@ class App {
     const transport = new PeerTransport(action === 'host' ? 'host' : 'guest', cfg.online!.code);
     const net = new NetController(transport);
     this.net = net;
-    this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
-    net.onRemoteState((s) => this.ui.applyRemoteState(s));
-    // When the peer asks for a snapshot (on join, or to recover a dropped one),
-    // answer with our current state UNCONDITIONALLY — whoever is asked holds the
-    // latest committed state and the asker is behind, so this must ignore turn
-    // authority (it is what heals a lost turn-handoff snapshot).
-    net.onSyncRequest(() => this.ui.answerSync());
+
+    // The guest's provisional game already exists (built in beginBattle); wire it
+    // to the net now. The host has NO game yet — it is built once the guest's
+    // army arrives (onJoin), and only then is its UI wired to the net.
+    if (this.uiReady) this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
+
+    net.onRemoteState((s) => { if (this.uiReady) this.ui.applyRemoteState(s); });
+    // Answer a peer's resync UNCONDITIONALLY (whoever is asked holds the latest
+    // committed state); this is what heals a lost turn-handoff snapshot.
+    net.onSyncRequest(() => { if (this.uiReady) this.ui.answerSync(); });
+
+    // Host only: the guest hands over its army; NOW we can build the shared game
+    // with the army the guest actually configured, then push the opening state.
+    net.onJoin((join) => {
+      if (action !== 'host') return;
+      const guestArmy = join.army as ArmyList | undefined;
+      if (guestArmy && guestArmy.entries.length) this.lists.B = guestArmy;
+      if (!this.uiReady) {
+        this.buildBattle();
+        this.ui.setDiceSpeed(cfg.settings.diceSpeed);
+        this.ui.setAi(null);
+        this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
+        this.menu.hide();
+        hideLoading();
+        sound.startMusic();
+      }
+      // Opening snapshot now carries the guest's real army as player B.
+      this.ui.pushState();
+    });
+
     net.onStatus((st) => {
       this.menu.setOnlineStatus(
         st === 'connected'
-          ? 'Connected — battle on!'
+          ? action === 'host'
+            ? 'Opponent connected — awaiting their army…'
+            : 'Connected — battle on!'
           : st === 'connecting'
             ? 'Connecting…'
             : st === 'error'
               ? 'Connection failed. Check the code and try again.'
               : 'Disconnected.',
       );
-      // On failure/disconnect, drop the loading overlay so the player isn't stuck
-      // on "Deploying forces…" — the menu stays up with the error so they can retry.
       if (st === 'error' || st === 'disconnected') hideLoading();
-      if (st === 'connected') {
+      if (st === 'connected' && action === 'join') {
+        // Guest: hand our chosen army to the host, then wait for the opening
+        // snapshot it builds. (requestSync covers a host that is already in-game,
+        // e.g. after we reconnect.)
         this.menu.hide();
         hideLoading();
         sound.startMusic();
-        // Host is authoritative: push the opening state to the guest. The guest
-        // also explicitly asks for it, so the initial sync can't be lost to a
-        // handshake race (host's first push arriving before the guest is ready).
-        if (net.localPlayer === 'A') this.ui.pushState();
-        else net.requestSync();
+        const mine = cfg.bArmy && cfg.bArmy.entries.length ? cfg.bArmy : this.lists.B;
+        net.sendJoin(mine, mine.faction, mine.name);
+        net.requestSync();
       }
     });
+
     // Heartbeat: the active player re-broadcasts state every ~1.5s (self-heals a
     // dropped in-turn snapshot). The waiting player can't be healed this way for
     // a lost turn-HANDOFF (neither side would then be broadcasting), so it also
@@ -241,7 +283,7 @@ class App {
     // unconditionally, delivering the handoff it missed.
     let hbTick = 0;
     this.netHeartbeat = window.setInterval(() => {
-      if (net.status !== 'connected') return;
+      if (!this.uiReady || net.status !== 'connected') return;
       if (this.ui.isLocalTurn()) {
         hbTick = 0;
         this.ui.pushState();
