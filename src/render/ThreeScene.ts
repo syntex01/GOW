@@ -14,6 +14,8 @@ import {
   type ModelRegistryEntry,
 } from './ModelRegistry';
 import { loadModel } from './ModelImport';
+import { resolveDeathFx, roleColor, type DeathFxConfig } from './fx/deathFxMap';
+import { makeDeathAnim, type DeathUpdater } from './fx/deathAnims';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
@@ -164,6 +166,11 @@ interface ModelVisual {
   alive: boolean;
   /** Animation progress for the death sink (1 = fully alive, 0 = sunk). */
   vitality: number;
+  /** Active procedural death animation (set on the alive→dead transition). */
+  deathAnim?: DeathUpdater;
+  /** Non-fatal "took a wound" flinch: remaining seconds + captured rest tilt. */
+  flinchT?: number;
+  flinchBase?: { x: number; z: number };
 }
 
 interface UnitVisual {
@@ -172,6 +179,8 @@ interface UnitVisual {
   ownerId: PlayerId;
   /** Faction proxy colour (hex int) used to tint combat FX (tracers etc.). */
   factionColor: number;
+  /** Per-unit death / hit FX archetype + colours. */
+  fx: DeathFxConfig;
   /** Optional imported model that replaces the procedural proxies. */
   imported?: THREE.Object3D;
 }
@@ -1054,7 +1063,8 @@ export class ThreeScene implements SceneController {
       /* keep fallback */
     }
 
-    uv = { group, models, ownerId: unit.ownerId, factionColor };
+    const fx = resolveDeathFx(unit.name, (unit.proxy ?? proxy)?.silhouette, unit.keywords ?? []);
+    uv = { group, models, ownerId: unit.ownerId, factionColor, fx };
     this.unitVisuals.set(unit.id, uv);
     this.unitsGroup.add(group);
     return uv;
@@ -1149,11 +1159,22 @@ export class ThreeScene implements SceneController {
         mv.group.position.x = world.x;
         mv.group.position.z = world.z;
 
-        // Death transition: sink + shrink. Revival: pop back.
-        if (m.alive && !mv.alive) {
-          mv.alive = true;
-        } else if (!m.alive && mv.alive) {
-          mv.alive = false;
+        // Death → start a procedural death animation (unless imported).
+        if (!m.alive && mv.alive) {
+          if (!uv.imported && mv.vitality > 0.01 && !mv.deathAnim) {
+            mv.deathAnim = makeDeathAnim(uv.fx.archetype, {
+              group: mv.group,
+              body: mv.body,
+              color: roleColor(uv.fx.color, uv.factionColor),
+              kit: this.getFxKit(),
+              explosion: uv.fx.explosion,
+            });
+          }
+        } else if (m.alive && !mv.alive) {
+          // Revival (e.g. Necron reanimation): undo the death animation cleanly.
+          if (mv.deathAnim) { mv.deathAnim.reset(); mv.deathAnim = undefined; }
+          mv.group.visible = true;
+          mv.vitality = 1;
         }
         mv.alive = m.alive;
       }
@@ -1770,6 +1791,18 @@ export class ThreeScene implements SceneController {
     sprite.position.set(anchor.x, baseY, anchor.z);
     this.overlayGroup.add(sprite);
     this.floatingNumbers.push({ sprite, age: 0, life: 1.4, baseY });
+    // A brief "took a wound" flinch on a couple of living models (unless they're
+    // mid-death). Kind comes from the unit's FX config (recoil / stagger / …).
+    if (uv.fx.flinch !== 'none' && !uv.imported) {
+      let flinched = 0;
+      for (const mv of uv.models) {
+        if (flinched >= 2) break;
+        if (!mv.alive || mv.deathAnim || (mv.flinchT ?? 0) > 0) continue;
+        mv.flinchBase = { x: mv.body.rotation.x, z: mv.body.rotation.z };
+        mv.flinchT = 0.32;
+        flinched += 1;
+      }
+    }
   }
 
   private updateFloatingNumbers(dt: number): void {
@@ -2983,23 +3016,42 @@ export class ThreeScene implements SceneController {
     else this.renderer.render(this.scene, this.camera);
   }
 
-  /** Smoothly sink dead models and pop revived ones. */
+  /** Drive procedural death animations; smoothly pop revived models. */
   private updateDeathAnimations(dt: number): void {
     const speed = dt * 4;
     for (const uv of this.unitVisuals.values()) {
       if (uv.imported) continue;
       for (const mv of uv.models) {
+        // A model playing its bespoke death animation drives itself; when the
+        // animation finishes it has hidden the model and we drop vitality to 0.
+        if (mv.deathAnim) {
+          const alive = mv.deathAnim(dt);
+          if (!alive) { mv.deathAnim = undefined; mv.vitality = 0; }
+          continue;
+        }
+        // Non-fatal wound flinch (decays back to the captured rest tilt).
+        if ((mv.flinchT ?? 0) > 0 && mv.flinchBase) {
+          mv.flinchT = (mv.flinchT ?? 0) - dt;
+          const p = Math.max(0, (mv.flinchT ?? 0) / 0.32); // 1→0
+          const amp = p * 0.28;
+          const kind = uv.fx.flinch;
+          const b = mv.flinchBase;
+          if (kind === 'recoil') mv.body.rotation.x = b.x - amp;
+          else if (kind === 'stagger') mv.body.rotation.z = b.z + Math.sin(p * Math.PI * 3) * amp;
+          else if (kind === 'shudder') { mv.body.rotation.x = b.x + Math.sin(p * 40) * amp * 0.5; mv.body.rotation.z = b.z + Math.cos(p * 37) * amp * 0.5; }
+          if ((mv.flinchT ?? 0) <= 0) { mv.body.rotation.x = b.x; mv.body.rotation.z = b.z; mv.flinchT = 0; }
+        }
         const target = mv.alive ? 1 : 0;
         if (mv.vitality === target) {
           mv.group.visible = mv.vitality > 0.01;
           continue;
         }
+        // Only the revive (pop back up) path runs here now; deaths animate above.
         mv.vitality += (target - mv.vitality) * Math.min(1, speed);
         if (Math.abs(mv.vitality - target) < 0.01) mv.vitality = target;
         const v = mv.vitality;
         mv.group.visible = v > 0.01;
         mv.group.scale.setScalar(clamp(v, 0.001, 1));
-        // sink into the table as it dies
         mv.group.position.y = (v - 1) * 0.6;
       }
     }

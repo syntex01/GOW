@@ -109,8 +109,16 @@ class App {
     this.applyModelAssignments();
     this.scene.frameBoard();
     if (import.meta.env.DEV) {
-      const w = window as Window & { __demoDice?: () => void; __frameBiggest?: () => void };
+      const w = window as Window & { __demoDice?: () => void; __frameBiggest?: () => void; __demoDeaths?: () => void };
       w.__demoDice = () => void this.ui.demoDice();
+      // Kill one model in every on-board unit to preview the death animations.
+      (w as unknown as { __demoDeaths?: () => void }).__demoDeaths = () => {
+        for (const u of Object.values(this.engine.state.units)) {
+          const alive = u.models.filter((m) => m.alive);
+          if (alive.length > 1) { alive[0].alive = false; alive[0].wounds = 0; }
+        }
+        this.ui.refresh();
+      };
       // Frame the squad with the most models (for showing off the figures).
       w.__frameBiggest = () => {
         const units = Object.values(this.engine.state.units).filter((u) =>
