@@ -189,8 +189,8 @@ export class GameUI {
     this.el.topbar.className = 'topbar';
     this.el.phaserail.className = 'phaserail';
     this.el.actionbar.className = 'actionbar';
-    this.el.unitpanel.className = 'unitpanel drawer drawer-left';
-    this.el.logpanel.className = 'logpanel drawer drawer-right';
+    this.el.unitpanel.className = 'unitpanel drawer drawer-right';
+    this.el.logpanel.className = 'logpanel drawer drawer-left';
     this.el.stratpanel.className = 'stratpanel drawer drawer-right';
     this.el.banner.className = 'banner';
     this.el.cluster.className = 'cluster';

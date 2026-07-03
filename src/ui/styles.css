@@ -430,12 +430,18 @@
 /* ============================ UNIT DATACARD ============================= */
 .unitpanel {
   position: absolute;
-  left: 12px; top: 134px; width: 296px; max-height: calc(100vh - 420px);
+  right: 12px; top: 134px; width: 316px; max-height: 40vh;
   padding: 14px; pointer-events: auto;
   display: none; overflow-y: auto;
+  /* faction-accent top edge so the card reads as the selected unit's card */
+  border-top: 2px solid var(--accent);
 }
-.unitpanel.show { display: block; }
-.datacard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.unitpanel.show { display: block; animation: card-in 0.18s ease both; }
+@keyframes card-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+.datacard-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  padding-bottom: 10px; margin-bottom: 2px; border-bottom: 1px solid var(--edge-soft);
+}
 .unitpanel .uname {
   font-family: var(--f-stencil); font-size: 16px; font-weight: 400;
   color: var(--brass-bright); letter-spacing: 1px; text-transform: uppercase;
@@ -509,7 +515,7 @@
 /* ============================ LOG / READOUT ============================= */
 .logpanel {
   position: absolute;
-  right: 12px; top: 134px; width: 312px; max-height: 48vh;
+  left: 12px; top: 134px; width: 312px; max-height: 48vh;
   padding: 0; overflow: hidden; pointer-events: auto;
   display: flex; flex-direction: column;
   font-size: 12px;
@@ -2042,6 +2048,15 @@
   position: relative;
 }
 .unitpanel > .grim-soot { display: none; } /* guard (no such element) */
+/* Desktop panel pinning. The grouped `position: relative` above (needed for the
+   soot/ornament layers) would otherwise defeat the per-panel absolute anchors,
+   so re-assert them here at higher specificity, desktop only — mobile keeps the
+   bottom-sheet .drawer behaviour untouched. Unit card = right, log = left. */
+@media (min-width: 881px) {
+  .hud .unitpanel { position: absolute; top: 134px; right: 12px; left: auto; }
+  .hud .logpanel { position: absolute; top: 134px; left: 12px; right: auto; }
+  .hud .stratpanel { position: absolute; bottom: 84px; right: 12px; left: auto; }
+}
 
 /* A pseudo soot vignette baked onto panels via an extra layered gradient on
    their existing surface — applied to the element background directly so we
