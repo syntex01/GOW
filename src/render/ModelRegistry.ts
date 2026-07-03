@@ -147,7 +147,9 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     keywords: ['adeptus astartes', 'ultramarines', 'imperium'],
     url: 'models/factions/ultramarine.glb', // armoured warrior
     heightScale: 1.0,
-    yaw: 0,
+    // This GLB is authored facing -Z (backward), unlike the others (+Z), so the
+    // board-centre facing left it looking off-table. Rotate 180° to face inward.
+    yaw: Math.PI,
   },
 ];
 

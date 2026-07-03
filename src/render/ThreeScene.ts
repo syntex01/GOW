@@ -26,6 +26,8 @@ import { buildAtmosphere } from './gfx/sky';
 import { buildLights } from './gfx/lights';
 import { buildPostChain, type PostChain } from './gfx/post';
 import type { Built, GfxQuality, AvoidRect } from './gfx/contract';
+import { ARCHETYPE_FX, classifyWeapon, type WeaponArchetype } from './fx/archetypes';
+import type { FxKit } from './fx/fxkit';
 
 /**
  * Three.js implementation of the renderer contract.
@@ -1896,7 +1898,14 @@ export class ThreeScene implements SceneController {
   playShoot(
     fromUnitId: string,
     toUnitId: string,
-    opts?: { volleys?: number; melee?: false },
+    opts?: {
+      volleys?: number;
+      melee?: false;
+      /** The firing weapon — its name/keywords pick the effect archetype. */
+      weapon?: { name: string; keywords: string[] };
+      /** Or force an archetype directly. */
+      archetype?: string;
+    },
   ): void {
     if (this.reducedMotion) {
       // Reduced motion: just a soft impact flash, no travelling tracers.
@@ -1907,25 +1916,23 @@ export class ThreeScene implements SceneController {
     const to = this.fxUnitPoint(toUnitId);
     if (!from || !to) return;
     const budget = this.fxBudget();
-    const requested = Math.max(1, Math.round(opts?.volleys ?? 3));
-    const volleys = clamp(requested, 1, budget.maxVolleys);
+    const volleys = clamp(Math.max(1, Math.round(opts?.volleys ?? 3)), 1, budget.maxVolleys);
     const color = this.unitVisuals.get(fromUnitId)?.factionColor ?? 0xffae5c;
 
-    // Muzzle flash at the shooter, slightly above the base.
-    this.spawnFlash(from.clone().setY(from.y + 1.0), color, 1.1, 0.12);
-
-    // Stagger several tracers; each is a thin additive sprite that streaks from
-    // muzzle to target then triggers a small impact spark + flash on arrival.
-    for (let i = 0; i < volleys; i++) {
-      const delay = i * 0.06;
-      // Small per-shot spread at the target so they don't all stack.
-      const jitter = 0.35;
-      const target = to.clone().setY(to.y + 0.9);
-      target.x += (((i * 1357) % 7) / 7 - 0.5) * jitter * 2;
-      target.z += (((i * 911) % 5) / 5 - 0.5) * jitter * 2;
-      const origin = from.clone().setY(from.y + 1.0);
-      this.addFxEffect(this.makeTracer(origin, target, color, delay, budget.sparkCount));
-    }
+    // Pick the weapon effect archetype (gauss beam, plasma bolt, heavy shell…),
+    // then hand off to that archetype's composer through the FxKit facade. The
+    // composers add their own muzzle-height / impact-height offsets.
+    const archetype =
+      (opts?.archetype as WeaponArchetype | undefined) ??
+      (opts?.weapon ? classifyWeapon(opts.weapon.name, opts.weapon.keywords) : 'generic');
+    const composer = ARCHETYPE_FX[archetype] ?? ARCHETYPE_FX.generic;
+    composer(
+      this.getFxKit(),
+      { x: from.x, y: from.y, z: from.z },
+      { x: to.x, y: to.y, z: to.z },
+      color,
+      volleys,
+    );
   }
 
   playMelee(aUnitId: string, bUnitId: string): void {
@@ -2125,6 +2132,260 @@ export class ThreeScene implements SceneController {
         geo.dispose();
         mat.dispose();
       },
+    };
+  }
+
+  /* ================= weapon-fx primitive toolkit (FxKit) ================= *
+   * The low-level primitives the per-archetype weapon composers render
+   * through. flash/tracer/sparks/ring already exist above; the following add
+   * bolts, beams, cones, explosions and transient lights. getFxKit() wraps them
+   * all into the FxKit facade consumed by src/render/fx/archetypes.ts.
+   * --------------------------------------------------------------------- */
+
+  private v3(p: { x: number; y: number; z: number }): THREE.Vector3 {
+    return new THREE.Vector3(p.x, p.y, p.z);
+  }
+
+  /** Fat glowing projectile (plasma/missile) that travels origin->target,
+   *  leaving a periodic trail; slower `speed` = a heavier, slower round. */
+  private makeBolt(
+    origin: THREE.Vector3,
+    target: THREE.Vector3,
+    color: number,
+    delay: number,
+    size: number,
+    speed: number,
+    trailColor: number,
+  ): FxEffect {
+    const mat = this.makeFxSpriteMat(this.getFxGlowTexture(), color, 1);
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.setScalar(size * 0.7);
+    sprite.position.copy(origin);
+    sprite.visible = false;
+    this.fxGroup.add(sprite);
+    const travel = 0.28 / Math.max(0.2, speed);
+    let age = 0;
+    let lastTrail = 0;
+    return {
+      cost: 1,
+      update: (dt) => {
+        age += dt;
+        if (age < delay) return true;
+        const t = (age - delay) / travel;
+        if (t >= 1) return false;
+        sprite.visible = true;
+        sprite.position.lerpVectors(origin, target, t);
+        mat.opacity = 0.95;
+        if (age - lastTrail > 0.03 && this.quality.tier !== 'low') {
+          lastTrail = age;
+          this.spawnFlash(sprite.position.clone(), trailColor, size * 0.5, 0.18);
+        }
+        return true;
+      },
+      dispose: () => {
+        this.fxGroup.remove(sprite);
+        mat.map = null;
+        mat.dispose();
+      },
+    };
+  }
+
+  /** Instant hitscan beam — a straight additive shaft between two points that
+   *  flickers and fades over `life` (las / gauss / melta). */
+  private makeBeam(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    color: number,
+    life: number,
+    thickness: number,
+    flicker: number,
+  ): FxEffect {
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length() || 0.001;
+    const geo = new THREE.CylinderGeometry(0.05 * thickness, 0.05 * thickness, len, 6, 1, true);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(from).addScaledVector(dir, 0.5);
+    mesh.quaternion.setFromUnitVectors(this.UP, dir.clone().normalize());
+    mesh.renderOrder = 3;
+    this.fxGroup.add(mesh);
+    let age = 0;
+    let seed = 1;
+    return {
+      cost: 1,
+      update: (dt) => {
+        age += dt;
+        const t = age / life;
+        if (t >= 1) return false;
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        const fl = 1 - flicker * ((seed % 100) / 100);
+        mat.opacity = (1 - t) * 0.9 * fl;
+        return true;
+      },
+      dispose: () => {
+        this.fxGroup.remove(mesh);
+        geo.dispose();
+        mat.dispose();
+      },
+    };
+  }
+
+  /** Directional particle cone (flamer): `count` embers stream from->to inside
+   *  an angular `spread`, billowing and fading over `life`. */
+  private makeCone(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    color: number,
+    life: number,
+    spread: number,
+    count: number,
+  ): FxEffect {
+    const n = Math.max(1, Math.min(count, 24));
+    const mat = this.makeFxSpriteMat(this.getFxGlowTexture(), color, 1);
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const dist = dir.length() || 1;
+    dir.normalize();
+    const ortho1 = new THREE.Vector3().crossVectors(dir, this.UP);
+    if (ortho1.lengthSq() < 1e-4) ortho1.set(1, 0, 0);
+    ortho1.normalize();
+    const ortho2 = new THREE.Vector3().crossVectors(dir, ortho1).normalize();
+    const sprites: THREE.Sprite[] = [];
+    const vel: THREE.Vector3[] = [];
+    const reach = dist * 0.9;
+    for (let i = 0; i < n; i++) {
+      const s = new THREE.Sprite(mat);
+      s.position.copy(from);
+      s.scale.setScalar(0.5);
+      const a1 = ((i * 37) % 100) / 100 - 0.5;
+      const a2 = ((i * 53) % 100) / 100 - 0.5;
+      const v = dir
+        .clone()
+        .addScaledVector(ortho1, a1 * spread)
+        .addScaledVector(ortho2, a2 * spread)
+        .normalize()
+        .multiplyScalar(reach / life);
+      vel.push(v);
+      sprites.push(s);
+      this.fxGroup.add(s);
+    }
+    let age = 0;
+    return {
+      cost: n,
+      update: (dt) => {
+        age += dt;
+        const t = age / life;
+        if (t >= 1) return false;
+        for (let i = 0; i < sprites.length; i++) {
+          sprites[i].position.addScaledVector(vel[i], dt);
+          sprites[i].scale.setScalar(0.5 + t * 1.2); // billow as it travels
+        }
+        mat.opacity = (1 - t) * 0.8;
+        return true;
+      },
+      dispose: () => {
+        for (const s of sprites) this.fxGroup.remove(s);
+        mat.map = null;
+        mat.dispose();
+      },
+    };
+  }
+
+  /** Explosion: a hot flash, an expanding fireball, a ground shock ring and a
+   *  debris spark burst — scaled by `size`. */
+  private spawnBoom(at: THREE.Vector3, color: number, size: number): void {
+    this.spawnFlash(at, 0xfff0d0, size * 1.4, 0.14);
+    const mat = this.makeFxSpriteMat(this.getFxGlowTexture(), color, 1);
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(at);
+    sprite.scale.setScalar(size * 0.8);
+    this.fxGroup.add(sprite);
+    const life = 0.35;
+    let age = 0;
+    this.addFxEffect({
+      cost: 1,
+      update: (dt) => {
+        age += dt;
+        const t = age / life;
+        if (t >= 1) return false;
+        sprite.scale.setScalar(size * (0.8 + t * 1.8));
+        mat.opacity = (1 - t) * 0.95;
+        return true;
+      },
+      dispose: () => {
+        this.fxGroup.remove(sprite);
+        mat.map = null;
+        mat.dispose();
+      },
+    });
+    this.addFxEffect(this.makeImpactRing(new THREE.Vector3(at.x, 0.2, at.z), color, size));
+    this.addFxEffect(this.makeSparkBurst(at, 0xffcaa0, this.fxBudget().sparkCount, 6 * size));
+  }
+
+  /** Transient dynamic point light (heavy/impact accent), fading over `life`.
+   *  Skipped on the low tier — dynamic lights are the priciest FX per pixel. */
+  private spawnGlowLight(at: THREE.Vector3, color: number, intensity: number, life: number): void {
+    if (this.quality.tier === 'low') return;
+    const light = new THREE.PointLight(color, intensity, 14, 2);
+    light.position.copy(at);
+    this.fxGroup.add(light);
+    let age = 0;
+    this.addFxEffect({
+      cost: 1,
+      update: (dt) => {
+        age += dt;
+        const t = age / life;
+        if (t >= 1) return false;
+        light.intensity = intensity * (1 - t);
+        return true;
+      },
+      dispose: () => {
+        this.fxGroup.remove(light);
+      },
+    });
+  }
+
+  /** Build the FxKit facade the weapon-archetype composers render through. */
+  private getFxKit(): FxKit {
+    const b = this.fxBudget();
+    return {
+      flash: (p, c, s, l) => this.spawnFlash(this.v3(p), c, s, l),
+      tracer: (f, t, c, o) =>
+        this.addFxEffect(this.makeTracer(this.v3(f), this.v3(t), c, o?.delay ?? 0, b.sparkCount)),
+      bolt: (f, t, c, o) =>
+        this.addFxEffect(
+          this.makeBolt(
+            this.v3(f),
+            this.v3(t),
+            c,
+            o?.delay ?? 0,
+            o?.size ?? 1,
+            o?.speed ?? 1,
+            o?.trailColor ?? c,
+          ),
+        ),
+      beam: (f, t, c, o) =>
+        this.addFxEffect(
+          this.makeBeam(this.v3(f), this.v3(t), c, o?.life ?? 0.2, o?.thickness ?? 1, o?.flicker ?? 0.3),
+        ),
+      cone: (f, t, c, o) =>
+        this.addFxEffect(
+          this.makeCone(this.v3(f), this.v3(t), c, o?.life ?? 0.8, o?.spread ?? 0.5, o?.count ?? 12),
+        ),
+      sparks: (p, c, n, sp) => this.addFxEffect(this.makeSparkBurst(this.v3(p), c, n, sp)),
+      ring: (p, c, s) => this.addFxEffect(this.makeImpactRing(this.v3(p), c, s)),
+      boom: (p, c, s) => this.spawnBoom(this.v3(p), c, s),
+      glowLight: (p, c, i, l) => this.spawnGlowLight(this.v3(p), c, i, l),
+      shake: (a) => {
+        if (b.shake && !this.reducedMotion) this.fxShake = Math.min(this.fxShake + a, 1);
+      },
+      budget: { volleys: b.maxVolleys, sparks: b.sparkCount, tier: this.quality.tier },
     };
   }
 

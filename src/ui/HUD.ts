@@ -1003,8 +1003,13 @@ export class GameUI {
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     const beforeModels = aliveModels(target).length;
     const results = this.engine.shoot(attacker, target);
-    // Tracers fly while the dice tumble; impact + casualties reveal after.
-    this.scene.playShoot(attacker.id, target.id);
+    // Tracers fly while the dice tumble; impact + casualties reveal after. The
+    // firing weapon's name/keywords pick the effect archetype (gauss beam,
+    // plasma bolt, heavy shell, …) so each weapon reads distinctly.
+    const rw = attacker.weapons.find((w) => w.kind === 'ranged') ?? attacker.weapons[0];
+    this.scene.playShoot(attacker.id, target.id, {
+      weapon: rw ? { name: rw.name, keywords: rw.keywords.map((k) => k.t) } : undefined,
+    });
     sound.playEvent(shootSoundFor(attacker));
     haptic();
     await this.dice.rollResults(results, { title: `${attacker.name} shoots ${target.name}` });

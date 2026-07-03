@@ -81,7 +81,14 @@ export interface SceneController {
   playShoot(
     fromUnitId: string,
     toUnitId: string,
-    opts?: { volleys?: number; melee?: false },
+    opts?: {
+      volleys?: number;
+      melee?: false;
+      /** Firing weapon — its name/keywords select the effect archetype. */
+      weapon?: { name: string; keywords: string[] };
+      /** Or force an archetype ('gauss' | 'plasma' | 'heavy' | …). */
+      archetype?: string;
+    },
   ): void;
 
   /** Melee clash: combatants lunge toward each other, a spark/slash flash at

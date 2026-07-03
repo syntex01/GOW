@@ -120,7 +120,10 @@ export function instantiateUnit(
 }
 
 /** Default battlefield: 60" x 44" (a standard mission size). */
-export const DEFAULT_BOARD = { width: 60, height: 44 };
+// ~2x the play area of the classic 60x44 (each dimension x√2). Objectives,
+// terrain, deployment zones and the renderer all derive from these, so the whole
+// battlefield scales together, giving more room to manoeuvre.
+export const DEFAULT_BOARD = { width: 84, height: 62 };
 
 /** Five-objective layout (corners + centre), a common deployment. */
 export function defaultObjectives(board: { width: number; height: number }): Objective[] {
