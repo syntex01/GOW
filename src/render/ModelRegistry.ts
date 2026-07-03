@@ -183,7 +183,11 @@ export const UNIT_MODELS: ModelRegistryEntry[] = [
   { keywords: [], datasheet: 'necron warriors', url: 'models/units/necron-warriors.glb', heightScale: 1, yaw: 0 },
   { keywords: [], datasheet: 'necron overlord', url: 'models/units/necron-overlord.glb', heightScale: 1, yaw: 0 },
   { keywords: [], datasheet: 'immortals', url: 'models/units/immortals.glb', heightScale: 1, yaw: 0 },
-  { keywords: [], datasheet: 'lychguard', url: 'models/units/lychguard.glb', heightScale: 1, yaw: 0 },
+  // The bespoke Lychguard GLB ships in a lifeless T-pose (no idle clip to freeze
+  // it out of), so it reuses the well-posed Necron skeleton — still on-theme
+  // (elite Necron warriors) and never a T-pose. heightScale nudged up as
+  // Lychguard are taller than base Warriors.
+  { keywords: [], datasheet: 'lychguard', url: 'models/units/necron-warriors.glb', heightScale: 1.12, yaw: 0 },
   { keywords: [], datasheet: 'royal warden', url: 'models/units/royal-warden.glb', heightScale: 1, yaw: 0 },
   { keywords: [], datasheet: 'canoptek scarab swarms', url: 'models/units/canoptek-scarab-swarms.glb', heightScale: 1, yaw: 0, fitToBase: false },
   { keywords: [], datasheet: 'canoptek wraiths', url: 'models/units/canoptek-wraiths.glb', heightScale: 1, yaw: 0, fitToBase: false },
