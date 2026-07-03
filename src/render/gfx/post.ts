@@ -78,7 +78,7 @@ const DOF_MAX_BLUR = 0.011;
 const GRADE_VIGNETTE = 0.45; // 0 = none, 1 = heavy corners (softened so wide-board
 // left/right deployment-edge units aren't buried; corners still fall dark)
 const GRADE_DESAT = 0.18; // neutral desat; the split-tone carries the cast
-const GRADE_GRAIN = 0.022; // grain amplitude (0 on low tier)
+const GRADE_GRAIN = 0.009; // grain amplitude (0 on low tier) — subtle, not screeny
 const GRADE_SHADOW_TINT = 0x33465e; // cool blue-steel shadows
 const GRADE_HI_TINT = 0xffd9a8; // warm firelit highlights
 const GRADE_SPLIT = 0.35; // split-tone strength
@@ -162,9 +162,14 @@ function buildGradePass(width: number, height: number, tier: GfxTier): ShaderPas
         uniform float uHiGlow;
         uniform vec2 uResolution;
         varying vec2 vUv;
-        // cheap hash for grain
+        // Non-directional hash for grain. The classic fract(sin(dot(...)))
+        // has diagonal structure that beats against the pixel grid into a
+        // visible cross-hatch/moiré at desktop resolutions; this integer-mix
+        // hash stays isotropic so the grain reads as true film noise.
         float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+          p = fract(p * vec2(233.34, 851.73));
+          p += dot(p, p + 23.45);
+          return fract(p.x * p.y);
         }
         void main() {
           vec4 col = texture2D(tDiffuse, vUv);
@@ -194,8 +199,8 @@ function buildGradePass(width: number, height: number, tier: GfxTier): ShaderPas
           // Faint animated film grain, weighted into the shadows, using the real
           // canvas resolution (no hardcoded 1920x1080 dependency).
           if (uGrain > 0.0) {
-            float g = hash(vUv * uResolution + fract(uTime) * 100.0);
-            col.rgb += (g - 0.5) * uGrain * (1.3 - l);
+            float g = hash(vUv * uResolution * 0.5 + fract(uTime) * 100.0);
+            col.rgb += (g - 0.5) * uGrain * (1.0 - l * 0.5);
           }
           gl_FragColor = col;
         }
