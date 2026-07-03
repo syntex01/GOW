@@ -101,6 +101,7 @@ export class GameEngine {
     const idx = PHASE_ORDER.indexOf(this.state.phase);
     if (this.state.phase === 'end') {
       this.scoreEndOfTurn();
+      this.scoreSecondaries(); // fixed-mission secondaries, folded into VP
       this.passTurn();
       return;
     }
@@ -650,6 +651,9 @@ export class GameEngine {
       this.log(`Cannot target ${target.name} in melee — it is protected by its bodyguard.`);
       return [];
     }
+    // Pile in (up to 3" toward the closest enemy) at the start of this unit's
+    // activation, before its blows land — a core part of every Fight activation.
+    this.pileIn(attacker.id);
     const weapons = attacker.weapons.filter((w) => w.kind === 'melee');
     const rerollFlag = attacker.pendingRerollHits;
     const results: AttackResult[] = [];
@@ -668,20 +672,43 @@ export class GameEngine {
     attacker.hasFought = true;
     attacker.fightsNext = false; // consumed
     this.cleanupDestroyed();
+    // Consolidate (up to 3" toward the closest enemy) at the end of the
+    // activation, so a unit that fought closes the gap or grabs an objective.
+    this.consolidate(attacker.id);
     return results;
   }
 
-  /** Order units for the fight phase: chargers (Fights First) first. */
+  /**
+   * Order units for the Fight phase, faithful to 10th-edition alternating
+   * activation:
+   *   1. Counter-offensive (a unit flagged to fight next) jumps to the front.
+   *   2. The "Fights First" step — units that charged this turn or have the
+   *      Fights First ability — resolves before any other unit.
+   *   3. The remaining engaged units resolve last.
+   * Within each step the two players ALTERNATE selecting a unit, beginning with
+   * the player whose turn is taking place, so the defender interleaves its
+   * blows rather than watching the whole enemy line strike unanswered.
+   */
   fightOrder(): UnitInstance[] {
     const all = Object.values(this.state.units).filter((u) => this.isAlive(u));
     const engaged = all.filter((u) => this.enemiesOf(u.ownerId).some((e) => inEngagementRange(u, e)));
-    // Counter-offensive: a flagged unit fights at the very front of the order.
     const counter = engaged.filter((u) => u.fightsNext);
     const first = engaged.filter(
       (u) => !u.fightsNext && (u.hasChargedThisTurn || this.hasEffect(u, 'fightsFirst')),
     );
     const rest = engaged.filter((u) => !u.fightsNext && !first.includes(u));
-    return [...counter, ...first, ...rest];
+    // Interleave a step's units by player, active side first.
+    const interleave = (units: UnitInstance[]): UnitInstance[] => {
+      const mine = units.filter((u) => u.ownerId === this.active);
+      const theirs = units.filter((u) => u.ownerId !== this.active);
+      const out: UnitInstance[] = [];
+      for (let i = 0; i < Math.max(mine.length, theirs.length); i++) {
+        if (i < mine.length) out.push(mine[i]);
+        if (i < theirs.length) out.push(theirs[i]);
+      }
+      return out;
+    };
+    return [...counter, ...interleave(first), ...interleave(rest)];
   }
 
   // ---------------------------------------------------------------- scoring

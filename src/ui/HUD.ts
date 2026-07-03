@@ -398,13 +398,15 @@ export class GameUI {
       const p = s.players[pid];
       const active = s.activePlayer === pid;
       const units = this.engine.unitsOf(pid).filter((u) => this.engine.isAlive(u)).length;
+      const sec = p.secondaryVictoryPoints ?? 0;
+      const secTag = sec > 0 ? ` <i class="sec" title="${sec}VP from secondary objectives">+${sec} sec</i>` : '';
       return `<div class="player-card p${pid.toLowerCase()} ${active ? 'active' : ''}">
         <div class="crest" aria-hidden="true"></div>
         <div class="pc-body">
           <div class="name">${p.name}</div>
           <div class="faction">${p.faction}</div>
           <div class="stats">
-            <span class="stat-vp">VP <b>${p.victoryPoints}</b></span>
+            <span class="stat-vp">VP <b>${p.victoryPoints}</b>${secTag}</span>
             <span class="stat-cp">CP <b>${p.commandPoints}</b></span>
             <span class="stat-un">Units <b>${units}</b></span>
           </div>

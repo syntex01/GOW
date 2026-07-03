@@ -256,6 +256,10 @@
 }
 .player-card.pb .stats { justify-content: flex-end; }
 .player-card .stats b { color: var(--brass-bright); font-weight: 700; font-family: var(--f-body); }
+.player-card .stats .sec {
+  font-style: normal; font-size: 9px; letter-spacing: 0.5px;
+  color: var(--accent, #ffd23f); opacity: 0.85; margin-left: 2px; vertical-align: 1px;
+}
 
 .turn-center {
   flex: 1;
