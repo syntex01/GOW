@@ -91,6 +91,19 @@ export class GameEngine {
     return this.enemiesOf(player).filter((u) => !this.isProtectedLeader(u));
   }
 
+  /**
+   * A living attached leader shielded inside `bodyguard`, if any — the legal
+   * victim for a Precision attack, which can pick the character out of the unit
+   * it is hiding in (this is what makes Epic Challenge / Precision meaningful).
+   */
+  private attachedLeaderOf(bodyguard: UnitInstance): UnitInstance | undefined {
+    for (const id of bodyguard.attachedLeaderIds ?? []) {
+      const l = this.state.units[id];
+      if (l && this.isAlive(l)) return l;
+    }
+    return undefined;
+  }
+
   hasEffect(u: UnitInstance, t: AbilityEffect['t']): boolean {
     return u.abilities.some((a) => a.effect?.t === t);
   }
@@ -543,27 +556,33 @@ export class GameEngine {
       return [];
     }
     const weapons = this.shootableWeapons(attacker, target);
-    // Cover from terrain, or granted transiently by Go to Ground / Smokescreen.
-    const cover = unitInCover(target, this.state.terrain) || !!target.goToGround || !!target.smokescreen;
-    // Go to Ground / Smokescreen also grant a 6+ invuln vs shooting this turn.
-    const bonusInvuln = target.goToGround || target.smokescreen ? 6 : undefined;
     // Command Re-roll: consume a one-shot "re-roll all hits" for this attack.
     const rerollFlag = attacker.pendingRerollHits;
     const results: AttackResult[] = [];
     for (const w of weapons) {
-      const halfRange = unitGap(attacker, target) <= w.range / 2;
+      // Precision: a weapon with Precision may snipe the attached leader out of
+      // the bodyguard unit; everything else strikes the bodyguard as normal.
+      const leader = w.keywords.some((k) => k.t === 'precision')
+        ? this.attachedLeaderOf(target)
+        : undefined;
+      const tgt = leader ?? target;
+      if (leader) this.log(`${attacker.name}'s ${w.name} takes a Precision shot at ${leader.name}.`);
+      // Cover / bonus invuln recomputed against the actual victim.
+      const cover = unitInCover(tgt, this.state.terrain) || !!tgt.goToGround || !!tgt.smokescreen;
+      const bonusInvuln = tgt.goToGround || tgt.smokescreen ? 6 : undefined;
+      const halfRange = unitGap(attacker, tgt) <= w.range / 2;
       const ignoresCover = w.keywords.some((k) => k.t === 'ignoresCover');
       const opts: AttackOptions = {
         halfRange,
         cover: (cover && !ignoresCover) || false,
         firingModels: aliveModels(attacker).length,
         ...(bonusInvuln !== undefined ? { bonusInvuln } : {}),
-        ...(target.armourOfContempt ? { apReduction: 1 } : {}),
+        ...(tgt.armourOfContempt ? { apReduction: 1 } : {}),
         ...this.attackerAbilityMods(attacker, 'shooting'),
         ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
         ...(optsByWeapon?.[w.id] ?? {}),
       };
-      const res = resolveWeapon(w, attacker, target, this.rng, opts);
+      const res = resolveWeapon(w, attacker, tgt, this.rng, opts);
       results.push(res);
       for (const line of res.log) this.log(line);
     }
@@ -658,13 +677,20 @@ export class GameEngine {
     const rerollFlag = attacker.pendingRerollHits;
     const results: AttackResult[] = [];
     for (const w of weapons) {
+      // Precision (e.g. from Epic Challenge) lets these blows strike the attached
+      // leader directly instead of the bodyguard escorting it.
+      const leader = w.keywords.some((k) => k.t === 'precision')
+        ? this.attachedLeaderOf(target)
+        : undefined;
+      const tgt = leader ?? target;
+      if (leader) this.log(`${attacker.name}'s ${w.name} strikes the attached ${leader.name} (Precision).`);
       const opts: AttackOptions = {
         firingModels: aliveModels(attacker).length,
-        ...(target.armourOfContempt ? { apReduction: 1 } : {}),
+        ...(tgt.armourOfContempt ? { apReduction: 1 } : {}),
         ...this.attackerAbilityMods(attacker, 'fight'),
         ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
       };
-      const res = resolveWeapon(w, attacker, target, this.rng, opts);
+      const res = resolveWeapon(w, attacker, tgt, this.rng, opts);
       results.push(res);
       for (const line of res.log) this.log(line);
     }
