@@ -32,11 +32,19 @@ function baseSize(ds: Datasheet): number {
   return Math.max(1, ds.composition[0]?.min ?? 1);
 }
 
-/** Points for a single list entry, scaling linearly from the minimum bracket. */
+/**
+ * Points for a single list entry. A datasheet's `points` is the list price of
+ * the unit as authored (a squad, not a per-model rate). Composition minimums in
+ * this data are loose (often 1), so scaling linearly by min would massively
+ * inflate multi-model squads (a 5-model Intercessor priced at 80 would read as
+ * 400). We therefore scale from the minimum ONLY when it is a real multi-model
+ * bracket (>1); otherwise `points` is treated as the flat squad price.
+ */
 export function entryPoints(ds: Datasheet, modelCount: number): number {
   const min = baseSize(ds);
   const n = modelCount || min;
-  return Math.round(ds.points * (n / min));
+  if (min > 1) return Math.round(ds.points * (n / min));
+  return ds.points;
 }
 
 /** Total points of an army list. */

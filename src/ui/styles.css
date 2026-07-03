@@ -2423,3 +2423,41 @@
     inset 0 -2px 5px rgba(0, 0, 0, 0.6),
     0 0 12px var(--accent-glow);
 }
+
+/* ===================== ARMY BUILDER (menu list forge) ==================== */
+.modal.builder { max-width: 860px; width: 94vw; }
+.ab-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ab-head h3 { margin: 0; }
+.ab-limit { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.ab-limit select { background: #0c1016; color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: 3px 6px; font-size: 12px; }
+.ab-status { margin: 8px 0; font-size: 12px; }
+.ab-pts { display: flex; gap: 10px; align-items: baseline; }
+.ab-pts .ok { color: #5fd38a; } .ab-pts .bad { color: #ff7a7a; }
+.ab-total { font-family: var(--f-body); font-weight: 700; color: var(--ink); }
+.ab-total.over { color: var(--warn, #e8b34a); }
+.ab-issues { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.ab-issues .bad { color: #ff9a9a; } .ab-issues .warn { color: #e8c05a; }
+.ab-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ab-colhead { font-family: var(--f-stencil, monospace); font-size: 10px; letter-spacing: 1.5px; color: var(--brass, #c8a24a); text-transform: uppercase; margin-bottom: 5px; }
+.ab-avail > div, .ab-roster > div { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 4px; }
+.ab-add { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--edge, #333); border-radius: 7px; padding: 7px 9px; cursor: pointer; color: var(--ink); text-align: left; }
+.ab-add:hover { background: rgba(255,220,120,0.08); border-color: var(--brass, #c8a24a); }
+.ab-an { font-size: 12px; font-weight: 600; }
+.ab-am { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
+.ab-am em { font-style: normal; opacity: 0.7; } .ab-am b { color: var(--ink); }
+.ab-plus { color: var(--brass, #c8a24a); font-weight: 700; }
+.ab-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px;
+  background: rgba(0,0,0,0.25); border: 1px solid var(--edge-soft, #2a2a2a); border-radius: 7px; padding: 6px 9px; }
+.ab-rn { font-size: 12px; font-weight: 600; }
+.ab-rp { font-size: 12px; color: var(--ink); min-width: 34px; text-align: right; }
+.ab-step { display: inline-flex; align-items: center; gap: 6px; }
+.ab-step button { width: 20px; height: 20px; border-radius: 5px; border: 1px solid var(--edge); background: #0c1016; color: var(--ink); cursor: pointer; line-height: 1; }
+.ab-step b { min-width: 20px; text-align: center; font-size: 12px; }
+.ab-single { font-size: 11px; color: var(--muted); }
+.ab-rem { width: 20px; height: 20px; border: 0; background: transparent; color: #c86; cursor: pointer; font-size: 13px; }
+.ab-rem:hover { color: #ff6a5a; }
+.ab-empty { font-size: 12px; color: var(--muted); padding: 14px 4px; }
+.ab-actions { margin-top: 12px; }
+.fc-edit { width: 100%; margin-top: 8px; }
+@media (max-width: 640px) { .ab-cols { grid-template-columns: 1fr; } }

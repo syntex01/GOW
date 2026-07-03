@@ -5,7 +5,17 @@
    Styles live under the `/* === MAIN MENU === *\/` block in styles.css.
    ========================================================================= */
 import { FACTIONS, SAMPLE_ARMIES, DATASHEETS } from '../engine/data/index';
+import type { ArmyList } from '../engine/factory';
+import { armyPoints } from '../engine/armyValidation';
+import { openArmyBuilder } from './ArmyBuilder';
 import { sound } from '../audio/SoundEngine';
+
+/** Deep-clone an army list so edits never touch the shared SAMPLE_ARMIES. */
+const cloneArmy = (l: ArmyList): ArmyList => ({
+  name: l.name,
+  faction: l.faction,
+  entries: l.entries.map((e) => ({ ...e })),
+});
 
 /** Short, unambiguous room code (no confusable chars). Matches the peer id the
  *  host registers under, so the code shown here IS the one guests dial. */
@@ -25,6 +35,11 @@ export interface GameSettings {
 export interface StartConfig {
   aFaction: string;
   bFaction: string;
+  /** The forged army lists (from the in-menu builder). Fall back to the sample
+   *  army for the faction when absent. */
+  aArmy?: ArmyList;
+  bArmy?: ArmyList;
+  pointsLimit?: number;
   mode: 'hotseat' | 'ai' | 'online';
   online?: { action: 'host' | 'join'; code?: string };
   settings: GameSettings;
@@ -52,6 +67,12 @@ export class Menu {
 
   private aFaction = 'necrons';
   private bFaction = 'ultramarines';
+  /** The editable army list per side (starts as a clone of the faction sample). */
+  private armies: Record<'A' | 'B', ArmyList> = {
+    A: cloneArmy(SAMPLE_ARMIES.necrons),
+    B: cloneArmy(SAMPLE_ARMIES.ultramarines),
+  };
+  private pointsLimit = 1000;
   private mode: Mode = 'hotseat';
   private onlineAction: 'host' | 'join' = 'host';
   /** Pre-generated host room code, shown the moment "Host War" is picked so it
@@ -181,6 +202,11 @@ export class Menu {
     if (side === 'A') this.rosterA = roster;
     else this.rosterB = roster;
     col.appendChild(roster);
+
+    const edit = el('button', 'btn small fc-edit', 'Forge Army ▸');
+    edit.type = 'button';
+    edit.addEventListener('click', () => this.editArmy(side));
+    col.appendChild(edit);
     return col;
   }
 
@@ -188,7 +214,25 @@ export class Menu {
     if (side === 'A') this.aFaction = id;
     else this.bFaction = id;
     if (side === 'A') this.root.setAttribute('data-accent', ACCENT[id] ?? '');
+    // Reset this side's list to the new faction's sample (a valid starting point).
+    const sample = (SAMPLE_ARMIES as Record<string, ArmyList>)[id];
+    this.armies[side] = sample ? cloneArmy(sample) : { name: FACTIONS[id]?.name ?? id, faction: FACTIONS[id]?.name ?? id, entries: [] };
     this.renderRoster(side);
+  }
+
+  /** Open the army builder for a side; write the result back and re-render. */
+  private editArmy(side: 'A' | 'B'): void {
+    const fid = side === 'A' ? this.aFaction : this.bFaction;
+    openArmyBuilder({
+      faction: fid,
+      initial: this.armies[side],
+      pointsLimit: this.pointsLimit,
+      onSave: (list, limit) => {
+        this.armies[side] = list;
+        this.pointsLimit = limit;
+        this.renderRoster(side);
+      },
+    });
   }
 
   private renderRoster(side: 'A' | 'B'): void {
@@ -199,28 +243,25 @@ export class Menu {
       b.classList.toggle('on', b.dataset.fid === id);
     });
 
-    const army = (SAMPLE_ARMIES as Record<string, typeof SAMPLE_ARMIES.necrons>)[id];
-    let total = 0;
+    const army = this.armies[side];
+    const total = armyPoints(army, DATASHEETS);
     const rows: string[] = [];
-    if (army) {
-      for (const e of army.entries) {
-        const ds = DATASHEETS[e.datasheetId];
-        if (!ds) continue;
-        total += ds.points;
-        const tags: string[] = [];
-        if (e.modelCount && e.modelCount > 1) tags.push(`×${e.modelCount}`);
-        if (e.attachTo) tags.push('Leader');
-        if (e.inReserves) tags.push('Reserves');
-        rows.push(
-          `<li><span class="rr-name">${ds.name}</span>` +
-            `<span class="rr-meta">${tags.map((t) => `<em>${t}</em>`).join('')}` +
-            `<b>${ds.points}</b></span></li>`,
-        );
-      }
+    for (const e of army.entries) {
+      const ds = DATASHEETS[e.datasheetId];
+      if (!ds) continue;
+      const tags: string[] = [];
+      if (e.modelCount && e.modelCount > 1) tags.push(`×${e.modelCount}`);
+      if (e.attachTo) tags.push('Leader');
+      if (e.inReserves) tags.push('Reserves');
+      rows.push(
+        `<li><span class="rr-name">${ds.name}</span>` +
+          `<span class="rr-meta">${tags.map((t) => `<em>${t}</em>`).join('')}` +
+          `<b>${ds.points}</b></span></li>`,
+      );
     }
     roster.innerHTML =
-      `<div class="rr-head"><span class="rr-army">${army ? army.name : id}</span>` +
-      `<span class="rr-total">${total} pts</span></div>` +
+      `<div class="rr-head"><span class="rr-army">${army.name || id}</span>` +
+      `<span class="rr-total">${total} / ${this.pointsLimit} pts</span></div>` +
       `<ul class="rr-list">${rows.join('')}</ul>`;
   }
 
@@ -509,6 +550,9 @@ export class Menu {
     const cfg: StartConfig = {
       aFaction: this.aFaction,
       bFaction: this.bFaction,
+      aArmy: cloneArmy(this.armies.A),
+      bArmy: cloneArmy(this.armies.B),
+      pointsLimit: this.pointsLimit,
       mode: this.mode,
       settings: { ...this.settings },
     };

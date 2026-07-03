@@ -57,7 +57,11 @@ class App {
   private async beginBattle(cfg: StartConfig): Promise<void> {
     showLoading('Deploying forces…');
     this.teardown();
-    this.lists = { A: this.armyFor(cfg.aFaction), B: this.armyFor(cfg.bFaction) };
+    // Prefer the army forged in the menu builder; fall back to the faction sample.
+    this.lists = {
+      A: cfg.aArmy && cfg.aArmy.entries.length ? cfg.aArmy : this.armyFor(cfg.aFaction),
+      B: cfg.bArmy && cfg.bArmy.entries.length ? cfg.bArmy : this.armyFor(cfg.bFaction),
+    };
     this.buildBattle();
     this.ui.setDiceSpeed(cfg.settings.diceSpeed);
     this.ui.setAi(cfg.mode === 'ai' ? cfg.settings.aiPlayer ?? 'B' : null);
