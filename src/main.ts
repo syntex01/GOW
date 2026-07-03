@@ -206,8 +206,10 @@ class App {
     this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
     net.onRemoteState((s) => this.ui.applyRemoteState(s));
     // When the peer asks for a snapshot (on join, or to recover a dropped one),
-    // answer with our current authoritative state.
-    net.onSyncRequest(() => this.ui.pushState());
+    // answer with our current state UNCONDITIONALLY — whoever is asked holds the
+    // latest committed state and the asker is behind, so this must ignore turn
+    // authority (it is what heals a lost turn-handoff snapshot).
+    net.onSyncRequest(() => this.ui.answerSync());
     net.onStatus((st) => {
       this.menu.setOnlineStatus(
         st === 'connected'
@@ -232,11 +234,20 @@ class App {
         else net.requestSync();
       }
     });
-    // Heartbeat: whoever's turn it is re-broadcasts state every ~1.5s. This
-    // self-heals any dropped snapshot, so the opponent always converges on the
-    // latest board and reliably sees every move / the turn passing to them.
+    // Heartbeat: the active player re-broadcasts state every ~1.5s (self-heals a
+    // dropped in-turn snapshot). The waiting player can't be healed this way for
+    // a lost turn-HANDOFF (neither side would then be broadcasting), so it also
+    // periodically asks the peer to resync — which the peer answers
+    // unconditionally, delivering the handoff it missed.
+    let hbTick = 0;
     this.netHeartbeat = window.setInterval(() => {
-      if (net.status === 'connected' && this.ui.isLocalTurn()) this.ui.pushState();
+      if (net.status !== 'connected') return;
+      if (this.ui.isLocalTurn()) {
+        hbTick = 0;
+        this.ui.pushState();
+      } else if ((hbTick = (hbTick + 1) % 3) === 0) {
+        net.requestSync();
+      }
     }, 1500);
     if (action === 'host') this.menu.setRoomCode(transport.roomCode);
     this.menu.setOnlineStatus('Connecting…');

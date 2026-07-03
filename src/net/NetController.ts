@@ -30,6 +30,10 @@ export class NetController {
   private chatCbs: Array<(text: string) => void> = [];
   private syncReqCbs: Array<() => void> = [];
   private _status: NetStatus = 'disconnected';
+  /** True once we have ever been fully connected. Lets sends survive a transient
+   *  post-connection 'error' (the DataConnection is usually still open), instead
+   *  of the coarse status permanently gagging sync with no path back. */
+  private everConnected = false;
 
   constructor(transport: Transport) {
     this.transport = transport;
@@ -37,6 +41,7 @@ export class NetController {
 
     this.transport.onStatus((s) => {
       this._status = s;
+      if (s === 'connected') this.everConnected = true;
       for (const cb of this.statusCbs) cb(s);
     });
 
@@ -57,6 +62,12 @@ export class NetController {
     });
   }
 
+  /** Whether the link is usable for sending: connected, or a transient error
+   *  after having been connected (a true 'disconnected'/close blocks sends). */
+  private canSend(): boolean {
+    return this._status === 'connected' || (this.everConnected && this._status === 'error');
+  }
+
   /** Open the underlying transport. */
   connect(): Promise<void> {
     return this.transport.connect();
@@ -64,14 +75,14 @@ export class NetController {
 
   /** Broadcast a full authoritative state snapshot to the peer. */
   broadcastState(state: unknown): void {
-    if (this._status !== 'connected') return;
+    if (!this.canSend()) return;
     this.transport.send({ t: 'state', state, seq: ++this.sendSeq });
   }
 
   /** Ask the peer to (re)send its full state. Used by a guest on connect and to
    *  recover a dropped snapshot. */
   requestSync(): void {
-    if (this._status !== 'connected') return;
+    if (!this.canSend()) return;
     this.transport.send({ t: 'sync-request' });
   }
 
@@ -82,7 +93,7 @@ export class NetController {
 
   /** Send a chat line to the peer. */
   sendChat(text: string): void {
-    if (this._status !== 'connected') return;
+    if (!this.canSend()) return;
     this.transport.send({ t: 'chat', text });
   }
 

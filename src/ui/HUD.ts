@@ -113,7 +113,10 @@ export class GameUI {
   private localPlayer: PlayerId | null = null;
   private broadcaster: ((state: unknown) => void) | null = null;
   private applyingRemote = false;
-  private hasReceivedRemote = false;
+  /** Online: true while WE are the authoritative writer (our turn). Only the
+   *  authoritative seat may transmit snapshots, so the waiting player can never
+   *  clobber the active player's state. Handed over at each turn change. */
+  private authoritative = false;
 
   // Stratagem shell state (presentation only).
   private stratagems: StratagemEntry[] = [];
@@ -346,15 +349,23 @@ export class GameUI {
     this.detectStateSounds();
     this.checkVictory();
     // Online: push our authoritative state to the peer after any local change.
-    // Host (A) may broadcast from the start; guest (B) only after it has first
-    // received the host's state, so it never clobbers the initial sync.
-    if (
-      this.broadcaster &&
-      !this.applyingRemote &&
-      (this.localPlayer === 'A' || this.hasReceivedRemote)
-    ) {
-      this.broadcaster(this.engine.state);
-    }
+    this.transmit();
+  }
+
+  /**
+   * Send our snapshot to the peer — but ONLY when we are the current
+   * authoritative writer (our turn). This is what stops the waiting player from
+   * overwriting the active player's state. It also stamps the live RNG position
+   * into the snapshot (so dice continue rather than rewinding to the seed on the
+   * peer) and relinquishes authority once a snapshot hands the turn away.
+   */
+  private transmit(): void {
+    if (!this.broadcaster || this.applyingRemote || !this.authoritative || !this.engine) return;
+    this.engine.state.rngSeed = this.engine.rng.seed;
+    this.broadcaster(this.engine.state);
+    // If this snapshot handed the turn to the opponent, we are no longer the
+    // authoritative writer until it comes back to us.
+    if (this.engine.active !== this.localPlayer) this.authoritative = false;
   }
 
   // -------------------------------------------------------------- online API
@@ -364,6 +375,9 @@ export class GameUI {
     this.localPlayer = local;
     this.broadcaster = broadcast;
     this.aiPlayer = null; // online play has no local AI
+    // The host (A) builds and owns the opening state (active = A), so it starts
+    // authoritative; the guest waits until a snapshot makes it the active seat.
+    this.authoritative = local === 'A';
   }
 
   /** True when it is the local player's turn to act (online). */
@@ -375,22 +389,60 @@ export class GameUI {
    *  sync request and as a periodic heartbeat so a dropped snapshot self-heals
    *  (so the opponent always sees the latest board / my every move). */
   pushState(): void {
-    if (this.broadcaster && !this.applyingRemote && this.engine) {
-      this.broadcaster(this.engine.state);
-    }
+    this.transmit();
+  }
+
+  /**
+   * Answer a peer's sync request by re-sending our current snapshot
+   * UNCONDITIONALLY (RNG-stamped). Unlike the per-action broadcast this ignores
+   * turn authority: whoever is asked holds the latest committed state and the
+   * asker is behind, so this is what recovers a lost turn-handoff (the one
+   * snapshot the authority-gated heartbeat cannot self-heal).
+   */
+  answerSync(): void {
+    if (!this.broadcaster || this.applyingRemote || !this.engine) return;
+    this.engine.state.rngSeed = this.engine.rng.seed;
+    this.broadcaster(this.engine.state);
+  }
+
+  /** Structural sanity-check of a remote snapshot before we trust it, so a
+   *  malformed/partial message can't corrupt or brick the receiver. */
+  private isValidSnapshot(s: unknown): s is GameEngine['state'] {
+    if (!s || typeof s !== 'object') return false;
+    const g = s as Record<string, unknown>;
+    return (
+      (g.activePlayer === 'A' || g.activePlayer === 'B') &&
+      typeof g.phase === 'string' &&
+      typeof g.rngSeed === 'number' &&
+      !!g.players &&
+      typeof g.players === 'object' &&
+      !!g.units &&
+      typeof g.units === 'object'
+    );
   }
 
   /** Apply an authoritative GameState received from the peer. */
   applyRemoteState(state: unknown): void {
+    if (!this.isValidSnapshot(state)) {
+      // Drop it rather than corrupt local state; the sender's heartbeat / a
+      // resync request will deliver a good snapshot shortly.
+      this.toast('Ignored a malformed sync from the other player', true);
+      return;
+    }
     const wasLocalTurn = this.isLocalTurn();
     this.applyingRemote = true;
-    this.hasReceivedRemote = true;
-    this.engine.state = state as GameEngine['state'];
-    this.engine.rng = new Rng((state as { rngSeed: number }).rngSeed);
-    this.deselect();
-    this.deepStrikeUnitId = null;
-    this.refresh();
-    this.applyingRemote = false;
+    try {
+      this.engine.state = state;
+      this.engine.rng = new Rng(state.rngSeed);
+      this.deselect();
+      this.deepStrikeUnitId = null;
+      this.refresh();
+    } finally {
+      this.applyingRemote = false;
+    }
+    // Receiving a snapshot that makes us the active seat means we are now the
+    // authoritative writer; a snapshot that isn't our turn leaves us waiting.
+    this.authoritative = this.isLocalTurn();
     // Announce the handoff so the player knows the board is theirs to act on.
     if (!wasLocalTurn && this.isLocalTurn()) {
       this.toast('Your turn!');
@@ -400,6 +452,8 @@ export class GameUI {
 
   /** True when the local player is allowed to act right now. */
   private canLocalAct(): boolean {
+    // Once the game is decided, no further actions may mutate (and re-decide) it.
+    if (this.engine && this.engine.winner() !== undefined) return false;
     return this.localPlayer === null || this.engine.active === this.localPlayer;
   }
 
@@ -535,11 +589,13 @@ export class GameUI {
     }
 
     // Universal controls. Army/model setup lives in the menu (New Battle), so
-    // the in-game bar stays focused on play: just the AI toggle and New Battle.
-    actions.append(
-      this.button(`AI: ${this.aiPlayer ? 'On' : 'Off'}`, 'small', () => this.toggleAi()),
-      this.button('New Battle', 'small', () => this.cb.onNewBattle()),
-    );
+    // the in-game bar stays focused on play. The AI toggle is meaningless (and
+    // unsafe — it mutates + would broadcast state) in online play, so it is
+    // hidden there.
+    if (this.localPlayer === null) {
+      actions.append(this.button(`AI: ${this.aiPlayer ? 'On' : 'Off'}`, 'small', () => this.toggleAi()));
+    }
+    actions.append(this.button('New Battle', 'small', () => this.cb.onNewBattle()));
     const next = this.button(phase === 'end' ? 'End Turn ▸' : 'Next Phase ▸', 'primary', () =>
       this.nextPhase(),
     );
@@ -734,14 +790,19 @@ export class GameUI {
             // Opponent's-turn reactions fire from the reaction window, not here.
             const reaction = st.when === 'opponents-turn';
             const tooPoor = st.cost > cp;
-            const disabled = wrongPhase || tooPoor || reaction;
-            const reason = reaction
-              ? 'reaction — used on the enemy turn'
-              : wrongPhase
-                ? 'wrong phase'
-                : tooPoor
-                  ? 'not enough CP'
-                  : '';
+            // Online: only the active seat may spend CP here — otherwise the
+            // waiting player would edit (and broadcast) the opponent's state.
+            const notMyTurn = !this.canLocalAct();
+            const disabled = wrongPhase || tooPoor || reaction || notMyTurn;
+            const reason = notMyTurn
+              ? "the other player's turn"
+              : reaction
+                ? 'reaction — used on the enemy turn'
+                : wrongPhase
+                  ? 'wrong phase'
+                  : tooPoor
+                    ? 'not enough CP'
+                    : '';
             return `<button class="strat ${disabled ? 'disabled' : ''}" type="button" data-id="${st.id}" ${
               disabled ? 'disabled' : ''
             }>

@@ -1180,6 +1180,20 @@ export class ThreeScene implements SceneController {
       }
     }
 
+    // Prune ghost visuals: any cached unit that is no longer in the state (a
+    // fully destroyed unit, or — crucially for online play — the local units
+    // this client created before its first snapshot, whose ids the authoritative
+    // snapshot replaced). Without this the guest accumulates permanent ghosts.
+    if (this.unitVisuals.size > Object.keys(state.units).length) {
+      for (const [id, uv] of this.unitVisuals) {
+        if (!state.units[id]) {
+          this.unitsGroup.remove(uv.group);
+          this.disposeObject(uv.group);
+          this.unitVisuals.delete(id);
+        }
+      }
+    }
+
     // Update highlight/target rings to follow units.
     this.updateAttachedRings(state);
   }

@@ -87,6 +87,13 @@ export class PeerTransport implements Transport {
         if (settled) return;
         settled = true;
         this.clearTimeout();
+        // Destroy the half-open peer so a late broker/guest event can't flip us
+        // from 'error' back to a live game after we've already reported failure.
+        try {
+          this.peer?.destroy();
+        } catch {
+          /* ignore */
+        }
         this.emitStatus('error');
         reject(err instanceof Error ? err : new Error(String(err)));
       };
@@ -116,6 +123,10 @@ export class PeerTransport implements Transport {
         // The broker may have assigned a different id than we asked for.
         if (this.role === 'host') {
           this._roomCode = id;
+          // The host is now registered with the broker and simply waiting for a
+          // guest — which may take arbitrarily long. Stop the connect watchdog so
+          // it doesn't false-fail a host sitting on the room-code screen.
+          this.clearTimeout();
           // Host waits for the guest to dial in.
           peer.on('connection', (c) => {
             // Accept the first connection only; ignore extras for v1.
