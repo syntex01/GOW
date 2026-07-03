@@ -615,6 +615,16 @@
 }
 
 /* ============================ TOAST / BANNER ============================ */
+/* Persistent connection notice (reconnect banner), pinned to the top edge. */
+.net-notice {
+  position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 80; padding: 6px 16px; border-radius: 0 0 10px 10px;
+  background: rgba(120, 30, 24, 0.94); color: #f4d9d4;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5); pointer-events: none;
+  max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* STAMPED STEEL PROCLAMATION with a hazard border */
 .banner {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.96);

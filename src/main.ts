@@ -35,6 +35,13 @@ class App {
    *  handlers guard on this because the HOST defers building the shared game
    *  until the guest hands over its army. */
   private uiReady = false;
+  // Reconnect state (auto-recover a transient online drop without a new room).
+  private onlineCfg: StartConfig | null = null;
+  private reconnectTimer: number | null = null;
+  private reconnectAttempts = 0;
+  /** Set while WE deliberately tear the connection down (new battle / re-dial),
+   *  so the resulting 'disconnected' status does not schedule a reconnect. */
+  private endingOnline = false;
   private lists: Record<PlayerId, ArmyList> = {
     A: SAMPLE_ARMIES.necrons,
     B: SAMPLE_ARMIES.ultramarines,
@@ -95,6 +102,14 @@ class App {
       clearInterval(this.netHeartbeat);
       this.netHeartbeat = null;
     }
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    // Abandon any online session: this close is intentional, not a drop.
+    this.endingOnline = true;
+    this.onlineCfg = null;
+    this.reconnectAttempts = 0;
     this.net?.close();
     this.net = null;
     this.uiReady = false;
@@ -217,6 +232,20 @@ class App {
   // ---------------------------------------------------------------- online
   private setupOnline(cfg: StartConfig): void {
     const action = cfg.online!.action;
+    // Re-entry (a reconnect attempt): tear down the previous heartbeat/net first
+    // WITHOUT letting that intentional close schedule another reconnect.
+    if (this.netHeartbeat !== null) {
+      clearInterval(this.netHeartbeat);
+      this.netHeartbeat = null;
+    }
+    if (this.net) {
+      this.endingOnline = true;
+      this.net.close();
+      this.net = null;
+    }
+    this.onlineCfg = cfg;
+    this.endingOnline = false;
+
     const transport = new PeerTransport(action === 'host' ? 'host' : 'guest', cfg.online!.code);
     const net = new NetController(transport);
     this.net = net;
@@ -263,16 +292,26 @@ class App {
               : 'Disconnected.',
       );
       if (st === 'error' || st === 'disconnected') hideLoading();
-      if (st === 'connected' && action === 'join') {
-        // Guest: hand our chosen army to the host, then wait for the opening
-        // snapshot it builds. (requestSync covers a host that is already in-game,
-        // e.g. after we reconnect.)
-        this.menu.hide();
-        hideLoading();
-        sound.startMusic();
-        const mine = cfg.bArmy && cfg.bArmy.entries.length ? cfg.bArmy : this.lists.B;
-        net.sendJoin(mine, mine.faction, mine.name);
-        net.requestSync();
+      if (st === 'connected') {
+        // Recovered (or first connect): clear any reconnect state/notice.
+        this.reconnectAttempts = 0;
+        if (this.uiReady) this.ui.setNetNotice(null);
+        if (action === 'join') {
+          // Guest: hand our chosen army to the host, then wait for the opening
+          // snapshot it builds. (requestSync also recovers a host already in-game
+          // after we reconnect — it re-answers with the current state.)
+          this.menu.hide();
+          hideLoading();
+          sound.startMusic();
+          const mine = cfg.bArmy && cfg.bArmy.entries.length ? cfg.bArmy : this.lists.B;
+          net.sendJoin(mine, mine.faction, mine.name);
+          net.requestSync();
+        }
+      }
+      // An UNINTENDED drop mid-game: try to recover the same session (the full
+      // snapshot resync on reconnect restores state with no divergence).
+      if ((st === 'disconnected' || st === 'error') && this.uiReady && !this.endingOnline) {
+        this.scheduleReconnect();
       }
     });
 
@@ -294,6 +333,29 @@ class App {
     if (action === 'host') this.menu.setRoomCode(transport.roomCode);
     this.menu.setOnlineStatus('Connecting…');
     void net.connect();
+  }
+
+  /**
+   * Recover a dropped online session by re-opening the transport with backoff
+   * (2s, 4s, 8s, … capped) — up to a few attempts — reusing the same room. The
+   * game/engine/UI stay intact; on reconnection a full-snapshot resync restores
+   * state with no divergence. Cancelled by teardown (starting a new battle).
+   */
+  private scheduleReconnect(): void {
+    if (!this.onlineCfg || this.endingOnline || this.reconnectTimer !== null) return;
+    const MAX_ATTEMPTS = 6;
+    if (this.reconnectAttempts >= MAX_ATTEMPTS) {
+      if (this.uiReady) this.ui.setNetNotice('Connection lost — could not reconnect. Start a new battle.');
+      return;
+    }
+    const attempt = ++this.reconnectAttempts;
+    const delay = Math.min(16000, 1000 * 2 ** attempt);
+    if (this.uiReady) this.ui.setNetNotice(`Connection lost — reconnecting (attempt ${attempt})…`);
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.endingOnline || !this.onlineCfg) return;
+      this.setupOnline(this.onlineCfg); // fresh transport; game + UI stay intact
+    }, delay);
   }
 
   // ---------------------------------------------------------------- stratagems

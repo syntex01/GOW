@@ -113,6 +113,8 @@ export class GameUI {
   private localPlayer: PlayerId | null = null;
   private broadcaster: ((state: unknown) => void) | null = null;
   private applyingRemote = false;
+  /** Persistent in-game connection notice element (reconnect banner). */
+  private netNoticeEl: HTMLElement | null = null;
   /** Online: true while WE are the authoritative writer (our turn). Only the
    *  authoritative seat may transmit snapshots, so the waiting player can never
    *  clobber the active player's state. Handed over at each turn change. */
@@ -403,6 +405,22 @@ export class GameUI {
     if (!this.broadcaster || this.applyingRemote || !this.engine) return;
     this.engine.state.rngSeed = this.engine.rng.seed;
     this.broadcaster(this.engine.state);
+  }
+
+  /** Show or clear a persistent in-game connection notice (e.g. "Reconnecting…"),
+   *  since the menu status line is hidden once a battle is underway. */
+  setNetNotice(text: string | null): void {
+    if (!text) {
+      this.netNoticeEl?.remove();
+      this.netNoticeEl = null;
+      return;
+    }
+    if (!this.netNoticeEl) {
+      this.netNoticeEl = document.createElement('div');
+      this.netNoticeEl.className = 'net-notice';
+      this.root.appendChild(this.netNoticeEl);
+    }
+    this.netNoticeEl.textContent = text;
   }
 
   /** Structural sanity-check of a remote snapshot before we trust it, so a

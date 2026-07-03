@@ -129,10 +129,16 @@ export class PeerTransport implements Transport {
           this.clearTimeout();
           // Host waits for the guest to dial in.
           peer.on('connection', (c) => {
-            // Accept the first connection only; ignore extras for v1.
+            // Accept a re-dial from a returning guest: replace the stale
+            // connection instead of rejecting it, so a transient drop can
+            // recover without a new room. (Full snapshot resync follows.)
             if (this.conn) {
-              c.close();
-              return;
+              try {
+                this.conn.close();
+              } catch {
+                /* ignore */
+              }
+              this.conn = null;
             }
             this.bindConnection(c, succeed);
           });
