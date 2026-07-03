@@ -68,6 +68,9 @@ export interface StratagemEntry {
   name: string;
   cost: number;
   phase: string;
+  /** Turn ownership: 'your-turn' | 'opponents-turn' | 'either'. Drives whether
+   *  the panel enables it on the active player's turn or marks it a reaction. */
+  when?: string;
   detail: string;
 }
 
@@ -117,6 +120,8 @@ export class GameUI {
 
   // Which drawer is open (drives the mobile bottom-sheet behaviour).
   private openDrawer: Drawer = null;
+  /** Desktop only: panels the user has collapsed via the cluster buttons. */
+  private collapsedPanels = new Set<Exclude<Drawer, null>>();
 
   // Audio change-detection: last-seen objective control + total CP, so refresh()
   // can fire capture / command-point cues only when these actually change.
@@ -267,8 +272,22 @@ export class GameUI {
   }
 
   // ------------------------------------------------------------- drawer logic
+  /** True on the desktop layout where the three side panels are always on-screen
+   *  (matching the CSS breakpoint), so the cluster buttons collapse/expand them
+   *  independently instead of acting as one-at-a-time bottom-sheet drawers. */
+  private isDesktopLayout(): boolean {
+    return window.matchMedia('(min-width: 1025px) and (min-height: 561px)').matches;
+  }
+
   private toggleDrawer(which: Exclude<Drawer, null>): void {
-    this.openDrawer = this.openDrawer === which ? null : which;
+    if (this.isDesktopLayout()) {
+      // Desktop: toggle just this panel's visibility (independent collapse).
+      if (this.collapsedPanels.has(which)) this.collapsedPanels.delete(which);
+      else this.collapsedPanels.add(which);
+    } else {
+      // Mobile: one bottom-sheet drawer open at a time.
+      this.openDrawer = this.openDrawer === which ? null : which;
+    }
     this.syncDrawers();
   }
 
@@ -277,29 +296,29 @@ export class GameUI {
     this.syncDrawers();
   }
 
-  /** Apply the open/closed classes. On desktop the panels are always visible
-   *  via CSS; the `open` class only matters at mobile breakpoints. */
+  /** Apply the open/collapsed classes. On mobile a single `.open` drawer shows;
+   *  on desktop every panel is visible unless the user collapsed it. */
   private syncDrawers(): void {
-    const map: Array<[Exclude<Drawer, null>, HTMLElement]> = [
-      ['unit', this.el.unitpanel],
-      ['log', this.el.logpanel],
-      ['stratagems', this.el.stratpanel],
+    const map: Array<[Exclude<Drawer, null>, HTMLElement, number]> = [
+      ['unit', this.el.unitpanel, 1],
+      ['stratagems', this.el.stratpanel, 2],
+      ['log', this.el.logpanel, 3],
     ];
+    const desktop = this.isDesktopLayout();
     let any = false;
     for (const [name, node] of map) {
       const on = this.openDrawer === name;
       node.classList.toggle('open', on);
+      node.classList.toggle('collapsed', desktop && this.collapsedPanels.has(name));
       if (on) any = true;
     }
-    this.el.backdrop.classList.toggle('show', any);
-    for (const b of Array.from(this.el.cluster.children)) {
-      b.classList.remove('active');
-    }
-    if (this.openDrawer) {
-      const order: Record<Exclude<Drawer, null>, number> = { unit: 1, stratagems: 2, log: 3 };
-      const idx = order[this.openDrawer];
+    this.el.backdrop.classList.toggle('show', any && !desktop);
+    for (const b of Array.from(this.el.cluster.children)) b.classList.remove('active');
+    // Light up the cluster button for whatever is currently shown.
+    for (const [name, , idx] of map) {
+      const shown = desktop ? !this.collapsedPanels.has(name) : this.openDrawer === name;
       const btn = this.el.cluster.children[idx];
-      if (btn) btn.classList.add('active');
+      if (btn && shown) btn.classList.add('active');
     }
   }
 
@@ -511,11 +530,10 @@ export class GameUI {
       }
     }
 
-    // Universal controls
+    // Universal controls. Army/model setup lives in the menu (New Battle), so
+    // the in-game bar stays focused on play: just the AI toggle and New Battle.
     actions.append(
       this.button(`AI: ${this.aiPlayer ? 'On' : 'Off'}`, 'small', () => this.toggleAi()),
-      this.button('Import Army ▾', 'small', () => this.cb.onImportArmy(this.engine.active)),
-      this.button('Import Model ▾', 'small', () => this.openModelImport()),
       this.button('New Battle', 'small', () => this.cb.onNewBattle()),
     );
     const next = this.button(phase === 'end' ? 'End Turn ▸' : 'Next Phase ▸', 'primary', () =>
@@ -695,10 +713,20 @@ export class GameUI {
       .map((ph) => {
         const items = groups[ph]
           .map((st) => {
-            const wrongPhase = ph.toLowerCase() !== String(curPhase).toLowerCase();
+            // 'any'-phase stratagems are valid in every phase; only a concrete
+            // phase mismatch is "wrong phase".
+            const wrongPhase = ph !== 'any' && ph.toLowerCase() !== String(curPhase).toLowerCase();
+            // Opponent's-turn reactions fire from the reaction window, not here.
+            const reaction = st.when === 'opponents-turn';
             const tooPoor = st.cost > cp;
-            const disabled = wrongPhase || tooPoor;
-            const reason = wrongPhase ? 'wrong phase' : tooPoor ? 'not enough CP' : '';
+            const disabled = wrongPhase || tooPoor || reaction;
+            const reason = reaction
+              ? 'reaction — used on the enemy turn'
+              : wrongPhase
+                ? 'wrong phase'
+                : tooPoor
+                  ? 'not enough CP'
+                  : '';
             return `<button class="strat ${disabled ? 'disabled' : ''}" type="button" data-id="${st.id}" ${
               disabled ? 'disabled' : ''
             }>
@@ -708,8 +736,9 @@ export class GameUI {
             </button>`;
           })
           .join('');
-        const active = ph.toLowerCase() === String(curPhase).toLowerCase();
-        return `<div class="strat-group ${active ? 'active' : ''}"><div class="strat-gh">${ph}</div>${items}</div>`;
+        const active = ph === 'any' || ph.toLowerCase() === String(curPhase).toLowerCase();
+        const label = ph === 'any' ? 'any phase' : ph;
+        return `<div class="strat-group ${active ? 'active' : ''}"><div class="strat-gh">${label}</div>${items}</div>`;
       })
       .join('');
 
@@ -1369,8 +1398,10 @@ export class GameUI {
     this.toast(message, warn);
   }
 
-  /** Modal to import a publicly-available 3D model (URL or file) onto a unit. */
-  private openModelImport(): void {
+  /** Modal to import a publicly-available 3D model (URL or file) onto a unit.
+   *  Public so it can be surfaced per-unit (e.g. from the datacard) rather than
+   *  as a big always-on toolbar button. */
+  openModelImport(): void {
     const unit = this.selected() ?? this.engine.unitsOf(this.engine.active).find((u) => this.engine.isAlive(u));
     if (!unit) {
       this.toast('Select a unit to apply a model to', true);

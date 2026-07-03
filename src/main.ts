@@ -233,6 +233,7 @@ class App {
       name: s.name,
       cost: s.cost,
       phase: s.phase,
+      when: s.when,
       detail: s.detail,
     }));
     this.ui.setStratagems(entries, (id) => {

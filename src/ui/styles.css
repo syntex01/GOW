@@ -763,6 +763,8 @@
 @media (min-width: 1025px) and (min-height: 561px) {
   .drawer { transform: none !important; }
   .drawer-backdrop { display: none !important; }
+  /* Cluster buttons collapse individual side panels on desktop. */
+  .drawer.collapsed { display: none !important; }
 }
 
 /* Reduce motion */
