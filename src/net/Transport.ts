@@ -14,6 +14,9 @@ export type NetMessage =
   | { t: 'state'; state: unknown; seq: number }
   /** Greeting sent right after a connection opens (optional display name). */
   | { t: 'hello'; name?: string }
+  /** "Send me your current full state" — used by a guest on connect and to
+   *  recover from any dropped snapshot so the peers can never desync silently. */
+  | { t: 'sync-request' }
   /** Free-text chat line. */
   | { t: 'chat'; text: string };
 

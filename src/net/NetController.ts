@@ -28,6 +28,7 @@ export class NetController {
   private remoteStateCbs: Array<(state: any) => void> = [];
   private statusCbs: Array<(s: NetStatus) => void> = [];
   private chatCbs: Array<(text: string) => void> = [];
+  private syncReqCbs: Array<() => void> = [];
   private _status: NetStatus = 'disconnected';
 
   constructor(transport: Transport) {
@@ -47,6 +48,10 @@ export class NetController {
         for (const cb of this.remoteStateCbs) cb(m.state);
       } else if (m.t === 'chat') {
         for (const cb of this.chatCbs) cb(m.text);
+      } else if (m.t === 'sync-request') {
+        // Peer asked for a fresh snapshot (joined, or missed one) — let the host
+        // re-broadcast its authoritative state.
+        for (const cb of this.syncReqCbs) cb();
       }
       // 'hello' is informational; no controller-level handling needed for v1.
     });
@@ -61,6 +66,18 @@ export class NetController {
   broadcastState(state: unknown): void {
     if (this._status !== 'connected') return;
     this.transport.send({ t: 'state', state, seq: ++this.sendSeq });
+  }
+
+  /** Ask the peer to (re)send its full state. Used by a guest on connect and to
+   *  recover a dropped snapshot. */
+  requestSync(): void {
+    if (this._status !== 'connected') return;
+    this.transport.send({ t: 'sync-request' });
+  }
+
+  /** Fired when the peer requests a fresh snapshot (answer with broadcastState). */
+  onSyncRequest(cb: () => void): void {
+    this.syncReqCbs.push(cb);
   }
 
   /** Send a chat line to the peer. */

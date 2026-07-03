@@ -80,6 +80,32 @@ describe('NetController over LoopbackTransport', () => {
 
     expect(seen).toEqual([1, 2]); // round-99 stale frame never delivered
   });
+
+  it('answers a guest sync-request with a fresh host snapshot', async () => {
+    const { host, guest } = createLoopbackPair('ROOM3');
+    const hostCtl = new NetController(host);
+    const guestCtl = new NetController(guest);
+
+    // Host answers any sync-request by broadcasting its authoritative state.
+    const state = sampleState();
+    hostCtl.onSyncRequest(() => hostCtl.broadcastState(state));
+
+    let received: GameState | null = null;
+    guestCtl.onRemoteState((s) => {
+      received = s;
+    });
+
+    await hostCtl.connect();
+    await guestCtl.connect();
+    await flush();
+
+    // Guest joined late / missed the opening push — it asks explicitly.
+    guestCtl.requestSync();
+    await flush();
+
+    expect(received).not.toBeNull();
+    expect(received).toEqual(state); // guest recovered the full board
+  });
 });
 
 describe('persistence', () => {

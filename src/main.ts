@@ -29,6 +29,7 @@ class App {
   private engine!: GameEngine;
   private ui!: GameUI;
   private net: NetController | null = null;
+  private netHeartbeat: number | null = null;
   private lists: Record<PlayerId, ArmyList> = {
     A: SAMPLE_ARMIES.necrons,
     B: SAMPLE_ARMIES.ultramarines,
@@ -70,6 +71,10 @@ class App {
   }
 
   private teardown(): void {
+    if (this.netHeartbeat !== null) {
+      clearInterval(this.netHeartbeat);
+      this.netHeartbeat = null;
+    }
     this.net?.close();
     this.net = null;
     this.scene?.dispose();
@@ -182,6 +187,9 @@ class App {
     this.net = net;
     this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
     net.onRemoteState((s) => this.ui.applyRemoteState(s));
+    // When the peer asks for a snapshot (on join, or to recover a dropped one),
+    // answer with our current authoritative state.
+    net.onSyncRequest(() => this.ui.pushState());
     net.onStatus((st) => {
       this.menu.setOnlineStatus(
         st === 'connected'
@@ -199,10 +207,19 @@ class App {
         this.menu.hide();
         hideLoading();
         sound.startMusic();
-        // Host is authoritative: push the opening state to the guest.
-        if (net.localPlayer === 'A') this.ui.refresh();
+        // Host is authoritative: push the opening state to the guest. The guest
+        // also explicitly asks for it, so the initial sync can't be lost to a
+        // handshake race (host's first push arriving before the guest is ready).
+        if (net.localPlayer === 'A') this.ui.pushState();
+        else net.requestSync();
       }
     });
+    // Heartbeat: whoever's turn it is re-broadcasts state every ~1.5s. This
+    // self-heals any dropped snapshot, so the opponent always converges on the
+    // latest board and reliably sees every move / the turn passing to them.
+    this.netHeartbeat = window.setInterval(() => {
+      if (net.status === 'connected' && this.ui.isLocalTurn()) this.ui.pushState();
+    }, 1500);
     if (action === 'host') this.menu.setRoomCode(transport.roomCode);
     this.menu.setOnlineStatus('Connecting…');
     void net.connect();

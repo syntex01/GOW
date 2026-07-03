@@ -341,8 +341,23 @@ export class GameUI {
     this.aiPlayer = null; // online play has no local AI
   }
 
+  /** True when it is the local player's turn to act (online). */
+  isLocalTurn(): boolean {
+    return this.localPlayer !== null && !!this.engine && this.engine.active === this.localPlayer;
+  }
+
+  /** Force-broadcast the current authoritative state — used to answer a peer's
+   *  sync request and as a periodic heartbeat so a dropped snapshot self-heals
+   *  (so the opponent always sees the latest board / my every move). */
+  pushState(): void {
+    if (this.broadcaster && !this.applyingRemote && this.engine) {
+      this.broadcaster(this.engine.state);
+    }
+  }
+
   /** Apply an authoritative GameState received from the peer. */
   applyRemoteState(state: unknown): void {
+    const wasLocalTurn = this.isLocalTurn();
     this.applyingRemote = true;
     this.hasReceivedRemote = true;
     this.engine.state = state as GameEngine['state'];
@@ -351,6 +366,11 @@ export class GameUI {
     this.deepStrikeUnitId = null;
     this.refresh();
     this.applyingRemote = false;
+    // Announce the handoff so the player knows the board is theirs to act on.
+    if (!wasLocalTurn && this.isLocalTurn()) {
+      this.toast('Your turn!');
+      haptic(24);
+    }
   }
 
   /** True when the local player is allowed to act right now. */
