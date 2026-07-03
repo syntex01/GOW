@@ -31,6 +31,8 @@ class App {
   private ui!: GameUI;
   private net: NetController | null = null;
   private netHeartbeat: number | null = null;
+  /** The mode of the current battle, so custom models can be kept LOCAL-only. */
+  private currentMode: StartConfig['mode'] = 'hotseat';
   private lists: Record<PlayerId, ArmyList> = {
     A: SAMPLE_ARMIES.necrons,
     B: SAMPLE_ARMIES.ultramarines,
@@ -57,6 +59,7 @@ class App {
   private async beginBattle(cfg: StartConfig): Promise<void> {
     showLoading('Deploying forces…');
     this.teardown();
+    this.currentMode = cfg.mode;
     // Prefer the army forged in the menu builder; fall back to the faction sample.
     this.lists = {
       A: cfg.aArmy && cfg.aArmy.entries.length ? cfg.aArmy : this.armyFor(cfg.aFaction),
@@ -182,8 +185,15 @@ class App {
     }
   }
 
-  /** Apply persisted per-datasheet model assignments to the deployed units. */
+  /**
+   * Apply persisted per-datasheet model assignments to the deployed units —
+   * but ONLY in LOCAL play (hotseat / vs-AI). In online play we deliberately
+   * keep everyone on the shipped, licence-clean models: your own imported models
+   * are never transmitted, never shown to a peer, and never baked into a shared
+   * session. This keeps custom (possibly grey-area) models to your own machine.
+   */
   private applyModelAssignments(): void {
+    if (this.currentMode === 'online') return; // custom models are local-only
     const assignments = loadAssignments();
     if (Object.keys(assignments).length === 0) return;
     for (const u of Object.values(this.engine.state.units)) {
