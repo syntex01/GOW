@@ -99,6 +99,10 @@ type ReactionOpt = { id: string; label: string; ctx: { unitId?: string; targetUn
 export class GameUI {
   private engine!: GameEngine;
   private selectedId: string | null = null;
+  /** A unit (friendly OR enemy) whose datacard is pinned open for inspection,
+   *  independent of action-selection. Cleared when a friendly unit is selected
+   *  for an action. The datacard shows this unit if set, else the selected one. */
+  private inspectId: string | null = null;
   /** Set once the player is warned about ending a phase early; re-tap confirms. */
   private endPhaseConfirmed = false;
   /** True while the enemy turn is being animated — locks the player's input. */
@@ -695,7 +699,8 @@ export class GameUI {
 
   // ---------------------------------------------------------------- unit panel
   private renderUnitPanel(): void {
-    const u = this.selected();
+    const shownId = this.inspectId ?? this.selectedId;
+    const u = shownId ? this.engine.state.units[shownId] : undefined;
     const panel = this.el.unitpanel;
     if (!u) {
       panel.classList.remove('show');
@@ -705,14 +710,16 @@ export class GameUI {
       if (this.openDrawer === 'unit') this.closeDrawer();
       return;
     }
+    const isEnemy = u.ownerId !== (this.localPlayer ?? this.engine.active);
+    panel.classList.toggle('enemy-card', isEnemy);
     panel.classList.add('show');
     // On mobile the datacard is a bottom-sheet drawer — slide it up when a NEW
     // unit is picked so the card is actually visible (desktop shows it always).
-    if (!this.isDesktopLayout() && this.selectedId !== this.lastCardSelId && this.openDrawer !== 'unit') {
+    if (!this.isDesktopLayout() && shownId !== this.lastCardSelId && this.openDrawer !== 'unit') {
       this.openDrawer = 'unit';
       this.syncDrawers();
     }
-    this.lastCardSelId = this.selectedId;
+    this.lastCardSelId = shownId;
     const s = u.statline;
     const stat = (k: string, v: string | number) =>
       `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
@@ -747,7 +754,7 @@ export class GameUI {
     panel.innerHTML = `
       <div class="datacard-head">
         <div class="dc-titles">
-          <div class="uname">${u.name}</div>
+          <div class="uname">${u.name} <span class="dc-owner ${isEnemy ? 'foe' : 'ally'}">${isEnemy ? 'Enemy' : 'Yours'}</span></div>
           <div class="ukw">${u.keywords.slice(0, 6).join(' · ')}</div>
         </div>
         <button class="drawer-close" type="button" aria-label="Close">✕</button>
@@ -770,7 +777,7 @@ export class GameUI {
         <tbody>${u.weapons.map(wpn).join('')}</tbody>
       </table>
       <div class="status">${badges.join('') || '<span class="badge ready">ready</span>'}</div>
-      <div class="dc-actions"><button class="dc-model" type="button" title="Use your own 3D model for this unit type">⬇ Set model</button></div>`;
+      ${isEnemy ? '' : '<div class="dc-actions"><button class="dc-model" type="button" title="Use your own 3D model for this unit type">⬇ Set model</button></div>'}`;
     const close = panel.querySelector('.drawer-close') as HTMLButtonElement | null;
     if (close) close.onclick = () => this.closeDrawer();
     const modelBtn = panel.querySelector('.dc-model') as HTMLButtonElement | null;
@@ -1153,11 +1160,28 @@ export class GameUI {
   // ---------------------------------------------------------------- picking
   private handlePick(r: PickResult): void {
     if (this.aiThinking) return; // the enemy is taking its turn
-    if (!this.canLocalAct()) return; // not our turn in online play
-    this.endPhaseConfirmed = false; // any board action re-arms the end-phase guard
     const phase = this.engine.state.phase;
-    if (phase === 'command' || phase === 'end') return;
     const unit = r.unitId ? this.engine.state.units[r.unitId] : undefined;
+    const mine = !!unit && unit.ownerId === this.engine.active;
+
+    // Inspection is ALWAYS allowed — even when it isn't our turn or the game is
+    // over — so any unit (friendly or enemy) can be tapped to read its datacard.
+    // Actions below still require it to be our turn to act.
+    if (!this.canLocalAct()) {
+      if (unit) this.inspect(unit.id);
+      return;
+    }
+    this.endPhaseConfirmed = false; // any board action re-arms the end-phase guard
+
+    // Command / stratagem phase (and end): tap a friendly unit to SELECT it (so
+    // stratagems apply to it), or an enemy to INSPECT it. Either opens the card.
+    if (phase === 'command' || phase === 'end') {
+      if (unit) {
+        if (mine) this.selectUnit(unit.id);
+        else this.inspect(unit.id);
+      }
+      return;
+    }
 
     if (phase === 'movement') {
       // Deep-strike placement takes priority when arming a reserve unit.
@@ -1173,59 +1197,51 @@ export class GameUI {
         }
         return;
       }
-      if (unit && unit.ownerId === this.engine.active) return this.selectUnit(unit.id);
+      if (mine) return this.selectUnit(unit!.id);
+      if (unit) return this.inspect(unit.id); // enemy: read its card, don't move onto it
       const sel = this.selected();
       if (sel) this.doMove(sel, r.point);
       return;
     }
 
     if (phase === 'shooting') {
-      if (unit && unit.ownerId === this.engine.active) {
-        if (this.engine.canShoot(unit)) return this.selectForShooting(unit);
-        // Tapped a friendly unit that can't shoot — say why instead of ignoring.
-        const why = this.engine.shootBlockReason(unit);
+      if (mine) {
+        if (this.engine.canShoot(unit!)) return this.selectForShooting(unit!);
+        // Can't shoot — say why, but still open the card so it's inspectable.
+        const why = this.engine.shootBlockReason(unit!);
         if (why) this.toast(why, true);
-        return;
+        return this.inspect(unit!.id);
       }
-      const sel = this.selected();
-      if (sel && unit && unit.ownerId !== this.engine.active) {
-        if (this.targets.includes(unit.id)) {
-          void this.doShoot(sel, unit);
-        } else {
-          this.toast(`${sel.name} can't hit ${unit.name} — out of range or no line of sight`, true);
-        }
-        return;
+      if (unit) {
+        const sel = this.selected();
+        if (sel && this.targets.includes(unit.id)) return void this.doShoot(sel, unit);
+        if (sel) this.toast(`${sel.name} can't hit ${unit.name} — out of range or no line of sight`, true);
+        return this.inspect(unit.id);
       }
       return;
     }
 
     if (phase === 'charge') {
-      if (unit && unit.ownerId === this.engine.active) {
-        const why = this.engine.chargeBlockReason(unit);
-        if (why) {
-          this.toast(why, true);
-          return;
-        }
-        return this.selectForCharge(unit);
+      if (mine) {
+        const why = this.engine.chargeBlockReason(unit!);
+        if (why) { this.toast(why, true); return this.inspect(unit!.id); }
+        return this.selectForCharge(unit!);
       }
-      const sel = this.selected();
-      if (sel && unit && unit.ownerId !== this.engine.active) {
-        if (this.targets.includes(unit.id)) {
-          void this.doCharge(sel, unit);
-          return;
-        }
-        this.toast(`${unit.name} is beyond 12" — out of charge range`, true);
-        return;
+      if (unit) {
+        const sel = this.selected();
+        if (sel && this.targets.includes(unit.id)) return void this.doCharge(sel, unit);
+        if (sel) this.toast(`${unit.name} is beyond 12" — out of charge range`, true);
+        return this.inspect(unit.id);
       }
       return;
     }
 
     if (phase === 'fight') {
-      if (unit && unit.ownerId === this.engine.active) return this.selectForFight(unit);
-      const sel = this.selected();
-      if (sel && unit && unit.ownerId !== this.engine.active) {
-        void this.doFight(sel, unit);
-        return;
+      if (mine) return this.selectForFight(unit!);
+      if (unit) {
+        const sel = this.selected();
+        if (sel && this.targets.includes(unit.id)) return void this.doFight(sel, unit);
+        return this.inspect(unit.id);
       }
       return;
     }
@@ -1268,14 +1284,25 @@ export class GameUI {
   // ---------------------------------------------------------------- actions
   private selectUnit(id: string): void {
     this.selectedId = id;
+    this.inspectId = null; // action-selection drives the card now
     this.targets = [];
     this.scene.setTargets([]);
     this.scene.highlightUnit(id);
     this.refresh();
   }
 
+  /** Pin any unit's datacard open for inspection (friendly or enemy) without
+   *  arming an action. This is what makes every unit tappable to read its card —
+   *  and on mobile the card slides up as a bottom sheet. */
+  private inspect(id: string): void {
+    this.inspectId = id;
+    this.scene.highlightUnit(id);
+    this.refresh();
+  }
+
   private deselect(): void {
     this.selectedId = null;
+    this.inspectId = null;
     this.targets = [];
     this.scene.highlightUnit(null);
     this.scene.setTargets([]);
@@ -1341,6 +1368,7 @@ export class GameUI {
 
   private selectForShooting(u: UnitInstance): void {
     this.selectedId = u.id;
+    this.inspectId = null;
     this.targets = this.engine
       .targetableEnemiesOf(this.engine.active) // excludes bodyguard-shielded leaders
       .filter((e) => this.engine.shootableWeapons(u, e).length > 0)
@@ -1426,6 +1454,7 @@ export class GameUI {
   private selectForCharge(u: UnitInstance): void {
     const tgts = this.engine.chargeTargets(u);
     this.selectedId = u.id;
+    this.inspectId = null;
     this.targets = tgts.map((t) => t.id);
     this.scene.highlightUnit(u.id);
     this.scene.setTargets(this.targets);
@@ -1466,6 +1495,7 @@ export class GameUI {
 
   private selectForFight(u: UnitInstance): void {
     this.selectedId = u.id;
+    this.inspectId = null;
     this.targets = this.engine
       .targetableEnemiesOf(this.engine.active) // can't single out a shielded leader
       .filter((e) => inEngagementRange(u, e))
