@@ -965,7 +965,10 @@ export class GameUI {
       }
       const sel = this.selected();
       if (sel && unit && unit.ownerId !== this.engine.active) {
-        if (this.targets.includes(unit.id)) return this.doCharge(sel, unit);
+        if (this.targets.includes(unit.id)) {
+          void this.doCharge(sel, unit);
+          return;
+        }
         this.toast(`${unit.name} is beyond 12" — out of charge range`, true);
         return;
       }
@@ -1116,14 +1119,16 @@ export class GameUI {
   }
 
   private async doShoot(attacker: UnitInstance, target: UnitInstance): Promise<void> {
-    // Reactive defence: an AI-owned target may spend a CP on Armour of Contempt
-    // before the shots land, so the human faces real opponent-turn interaction.
+    // Reactive defence before the shots land, so the opponent's turn has real
+    // interaction: the AI auto-braces; a hotseat human gets a reaction window.
     if (this.aiPlayer && target.ownerId === this.aiPlayer) {
       const r = aiReactToShooting(this.engine, attacker, target);
       if (r.used) {
         this.toast(r.message ?? `${target.name} braces (Armour of Contempt)`, false);
         sound.playEvent('stratagem');
       }
+    } else if (this.localPlayer === null && this.aiPlayer === null) {
+      await this.offerHumanReaction(target.ownerId, 'shooting');
     }
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     const beforeModels = aliveModels(target).length;
@@ -1158,9 +1163,10 @@ export class GameUI {
     if (tgts.length === 0) this.toast('No charge targets within 12"', true);
   }
 
-  private doCharge(u: UnitInstance, target: UnitInstance): void {
-    // Reactive defence: as the human charges, an AI defender may Fire Overwatch
-    // at the charging unit before it completes its move (hits only on 6s).
+  private async doCharge(u: UnitInstance, target: UnitInstance): Promise<void> {
+    // Reactive defence as the charge is declared: an AI defender may Fire
+    // Overwatch automatically; a hotseat human gets a reaction window (Fire
+    // Overwatch at the charger, etc.) before the charge move completes.
     if (this.aiPlayer && target.ownerId === this.aiPlayer) {
       const r = aiReactToCharge(this.engine, u);
       if (r.fired) {
@@ -1168,13 +1174,15 @@ export class GameUI {
         sound.playEvent('stratagem');
         if (r.shooterId) this.scene.playShoot(r.shooterId, u.id, {});
         this.refresh();
-        // If Overwatch wiped the charger, there is nothing left to charge with.
-        if (!this.engine.isAlive(u)) {
-          this.deselect();
-          this.refresh();
-          return;
-        }
       }
+    } else if (this.localPlayer === null && this.aiPlayer === null) {
+      await this.offerHumanReaction(target.ownerId, 'charge');
+    }
+    // If a reaction wiped the charging unit, there is nothing left to charge.
+    if (!this.engine.isAlive(u)) {
+      this.deselect();
+      this.refresh();
+      return;
     }
     const res = this.engine.charge(u, target);
     this.toast(`Charge roll: ${res.roll} — ${res.success ? 'success!' : 'failed'}`, !res.success);
