@@ -5,13 +5,15 @@ import {
   aliveModels,
   unitCentroid,
   inEngagementRange,
+  unitGap,
   coverState,
   moveReachField,
   moveReachDistance,
   shootReachField,
   unitBlockers,
 } from '../engine/geometry';
-import { aiStep } from '../engine/ai';
+import { aiStep, aiReactToCharge, aiReactToShooting } from '../engine/ai';
+import { CORE_STRATAGEMS } from '../engine/stratagems';
 import { DiceTray } from './DiceTray';
 import { Rng } from '../engine/dice';
 import { setAssignment, fileToDataUrl, formatFromName, type ModelFormat } from '../render/ModelAssignments';
@@ -767,14 +769,106 @@ export class GameUI {
     return new Promise((res) => window.setTimeout(res, ms));
   }
 
+  /**
+   * Give the DEFENDING human a reaction window on the AI's turn, just before the
+   * AI resolves its Shooting or Charge phase. Presents the human's affordable
+   * reactive stratagems (each auto-targeting the sensible unit) plus Skip. The
+   * returned promise settles once the human picks or skips, so the animated AI
+   * turn pauses for the reaction rather than steamrolling it. Resolves instantly
+   * when there is nothing to offer.
+   */
+  private offerHumanReaction(defender: PlayerId, phase: Phase): Promise<void> {
+    // Only clearly-defensive, auto-targetable reactions belong in this window.
+    const DEFENSE = new Set(['fire_overwatch', 'armour_of_contempt', 'go_to_ground', 'smokescreen']);
+    const strats = this.engine.reactiveStratagemsFor(defender).filter((s) => DEFENSE.has(s.id));
+    if (strats.length === 0) return Promise.resolve();
+
+    // Auto-targets: the most-threatened friendly unit, and the best overwatch pair.
+    const enemies = this.engine.unitsOf(defender === 'A' ? 'B' : 'A').filter((u) => this.engine.onBoard(u));
+    const mine = this.engine.unitsOf(defender).filter((u) => this.engine.onBoard(u));
+    let threatened: UnitInstance | undefined;
+    let bestGap = Infinity;
+    for (const u of mine)
+      for (const en of enemies) {
+        const g = unitGap(u, en);
+        if (g < bestGap) { bestGap = g; threatened = u; }
+      }
+    let owShooter: UnitInstance | undefined;
+    let owTarget: UnitInstance | undefined;
+    let owBest = 0;
+    for (const u of mine) {
+      if (u.overwatchUsedRound === this.engine.state.round) continue;
+      for (const en of enemies) {
+        const n = this.engine.shootableWeapons(u, en).length;
+        if (n > owBest) { owBest = n; owShooter = u; owTarget = en; }
+      }
+    }
+
+    // Build one option per usable reaction (only if it has a valid target).
+    type Opt = { id: string; label: string; ctx: { unitId?: string; targetUnitId?: string } };
+    const opts: Opt[] = [];
+    for (const s of strats) {
+      if (s.id === 'fire_overwatch') {
+        if (owShooter && owTarget && owBest > 0)
+          opts.push({ id: s.id, label: `Fire Overwatch — ${owShooter.name} → ${owTarget.name}`, ctx: { unitId: owShooter.id, targetUnitId: owTarget.id } });
+      } else if (s.id === 'go_to_ground') {
+        if (threatened && threatened.keywords.includes('INFANTRY'))
+          opts.push({ id: s.id, label: `Go to Ground — ${threatened.name}`, ctx: { unitId: threatened.id } });
+      } else if (threatened) {
+        const verb = s.id === 'smokescreen' ? 'Smokescreen' : 'Armour of Contempt';
+        opts.push({ id: s.id, label: `${verb} — ${threatened.name}`, ctx: { unitId: threatened.id } });
+      }
+    }
+    if (opts.length === 0) return Promise.resolve();
+
+    const cp = this.engine.state.players[defender].commandPoints;
+    return new Promise<void>((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop show';
+      const rows = opts
+        .map((o, i) => {
+          const cost = CORE_STRATAGEMS.find((s) => s.id === o.id)?.cost ?? 1;
+          return `<button class="btn small react" data-i="${i}" type="button">${o.label} <span style="opacity:.7">(${cost} CP)</span></button>`;
+        })
+        .join('');
+      backdrop.innerHTML = `
+        <div class="modal">
+          <h3>Reaction — enemy ${phase} phase</h3>
+          <p>The enemy is about to ${phase === 'charge' ? 'charge' : 'shoot'}. Spend a reactive Stratagem? You have <b>${cp} CP</b>.</p>
+          <div class="react-list" style="display:flex;flex-direction:column;gap:6px;margin:8px 0;">${rows}</div>
+          <div class="row"><button class="btn primary small" id="reactSkip" type="button">Skip reaction</button></div>
+        </div>`;
+      this.root.appendChild(backdrop);
+      const done = () => { backdrop.remove(); resolve(); };
+      backdrop.querySelectorAll<HTMLButtonElement>('.react').forEach((btn) => {
+        btn.onclick = () => {
+          const o = opts[Number(btn.dataset.i)];
+          const res = this.engine.activateStratagem(o.id, o.ctx, defender);
+          this.toast(res.message, !res.ok);
+          if (res.ok) sound.playEvent('stratagem');
+          this.refresh();
+          done();
+        };
+      });
+      (backdrop.querySelector('#reactSkip') as HTMLElement).onclick = done;
+      backdrop.onclick = (e) => { if (e.target === backdrop) done(); };
+    });
+  }
+
   /** Show the enemy's turn unfolding phase by phase. */
   private async runAiTurnAnimated(ai: PlayerId): Promise<void> {
     this.aiThinking = true;
     this.refresh();
     let guard = 0;
+    const human: PlayerId = ai === 'A' ? 'B' : 'A';
     while (this.aiPlayer && this.engine.active === ai && this.engine.winner() === undefined && guard < 60) {
       const phase = this.engine.state.phase;
       this.toast(`${this.engine.state.players[ai].name} — ${phase} phase`);
+      // Reaction window: before the AI shoots or charges, let the human spend a
+      // reactive Stratagem in defence. Pauses the animated turn until resolved.
+      if (phase === 'shooting' || phase === 'charge') {
+        await this.offerHumanReaction(human, phase);
+      }
       const cont = aiStep(this.engine);
       this.refresh(); // reveal the moves / casualties from this phase
       // Linger longer on phases with visible consequences (shots, melee).
@@ -1022,6 +1116,15 @@ export class GameUI {
   }
 
   private async doShoot(attacker: UnitInstance, target: UnitInstance): Promise<void> {
+    // Reactive defence: an AI-owned target may spend a CP on Armour of Contempt
+    // before the shots land, so the human faces real opponent-turn interaction.
+    if (this.aiPlayer && target.ownerId === this.aiPlayer) {
+      const r = aiReactToShooting(this.engine, attacker, target);
+      if (r.used) {
+        this.toast(r.message ?? `${target.name} braces (Armour of Contempt)`, false);
+        sound.playEvent('stratagem');
+      }
+    }
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     const beforeModels = aliveModels(target).length;
     const results = this.engine.shoot(attacker, target);
@@ -1056,6 +1159,23 @@ export class GameUI {
   }
 
   private doCharge(u: UnitInstance, target: UnitInstance): void {
+    // Reactive defence: as the human charges, an AI defender may Fire Overwatch
+    // at the charging unit before it completes its move (hits only on 6s).
+    if (this.aiPlayer && target.ownerId === this.aiPlayer) {
+      const r = aiReactToCharge(this.engine, u);
+      if (r.fired) {
+        this.toast(r.message ?? `${target.name} fires Overwatch!`, false);
+        sound.playEvent('stratagem');
+        if (r.shooterId) this.scene.playShoot(r.shooterId, u.id, {});
+        this.refresh();
+        // If Overwatch wiped the charger, there is nothing left to charge with.
+        if (!this.engine.isAlive(u)) {
+          this.deselect();
+          this.refresh();
+          return;
+        }
+      }
+    }
     const res = this.engine.charge(u, target);
     this.toast(`Charge roll: ${res.roll} — ${res.success ? 'success!' : 'failed'}`, !res.success);
     sound.playEvent(res.success ? 'charge' : 'ui_cancel');

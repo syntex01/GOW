@@ -1,5 +1,5 @@
 import type { GameEngine } from './game';
-import type { UnitInstance } from './types';
+import type { PlayerId, UnitInstance } from './types';
 import { unitCentroid, unitGap, inEngagementRange, unitGapToPoint } from './geometry';
 
 /**
@@ -116,6 +116,65 @@ function playPhase(e: GameEngine): void {
       if (enemy) e.fight(u, enemy);
     }
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Reactive stratagems — how the AI DEFENDS on the human's turn.        *
+ * Each is called by the HUD just before the human's action resolves,   *
+ * spends the AI's own command points, and returns what it did so the   *
+ * UI can toast + play FX. All are no-ops unless the AI both owns the    *
+ * defender and can afford / legally use the reaction.                   *
+ * ------------------------------------------------------------------ */
+
+/** The player who is NOT the given unit's owner. */
+function opponentOf(u: UnitInstance): PlayerId {
+  return u.ownerId === 'A' ? 'B' : 'A';
+}
+
+/**
+ * When a human unit declares a charge, the AI defender may Fire Overwatch at
+ * the charging unit with its best-placed shooter (most weapons in range + LoS,
+ * not yet used this round). Returns the fired shooter + result message, if any.
+ */
+export function aiReactToCharge(
+  e: GameEngine,
+  charger: UnitInstance,
+): { fired: boolean; shooterId?: string; message?: string } {
+  const defender = opponentOf(charger);
+  if (!e.reactiveStratagemsFor(defender).some((s) => s.id === 'fire_overwatch')) return { fired: false };
+  let best: UnitInstance | undefined;
+  let bestN = 0;
+  for (const u of e.unitsOf(defender)) {
+    if (!e.onBoard(u) || u.overwatchUsedRound === e.state.round) continue;
+    const n = e.shootableWeapons(u, charger).length;
+    if (n > bestN) {
+      bestN = n;
+      best = u;
+    }
+  }
+  if (!best || bestN === 0) return { fired: false };
+  const res = e.activateStratagem('fire_overwatch', { unitId: best.id, targetUnitId: charger.id }, defender);
+  return { fired: res.ok, shooterId: best.id, message: res.message };
+}
+
+/**
+ * When a human unit targets an AI unit with shooting, the AI defender may spend
+ * a CP on Armour of Contempt (incoming attacks suffer -1 AP) — but only when the
+ * incoming fire actually has AP to shave off, so it isn't wasted on bolters.
+ */
+export function aiReactToShooting(
+  e: GameEngine,
+  shooter: UnitInstance,
+  target: UnitInstance,
+): { used: boolean; message?: string } {
+  const defender = target.ownerId;
+  if (defender === e.active) return { used: false }; // reactions are the defender's only
+  if (target.armourOfContempt) return { used: false };
+  if (!e.reactiveStratagemsFor(defender).some((s) => s.id === 'armour_of_contempt')) return { used: false };
+  const dangerous = shooter.weapons.some((w) => w.kind === 'ranged' && w.ap >= 1);
+  if (!dangerous) return { used: false };
+  const res = e.activateStratagem('armour_of_contempt', { unitId: target.id }, defender);
+  return { used: res.ok, message: res.message };
 }
 
 /**

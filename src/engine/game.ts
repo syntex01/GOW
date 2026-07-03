@@ -789,17 +789,41 @@ export class GameEngine {
   }
 
   /**
+   * Reactive stratagems the DEFENDING player (`defender`, the one whose turn it
+   * is NOT) may use right now: gated by the current phase and to stratagems that
+   * are legal on the opponent's turn ('opponents-turn' or 'either'), and by the
+   * defender's own command points. This is what powers reactions on the active
+   * player's turn (Fire Overwatch, Armour of Contempt, Go to Ground, …).
+   */
+  reactiveStratagemsFor(defender: PlayerId): Stratagem[] {
+    if (defender === this.active) return []; // reactions belong to the non-active side
+    const phase = this.state.phase;
+    const cp = this.state.players[defender].commandPoints;
+    return CORE_STRATAGEMS.filter((s) => {
+      if (s.when === 'your-turn') return false; // not a reaction
+      if (s.cost > cp) return false;
+      if (s.phase !== 'any' && s.phase !== phase) return false;
+      return true;
+    });
+  }
+
+  /**
    * Spend command points and apply a stratagem's effect. Returns ok:false with a
    * message if it cannot be used (unknown id, wrong phase, or not enough CP).
    * `ctx.unitId` is the affected friendly unit; `ctx.targetUnitId` an enemy.
+   *
+   * `actingPlayer` is who pays and gets the effect; it defaults to the active
+   * player but a REACTION passes the defending player so the correct side's CP
+   * is spent during the opponent's turn.
    */
   activateStratagem(
     id: string,
     ctx?: { unitId?: string; targetUnitId?: string },
+    actingPlayer: PlayerId = this.active,
   ): { ok: boolean; message: string } {
     const strat = findStratagem(id);
     if (!strat) return { ok: false, message: `Unknown stratagem: ${id}` };
-    const player = this.state.players[this.active];
+    const player = this.state.players[actingPlayer];
     if (strat.cost > player.commandPoints) {
       return { ok: false, message: `${strat.name} costs ${strat.cost}CP; only ${player.commandPoints} available.` };
     }
