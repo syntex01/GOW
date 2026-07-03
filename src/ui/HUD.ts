@@ -122,6 +122,9 @@ export class GameUI {
   private openDrawer: Drawer = null;
   /** Desktop only: panels the user has collapsed via the cluster buttons. */
   private collapsedPanels = new Set<Exclude<Drawer, null>>();
+  /** Last unit the datacard was auto-popped for (so a new mobile selection
+   *  slides the card up, without re-opening it on every refresh). */
+  private lastCardSelId: string | null = null;
 
   // Audio change-detection: last-seen objective control + total CP, so refresh()
   // can fire capture / command-point cues only when these actually change.
@@ -600,11 +603,19 @@ export class GameUI {
     if (!u) {
       panel.classList.remove('show');
       panel.innerHTML = '';
+      this.lastCardSelId = null;
       // If the unit drawer was open with nothing selected, close it on mobile.
       if (this.openDrawer === 'unit') this.closeDrawer();
       return;
     }
     panel.classList.add('show');
+    // On mobile the datacard is a bottom-sheet drawer — slide it up when a NEW
+    // unit is picked so the card is actually visible (desktop shows it always).
+    if (!this.isDesktopLayout() && this.selectedId !== this.lastCardSelId && this.openDrawer !== 'unit') {
+      this.openDrawer = 'unit';
+      this.syncDrawers();
+    }
+    this.lastCardSelId = this.selectedId;
     const s = u.statline;
     const stat = (k: string, v: string | number) =>
       `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;

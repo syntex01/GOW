@@ -34,6 +34,10 @@ export function openArmyBuilder(opts: BuilderOpts): void {
 
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop show';
+  // The builder is opened FROM the menu (z-index 50), so it must sit above it —
+  // otherwise it renders hidden behind the menu and only appears once the menu
+  // is dismissed on Deploy.
+  backdrop.style.zIndex = '60';
   backdrop.innerHTML = `
     <div class="modal builder">
       <div class="ab-head">
