@@ -1,4 +1,5 @@
 import type { GameEngine } from '../engine/game';
+import type { AttackOptions } from '../engine/combat';
 import type { SceneController, PickResult } from '../render/SceneController';
 import type { UnitInstance, Phase, Vec2, Weapon, PlayerId } from '../engine/types';
 import {
@@ -1173,9 +1174,24 @@ export class GameUI {
     } else if (this.localPlayer === null && this.aiPlayer === null) {
       await this.offerHumanReaction(target.ownerId, 'shooting');
     }
+    // Weapon selection: when the shooter has more than one eligible weapon, or a
+    // plasma weapon that can dial its supercharge, let a human choose which guns
+    // fire and whether plasma runs hot. The AI just fires everything.
+    let weaponIds: string[] | undefined;
+    let optsByWeapon: Record<string, AttackOptions> | undefined;
+    const humanShooter = !(this.aiPlayer && attacker.ownerId === this.aiPlayer);
+    if (humanShooter) {
+      const plan = await this.pickShootingPlan(attacker, target);
+      if (plan === null) {
+        // Cancelled — abort the shot entirely, nothing is spent.
+        return;
+      }
+      weaponIds = plan.weaponIds;
+      optsByWeapon = plan.optsByWeapon;
+    }
     const before = aliveModels(target).reduce((a, m) => a + m.wounds, 0);
     const beforeModels = aliveModels(target).length;
-    const results = this.engine.shoot(attacker, target);
+    const results = this.engine.shoot(attacker, target, optsByWeapon, weaponIds);
     // Tracers fly while the dice tumble; impact + casualties reveal after. The
     // firing weapon's name/keywords pick the effect archetype (gauss beam,
     // plasma bolt, heavy shell, …) so each weapon reads distinctly.
@@ -1489,6 +1505,102 @@ export class GameUI {
     backdrop.onclick = (e) => {
       if (e.target === backdrop) close();
     };
+  }
+
+  /** A plasma weapon whose printed profile is the supercharge (Hazardous) one,
+   *  so the player may choose to fire it at the safer standard profile instead. */
+  private isPlasmaToggle(w: Weapon): boolean {
+    return w.name.toLowerCase().includes('plasma') && w.keywords.some((k) => k.t === 'hazardous');
+  }
+
+  private fmtWeapon(w: Weapon): string {
+    const ap = w.ap ? `-${w.ap}` : '0';
+    return `${w.range}" · A${w.attacks} · S${w.strength} · AP${ap} · D${w.damage}`;
+  }
+
+  /**
+   * Ask the human which of the shooter's eligible weapons fire, and whether any
+   * plasma weapon runs at supercharge (default) or its safer standard profile.
+   * Resolves to a firing plan, or `null` if the player cancels the shot. When
+   * there is no real choice (a single weapon, no plasma toggle) it resolves
+   * immediately with every weapon firing.
+   */
+  private pickShootingPlan(
+    attacker: UnitInstance,
+    target: UnitInstance,
+  ): Promise<{ weaponIds: string[]; optsByWeapon: Record<string, AttackOptions> } | null> {
+    const weapons = this.engine.shootableWeapons(attacker, target);
+    const hasToggle = weapons.some((w) => this.isPlasmaToggle(w));
+    if (weapons.length <= 1 && !hasToggle) {
+      return Promise.resolve({ weaponIds: weapons.map((w) => w.id), optsByWeapon: {} });
+    }
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop show';
+      const rows = weapons
+        .map((w) => {
+          const toggle = this.isPlasmaToggle(w)
+            ? `<label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);margin-top:3px;cursor:pointer;">
+                 <input type="checkbox" class="wsuper" data-wid="${w.id}" checked /> Supercharge <span style="color:#e0863f;">(Hazardous: +1 S/AP/D)</span>
+               </label>`
+            : '';
+          return `<div style="padding:7px 0;border-bottom:1px solid var(--edge);">
+              <label style="display:flex;gap:8px;align-items:center;cursor:pointer;">
+                <input type="checkbox" class="wfire" data-wid="${w.id}" checked />
+                <span><b style="color:var(--ink);">${w.name}</b><br><span style="font-size:11px;color:var(--muted);font-family:ui-monospace,monospace;">${this.fmtWeapon(w)}</span></span>
+              </label>${toggle}
+            </div>`;
+        })
+        .join('');
+      backdrop.innerHTML = `
+        <div class="modal">
+          <h3>${attacker.name} shoots ${target.name}</h3>
+          <p style="margin:0 0 4px;">Choose which weapons fire${hasToggle ? ', and whether plasma runs hot' : ''}.</p>
+          <div>${rows}</div>
+          <div class="warn" id="wswarn"></div>
+          <div class="row">
+            <button class="btn small" id="wsCancel">Cancel</button>
+            <button class="btn primary small" id="wsGo">Fire</button>
+          </div>
+        </div>`;
+      this.root.appendChild(backdrop);
+      const warn = backdrop.querySelector('#wswarn') as HTMLElement;
+      const close = (): void => backdrop.remove();
+      (backdrop.querySelector('#wsCancel') as HTMLElement).onclick = () => {
+        close();
+        resolve(null);
+      };
+      (backdrop.querySelector('#wsGo') as HTMLElement).onclick = () => {
+        const fireBoxes = Array.from(backdrop.querySelectorAll('.wfire')) as HTMLInputElement[];
+        const weaponIds = fireBoxes.filter((b) => b.checked).map((b) => b.dataset.wid!);
+        if (weaponIds.length === 0) {
+          warn.textContent = 'Select at least one weapon to fire.';
+          return;
+        }
+        const optsByWeapon: Record<string, AttackOptions> = {};
+        const superBoxes = Array.from(backdrop.querySelectorAll('.wsuper')) as HTMLInputElement[];
+        for (const b of superBoxes) {
+          // Unchecked supercharge → fire the safer standard profile: -1 S, AP and
+          // Damage, and no Hazardous self-wounds.
+          if (!b.checked) {
+            optsByWeapon[b.dataset.wid!] = {
+              strengthBonus: -1,
+              apReduction: 1,
+              damageBonus: -1,
+              suppressHazardous: true,
+            };
+          }
+        }
+        close();
+        resolve({ weaponIds, optsByWeapon });
+      };
+      backdrop.onclick = (e) => {
+        if (e.target === backdrop) {
+          close();
+          resolve(null);
+        }
+      };
+    });
   }
 
   /** Dev/demo hook: play a representative dice sequence through the real tray. */

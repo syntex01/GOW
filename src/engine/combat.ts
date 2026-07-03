@@ -50,6 +50,16 @@ export interface AttackOptions {
   apReduction?: number;
   /** Extra attacks per firing model, e.g. the Waaagh! +1 melee attack. */
   bonusAttacks?: number;
+  /**
+   * Add to the weapon's Strength for the wound roll only. Used to model a plasma
+   * weapon fired at its STANDARD profile (supercharge off = -1 S). Does not
+   * mutate the weapon.
+   */
+  strengthBonus?: number;
+  /** Add to every damage roll (floored so an unsaved wound still deals >=1). */
+  damageBonus?: number;
+  /** Ignore the weapon's Hazardous keyword for this attack (plasma at standard). */
+  suppressHazardous?: boolean;
 }
 
 /** The actual dice rolled at each step, for animated dice display. */
@@ -195,7 +205,8 @@ export function resolveWeapon(
   const hits = normalHits + lethalAutoWounds;
 
   // --- Wound step ---
-  const wt = woundThreshold(weapon.strength, target.statline.toughness);
+  const effectiveStrength = weapon.strength + (opts.strengthBonus ?? 0);
+  const wt = woundThreshold(effectiveStrength, target.statline.toughness);
   const antiApplies = anti && target.keywords.includes(anti.keyword);
   let saveableWounds = 0;
   let devWounds = 0;
@@ -245,6 +256,8 @@ export function resolveWeapon(
     // Roll damage for this unsaved/dev wound.
     let dmg = rollAttackValue(weapon.damage, rng);
     if (melta && opts.halfRange) dmg += melta.x;
+    dmg += opts.damageBonus ?? 0;
+    if (dmg < 1) dmg = 1; // an unsaved wound always deals at least 1 damage
     rolls.damage.push(dmg);
     // Feel No Pain reduces damage point-by-point.
     if (fnp !== undefined) {
@@ -275,7 +288,7 @@ export function resolveWeapon(
   // After firing/fighting, roll a D6 per firing model with a Hazardous weapon;
   // on a 1 the attacker suffers: a multi-wound model takes 3 mortal wounds,
   // otherwise a single model is destroyed. Mutates the attacker.
-  if (findKeyword(weapon, 'hazardous')) {
+  if (findKeyword(weapon, 'hazardous') && !opts.suppressHazardous) {
     for (let i = 0; i < firingModels; i++) {
       const roll = rng.die();
       if (roll !== 1) continue;

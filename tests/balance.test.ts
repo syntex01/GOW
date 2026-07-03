@@ -82,21 +82,20 @@ const N = 10000;
 const REL = 0.06;
 
 describe('balance: new weapons empirical vs analytic damage', () => {
-  it('Warscythe (Lychguard) vs T4 Sv3+ — Devastating Wounds', () => {
+  it('Warscythe (Lychguard) vs T4 Sv3+', () => {
     const w = necronLychguard.weapons.find((x) => x.id === 'warscythe')!;
-    // Sanity-check we picked the weapon we think we did.
-    expect(w.attacks).toBe(2);
+    // Sanity-check we picked the weapon we think we did (10th-ed corrected
+    // profile: A3, S8, AP-2, D2, no Devastating Wounds).
+    expect(w.attacks).toBe(3);
     expect(w.strength).toBe(8);
-    expect(w.ap).toBe(3);
+    expect(w.ap).toBe(2);
     expect(w.damage).toBe(2);
-    expect(w.keywords.some((k) => k.t === 'devastatingWounds')).toBe(true);
-    // attacks=2, Phit=(7-3)/6=4/6, S8 vs T4 -> wound 2+ (P=5/6).
-    // Per hit: P(saveable wound)=4/6 (rolls 2..5), P(dev)=1/6 (roll 6).
-    // Save: AP3 vs Sv3+ -> 6+, P(fail)=5/6. Damage=2 flat.
-    // E/hit = [ (4/6)(5/6) + 1/6 ] * 2 = (26/36)*2 = 1.4444
-    // E = attacks(2) * Phit(4/6) * 1.4444 = 1.3333 * 1.4444 = 1.9259
-    const analytic = 2 * (4 / 6) * ((4 / 6) * (5 / 6) + 1 / 6) * 2;
-    expect(analytic).toBeCloseTo(1.9259, 3);
+    expect(w.keywords.some((k) => k.t === 'devastatingWounds')).toBe(false);
+    // attacks=3, Phit=(7-3)/6=4/6, S8 vs T4 (8>=2*4) -> wound 2+ (P=5/6).
+    // Save: AP2 vs Sv3+ -> 5+, P(fail)=4/6. Damage=2 flat.
+    // E = attacks(3) * Phit(4/6) * Pwound(5/6) * Pfail(4/6) * 2 = 2.2222
+    const analytic = 3 * (4 / 6) * (5 / 6) * (4 / 6) * 2;
+    expect(analytic).toBeCloseTo(2.2222, 3);
     expectClose(meanDamage(w, 4, 3, N), analytic, REL, 'Warscythe vs T4 Sv3+');
   });
 
@@ -130,20 +129,17 @@ describe('balance: new weapons empirical vs analytic damage', () => {
     expectClose(meanDamage(w, 8, 3, N), analytic, REL, 'Power Klaw vs T8 Sv3+');
   });
 
-  it('control: Gauss Flayer (Necron Warriors) vs T4 Sv4+ — Lethal Hits, half range Rapid Fire', () => {
-    // A new-faction ranged weapon as a cross-check of the Lethal Hits + Rapid
-    // Fire paths. attacks=1 + rapidFire1 at half range = 2. Phit=(7-4)/6=3/6.
-    // Lethal Hits: a crit hit (natural 6, P=1/6 of an attack) auto-wounds
-    // (saveable). Non-crit hits (rolls 4,5; P=2/6) need a wound roll.
-    // S4 vs T4 -> wound 4+ (P=3/6).
-    // Save: AP0 vs Sv4+ -> 4+, P(fail)=3/6. Damage=1.
-    // E(saveable wounds per attack) = P(lethal) + P(normal hit)*P(wound)
-    //   = 1/6 + (2/6)*(3/6) = 1/6 + 6/36 = 6/36 + 6/36 = 12/36 = 1/3
-    // E(damage per attack) = (1/3) * P(fail save 3/6) * 1 = (1/3)*(1/2) = 1/6
+  it('control: Gauss Flayer (Necron Warriors) vs T4 Sv4+ — half range Rapid Fire', () => {
+    // A new-faction ranged weapon as a cross-check of the Rapid Fire path.
+    // 10th-ed corrected profile: A1, S4, AP-1, D1, Rapid Fire 1 (no Lethal Hits).
+    // attacks=1 + rapidFire1 at half range = 2. Phit=(7-4)/6=3/6.
+    // S4 vs T4 -> wound 4+ (P=3/6). Save: AP1 vs Sv4+ -> 5+, P(fail)=4/6. Damage=1.
+    // E(damage per attack) = Phit(3/6) * Pwound(3/6) * Pfail(4/6) * 1 = 1/6
     // attacks = 2 -> E = 2 * 1/6 = 0.3333
     const w = necronWarriors.weapons.find((x) => x.id === 'gauss_flayer')!;
-    expect(w.keywords.some((k) => k.t === 'lethalHits')).toBe(true);
-    const analytic = 2 * (1 / 6 + (2 / 6) * (3 / 6)) * (3 / 6) * 1;
+    expect(w.keywords.some((k) => k.t === 'lethalHits')).toBe(false);
+    expect(w.ap).toBe(1);
+    const analytic = 2 * (3 / 6) * (3 / 6) * (4 / 6) * 1;
     expect(analytic).toBeCloseTo(0.3333, 3);
     expectClose(meanDamage(w, 4, 4, N, { halfRange: true }), analytic, REL, 'Gauss Flayer vs T4 Sv4+ (half range)');
   });

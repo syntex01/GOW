@@ -19,9 +19,9 @@ export const orkBoyz: Datasheet = {
   statline: {
     move: 6,
     toughness: 5,
-    save: 5, // 5+
+    save: 6, // 5+
     wounds: 1,
-    leadership: 7, // 7+
+    leadership: 6, // 7+
     objectiveControl: 2,
   },
   weapons: [
@@ -45,7 +45,7 @@ export const orkBoyz: Datasheet = {
       attacks: 3,
       skill: 3, // WS 3+
       strength: 4,
-      ap: 1, // AP -1
+      ap: 0, // AP -1
       damage: 1,
       keywords: [],
     },
@@ -88,8 +88,8 @@ export const orkNobz: Datasheet = {
     toughness: 5,
     save: 4, // 4+
     wounds: 2,
-    leadership: 7, // 7+
-    objectiveControl: 1,
+    leadership: 6, // 7+
+    objectiveControl: 2,
   },
   weapons: [
     {
@@ -234,7 +234,6 @@ export const orkTrukk: Datasheet = {
     move: 12,
     toughness: 8,
     save: 4, // 4+
-    invuln: 6, // 6+ (open-topped scrap)
     wounds: 10,
     leadership: 7, // 7+
     objectiveControl: 2,
@@ -250,7 +249,7 @@ export const orkTrukk: Datasheet = {
       strength: 5,
       ap: 0,
       damage: 1,
-      keywords: [{ t: 'rapidFire', x: 2 }],
+      keywords: [],
     },
     {
       id: 'spiked_wheels',
@@ -266,11 +265,6 @@ export const orkTrukk: Datasheet = {
     },
   ],
   abilities: [
-    {
-      name: 'Invulnerable Save',
-      text: 'This model has a 6+ invulnerable save.',
-      effect: { t: 'invuln', value: 6 },
-    },
     {
       name: 'Grot Riggers',
       text: 'At the start of your Command phase this model regains 1 lost wound.',

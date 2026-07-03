@@ -224,7 +224,7 @@ export const assaultIntercessors: Datasheet = {
       name: 'Astartes Chainsword',
       kind: 'melee',
       range: 0,
-      attacks: 4,
+      attacks: 5,
       skill: 3, // WS 3+
       strength: 4,
       ap: 1, // AP -1
@@ -361,7 +361,7 @@ export const hellblasterSquad: Datasheet = {
     move: 6,
     toughness: 4,
     save: 3, // 3+
-    wounds: 2,
+    wounds: 3,
     leadership: 6, // 6+
     objectiveControl: 1,
   },
@@ -370,7 +370,7 @@ export const hellblasterSquad: Datasheet = {
       id: 'plasma_incinerator_super',
       name: 'Plasma Incinerator (Supercharge)',
       kind: 'ranged',
-      range: 24,
+      range: 30,
       attacks: 2,
       skill: 3, // BS 3+
       strength: 8,
@@ -474,7 +474,7 @@ export const redemptorDreadnought: Datasheet = {
       attacks: 12,
       skill: 3, // BS 3+
       strength: 6,
-      ap: 0,
+      ap: 1, // AP -1
       damage: 1,
       keywords: [{ t: 'devastatingWounds' }],
     },
@@ -579,7 +579,7 @@ export const bladeguardVeterans: Datasheet = {
       name: 'Master-crafted Power Weapon',
       kind: 'melee',
       range: 0,
-      attacks: 4,
+      attacks: 5,
       skill: 3, // WS 3+
       strength: 5,
       ap: 2, // AP -2
@@ -636,7 +636,6 @@ export const ultramarinesLieutenant: Datasheet = {
     move: 6,
     toughness: 4,
     save: 3, // 3+
-    invuln: 4, // 4+
     wounds: 4,
     leadership: 6, // 6+
     objectiveControl: 1,
@@ -684,11 +683,6 @@ export const ultramarinesLieutenant: Datasheet = {
           'ultramarines_bladeguard',
         ],
       },
-    },
-    {
-      name: 'Invulnerable Save',
-      text: 'This model has a 4+ invulnerable save.',
-      effect: { t: 'invuln', value: 4 },
     },
     {
       name: 'Tactical Precision',

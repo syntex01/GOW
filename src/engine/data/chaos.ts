@@ -117,7 +117,7 @@ export const chaosChosen: Datasheet = {
     move: 6,
     toughness: 4,
     save: 3, // 3+
-    wounds: 3,
+    wounds: 2,
     leadership: 6, // 6+
     objectiveControl: 1,
   },
@@ -144,7 +144,7 @@ export const chaosChosen: Datasheet = {
       strength: 5,
       ap: 2, // AP -2
       damage: 1,
-      keywords: [{ t: 'twinLinked' }],
+      keywords: [],
     },
   ],
   abilities: [
@@ -280,12 +280,12 @@ export const chaosCultists: Datasheet = {
   keywords: ['INFANTRY', 'CHAOS', 'DAMNED', 'ACCURSED CULTISTS', 'HERETIC ASTARTES'],
   statline: {
     move: 6,
-    toughness: 4,
+    toughness: 3,
     save: 6, // 6+
     feelNoPain: 6, // 6+++
     wounds: 1,
     leadership: 7, // 7+
-    objectiveControl: 1,
+    objectiveControl: 2,
   },
   weapons: [
     {
@@ -293,10 +293,10 @@ export const chaosCultists: Datasheet = {
       name: 'Blasphemous Appendages',
       kind: 'melee',
       range: 0,
-      attacks: 2,
+      attacks: 4,
       skill: 4, // WS 4+
       strength: 4,
-      ap: 0,
+      ap: 1,
       damage: 1,
       keywords: [],
     },
@@ -429,7 +429,7 @@ export const chaosHelbrute: Datasheet = {
   faction: 'chaos',
   keywords: ['VEHICLE', 'WALKER', 'CHAOS', 'HELBRUTE', 'HERETIC ASTARTES'],
   statline: {
-    move: 6,
+    move: 8,
     toughness: 9,
     save: 2, // 2+
     wounds: 8,
@@ -502,10 +502,10 @@ export const chaosMasterOfPossession: Datasheet = {
   faction: 'chaos',
   keywords: ['INFANTRY', 'CHARACTER', 'PSYKER', 'CHAOS', 'MASTER OF POSSESSION', 'HERETIC ASTARTES'],
   statline: {
-    move: 8,
+    move: 6,
     toughness: 4,
     save: 3, // 3+
-    invuln: 5, // 5+
+    invuln: 4, // 5+
     wounds: 4,
     leadership: 6, // 6+
     objectiveControl: 1,
@@ -519,7 +519,7 @@ export const chaosMasterOfPossession: Datasheet = {
       attacks: 2,
       skill: 3, // BS 3+
       strength: 4,
-      ap: 3, // AP -3
+      ap: 1, // AP -3
       damage: 2,
       keywords: [{ t: 'anti', keyword: 'PSYKER', x: 2 }, { t: 'pistol' }, { t: 'precision' }],
     },

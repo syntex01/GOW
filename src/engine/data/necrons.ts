@@ -31,9 +31,9 @@ export const necronWarriors: Datasheet = {
       attacks: 1,
       skill: 4, // BS 4+
       strength: 4,
-      ap: 0,
+      ap: 1,
       damage: 1,
-      keywords: [{ t: 'rapidFire', x: 1 }, { t: 'lethalHits' }],
+      keywords: [{ t: 'rapidFire', x: 1 }],
     },
     {
       id: 'gauss_reaper',
@@ -43,9 +43,9 @@ export const necronWarriors: Datasheet = {
       attacks: 2,
       skill: 4, // BS 4+
       strength: 4,
-      ap: 1, // AP -1
+      ap: 2, // AP -2
       damage: 1,
-      keywords: [{ t: 'lethalHits' }],
+      keywords: [],
     },
     {
       id: 'necron_ccw',
@@ -103,9 +103,9 @@ export const necronOverlord: Datasheet = {
   statline: {
     move: 5,
     toughness: 5,
-    save: 2, // 2+
+    save: 3, // 3+
     invuln: 4, // 4+
-    wounds: 6,
+    wounds: 5,
     leadership: 6, // 6+
     objectiveControl: 1,
   },
@@ -219,7 +219,7 @@ export const necronImmortals: Datasheet = {
       attacks: 2,
       skill: 3, // BS 3+
       strength: 5,
-      ap: 1, // AP -1
+      ap: 2, // AP -2
       damage: 1,
       keywords: [{ t: 'lethalHits' }],
     },
@@ -290,12 +290,12 @@ export const necronLychguard: Datasheet = {
       name: 'Warscythe',
       kind: 'melee',
       range: 0,
-      attacks: 2,
+      attacks: 3,
       skill: 3, // WS 3+
       strength: 8,
-      ap: 3, // AP -3
+      ap: 2, // AP -2
       damage: 2,
-      keywords: [{ t: 'devastatingWounds' }],
+      keywords: [],
     },
   ],
   abilities: [
@@ -339,9 +339,9 @@ export const necronScarabs: Datasheet = {
   keywords: ['SWARM', 'FLY', 'CANOPTEK', 'SCARAB SWARMS', 'NECRONS'],
   statline: {
     move: 10,
-    toughness: 2,
+    toughness: 3,
     save: 6, // 6+
-    wounds: 4,
+    wounds: 3,
     leadership: 8, // 8+
     objectiveControl: 0,
   },
@@ -352,7 +352,7 @@ export const necronScarabs: Datasheet = {
       kind: 'melee',
       range: 0,
       attacks: 6,
-      skill: 5, // WS 5+
+      skill: 4, // WS 4+
       strength: 2,
       ap: 0,
       damage: 1,
@@ -457,7 +457,7 @@ export const necronWraiths: Datasheet = {
   statline: {
     move: 10,
     toughness: 6,
-    save: 3, // 3+
+    save: 4, // 4+
     invuln: 4, // 4+
     wounds: 4,
     leadership: 8, // 8+
@@ -469,12 +469,12 @@ export const necronWraiths: Datasheet = {
       name: 'Particle Caster',
       kind: 'ranged',
       range: 12,
-      attacks: 3,
+      attacks: 1,
       skill: 4, // BS 4+
-      strength: 5,
+      strength: 6,
       ap: 0,
       damage: 1,
-      keywords: [{ t: 'pistol' }, { t: 'devastatingWounds' }],
+      keywords: [{ t: 'pistol' }],
     },
     {
       id: 'vicious_claws',
@@ -482,9 +482,9 @@ export const necronWraiths: Datasheet = {
       kind: 'melee',
       range: 0,
       attacks: 4,
-      skill: 4, // WS 4+
+      skill: 3, // WS 3+
       strength: 6,
-      ap: 1, // AP -1
+      ap: 2, // AP -2
       damage: 2,
       keywords: [],
     },
@@ -532,7 +532,6 @@ export const necronDoomsdayArk: Datasheet = {
     move: 10,
     toughness: 9,
     save: 3, // 3+
-    invuln: 4, // 4+
     wounds: 14,
     leadership: 7, // 7+
     objectiveControl: 5,
@@ -545,9 +544,9 @@ export const necronDoomsdayArk: Datasheet = {
       range: 72,
       attacks: 'D6+1',
       skill: 3, // BS 3+
-      strength: 18,
+      strength: 16,
       ap: 4, // AP -4
-      damage: 4,
+      damage: 'D6+1',
       keywords: [{ t: 'heavy' }, { t: 'blast' }],
     },
     {
@@ -560,7 +559,7 @@ export const necronDoomsdayArk: Datasheet = {
       strength: 4,
       ap: 0,
       damage: 1,
-      keywords: [{ t: 'lethalHits' }, { t: 'rapidFire', x: 5 }],
+      keywords: [{ t: 'rapidFire', x: 5 }],
     },
     {
       id: 'doomsday_armoured_bulk',
@@ -580,11 +579,6 @@ export const necronDoomsdayArk: Datasheet = {
       name: 'Reanimation Protocols',
       text: 'At the end of your Command phase this model reanimates D3 lost wounds.',
       effect: { t: 'reanimation', wounds: 3 },
-    },
-    {
-      name: 'Invulnerable Save',
-      text: 'This model has a 4+ invulnerable save.',
-      effect: { t: 'invuln', value: 4 },
     },
     {
       name: 'Deadly Demise D3',
@@ -621,7 +615,7 @@ export const necronRoyalWarden: Datasheet = {
   keywords: ['INFANTRY', 'CHARACTER', 'NOBLE', 'ROYAL WARDEN', 'NECRONS'],
   statline: {
     move: 5,
-    toughness: 5,
+    toughness: 4,
     save: 3, // 3+
     wounds: 4,
     leadership: 6, // 6+
@@ -637,15 +631,15 @@ export const necronRoyalWarden: Datasheet = {
       skill: 3, // BS 3+
       strength: 5,
       ap: 1, // AP -1
-      damage: 2,
-      keywords: [{ t: 'lethalHits' }, { t: 'rapidFire', x: 2 }],
+      damage: 1,
+      keywords: [{ t: 'lethalHits' }],
     },
     {
       id: 'warden_ccw',
       name: 'Close Combat Weapon',
       kind: 'melee',
       range: 0,
-      attacks: 4,
+      attacks: 3,
       skill: 3, // WS 3+
       strength: 5,
       ap: 0,

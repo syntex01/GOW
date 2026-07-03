@@ -599,14 +599,28 @@ export class GameEngine {
     return null;
   }
 
-  /** Resolve all shooting from an attacker into a target. */
-  shoot(attacker: UnitInstance, target: UnitInstance, optsByWeapon?: Record<string, AttackOptions>): AttackResult[] {
+  /**
+   * Resolve shooting from an attacker into a target.
+   * `optsByWeapon` supplies per-weapon attack options (e.g. plasma standard
+   * profile). `weaponIds`, when given, restricts fire to that subset of the
+   * unit's weapons (split-fire / holding weapons back); omitted = fire all.
+   */
+  shoot(
+    attacker: UnitInstance,
+    target: UnitInstance,
+    optsByWeapon?: Record<string, AttackOptions>,
+    weaponIds?: string[],
+  ): AttackResult[] {
     // A target shielded as an attached leader (living bodyguard) cannot be shot.
     if (this.isProtectedLeader(target)) {
       this.log(`${attacker.name} cannot target ${target.name}: it is an attached leader (protected).`);
       return [];
     }
-    const weapons = this.shootableWeapons(attacker, target);
+    let weapons = this.shootableWeapons(attacker, target);
+    if (weaponIds) {
+      const pick = new Set(weaponIds);
+      weapons = weapons.filter((w) => pick.has(w.id));
+    }
     // Command Re-roll: consume a one-shot single-die hit re-roll for this attack.
     const rerollFlag = attacker.pendingRerollHits;
     const results: AttackResult[] = [];

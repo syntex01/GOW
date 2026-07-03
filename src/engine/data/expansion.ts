@@ -15,7 +15,7 @@ export const orkGretchin: Datasheet = {
   name: 'Gretchin',
   faction: 'orks',
   keywords: ['INFANTRY', 'BATTLELINE', 'GRETCHIN', 'ORKS'],
-  statline: { move: 6, toughness: 2, save: 7, wounds: 1, leadership: 8, objectiveControl: 2 },
+  statline: { move: 5, toughness: 2, save: 7, wounds: 1, leadership: 7, objectiveControl: 1 },
   weapons: [
     { id: 'grot_blasta', name: 'Grot Blasta', kind: 'ranged', range: 12, attacks: 1, skill: 5, strength: 3, ap: 0, damage: 1, keywords: [] },
     { id: 'grot_ccw', name: 'Close Combat Weapon', kind: 'melee', range: 0, attacks: 1, skill: 5, strength: 2, ap: 0, damage: 1, keywords: [] },
@@ -33,9 +33,9 @@ export const orkMeganobz: Datasheet = {
   name: 'Meganobz',
   faction: 'orks',
   keywords: ['INFANTRY', 'MEGANOBZ', 'ORKS'],
-  statline: { move: 5, toughness: 5, save: 2, wounds: 3, leadership: 7, objectiveControl: 1 },
+  statline: { move: 5, toughness: 5, save: 2, wounds: 3, leadership: 6, objectiveControl: 1 },
   weapons: [
-    { id: 'kombi_weapon', name: 'Kombi-weapon', kind: 'ranged', range: 24, attacks: 1, skill: 5, strength: 5, ap: 1, damage: 1, keywords: [{ t: 'rapidFire', x: 1 }] },
+    { id: 'kombi_weapon', name: 'Kombi-weapon', kind: 'ranged', range: 24, attacks: 1, skill: 5, strength: 5, ap: 1, damage: 1, keywords: [{ t: 'rapidFire', x: 1 }, { t: 'anti', keyword: 'INFANTRY', x: 4 }, { t: 'devastatingWounds' }] },
     { id: 'mega_klaw', name: 'Power Klaw', kind: 'melee', range: 0, attacks: 3, skill: 3, strength: 9, ap: 2, damage: 2, keywords: [] },
   ],
   abilities: [{ name: "'Ard as Nails", text: 'Walking tanks in mega-armour that hit like a Dreadnought.' }],
@@ -51,9 +51,9 @@ export const orkKillaKans: Datasheet = {
   name: 'Killa Kans',
   faction: 'orks',
   keywords: ['VEHICLE', 'WALKER', 'KILLA KANS', 'ORKS'],
-  statline: { move: 6, toughness: 7, save: 4, wounds: 8, leadership: 7, objectiveControl: 2 },
+  statline: { move: 6, toughness: 8, save: 4, wounds: 8, leadership: 7, objectiveControl: 2 },
   weapons: [
-    { id: 'kk_big_shoota', name: 'Big Shoota', kind: 'ranged', range: 36, attacks: 3, skill: 5, strength: 5, ap: 0, damage: 1, keywords: [{ t: 'rapidFire', x: 2 }] },
+    { id: 'kk_big_shoota', name: 'Big Shoota', kind: 'ranged', range: 36, attacks: 3, skill: 5, strength: 5, ap: 0, damage: 1, keywords: [] },
     { id: 'kan_klaw', name: 'Kan Klaw', kind: 'melee', range: 0, attacks: 3, skill: 4, strength: 8, ap: 2, damage: 2, keywords: [] },
   ],
   abilities: [{ name: 'Deadly Demise 1', text: 'When destroyed, on a 6 it explodes for 1 mortal wound nearby.' }],
@@ -69,7 +69,7 @@ export const orkDeffkoptas: Datasheet = {
   name: 'Deffkoptas',
   faction: 'orks',
   keywords: ['VEHICLE', 'FLY', 'DEFFKOPTAS', 'ORKS'],
-  statline: { move: 14, toughness: 5, save: 5, wounds: 3, leadership: 7, objectiveControl: 1 },
+  statline: { move: 12, toughness: 5, save: 4, wounds: 4, leadership: 7, objectiveControl: 1 },
   weapons: [
     { id: 'twin_big_shoota', name: 'Twin Big Shoota', kind: 'ranged', range: 36, attacks: 6, skill: 5, strength: 5, ap: 0, damage: 1, keywords: [{ t: 'twinLinked' }] },
     { id: 'spinnin_blades', name: "Spinnin' Blades", kind: 'melee', range: 0, attacks: 3, skill: 4, strength: 5, ap: 0, damage: 1, keywords: [] },
@@ -91,7 +91,7 @@ export const necronDeathmarks: Datasheet = {
   keywords: ['INFANTRY', 'DEEP STRIKE', 'DEATHMARKS', 'NECRONS'],
   statline: { move: 6, toughness: 4, save: 4, wounds: 1, leadership: 8, objectiveControl: 1 },
   weapons: [
-    { id: 'synaptic_disintegrator', name: 'Synaptic Disintegrator', kind: 'ranged', range: 36, attacks: 1, skill: 3, strength: 5, ap: 2, damage: 2, keywords: [{ t: 'precision' }, { t: 'heavy' }] },
+    { id: 'synaptic_disintegrator', name: 'Synaptic Disintegrator', kind: 'ranged', range: 36, attacks: 1, skill: 3, strength: 5, ap: 1, damage: 2, keywords: [{ t: 'precision' }, { t: 'heavy' }] },
     { id: 'deathmark_ccw', name: 'Close Combat Weapon', kind: 'melee', range: 0, attacks: 1, skill: 4, strength: 4, ap: 0, damage: 1, keywords: [] },
   ],
   abilities: [
@@ -135,7 +135,7 @@ export const ultramarinesAggressors: Datasheet = {
   statline: { move: 5, toughness: 6, save: 3, wounds: 3, leadership: 6, objectiveControl: 1 },
   weapons: [
     { id: 'boltstorm_gauntlets', name: 'Boltstorm Gauntlets', kind: 'ranged', range: 18, attacks: 6, skill: 3, strength: 4, ap: 0, damage: 1, keywords: [{ t: 'rapidFire', x: 3 }] },
-    { id: 'power_fists_agg', name: 'Power Fists', kind: 'melee', range: 0, attacks: 3, skill: 3, strength: 8, ap: 1, damage: 2, keywords: [] },
+    { id: 'power_fists_agg', name: 'Power Fists', kind: 'melee', range: 0, attacks: 3, skill: 3, strength: 8, ap: 2, damage: 2, keywords: [] },
   ],
   abilities: [{ name: 'Fire Storm', text: 'Bulky Gravis brutes that lay down a withering hail of bolts.' }],
   composition: [{ modelName: 'Aggressor', min: 3, max: 6, defaultWeaponIds: ['boltstorm_gauntlets', 'power_fists_agg'] }],
@@ -152,7 +152,7 @@ export const ultramarinesInceptors: Datasheet = {
   keywords: ['INFANTRY', 'FLY', 'DEEP STRIKE', 'INCEPTOR SQUAD', 'ADEPTUS ASTARTES', 'IMPERIUM', 'ULTRAMARINES'],
   statline: { move: 10, toughness: 6, save: 3, wounds: 3, leadership: 6, objectiveControl: 1 },
   weapons: [
-    { id: 'assault_bolters', name: 'Assault Bolters', kind: 'ranged', range: 18, attacks: 3, skill: 3, strength: 5, ap: 1, damage: 1, keywords: [{ t: 'assault' }] },
+    { id: 'assault_bolters', name: 'Assault Bolters', kind: 'ranged', range: 18, attacks: 3, skill: 3, strength: 5, ap: 1, damage: 1, keywords: [] },
     { id: 'inceptor_ccw', name: 'Close Combat Weapon', kind: 'melee', range: 0, attacks: 3, skill: 3, strength: 4, ap: 0, damage: 1, keywords: [] },
   ],
   abilities: [{ name: 'Meteoric Descent', text: 'Deep-strikes from the sky, guns blazing.', effect: { t: 'deepStrike' } }],
@@ -172,7 +172,7 @@ export const chaosPossessed: Datasheet = {
   keywords: ['INFANTRY', 'DAEMON', 'POSSESSED', 'CHAOS', 'HERETIC ASTARTES'],
   statline: { move: 6, toughness: 5, save: 3, wounds: 2, leadership: 6, objectiveControl: 1 },
   weapons: [
-    { id: 'hideous_mutations', name: 'Hideous Mutations', kind: 'melee', range: 0, attacks: 4, skill: 3, strength: 6, ap: 1, damage: 2, keywords: [] },
+    { id: 'hideous_mutations', name: 'Hideous Mutations', kind: 'melee', range: 0, attacks: 4, skill: 3, strength: 6, ap: 2, damage: 2, keywords: [] },
   ],
   abilities: [
     { name: 'Writhing Horrors', text: 'Warp-swollen killers that tear through armour in melee.' },
@@ -190,7 +190,7 @@ export const chaosSpawn: Datasheet = {
   name: 'Chaos Spawn',
   faction: 'chaos',
   keywords: ['BEASTS', 'DAEMON', 'CHAOS SPAWN', 'CHAOS', 'HERETIC ASTARTES'],
-  statline: { move: 8, toughness: 5, save: 5, wounds: 4, leadership: 8, objectiveControl: 1 },
+  statline: { move: 8, toughness: 5, save: 4, wounds: 4, leadership: 8, objectiveControl: 1 },
   weapons: [
     { id: 'mutated_appendages', name: 'Mutated Appendages', kind: 'melee', range: 0, attacks: 4, skill: 4, strength: 5, ap: 1, damage: 1, keywords: [] },
   ],
