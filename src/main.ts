@@ -6,6 +6,7 @@ import { Menu, showLoading, hideLoading, type StartConfig } from './ui/Menu';
 import { createGame, type ArmyList, type GameConfig } from './engine/factory';
 import { DATASHEETS, FACTIONS, SAMPLE_ARMIES } from './engine/data/index';
 import { importRosterText } from './import/rosterImport';
+import { validateArmy, POINTS_LIMITS } from './engine/armyValidation';
 import { SAMPLE_ROSTERS } from './import/sampleRosters';
 import { CORE_STRATAGEMS } from './engine/stratagems';
 import { NetController } from './net/NetController';
@@ -253,6 +254,13 @@ class App {
         <h3>Import army for Player ${player}</h3>
         <p>Paste an army-list text export (Warhammer app, New Recruit, or BattleScribe). Unmatched units are skipped.</p>
         <textarea id="rosterText" placeholder="+++ My Army (1000 Points) +++&#10;Faction: Necrons&#10;...">${sample}</textarea>
+        <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin:6px 0;">
+          Points limit
+          <select id="ptsLimit" style="background:#0c1016;color:var(--ink);border:1px solid var(--edge);border-radius:6px;padding:4px 6px;font-size:12px;">
+            ${POINTS_LIMITS.map((p) => `<option value="${p}"${p === 1000 ? ' selected' : ''}>${p}</option>`).join('')}
+          </select>
+        </label>
+        <div class="legality" id="legality" style="font-size:12px;margin:4px 0;"></div>
         <div class="warn" id="importWarn"></div>
         <div class="row">
           <button class="btn small" id="impCancel">Cancel</button>
@@ -264,9 +272,37 @@ class App {
 
     const ta = backdrop.querySelector('#rosterText') as HTMLTextAreaElement;
     const warn = backdrop.querySelector('#importWarn') as HTMLElement;
+    const legality = backdrop.querySelector('#legality') as HTMLElement;
+    const limitSel = backdrop.querySelector('#ptsLimit') as HTMLSelectElement;
     const close = () => backdrop.remove();
+
+    // Live legality check: parse the pasted list and validate points + structure.
+    const recheck = (): void => {
+      const parsed = importRosterText(ta.value, { nameToId: undefined });
+      if (parsed.army.entries.length === 0) {
+        legality.innerHTML = '';
+        return;
+      }
+      const v = validateArmy(parsed.army, DATASHEETS, { pointsLimit: Number(limitSel.value) });
+      const badge = v.legal
+        ? `<b style="color:#5fd38a">✓ Legal</b>`
+        : `<b style="color:#ff7a7a">✗ Illegal</b>`;
+      const lines = [
+        `${badge} — <b>${v.points}</b> / ${v.limit} pts`,
+        ...v.issues.map((i) => `<span style="color:#ff9a9a">• ${i}</span>`),
+        ...v.warnings.map((w) => `<span style="color:#e8c05a">• ${w}</span>`),
+      ];
+      legality.innerHTML = lines.join('<br>');
+    };
+    ta.oninput = recheck;
+    limitSel.onchange = recheck;
+    recheck();
+
     (backdrop.querySelector('#impCancel') as HTMLElement).onclick = close;
-    (backdrop.querySelector('#impFill') as HTMLElement).onclick = () => (ta.value = sample);
+    (backdrop.querySelector('#impFill') as HTMLElement).onclick = () => {
+      ta.value = sample;
+      recheck();
+    };
     (backdrop.querySelector('#impGo') as HTMLElement).onclick = () => {
       const res = importRosterText(ta.value, { nameToId: undefined });
       if (res.army.entries.length === 0) {
