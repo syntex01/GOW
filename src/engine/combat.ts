@@ -24,6 +24,12 @@ export interface AttackOptions {
   woundModifier?: number;
   /** Re-roll hits: 'ones' or 'all' failed. */
   rerollHits?: 'ones' | 'all';
+  /**
+   * Command Re-roll: re-roll a SINGLE failed hit die once (the tabletop
+   * stratagem re-rolls one dice, not the whole volley). Applied to the first
+   * failed hit roll of this attack, after any weapon-level `rerollHits`.
+   */
+  rerollOneHit?: boolean;
   /** Re-roll wounds: 'ones' or 'all' failed. */
   rerollWounds?: 'ones' | 'all';
   /** Number of models firing this weapon profile. */
@@ -163,8 +169,17 @@ export function resolveWeapon(
   if (torrent) {
     normalHits = attacks;
   } else {
+    let singleRerollLeft = opts.rerollOneHit ? 1 : 0;
     for (let i = 0; i < attacks; i++) {
-      const roll = rollWithReroll(rng, weapon.skill, opts.rerollHits);
+      let roll = rollWithReroll(rng, weapon.skill, opts.rerollHits);
+      // Command Re-roll: one failed hit die may be re-rolled once.
+      if (singleRerollLeft > 0) {
+        const failed = roll === 1 || (roll !== 6 && roll + hitMod < weapon.skill);
+        if (failed) {
+          roll = rng.die();
+          singleRerollLeft -= 1;
+        }
+      }
       rolls.hit.push(roll);
       const isCrit = roll === 6;
       const success = roll !== 1 && (roll === 6 || roll + hitMod >= weapon.skill);

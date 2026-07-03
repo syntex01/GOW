@@ -194,7 +194,7 @@ describe('Go to Ground', () => {
 });
 
 describe('Command Re-roll', () => {
-  it('grants a one-shot re-roll all hits consumed by the next attack', () => {
+  it('grants a one-shot single-die hit re-roll consumed by the next attack', () => {
     const g = newGame();
     g.state.players.A.commandPoints = 3;
     const a = g.unitsOf('A')[0];

@@ -208,8 +208,9 @@ export interface UnitInstance {
   fightsNext?: boolean;
   /** Fire Overwatch already used by this unit this battle round (1/round). */
   overwatchUsedRound?: number;
-  /** Command Re-roll: a one-shot "re-roll all hits" granted to this unit's
-   *  next shooting/fight attack. Consumed by the next resolveWeapon. */
+  /** Command Re-roll: a one-shot single-die hit re-roll granted to this unit's
+   *  next shooting/fight attack (one failed hit die is re-rolled, matching the
+   *  tabletop stratagem). Consumed by the next resolveWeapon. */
   pendingRerollHits?: boolean;
   /** Armour of Contempt: incoming attacks suffer -1 AP against this unit until
    *  its controller's next turn. Honoured by shoot()/fight() via AttackOptions. */

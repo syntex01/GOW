@@ -607,7 +607,7 @@ export class GameEngine {
       return [];
     }
     const weapons = this.shootableWeapons(attacker, target);
-    // Command Re-roll: consume a one-shot "re-roll all hits" for this attack.
+    // Command Re-roll: consume a one-shot single-die hit re-roll for this attack.
     const rerollFlag = attacker.pendingRerollHits;
     const results: AttackResult[] = [];
     for (const w of weapons) {
@@ -646,7 +646,7 @@ export class GameEngine {
         ...(bonusInvuln !== undefined ? { bonusInvuln } : {}),
         ...(tgt.armourOfContempt ? { apReduction: 1 } : {}),
         ...this.attackerAbilityMods(attacker, 'shooting', tgt),
-        ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
+        ...(rerollFlag ? { rerollOneHit: true } : {}),
         ...(optsByWeapon?.[w.id] ?? {}),
       };
       const res = resolveWeapon(w, attacker, tgt, this.rng, opts);
@@ -773,7 +773,7 @@ export class GameEngine {
         ...(defInvuln !== undefined ? { bonusInvuln: defInvuln } : {}),
         ...(tgt.armourOfContempt ? { apReduction: 1 } : {}),
         ...this.attackerAbilityMods(attacker, 'fight', tgt),
-        ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
+        ...(rerollFlag ? { rerollOneHit: true } : {}),
       };
       const res = resolveWeapon(w, attacker, tgt, this.rng, opts);
       results.push(res);
@@ -955,7 +955,7 @@ export class GameEngine {
         if (!unit) return { ok: false, message: 'Command Re-roll needs a unit (ctx.unitId).' };
         spend();
         unit.pendingRerollHits = true;
-        return { ok: true, message: `${unit.name} will re-roll all hits on its next attack.` };
+        return { ok: true, message: `${unit.name} will re-roll one failed hit on its next attack.` };
       }
       case 'insane_bravery': {
         if (!unit) return { ok: false, message: 'Insane Bravery needs a unit (ctx.unitId).' };
