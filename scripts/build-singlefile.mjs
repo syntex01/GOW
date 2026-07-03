@@ -16,20 +16,24 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const DIST = 'dist';
-const MODELS_DIR = 'public/models/factions';
+// Every runtime model directory to inline, keyed by the URL prefix the app
+// fetches. Both the generic faction figures AND the per-unit datasheet models.
+const MODELS_DIRS = ['models/factions', 'models/units'];
 
 const htmlPath = join(DIST, 'index.html');
 let html = readFileSync(htmlPath, 'utf8');
 
-// Collect every faction GLB and base64-encode it, keyed by the runtime path the
-// app fetches (e.g. "models/factions/necron.glb").
+// Collect every GLB and base64-encode it, keyed by the runtime path the app
+// fetches (e.g. "models/factions/necron.glb", "models/units/trukk.glb").
 const map = {};
 let total = 0;
-for (const f of readdirSync(MODELS_DIR)) {
-  if (!f.endsWith('.glb')) continue;
-  const bytes = readFileSync(join(MODELS_DIR, f));
-  total += bytes.length;
-  map[`models/factions/${f}`] = bytes.toString('base64');
+for (const dir of MODELS_DIRS) {
+  for (const f of readdirSync(join('public', dir))) {
+    if (!f.endsWith('.glb')) continue;
+    const bytes = readFileSync(join('public', dir, f));
+    total += bytes.length;
+    map[`${dir}/${f}`] = bytes.toString('base64');
+  }
 }
 
 // A self-installing fetch shim: when the app (GLTFLoader) fetches one of these

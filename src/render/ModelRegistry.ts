@@ -30,6 +30,13 @@ import type { ProxyDescriptor, UnitInstance } from '../engine/types';
 export interface ModelRegistryEntry {
   /** Any of these keywords on the unit selects this model. */
   keywords: string[];
+  /**
+   * Exact datasheet name (lower-cased) this entry is bespoke for. When set, the
+   * entry is matched by `unit.name` FIRST — one dedicated model per unit type —
+   * before any silhouette/keyword fallback. Leave undefined for the generic
+   * faction/silhouette fallbacks below.
+   */
+  datasheet?: string;
   /** Runtime URL (vite serves /public at the site root; base is './'). */
   url: string;
   /**
@@ -154,17 +161,91 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
 ];
 
 /**
+ * Per-datasheet models — ONE dedicated CC0 (public-domain, poly.pizza) model
+ * for every unit type in the four shipped rosters, matched by exact datasheet
+ * name. This is the "one unit type, one model" table: it takes priority over the
+ * generic faction/silhouette fallbacks so, e.g., a Redemptor Dreadnought reads
+ * as a hulking walker and a Doomsday Ark as a floating tank instead of the
+ * shared generic hull.
+ *
+ * `heightScale` stays 1 — the per-unit relative size already lives in each
+ * datasheet's `proxy.heightInches`, which drives the absolute normalised height.
+ * `fitToBase` is false for vehicles/monsters (they legitimately overhang their
+ * footprint) and true (default) for infantry/characters so figures never clip
+ * their neighbours. `yaw` corrects each GLB's authored forward to engine +Z.
+ *
+ * Three units intentionally share a model (no distinct CC0 sculpt was needed —
+ * they are the same silhouette in-universe): Legionaries and Chosen reuse the
+ * power-armour marine, and the Chaos Lord reuses the Master of Possession.
+ */
+export const UNIT_MODELS: ModelRegistryEntry[] = [
+  // ---- Necrons ----
+  { keywords: [], datasheet: 'necron warriors', url: 'models/units/necron-warriors.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'necron overlord', url: 'models/units/necron-overlord.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'immortals', url: 'models/units/immortals.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'lychguard', url: 'models/units/lychguard.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'royal warden', url: 'models/units/royal-warden.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'canoptek scarab swarms', url: 'models/units/canoptek-scarab-swarms.glb', heightScale: 1, yaw: 0, fitToBase: false },
+  { keywords: [], datasheet: 'canoptek wraiths', url: 'models/units/canoptek-wraiths.glb', heightScale: 1, yaw: 0, fitToBase: false },
+  // GLB authored side-on (head toward +X); rotate so its head leads toward +Z.
+  { keywords: [], datasheet: 'skorpekh destroyers', url: 'models/units/skorpekh-destroyers.glb', heightScale: 1, yaw: -Math.PI / 2, fitToBase: false },
+  { keywords: [], datasheet: 'doomsday ark', url: 'models/units/doomsday-ark.glb', heightScale: 1, yaw: 0, fitToBase: false },
+
+  // ---- Ultramarines / Adeptus Astartes ----
+  { keywords: [], datasheet: 'intercessor squad', url: 'models/units/intercessor-squad.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'assault intercessor squad', url: 'models/units/assault-intercessor-squad.glb', heightScale: 1, yaw: 0 },
+  // Lone rifle GLB with the muzzle toward -X; rotate so the barrel leads to +Z.
+  { keywords: [], datasheet: 'hellblaster squad', url: 'models/units/hellblaster-squad.glb', heightScale: 1, yaw: Math.PI / 2 },
+  { keywords: [], datasheet: 'eradicator squad', url: 'models/units/eradicator-squad.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'bladeguard veteran squad', url: 'models/units/bladeguard-veteran-squad.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'terminator squad', url: 'models/units/terminator-squad.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'captain', url: 'models/units/captain.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'lieutenant', url: 'models/units/lieutenant.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'redemptor dreadnought', url: 'models/units/redemptor-dreadnought.glb', heightScale: 1, yaw: 0, fitToBase: false },
+
+  // ---- Orks ----
+  { keywords: [], datasheet: 'boyz', url: 'models/units/boyz.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'nobz', url: 'models/units/nobz.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'warboss', url: 'models/units/warboss.glb', heightScale: 1, yaw: 0 },
+  // Truck GLB authored side-on (cab/front toward +X); rotate the nose to +Z.
+  { keywords: [], datasheet: 'trukk', url: 'models/units/trukk.glb', heightScale: 1, yaw: -Math.PI / 2, fitToBase: false },
+
+  // ---- Chaos / Heretic Astartes ----
+  { keywords: [], datasheet: 'legionaries', url: 'models/units/intercessor-squad.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'chosen', url: 'models/units/intercessor-squad.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'chaos lord', url: 'models/units/master-of-possession.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'master of possession', url: 'models/units/master-of-possession.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'accursed cultists', url: 'models/units/accursed-cultists.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'raptors', url: 'models/units/raptors.glb', heightScale: 1, yaw: 0 },
+  { keywords: [], datasheet: 'helbrute', url: 'models/units/helbrute.glb', heightScale: 1, yaw: 0, fitToBase: false },
+];
+
+/** Fast exact-name lookup into UNIT_MODELS (built once). */
+const UNIT_MODEL_BY_NAME: Map<string, ModelRegistryEntry> = new Map(
+  UNIT_MODELS.map((e) => [e.datasheet!, e]),
+);
+
+/**
  * Resolve the registry entry for a unit, or null to use the procedural proxy.
- * Matching is CASE-INSENSITIVE (datasheet keywords are uppercase, e.g.
- * 'NECRONS'). Vehicles and monsters keep the procedural body — a human-scale
- * figure model would misrepresent a tank/walker; those get bespoke models later.
+ *
+ * Priority:
+ *  1. A bespoke per-datasheet model (exact `unit.name`, case-insensitive) — the
+ *     "one unit type, one model" table.
+ *  2. The shared vehicle hull / walker mech by proxy silhouette.
+ *  3. A generic faction figure by keyword.
+ *  4. null → procedural proxy.
  */
 export function resolveModelEntry(unit: UnitInstance): ModelRegistryEntry | null {
+  // 1) Bespoke per-unit model wins.
+  const byName = UNIT_MODEL_BY_NAME.get(unit.name.toLowerCase());
+  if (byName) return byName;
+
+  // 2) Silhouette fallbacks (shared tank hull / walker mech).
   const sil = unit.proxy?.silhouette;
-  // Vehicles use the shared tank hull (selected by silhouette). Monsters keep
-  // the procedural body for now (no fitting CC0 creature sourced yet).
   if (sil === 'vehicle') return VEHICLE_ENTRY;
   if (sil === 'monster') return MONSTER_ENTRY;
+
+  // 3) Generic faction figure by keyword.
   const kw = (unit.keywords ?? []).map((k) => k.toLowerCase());
   for (const entry of MODEL_REGISTRY) {
     if (entry.keywords.some((k) => kw.includes(k.toLowerCase()))) return entry;
