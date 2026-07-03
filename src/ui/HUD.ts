@@ -84,6 +84,9 @@ export interface HUDCallbacks {
 /** Which mobile drawer (if any) is currently open. Only one at a time on phones. */
 type Drawer = 'unit' | 'log' | 'stratagems' | null;
 
+/** One auto-targeted defensive reaction offered to a defender. */
+type ReactionOpt = { id: string; label: string; ctx: { unitId?: string; targetUnitId?: string } };
+
 /**
  * The interactive controller. Owns the DOM overlay and translates player input
  * (clicks on the 3D scene + HUD buttons) into engine actions, then re-syncs the
@@ -115,6 +118,16 @@ export class GameUI {
   private applyingRemote = false;
   /** Persistent in-game connection notice element (reconnect banner). */
   private netNoticeEl: HTMLElement | null = null;
+  /** Online reaction plumbing (set in setOnline): lets the active client open a
+   *  reaction window on the remote defender and the defender answer back. */
+  private reactionNet: {
+    sendWindow: (kind: 'shooting' | 'charge', attackerId: string, targetId: string) => void;
+    sendReaction: (stratId: string, unitId?: string, targetUnitId?: string) => void;
+  } | null = null;
+  /** Active side: resolver awaiting the remote defender's reaction choice. */
+  private pendingReaction: ((m: { stratId: string; unitId?: string; targetUnitId?: string }) => void) | null = null;
+  /** Defender side: the open reaction modal (so a snapshot/timeout can dismiss it). */
+  private reactionModal: HTMLElement | null = null;
   /** Online: true while WE are the authoritative writer (our turn). Only the
    *  authoritative seat may transmit snapshots, so the waiting player can never
    *  clobber the active player's state. Handed over at each turn change. */
@@ -373,9 +386,17 @@ export class GameUI {
   // -------------------------------------------------------------- online API
   /** Put the HUD into online mode: input is gated to `local`'s turns, and every
    *  local change is sent via `broadcast`. */
-  setOnline(local: PlayerId, broadcast: (state: unknown) => void): void {
+  setOnline(
+    local: PlayerId,
+    broadcast: (state: unknown) => void,
+    reactions?: {
+      sendWindow: (kind: 'shooting' | 'charge', attackerId: string, targetId: string) => void;
+      sendReaction: (stratId: string, unitId?: string, targetUnitId?: string) => void;
+    },
+  ): void {
     this.localPlayer = local;
     this.broadcaster = broadcast;
+    this.reactionNet = reactions ?? null;
     this.aiPlayer = null; // online play has no local AI
     // The host (A) builds and owns the opening state (active = A), so it starts
     // authoritative; the guest waits until a snapshot makes it the active seat.
@@ -448,6 +469,7 @@ export class GameUI {
       return;
     }
     const wasLocalTurn = this.isLocalTurn();
+    this.dismissReactionModal(); // a fresh snapshot supersedes any open reaction UI
     this.applyingRemote = true;
     try {
       this.engine.state = state;
@@ -900,11 +922,12 @@ export class GameUI {
    * turn pauses for the reaction rather than steamrolling it. Resolves instantly
    * when there is nothing to offer.
    */
-  private offerHumanReaction(defender: PlayerId, phase: Phase): Promise<void> {
-    // Only clearly-defensive, auto-targetable reactions belong in this window.
+  /** Build the affordable, auto-targeted defensive reaction options for a seat.
+   *  Shared by the hotseat/AI reaction window and the online defender window. */
+  private buildReactionOptions(defender: PlayerId): ReactionOpt[] {
     const DEFENSE = new Set(['fire_overwatch', 'armour_of_contempt', 'go_to_ground', 'smokescreen']);
     const strats = this.engine.reactiveStratagemsFor(defender).filter((s) => DEFENSE.has(s.id));
-    if (strats.length === 0) return Promise.resolve();
+    if (strats.length === 0) return [];
 
     // Auto-targets: the most-threatened friendly unit, and the best overwatch pair.
     const enemies = this.engine.unitsOf(defender === 'A' ? 'B' : 'A').filter((u) => this.engine.onBoard(u));
@@ -927,9 +950,7 @@ export class GameUI {
       }
     }
 
-    // Build one option per usable reaction (only if it has a valid target).
-    type Opt = { id: string; label: string; ctx: { unitId?: string; targetUnitId?: string } };
-    const opts: Opt[] = [];
+    const opts: ReactionOpt[] = [];
     for (const s of strats) {
       if (s.id === 'fire_overwatch') {
         if (owShooter && owTarget && owBest > 0)
@@ -942,6 +963,11 @@ export class GameUI {
         opts.push({ id: s.id, label: `${verb} — ${threatened.name}`, ctx: { unitId: threatened.id } });
       }
     }
+    return opts;
+  }
+
+  private offerHumanReaction(defender: PlayerId, phase: Phase): Promise<void> {
+    const opts = this.buildReactionOptions(defender);
     if (opts.length === 0) return Promise.resolve();
 
     const cp = this.engine.state.players[defender].commandPoints;
@@ -976,6 +1002,102 @@ export class GameUI {
       (backdrop.querySelector('#reactSkip') as HTMLElement).onclick = done;
       backdrop.onclick = (e) => { if (e.target === backdrop) done(); };
     });
+  }
+
+  /**
+   * ONLINE, active side: open a reaction window on the remote defender before an
+   * attack resolves, and apply whatever reaction they choose LOCALLY (we are the
+   * authoritative writer, so the resulting state broadcasts as normal — a single
+   * writer throughout). Resolves when the defender answers or after a timeout, so
+   * a lost message can never hang the game. Skips instantly when the defender has
+   * no affordable reaction (checked against our shared state).
+   */
+  private awaitRemoteReaction(defender: PlayerId, kind: 'shooting' | 'charge', attackerId: string, targetId: string): Promise<void> {
+    if (!this.reactionNet || this.buildReactionOptions(defender).length === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.pendingReaction = null;
+        resolve();
+      };
+      this.pendingReaction = (m) => {
+        if (m.stratId && m.stratId !== 'none') {
+          const res = this.engine.activateStratagem(m.stratId, { unitId: m.unitId, targetUnitId: m.targetUnitId }, defender);
+          if (res.ok) {
+            this.toast(`Opponent reacts: ${res.message}`);
+            sound.playEvent('stratagem');
+          }
+          this.refresh();
+        }
+        finish();
+      };
+      // Bounded wait so a dropped reaction reply can never stall the attack.
+      const timer = setTimeout(finish, 8000);
+      this.reactionNet!.sendWindow(kind, attackerId, targetId);
+      this.toast('Waiting for opponent’s reaction…');
+    });
+  }
+
+  /** ONLINE, defender side: the active player opened a reaction window. Show our
+   *  affordable reactions; send the chosen one (or 'none') back. The active
+   *  client applies it — we do NOT mutate locally (single authoritative writer).
+   *  Auto-declines after a timeout so the modal can't linger. */
+  onRemoteReactionWindow(msg: { kind: 'shooting' | 'charge'; attackerId: string; targetId: string }): void {
+    if (!this.reactionNet) return;
+    this.dismissReactionModal();
+    // Reactions belong to OUR seat (the defender = the non-active player).
+    const defenderSeat: PlayerId = this.localPlayer ?? (this.engine.active === 'A' ? 'B' : 'A');
+    const defenderOpts = this.buildReactionOptions(defenderSeat);
+    if (defenderOpts.length === 0) {
+      this.reactionNet.sendReaction('none');
+      return;
+    }
+    const cp = this.engine.state.players[defenderSeat].commandPoints;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop show';
+    const rows = defenderOpts
+      .map((o, i) => {
+        const cost = CORE_STRATAGEMS.find((s) => s.id === o.id)?.cost ?? 1;
+        return `<button class="btn small react" data-i="${i}" type="button">${o.label} <span style="opacity:.7">(${cost} CP)</span></button>`;
+      })
+      .join('');
+    backdrop.innerHTML = `
+      <div class="modal">
+        <h3>Reaction — opponent's ${msg.kind === 'charge' ? 'charge' : 'shooting'}</h3>
+        <p>The enemy is about to ${msg.kind === 'charge' ? 'charge' : 'shoot'}. Spend a reactive Stratagem? You have <b>${cp} CP</b>.</p>
+        <div class="react-list" style="display:flex;flex-direction:column;gap:6px;margin:8px 0;">${rows}</div>
+        <div class="row"><button class="btn primary small" id="reactSkip" type="button">Skip reaction</button></div>
+      </div>`;
+    this.root.appendChild(backdrop);
+    this.reactionModal = backdrop;
+    const send = (stratId: string, ctx?: { unitId?: string; targetUnitId?: string }): void => {
+      this.reactionNet?.sendReaction(stratId, ctx?.unitId, ctx?.targetUnitId);
+      this.dismissReactionModal();
+    };
+    backdrop.querySelectorAll<HTMLButtonElement>('.react').forEach((btn) => {
+      btn.onclick = () => {
+        const o = defenderOpts[Number(btn.dataset.i)];
+        send(o.id, o.ctx);
+      };
+    });
+    (backdrop.querySelector('#reactSkip') as HTMLElement).onclick = () => send('none');
+    backdrop.onclick = (e) => { if (e.target === backdrop) send('none'); };
+    // Auto-decline if the player doesn't answer in time (matches the active
+    // side's wait), so a stale modal never blocks the incoming snapshot.
+    window.setTimeout(() => { if (this.reactionModal === backdrop) send('none'); }, 7500);
+  }
+
+  /** ONLINE, active side: the defender answered our reaction window. */
+  onRemoteReaction(msg: { stratId: string; unitId?: string; targetUnitId?: string }): void {
+    this.pendingReaction?.(msg);
+  }
+
+  private dismissReactionModal(): void {
+    this.reactionModal?.remove();
+    this.reactionModal = null;
   }
 
   /** Show the enemy's turn unfolding phase by phase. */
@@ -1250,6 +1372,10 @@ export class GameUI {
         this.toast(r.message ?? `${target.name} braces (Armour of Contempt)`, false);
         sound.playEvent('stratagem');
       }
+    } else if (this.localPlayer !== null && target.ownerId !== this.localPlayer) {
+      // Online: ask the remote defender for a reaction, applied on our (the
+      // authoritative) client before the shots land.
+      await this.awaitRemoteReaction(target.ownerId, 'shooting', attacker.id, target.id);
     } else if (this.localPlayer === null && this.aiPlayer === null) {
       await this.offerHumanReaction(target.ownerId, 'shooting');
     }
@@ -1319,6 +1445,8 @@ export class GameUI {
         if (r.shooterId) this.scene.playShoot(r.shooterId, u.id, {});
         this.refresh();
       }
+    } else if (this.localPlayer !== null && target.ownerId !== this.localPlayer) {
+      await this.awaitRemoteReaction(target.ownerId, 'charge', u.id, target.id);
     } else if (this.localPlayer === null && this.aiPlayer === null) {
       await this.offerHumanReaction(target.ownerId, 'charge');
     }

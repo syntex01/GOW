@@ -100,6 +100,37 @@ describe('MP fix — guest army handshake', () => {
   });
 });
 
+describe('MP fix — online reaction round-trip', () => {
+  it('carries a reaction-window to the defender and the choice back to the active player', async () => {
+    const { host, guest } = createLoopbackPair('ROOM');
+    const active = new NetController(host);
+    const defender = new NetController(guest);
+
+    let window: { kind: string; attackerId: string; targetId: string } | null = null;
+    defender.onReactionWindow((m) => {
+      window = m;
+      // Defender answers with a Fire Overwatch choice.
+      defender.sendReaction('fire_overwatch', 'unitB', 'unitA');
+    });
+    let reply: { stratId: string; unitId?: string; targetUnitId?: string } | null = null;
+    active.onReaction((m) => (reply = m));
+
+    await host.connect();
+    await guest.connect();
+    await flush();
+
+    active.sendReactionWindow('shooting', 'unitA', 'unitB');
+    await flush();
+    await flush();
+
+    expect(window).not.toBeNull();
+    expect(window!.kind).toBe('shooting');
+    expect(reply).not.toBeNull();
+    expect(reply!.stratId).toBe('fire_overwatch');
+    expect(reply!.unitId).toBe('unitB');
+  });
+});
+
 describe('MP — GameState survives a JSON round-trip after real play', () => {
   it('deep-equals itself through stringify/parse mid-game', () => {
     const state = sampleState();

@@ -250,12 +250,19 @@ class App {
     const net = new NetController(transport);
     this.net = net;
 
+    const reactionHooks = {
+      sendWindow: (kind: 'shooting' | 'charge', a: string, t: string) => net.sendReactionWindow(kind, a, t),
+      sendReaction: (stratId: string, u?: string, tu?: string) => net.sendReaction(stratId, u, tu),
+    };
+
     // The guest's provisional game already exists (built in beginBattle); wire it
     // to the net now. The host has NO game yet — it is built once the guest's
     // army arrives (onJoin), and only then is its UI wired to the net.
-    if (this.uiReady) this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
+    if (this.uiReady) this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s), reactionHooks);
 
     net.onRemoteState((s) => { if (this.uiReady) this.ui.applyRemoteState(s); });
+    net.onReactionWindow((m) => { if (this.uiReady) this.ui.onRemoteReactionWindow(m); });
+    net.onReaction((m) => { if (this.uiReady) this.ui.onRemoteReaction(m); });
     // Answer a peer's resync UNCONDITIONALLY (whoever is asked holds the latest
     // committed state); this is what heals a lost turn-handoff snapshot.
     net.onSyncRequest(() => { if (this.uiReady) this.ui.answerSync(); });
@@ -270,7 +277,7 @@ class App {
         this.buildBattle();
         this.ui.setDiceSpeed(cfg.settings.diceSpeed);
         this.ui.setAi(null);
-        this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s));
+        this.ui.setOnline(net.localPlayer, (s) => net.broadcastState(s), reactionHooks);
         this.menu.hide();
         hideLoading();
         sound.startMusic();

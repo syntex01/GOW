@@ -30,6 +30,8 @@ export class NetController {
   private chatCbs: Array<(text: string) => void> = [];
   private syncReqCbs: Array<() => void> = [];
   private joinCbs: Array<(join: { army: unknown; faction: string; name?: string; session?: string }) => void> = [];
+  private reactionWindowCbs: Array<(m: { kind: 'shooting' | 'charge'; attackerId: string; targetId: string }) => void> = [];
+  private reactionCbs: Array<(m: { stratId: string; unitId?: string; targetUnitId?: string }) => void> = [];
   private _status: NetStatus = 'disconnected';
   /** True once we have ever been fully connected. Lets sends survive a transient
    *  post-connection 'error' (the DataConnection is usually still open), instead
@@ -60,6 +62,10 @@ export class NetController {
         for (const cb of this.syncReqCbs) cb();
       } else if (m.t === 'join') {
         for (const cb of this.joinCbs) cb({ army: m.army, faction: m.faction, name: m.name, session: m.session });
+      } else if (m.t === 'reaction-window') {
+        for (const cb of this.reactionWindowCbs) cb({ kind: m.kind, attackerId: m.attackerId, targetId: m.targetId });
+      } else if (m.t === 'reaction') {
+        for (const cb of this.reactionCbs) cb({ stratId: m.stratId, unitId: m.unitId, targetUnitId: m.targetUnitId });
       }
       // 'hello' is informational; no controller-level handling needed for v1.
     });
@@ -104,6 +110,28 @@ export class NetController {
   /** Host: fired when the guest sends its army (initial join or a reconnect). */
   onJoin(cb: (join: { army: unknown; faction: string; name?: string; session?: string }) => void): void {
     this.joinCbs.push(cb);
+  }
+
+  /** Active → defender: open a reaction window for a declared attack. */
+  sendReactionWindow(kind: 'shooting' | 'charge', attackerId: string, targetId: string): void {
+    if (!this.canSend()) return;
+    this.transport.send({ t: 'reaction-window', kind, attackerId, targetId });
+  }
+
+  /** Defender: fired when the active player opens a reaction window. */
+  onReactionWindow(cb: (m: { kind: 'shooting' | 'charge'; attackerId: string; targetId: string }) => void): void {
+    this.reactionWindowCbs.push(cb);
+  }
+
+  /** Defender → active: the reaction chosen (stratId 'none' = declined). */
+  sendReaction(stratId: string, unitId?: string, targetUnitId?: string): void {
+    if (!this.canSend()) return;
+    this.transport.send({ t: 'reaction', stratId, unitId, targetUnitId });
+  }
+
+  /** Active: fired when the defender answers a reaction window. */
+  onReaction(cb: (m: { stratId: string; unitId?: string; targetUnitId?: string }) => void): void {
+    this.reactionCbs.push(cb);
   }
 
   /** Send a chat line to the peer. */
