@@ -273,6 +273,9 @@ export interface PlayerState {
   secondaryVictoryPoints?: number;
   /** Count of enemy units this player has destroyed this turn (for secondaries). */
   enemyUnitsKilledThisTurn?: number;
+  /** Oath of Moment: the enemy unit id this player's OATH-capable units re-roll
+   *  hits and wounds against this turn (auto-designated each Command phase). */
+  oathTarget?: string;
 }
 
 export interface LogEntry {

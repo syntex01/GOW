@@ -18,7 +18,7 @@ import {
   computeObjectiveControl,
   isBelowHalfStrength,
   hasLineOfSight,
-  unitInCover,
+  coverState,
   isCoherent,
   ENGAGEMENT_RANGE,
   resolveCollisions,
@@ -168,6 +168,24 @@ export class GameEngine {
         u.smokescreen = false;
         u.armourOfContempt = false;
         u.defensiveFlagRound = undefined;
+      }
+    }
+
+    // Oath of Moment: if the active player fields any OATH-capable unit, mark one
+    // enemy unit as the Oath target for this turn — its attacks against that unit
+    // re-roll hits and wounds. With no picker UI we auto-designate the juiciest
+    // target (the enemy unit with the most current wounds on the board).
+    p.oathTarget = undefined;
+    if (this.unitsOf(this.active).some((u) => this.isAlive(u) && this.hasEffect(u, 'oathOfMoment'))) {
+      let best: UnitInstance | undefined;
+      let bestW = -1;
+      for (const e of this.targetableEnemiesOf(this.active)) {
+        const w = aliveModels(e).reduce((a, m) => a + m.wounds, 0);
+        if (w > bestW) { bestW = w; best = e; }
+      }
+      if (best) {
+        p.oathTarget = best.id;
+        this.log(`${p.name} swears the Oath of Moment against ${best.name}.`);
       }
     }
 
@@ -567,18 +585,28 @@ export class GameEngine {
         : undefined;
       const tgt = leader ?? target;
       if (leader) this.log(`${attacker.name}'s ${w.name} takes a Precision shot at ${leader.name}.`);
-      // Cover / bonus invuln recomputed against the actual victim.
-      const cover = unitInCover(tgt, this.state.terrain) || !!tgt.goToGround || !!tgt.smokescreen;
+      // Cover recomputed against the actual victim — DIRECTIONALLY (a model only
+      // benefits from cover relative to THIS shooter's line, not from every
+      // angle). Go to Ground / Smokescreen still grant cover from any direction.
+      const cover =
+        coverState(attacker, tgt, this.state.terrain) !== 'none' || !!tgt.goToGround || !!tgt.smokescreen;
       const bonusInvuln = tgt.goToGround || tgt.smokescreen ? 6 : undefined;
       const halfRange = unitGap(attacker, tgt) <= w.range / 2;
       const ignoresCover = w.keywords.some((k) => k.t === 'ignoresCover');
+      // Heavy: +1 to hit if the firing unit Remained Stationary this turn.
+      const heavyBonus =
+        w.keywords.some((k) => k.t === 'heavy') &&
+        (attacker.moveState === 'none' || attacker.moveState === 'remainedStationary')
+          ? 1
+          : 0;
       const opts: AttackOptions = {
         halfRange,
         cover: (cover && !ignoresCover) || false,
         firingModels: aliveModels(attacker).length,
+        ...(heavyBonus ? { hitModifier: heavyBonus } : {}),
         ...(bonusInvuln !== undefined ? { bonusInvuln } : {}),
         ...(tgt.armourOfContempt ? { apReduction: 1 } : {}),
-        ...this.attackerAbilityMods(attacker, 'shooting'),
+        ...this.attackerAbilityMods(attacker, 'shooting', tgt),
         ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
         ...(optsByWeapon?.[w.id] ?? {}),
       };
@@ -592,7 +620,7 @@ export class GameEngine {
     return results;
   }
 
-  private attackerAbilityMods(u: UnitInstance, _phase: 'shooting' | 'fight'): Partial<AttackOptions> {
+  private attackerAbilityMods(u: UnitInstance, _phase: 'shooting' | 'fight', target?: UnitInstance): Partial<AttackOptions> {
     const mods: Partial<AttackOptions> = {};
     // A unit's own abilities plus those conferred by any attached leaders.
     const conferred = (u.attachedLeaderIds ?? [])
@@ -604,6 +632,16 @@ export class GameEngine {
     if (reroll && reroll.t === 'reroll') {
       if (reroll.phase === 'hit') mods.rerollHits = reroll.scope === 'all' ? 'all' : 'ones';
       if (reroll.phase === 'wound') mods.rerollWounds = reroll.scope === 'all' ? 'all' : 'ones';
+    }
+    // Oath of Moment: an OATH-capable unit re-rolls all hits AND wounds against
+    // the enemy unit its army swore the Oath against this turn.
+    if (
+      target &&
+      abilities.some((a) => a.effect?.t === 'oathOfMoment') &&
+      this.state.players[u.ownerId].oathTarget === target.id
+    ) {
+      mods.rerollHits = 'all';
+      mods.rerollWounds = 'all';
     }
     // Dark Pacts: a one-shot Lethal Hits granted this turn, consumed on use.
     if (u.lethalHitsNext) {
@@ -684,10 +722,13 @@ export class GameEngine {
         : undefined;
       const tgt = leader ?? target;
       if (leader) this.log(`${attacker.name}'s ${w.name} strikes the attached ${leader.name} (Precision).`);
+      // Lance: +1 to wound if this unit made a Charge move this turn.
+      const lanceBonus = w.keywords.some((k) => k.t === 'lance') && attacker.hasChargedThisTurn ? 1 : 0;
       const opts: AttackOptions = {
         firingModels: aliveModels(attacker).length,
+        ...(lanceBonus ? { woundModifier: lanceBonus } : {}),
         ...(tgt.armourOfContempt ? { apReduction: 1 } : {}),
-        ...this.attackerAbilityMods(attacker, 'fight'),
+        ...this.attackerAbilityMods(attacker, 'fight', tgt),
         ...(rerollFlag ? { rerollHits: 'all' as const } : {}),
       };
       const res = resolveWeapon(w, attacker, tgt, this.rng, opts);
@@ -1019,7 +1060,7 @@ export class GameEngine {
     }
     const weapons = this.shootableWeapons(shooter, target);
     if (weapons.length === 0) return { ok: false, message: `${shooter.name} has no weapon that can reach ${target.name}.` };
-    const cover = unitInCover(target, this.state.terrain) || !!target.goToGround || !!target.smokescreen;
+    const cover = coverState(shooter, target, this.state.terrain) !== 'none' || !!target.goToGround || !!target.smokescreen;
     let slain = 0;
     for (const w of weapons) {
       // Force "hit only on unmodified 6": clone the weapon with skill 6 and no
