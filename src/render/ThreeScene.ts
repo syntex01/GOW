@@ -14,6 +14,7 @@ import {
   type ModelRegistryEntry,
 } from './ModelRegistry';
 import { loadModel } from './ModelImport';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { resolveDeathFx, roleColor, type DeathFxConfig } from './fx/deathFxMap';
 import { makeDeathAnim, type DeathUpdater } from './fx/deathAnims';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -3084,41 +3085,49 @@ export class ThreeScene implements SceneController {
 
   /* ========================= imported-model hook ========================= */
 
-  /**
-   * Replace a unit's procedural proxy models with an imported Object3D.
-   * Public so ModelImport.applyImportedModelToUnit can drive it.
-   */
+  /** Replace every miniature in a unit with a clone of an imported figure. */
   setUnitModel(unitId: string, object3d: THREE.Object3D): void {
     const uv = this.unitVisuals.get(unitId);
     if (!uv) return;
-    // Remove old imported, if any (also tear down its idle mixer).
+    // Remove the legacy single-centroid import, if this scene was hydrated from
+    // an older runtime. New imports are always one figure per model/base.
     if (uv.imported) {
       this.detachImportedIdle(uv.imported);
       uv.group.remove(uv.imported);
       this.disposeObject(uv.imported);
       uv.imported = undefined;
     }
-    // Hide procedural models.
-    for (const mv of uv.models) mv.group.visible = false;
-    // Tag for picking and attach. Note whether any skinned mesh exists so we can
-    // decide whether to drive an idle (static meshes are left untouched).
-    let hasSkinned = false;
-    object3d.traverse((o) => {
-      o.userData.unitId = unitId;
-      const mesh = o as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-      }
-      if ((o as THREE.SkinnedMesh).isSkinnedMesh) hasSkinned = true;
-    });
-    uv.group.add(object3d);
-    uv.imported = object3d;
 
-    // Subtle idle for imported skinned models that carry animation clips, driven
-    // by the render loop via a local mixer (mirrors ModelLibrary's mechanism).
-    // No skin or no clips -> the model is simply left static. Never throws.
-    this.attachImportedIdle(object3d, hasSkinned);
+    for (const [index, mv] of uv.models.entries()) {
+      this.detachImportedIdle(mv.body);
+      mv.group.remove(mv.body);
+      this.disposeObject(mv.body);
+
+      const figure = index === 0 ? object3d : skeletonClone(object3d);
+      const body = new THREE.Group();
+      body.add(figure);
+      body.position.y = 0.18; // sit on the existing tabletop base
+      body.userData.unitId = unitId;
+      let hasSkinned = false;
+      body.traverse((node) => {
+        node.userData.unitId = unitId;
+        const mesh = node as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          // Each miniature gets independent materials so death/flinch effects on
+          // one squad member never recolour every clone in the unit.
+          mesh.material = Array.isArray(mesh.material)
+            ? mesh.material.map((material) => material.clone())
+            : mesh.material.clone();
+        }
+        if ((node as THREE.SkinnedMesh).isSkinnedMesh) hasSkinned = true;
+      });
+      mv.group.add(body);
+      mv.body = body;
+      mv.group.visible = mv.vitality > 0.01;
+      this.attachImportedIdle(figure, hasSkinned);
+    }
   }
 
   /**
@@ -3165,7 +3174,7 @@ export class ThreeScene implements SceneController {
   async importUnitModel(
     unitId: string,
     src: string | File,
-    format: 'gltf' | 'glb' | 'obj' | 'stl',
+    format: 'gltf' | 'glb' | 'obj' | 'stl' | 'tts',
     heightInches = 3,
   ): Promise<void> {
     const obj = await loadModel(src, format, { targetHeightInches: heightInches });
