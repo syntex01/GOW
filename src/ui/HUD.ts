@@ -18,6 +18,7 @@ import { CORE_STRATAGEMS } from '../engine/stratagems';
 import { DiceTray } from './DiceTray';
 import { Rng } from '../engine/dice';
 import { setAssignment, fileToDataUrl, formatFromName, type ModelFormat } from '../render/ModelAssignments';
+import { encodeTtsModel, parseTtsModels, type TtsModelAsset } from '../render/TtsImport';
 import { sound } from '../audio/SoundEngine';
 
 /** Short confirmation haptic, guarded for devices/browsers without vibrate. */
@@ -1671,7 +1672,7 @@ export class GameUI {
     this.toast(message, warn);
   }
 
-  /** Modal to import a publicly-available 3D model (URL or file) onto a unit.
+  /** Modal to import a 3D model or a TTS saved object onto every miniature.
    *  Public so it can be surfaced per-unit (e.g. from the datacard) rather than
    *  as a big always-on toolbar button. */
   openModelImport(): void {
@@ -1685,9 +1686,20 @@ export class GameUI {
     backdrop.innerHTML = `
       <div class="modal">
         <h3>Import 3D model → ${unit.name}</h3>
-        <p>Use models you have the rights to. Paste a public URL (glTF/GLB/OBJ/STL) or choose a file.</p>
+        <p>Use a model you have the rights to, or export a model/army from Tabletop Simulator as JSON. TTS textures are restored automatically.</p>
         <input id="murl" type="text" placeholder="https://…/model.glb" style="width:100%;margin-bottom:8px;background:#0c1016;color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:9px;font-family:ui-monospace,monospace;font-size:12px;" />
-        <input id="mfile" type="file" accept=".glb,.gltf,.obj,.stl" style="font-size:12px;margin-bottom:10px;" />
+        <input id="mfile" type="file" accept=".glb,.gltf,.obj,.stl,.json,application/json" style="font-size:12px;margin-bottom:10px;" />
+        <label id="mcandidateRow" style="display:none;margin-bottom:10px;font-size:12px;color:var(--muted);">Figure from TTS file
+          <select id="mcandidate" style="width:100%;margin-top:5px;background:#0c1016;color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:9px;"></select>
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <label style="font-size:11px;color:var(--muted);">Figure height (in)
+            <input id="mheight" type="number" min="0.25" max="20" step="0.1" value="${Math.max(...unit.models.map((model) => model.heightInches ?? 3)).toFixed(1)}" style="width:100%;margin-top:4px;background:#0c1016;color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:8px;" />
+          </label>
+          <label style="font-size:11px;color:var(--muted);">Rotate around base (°)
+            <input id="myaw" type="number" min="-360" max="360" step="15" value="0" style="width:100%;margin-top:4px;background:#0c1016;color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:8px;" />
+          </label>
+        </div>
         <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer;">
           <input id="mall" type="checkbox" checked /> Apply to all <b style="color:var(--ink);margin:0 3px;">${unit.name}</b> and remember it
         </label>
@@ -1700,31 +1712,68 @@ export class GameUI {
     this.root.appendChild(backdrop);
     const url = backdrop.querySelector('#murl') as HTMLInputElement;
     const file = backdrop.querySelector('#mfile') as HTMLInputElement;
+    const candidateRow = backdrop.querySelector('#mcandidateRow') as HTMLElement;
+    const candidate = backdrop.querySelector('#mcandidate') as HTMLSelectElement;
+    const height = backdrop.querySelector('#mheight') as HTMLInputElement;
+    const yaw = backdrop.querySelector('#myaw') as HTMLInputElement;
     const all = backdrop.querySelector('#mall') as HTMLInputElement;
     const warn = backdrop.querySelector('#mwarn') as HTMLElement;
+    let ttsModels: TtsModelAsset[] = [];
+    const readTtsFile = async (selected: File): Promise<void> => {
+      try {
+        ttsModels = parseTtsModels(await selected.text());
+        candidate.replaceChildren(...ttsModels.map((model, index) => {
+          const option = document.createElement('option');
+          option.value = String(index);
+          option.textContent = model.name;
+          return option;
+        }));
+        candidateRow.style.display = ttsModels.length ? 'block' : 'none';
+        warn.textContent = ttsModels.length
+          ? `Found ${ttsModels.length} TTS figure${ttsModels.length === 1 ? '' : 's'}. Choose the one matching this datasheet.`
+          : 'No Custom Model meshes found. Unity AssetBundle figures cannot be imported by a web browser.';
+      } catch (error) {
+        ttsModels = [];
+        candidateRow.style.display = 'none';
+        warn.textContent = `Invalid TTS JSON: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    };
+    file.onchange = () => {
+      const selected = file.files?.[0];
+      if (selected && formatFromName(selected.name) === 'tts') void readTtsFile(selected);
+      else { ttsModels = []; candidateRow.style.display = 'none'; warn.textContent = ''; }
+    };
     const close = () => backdrop.remove();
     (backdrop.querySelector('#mCancel') as HTMLElement).onclick = close;
-    (backdrop.querySelector('#mGo') as HTMLElement).onclick = () => {
+    (backdrop.querySelector('#mGo') as HTMLElement).onclick = async () => {
       const f = file.files?.[0];
       const raw = url.value.trim();
-      const src: string | File | undefined = f ?? (raw || undefined);
+      const fmt: ModelFormat = formatFromName(f ? f.name : raw);
+      if (fmt === 'tts' && f && ttsModels.length === 0) await readTtsFile(f);
+      const selectedTts = fmt === 'tts' ? ttsModels[Number(candidate.value) || 0] : undefined;
+      if (selectedTts) selectedTts.yawDegrees = Number(yaw.value) || 0;
+      const src: string | File | undefined = selectedTts ? encodeTtsModel(selectedTts) : f ?? (raw || undefined);
       if (!src) {
         warn.textContent = 'Provide a URL or choose a file.';
         return;
       }
-      const fmt: ModelFormat = formatFromName(f ? f.name : raw);
+      if (fmt === 'tts' && !selectedTts) {
+        warn.textContent = 'Choose a TTS JSON containing at least one Custom Model mesh.';
+        return;
+      }
       const applyToAll = all.checked;
+      const targetHeight = Math.max(0.25, Number(height.value) || 3);
       warn.textContent = 'Loading…';
       // The set of units to update: just this one, or every unit of its type.
       const targets = applyToAll
         ? Object.values(this.engine.state.units).filter((u) => u.datasheetId === unit.datasheetId)
         : [unit];
-      Promise.all(targets.map((u) => this.scene.importUnitModel(u.id, src, fmt)))
+      Promise.all(targets.map((u) => this.scene.importUnitModel(u.id, src, fmt, targetHeight)))
         .then(async () => {
           if (applyToAll) {
             // Persist so it auto-applies to this unit type in future battles.
-            const persistSrc = f ? await fileToDataUrl(f).catch(() => '') : raw;
-            const ok = persistSrc ? setAssignment(unit.datasheetId, { src: persistSrc, format: fmt }) : false;
+            const persistSrc = selectedTts ? encodeTtsModel(selectedTts) : f ? await fileToDataUrl(f).catch(() => '') : raw;
+            const ok = persistSrc ? setAssignment(unit.datasheetId, { src: persistSrc, format: fmt, heightInches: targetHeight }) : false;
             this.toast(
               ok
                 ? `Saved for all ${unit.name}`
