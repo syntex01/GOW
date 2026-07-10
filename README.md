@@ -57,6 +57,25 @@ npm test         # rules + fidelity test suite
 npm run build    # production bundle
 ```
 
+## Use your Tabletop Simulator miniatures
+
+No third-party miniature files are committed to this repository. You can keep a
+private collection locally and render the same figures you use in a TTS 40K mod:
+
+1. In Tabletop Simulator, right-click a figure or model bag and choose
+   **Save Object**.
+2. Find the resulting `.json` below
+   `Documents/My Games/Tabletop Simulator/Saves/Saved Objects/`.
+3. Start a battle here, select the matching unit, open its datacard, and choose
+   **Set model**.
+4. Select the JSON file, choose the figure from the detected list, then adjust
+   height/rotation if necessary.
+
+The importer reads TTS `CustomMesh` entries, restores their OBJ diffuse and
+normal textures, clones the chosen figure onto every model in the squad, and
+remembers the choice per datasheet. Unity `AssetBundle` figures cannot be loaded
+by a web browser; use a TTS custom-model/OBJ version for those units.
+
 ## Architecture
 
 ```
