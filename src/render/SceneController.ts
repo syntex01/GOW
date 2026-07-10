@@ -152,7 +152,7 @@ export interface SceneController {
   importUnitModel(
     unitId: string,
     src: string | File,
-    format: 'gltf' | 'glb' | 'obj' | 'stl',
+    format: 'gltf' | 'glb' | 'obj' | 'stl' | 'tts',
     heightInches?: number,
   ): Promise<void>;
 }
