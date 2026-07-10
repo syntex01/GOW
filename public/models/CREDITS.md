@@ -10,6 +10,10 @@ proxies (NOT Games Workshop models — this project ships no GW IP):
 Players can import their own publicly-available models (glTF/GLB/OBJ/STL) via the
 in-app model import to represent their actual collection.
 
+Tabletop Simulator save/object JSON is also supported. The app reads external
+CustomMesh URLs locally in the player's browser; no TTS or Games Workshop model
+assets are copied into this repository or transmitted in multiplayer.
+
 ## Showcase models (public/models/showcase/)
 Distinct permissively-licensed glTF sample assets demonstrating import of many
 different real figures (not GW models): horse/parrot/flamingo/stork (three.js
