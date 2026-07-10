@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import type { ThreeScene } from './ThreeScene';
+import { decodeTtsModel } from './TtsImport';
 
 /**
  * Importing user-provided, publicly-available models and attaching them to a
@@ -14,7 +15,7 @@ import type { ThreeScene } from './ThreeScene';
  * base sits on the table (y = 0), matching the procedural-proxy convention.
  */
 
-export type ModelFormat = 'gltf' | 'glb' | 'obj' | 'stl';
+export type ModelFormat = 'gltf' | 'glb' | 'obj' | 'stl' | 'tts';
 
 export interface ImportOptions {
   /** Target height in inches; the model is uniformly scaled to match. */
@@ -103,11 +104,74 @@ function loadRaw(url: string, format: ModelFormat, stlColor: number): Promise<TH
         );
       });
     }
+    case 'tts':
+      return loadTtsObject(url);
     default: {
       const exhaustive: never = format;
       return Promise.reject(new Error(`Unsupported model format: ${String(exhaustive)}`));
     }
   }
+}
+
+/** Load a selected TTS CustomMesh and recreate its diffuse/normal materials. */
+async function loadTtsObject(source: string): Promise<THREE.Object3D> {
+  const asset = decodeTtsModel(source);
+  const root = await new Promise<THREE.Group>((resolve, reject) => {
+    new OBJLoader().load(
+      asset.meshUrl,
+      resolve,
+      undefined,
+      (err) => reject(err instanceof Error ? err : new Error(String(err))),
+    );
+  });
+
+  const [diffuse, normal] = await Promise.all([
+    loadOptionalTexture(asset.diffuseUrl, true),
+    loadOptionalTexture(asset.normalUrl, false),
+  ]);
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({
+      color: diffuse ? 0xffffff : 0x8e939b,
+      map: diffuse,
+      normalMap: normal,
+      metalness: 0.08,
+      roughness: 0.72,
+    });
+    const old = mesh.material;
+    if (Array.isArray(old)) old.forEach((item) => item.dispose());
+    else old?.dispose();
+    mesh.material = material;
+  });
+  root.rotation.y = THREE.MathUtils.degToRad(asset.yawDegrees ?? 0);
+  return root;
+}
+
+async function loadOptionalTexture(url: string | undefined, color: boolean): Promise<THREE.Texture | null> {
+  if (!url) return null;
+  try {
+    return await loadTexture(url, color);
+  } catch {
+    return null; // old TTS collections often contain a stale optional texture URL
+  }
+}
+
+function loadTexture(url: string, color: boolean): Promise<THREE.Texture> {
+  return new Promise((resolve, reject) => {
+    new THREE.TextureLoader().load(
+      url,
+      (texture) => {
+        texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        texture.flipY = false;
+        texture.anisotropy = 4;
+        resolve(texture);
+      },
+      undefined,
+      (err) => reject(err instanceof Error ? err : new Error(String(err))),
+    );
+  });
 }
 
 /**
