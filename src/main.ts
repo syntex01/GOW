@@ -12,6 +12,8 @@ import { CORE_STRATAGEMS } from './engine/stratagems';
 import { NetController } from './net/NetController';
 import { PeerTransport } from './net/PeerTransport';
 import { loadAssignments } from './render/ModelAssignments';
+import { COMMUNITY_MODEL_BY_DATASHEET } from './render/CommunityModelPack';
+import { encodeTtsModel } from './render/TtsImport';
 import { Cinematic } from './ui/Cinematic';
 import { TrailerCapture } from './ui/TrailerCapture';
 import { sound } from './audio/SoundEngine';
@@ -214,18 +216,25 @@ class App {
     }
   }
 
-  /**
-   * Apply persisted per-datasheet model assignments to the deployed units. These
-   * are licence-clean generic models the player has mapped to a unit type, so
-   * they apply in every mode including online (nothing copyrighted is shipped or
-   * transmitted — each client renders from its own local assignment map).
-   */
+  /** Apply player overrides, otherwise the private community TTS model pack. */
   private applyModelAssignments(): void {
     const assignments = loadAssignments();
-    if (Object.keys(assignments).length === 0) return;
     for (const u of Object.values(this.engine.state.units)) {
       const a = assignments[u.datasheetId];
-      if (a) void this.scene!.importUnitModel(u.id, a.src, a.format, a.heightInches ?? 3.6);
+      const height = u.proxy?.heightInches ?? 3;
+      if (a) {
+        void this.scene!.importUnitModel(u.id, a.src, a.format, a.heightInches ?? height);
+        continue;
+      }
+      const community = COMMUNITY_MODEL_BY_DATASHEET.get(u.datasheetId);
+      if (!community) continue;
+      void this.scene!
+        .importUnitModel(u.id, encodeTtsModel(community.asset), 'tts', height)
+        .catch((error: unknown) => {
+          // A stale community CDN link should leave the bundled fallback alive,
+          // never prevent a battle from starting.
+          console.warn(`Community model failed: ${community.datasheetName}`, error);
+        });
     }
   }
 

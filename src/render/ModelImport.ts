@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import type { ThreeScene } from './ThreeScene';
-import { decodeTtsModel } from './TtsImport';
+import { decodeTtsModel, ttsAssetUrlCandidates, type TtsModelPart } from './TtsImport';
 
 /**
  * Importing user-provided, publicly-available models and attaching them to a
@@ -116,18 +116,26 @@ function loadRaw(url: string, format: ModelFormat, stlColor: number): Promise<TH
 /** Load a selected TTS CustomMesh and recreate its diffuse/normal materials. */
 async function loadTtsObject(source: string): Promise<THREE.Object3D> {
   const asset = decodeTtsModel(source);
-  const root = await new Promise<THREE.Group>((resolve, reject) => {
-    new OBJLoader().load(
-      asset.meshUrl,
-      resolve,
-      undefined,
-      (err) => reject(err instanceof Error ? err : new Error(String(err))),
-    );
-  });
+  const definitions: TtsModelPart[] = asset.parts?.length
+    ? asset.parts
+    : [{
+        meshUrl: asset.meshUrl!,
+        ...(asset.diffuseUrl ? { diffuseUrl: asset.diffuseUrl } : {}),
+        ...(asset.normalUrl ? { normalUrl: asset.normalUrl } : {}),
+      }];
+  const loaded = await Promise.all(definitions.map(loadTtsPart));
+  const root = new THREE.Group();
+  root.name = asset.name;
+  root.add(...loaded);
+  root.rotation.y = THREE.MathUtils.degToRad(asset.yawDegrees ?? 0);
+  return root;
+}
 
+async function loadTtsPart(part: TtsModelPart): Promise<THREE.Group> {
+  const root = await loadFirstObj(ttsAssetUrlCandidates(part.meshUrl));
   const [diffuse, normal] = await Promise.all([
-    loadOptionalTexture(asset.diffuseUrl, true),
-    loadOptionalTexture(asset.normalUrl, false),
+    loadOptionalTexture(part.diffuseUrl, true),
+    loadOptionalTexture(part.normalUrl, false),
   ]);
   root.traverse((object) => {
     const mesh = object as THREE.Mesh;
@@ -144,18 +152,46 @@ async function loadTtsObject(source: string): Promise<THREE.Object3D> {
     if (Array.isArray(old)) old.forEach((item) => item.dispose());
     else old?.dispose();
     mesh.material = material;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
   });
-  root.rotation.y = THREE.MathUtils.degToRad(asset.yawDegrees ?? 0);
+  if (part.position) root.position.fromArray(part.position);
+  if (part.rotationDegrees) {
+    root.rotation.set(...part.rotationDegrees.map(THREE.MathUtils.degToRad) as [number, number, number]);
+  }
+  if (part.scale) root.scale.fromArray(part.scale);
   return root;
+}
+
+async function loadFirstObj(urls: string[]): Promise<THREE.Group> {
+  let lastError: Error | null = null;
+  for (const url of urls) {
+    try {
+      return await new Promise<THREE.Group>((resolve, reject) => {
+        new OBJLoader().load(
+          url,
+          resolve,
+          undefined,
+          (err) => reject(err instanceof Error ? err : new Error(String(err))),
+        );
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error('No TTS mesh URL could be loaded.');
 }
 
 async function loadOptionalTexture(url: string | undefined, color: boolean): Promise<THREE.Texture | null> {
   if (!url) return null;
-  try {
-    return await loadTexture(url, color);
-  } catch {
-    return null; // old TTS collections often contain a stale optional texture URL
+  for (const candidate of ttsAssetUrlCandidates(url)) {
+    try {
+      return await loadTexture(candidate, color);
+    } catch {
+      // Try the equivalent Steam CDN hostname; old saves mix retired hosts.
+    }
   }
+  return null; // old TTS collections often contain a stale optional texture URL
 }
 
 function loadTexture(url: string, color: boolean): Promise<THREE.Texture> {
@@ -164,7 +200,9 @@ function loadTexture(url: string, color: boolean): Promise<THREE.Texture> {
       url,
       (texture) => {
         texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        texture.flipY = false;
+        // OBJ UVs use the conventional bottom-left origin; TextureLoader's
+        // default Y flip is required for the painted TTS atlases to line up.
+        texture.flipY = true;
         texture.anisotropy = 4;
         resolve(texture);
       },

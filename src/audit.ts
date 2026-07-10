@@ -1,50 +1,37 @@
 import './ui/audit.css';
 import * as THREE from 'three';
 import {
-  MODEL_REGISTRY,
-  MONSTER_ENTRY,
-  ModelLibrary,
-  UNIT_MODELS,
-  VEHICLE_ENTRY,
-  type ModelRegistryEntry,
-} from './render/ModelRegistry';
+  COMMUNITY_MODEL_PACK,
+  COMMUNITY_MODEL_SOURCE,
+  type CommunityModelDefinition,
+} from './render/CommunityModelPack';
+import { loadModel } from './render/ModelImport';
+import { encodeTtsModel } from './render/TtsImport';
 import { ThreeScene } from './render/ThreeScene';
 import { createGame, type ArmyList } from './engine/factory';
 import { DATASHEETS } from './engine/data/index';
-import type { GameState, ProxyDescriptor } from './engine/types';
+import type { GameState } from './engine/types';
 
 type Kind = 'model' | 'effect';
-interface Item { id: string; name: string; detail: string; kind: Kind; entry?: ModelRegistryEntry; }
+interface Item { id: string; name: string; detail: string; kind: Kind; community?: CommunityModelDefinition; }
 interface Finding { status: 'pending' | 'pass' | 'issue'; flags: string[]; notes: string; }
 
-const FLAGS = ['Rotated', 'Incomplete', 'No color', 'Ugly', 'T-pose', 'Wrong scale', 'Clipping', 'Buggy'];
+const FLAGS = ['Wrong model', 'Rotated', 'Incomplete', 'No color', 'Ugly', 'Wrong scale', 'Clipping', 'Buggy'];
 const EFFECTS = ['Bolter', 'Gauss', 'Plasma', 'Melta', 'Flamer', 'Heavy', 'Missile', 'Sniper', 'Generic', 'Melee', 'Impact', 'Damage number', 'Death animation'];
-const unitModels: Item[] = UNIT_MODELS.map((entry, index) => ({
-  id: `model:${entry.datasheet ?? index}`,
-  name: entry.datasheet?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? `Model ${index + 1}`,
-  detail: entry.url,
+const models: Item[] = COMMUNITY_MODEL_PACK.map((community) => ({
+  id: `model:${community.datasheetId}`,
+  name: community.datasheetName,
+  detail: `${community.faction} · ${community.objectName}${community.match === 'variant' ? ' · VARIANT' : ''}`,
   kind: 'model',
-  entry,
+  community,
 }));
-const fallbackModels: Item[] = [
-  { id: 'model:fallback-vehicle', name: 'Generic Vehicle Fallback', detail: VEHICLE_ENTRY.url, kind: 'model', entry: VEHICLE_ENTRY },
-  { id: 'model:fallback-monster', name: 'Generic Walker Fallback', detail: MONSTER_ENTRY.url, kind: 'model', entry: MONSTER_ENTRY },
-  ...MODEL_REGISTRY.map((entry) => ({
-    id: `model:fallback-${entry.keywords[0]}`,
-    name: `${entry.keywords[0].replace(/\b\w/g, (letter) => letter.toUpperCase())} Faction Fallback`,
-    detail: entry.url,
-    kind: 'model' as const,
-    entry,
-  })),
-];
-const models = [...unitModels, ...fallbackModels];
 const effects: Item[] = EFFECTS.map((name) => ({ id: `effect:${name.toLowerCase().replaceAll(' ', '-')}`, name, detail: 'In-engine effect', kind: 'effect' }));
 const items = [...models, ...effects];
 const findings = new Map<string, Finding>(items.map((item) => [item.id, { status: 'pending', flags: [], notes: '' }]));
 
 const root = document.querySelector<HTMLDivElement>('#audit')!;
 root.innerHTML = `
-  <header><div><h1>Visual Audit</h1><p>Review every figure and effect. Keys 1–8 flag problems · P passes · ←/→ moves · Space replays · E exports.</p></div><button id="export">Export report.txt</button></header>
+  <header><div><h1>Community Model Audit</h1><p>Review 39 community candidates and every effect. Keys 1–8 flag problems · P passes · ←/→ moves · Space replays · E exports.</p></div><button id="export">Export report.txt</button></header>
   <main>
     <aside><div class="tabs"><button class="tab on" data-kind="model">Models <b>${models.length}</b></button><button class="tab" data-kind="effect">Effects <b>${effects.length}</b></button></div><div id="progress"></div><div id="list"></div></aside>
     <section class="stage">
@@ -174,7 +161,15 @@ window.onkeydown = (event) => {
 
 function exportReport(): void {
   saveCurrent();
-  const lines = ['GRIMDARK VISUAL AUDIT', `Generated: ${new Date().toISOString()}`, 'Branch: graphics-overhaul-tts-models', ''];
+  const lines = [
+    'GRIMDARK VISUAL AUDIT',
+    `Generated: ${new Date().toISOString()}`,
+    'Branch: graphics-overhaul-tts-models',
+    `Community source: ${COMMUNITY_MODEL_SOURCE.title}`,
+    COMMUNITY_MODEL_SOURCE.url,
+    COMMUNITY_MODEL_SOURCE.notice,
+    '',
+  ];
   for (const groupKind of ['model', 'effect'] as const) {
     lines.push(groupKind === 'model' ? 'MODELS' : 'VISUAL EFFECTS', '='.repeat(groupKind === 'model' ? 6 : 14));
     for (const item of items.filter((candidate) => candidate.kind === groupKind)) {
@@ -207,7 +202,6 @@ const key = new THREE.DirectionalLight(0xffd5a0, 4.2); key.position.set(4, 6, 4)
 const rim = new THREE.DirectionalLight(0x729cff, 2.4); rim.position.set(-4, 3, -4); modelScene.add(rim);
 const floor = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.35, 0.15, 64), new THREE.MeshStandardMaterial({ color: 0x25272b, metalness: 0.2, roughness: 0.78 }));
 floor.position.y = -0.075; modelScene.add(floor);
-const library = new ModelLibrary();
 let shown: THREE.Object3D | null = null;
 let loadToken = 0;
 let yaw = 0;
@@ -216,22 +210,41 @@ let zoom = 1;
 let dragging = false;
 let pointer = { x: 0, y: 0 };
 
-function proxyFor(item: Item): ProxyDescriptor {
-  const datasheet = Object.values(DATASHEETS).find((sheet) => sheet.name.toLowerCase() === item.entry?.datasheet);
-  return datasheet?.proxy ?? { silhouette: 'infantry', primary: '#3b6fa8', secondary: '#272d35', metalness: 0.55, heightInches: 2 };
-}
-
 function showModel(item: Item): void {
-  if (!item.entry) return;
+  if (!item.community) return;
   const token = ++loadToken;
   yaw = 0; pitch = 0; zoom = 1;
-  library.instantiate(item.entry.url, proxyFor(item), item.entry, (object) => {
-    if (token !== loadToken) return;
-    if (shown) modelScene.remove(shown);
-    shown = object;
-    shown.position.y = 0.08;
+  detail.textContent = `${item.detail} — loading…`;
+  const datasheet = DATASHEETS[item.community.datasheetId];
+  void loadModel(encodeTtsModel(item.community.asset), 'tts', {
+    targetHeightInches: datasheet?.proxy?.heightInches ?? 2,
+  }).then((object) => {
+    if (token !== loadToken) { disposeModel(object); return; }
+    if (shown) { modelScene.remove(shown); disposeModel(shown); }
+    const pivot = new THREE.Group();
+    pivot.add(object); // keep the asset's baked facing correction on the child
+    pivot.position.y = 0.08;
+    shown = pivot;
     modelScene.add(shown);
-  }, () => { detail.textContent = `${item.detail} — FAILED TO LOAD`; });
+    detail.textContent = item.detail;
+  }).catch(() => {
+    if (token === loadToken) detail.textContent = `${item.detail} — FAILED TO LOAD`;
+  });
+}
+
+function disposeModel(root: THREE.Object3D): void {
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.dispose();
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      const standard = material as THREE.MeshStandardMaterial;
+      standard.map?.dispose();
+      standard.normalMap?.dispose();
+      material.dispose();
+    }
+  });
 }
 
 renderer.domElement.onpointerdown = (event) => { dragging = true; pointer = { x: event.clientX, y: event.clientY }; renderer.domElement.setPointerCapture(event.pointerId); };
@@ -294,7 +307,6 @@ function animate(): void {
     shown.rotation.set(pitch, yaw, 0);
     shown.scale.setScalar(zoom);
   }
-  library.update(1 / 60);
   renderer.render(modelScene, camera);
 }
 
