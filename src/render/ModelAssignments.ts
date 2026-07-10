@@ -10,7 +10,7 @@
  * copyrighted assets.
  */
 
-export type ModelFormat = 'gltf' | 'glb' | 'obj' | 'stl';
+export type ModelFormat = 'gltf' | 'glb' | 'obj' | 'stl' | 'tts';
 
 export interface ModelAssignment {
   /** A remote URL, OR a data: URL for a locally-imported file. */
@@ -77,6 +77,7 @@ export function fileToDataUrl(file: File): Promise<string> {
 
 export function formatFromName(name: string): ModelFormat {
   const e = name.toLowerCase().split('?')[0];
+  if (e.endsWith('.json')) return 'tts';
   if (e.endsWith('.glb')) return 'glb';
   if (e.endsWith('.obj')) return 'obj';
   if (e.endsWith('.stl')) return 'stl';
