@@ -13,6 +13,7 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: !singlefile,
+    rollupOptions: singlefile ? undefined : { input: ['index.html', 'model-audit.html'] },
   },
   server: {
     host: true,
