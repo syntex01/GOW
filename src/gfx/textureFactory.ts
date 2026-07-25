@@ -3,7 +3,7 @@ import { TURRETS } from '../data/turrets'
 import type { ProjectileId } from '../data/types'
 import { UNITS } from '../data/units'
 import { AGE_THEMES, UI } from './palette'
-import { Canvas2D, css, glow, makeCanvas, roundRect, shade } from './painter'
+import { Canvas2D, css, makeCanvas, roundRect, shade } from './painter'
 import {
   drawBase,
   drawCloud,
@@ -12,6 +12,9 @@ import {
   drawParticles,
   drawProjectile,
   drawRidge,
+  drawLightFalloff,
+  drawSky,
+  drawSunDisc,
   drawTurret,
   drawVignette
 } from './propArt'
@@ -248,6 +251,7 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
       const particles = drawParticles()
       for (const [name, canvas] of Object.entries(particles)) addCanvas(scene, `fx:${name}`, canvas)
       addCanvas(scene, 'fx:shadow', buildShadowCanvas())
+      addCanvas(scene, 'fx:light', drawLightFalloff())
     }
   })
 
@@ -260,6 +264,7 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
         addCanvas(scene, `ridge:${age}:1`, drawRidge(age, 1, 1024, 230))
         addCanvas(scene, `ridge:${age}:2`, drawRidge(age, 2, 1024, 200))
         addCanvas(scene, `fg:${age}`, drawForeground(age, 1024, 150))
+        addCanvas(scene, `sky:${age}`, drawSky(age, 1280, 720))
       }
       addCanvas(scene, 'sky:cloud', drawCloud(0xffffff))
       addCanvas(scene, 'fx:vignette', drawVignette(1280, 720))
@@ -268,11 +273,7 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
 
   steps.push({
     label: 'Lighting the sun',
-    run: () => {
-      const sun = makeCanvas(256, 256)
-      glow(sun.ctx, 128, 128, 126, 0xffffff, 1)
-      addCanvas(scene, 'sky:sun', sun)
-    }
+    run: () => addCanvas(scene, 'sky:sun', drawSunDisc())
   })
 
   steps.push({

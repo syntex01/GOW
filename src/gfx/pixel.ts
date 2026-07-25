@@ -505,6 +505,28 @@ export default class Pix {
     return false
   }
 
+  /**
+   * Hands the grid over at an integer magnification, each art pixel becoming
+   * an n×n block. Used where a texture's dimensions are fixed by its consumer
+   * but its pixels still have to match the rest of the world.
+   */
+  toCanvasScaled(scale: number): PixelCanvas {
+    const n = Math.max(1, Math.round(scale))
+    if (n === 1) return this.toCanvas()
+    const big = new Pix(this.w * n, this.h * n)
+    for (let y = 0; y < this.h; y += 1) {
+      for (let x = 0; x < this.w; x += 1) {
+        const value = this.data[y * this.w + x]
+        if ((value >>> 24) === 0) continue
+        for (let dy = 0; dy < n; dy += 1) {
+          const row = (y * n + dy) * big.w + x * n
+          for (let dx = 0; dx < n; dx += 1) big.data[row + dx] = value
+        }
+      }
+    }
+    return big.toCanvas()
+  }
+
   /** Hands the finished grid to a real canvas for the texture manager. */
   toCanvas(): PixelCanvas {
     const canvas = document.createElement('canvas')

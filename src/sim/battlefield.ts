@@ -84,7 +84,16 @@ function emptyStats(): MatchStats {
 }
 
 function mergeModifiers(patch?: Partial<ArmyModifiers>): ArmyModifiers {
-  return { ...defaultModifiers(), ...(patch ?? {}) }
+  // Spreading the patch directly would let an explicitly-undefined key wipe out
+  // its default, and a single undefined multiplier turns an army's gold into
+  // NaN for the rest of the match — a silent loss, with no error anywhere.
+  const merged = defaultModifiers()
+  for (const [key, value] of Object.entries(patch ?? {})) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      merged[key as keyof ArmyModifiers] = value
+    }
+  }
+  return merged
 }
 
 /**

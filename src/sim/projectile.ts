@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { RES } from '../gfx/pixel'
 import { rng } from '../core/rng'
 import type { ProjectileId } from '../data/types'
 import type Vfx from '../gfx/vfx'
@@ -80,6 +81,7 @@ export default class Projectile {
 
     this.sprite = scene.add
       .image(this.x, this.y, `proj:${config.projectile}`)
+      .setScale(1 / RES)
       .setDepth(250)
       .setRotation(Math.atan2(this.vy, this.vx))
 

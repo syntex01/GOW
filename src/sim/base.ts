@@ -4,6 +4,7 @@ import { rng } from '../core/rng'
 import type { TurretDef } from '../data/types'
 import { TURRETS_BY_ID, TURRET_SLOTS } from '../data/turrets'
 import { FACTION_COLOR, UI } from '../gfx/palette'
+import { RES } from '../gfx/pixel'
 import { BASE_H, BASE_W, TURRET_SLOT_OFFSETS } from '../gfx/propArt'
 import type Vfx from '../gfx/vfx'
 import type { ArmorType, Damageable, DamageType, Faction, Layer } from './types'
@@ -161,12 +162,12 @@ export default class Base implements Damageable {
       .image(wx, wy - 8, `turret:${def.id}:barrel`)
       .setOrigin(0.08, 0.5)
       .setDepth(44)
-      .setScale(0.62)
+      .setScale(1 / RES)
     slot.baseSprite = this.scene.add
       .image(wx, wy, `turret:${def.id}:base`)
       .setOrigin(0.5, 0.7)
       .setDepth(45)
-      .setScale(0.62)
+      .setScale(1 / RES)
     slot.baseSprite.setFlipX(this.faction === 'enemy')
   }
 

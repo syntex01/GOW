@@ -60,6 +60,8 @@ export default class Lighting {
   private width: number
   private height: number
   private destroyed = false
+  /** Width of the falloff stamp, so the scale maths follows the texture. */
+  private stampSize = 192
   private readonly shadeKey: string
   private readonly glowKey: string
 
@@ -98,7 +100,8 @@ export default class Lighting {
       .setBlendMode(Phaser.BlendModes.ADD)
 
     // One off-screen stamp reused for every light, so no per-frame allocation.
-    this.eraser = scene.make.image({ key: 'fx:soft', add: false })
+    this.eraser = scene.make.image({ key: GLOW_STAMP_KEY, add: false })
+    this.stampSize = this.eraser.width || 192
   }
 
   get isEnabled(): boolean {
@@ -167,7 +170,7 @@ export default class Lighting {
       if (sx < -light.radius || sx > this.width + light.radius) continue
       if (sy < -light.radius || sy > this.height + light.radius) continue
 
-      const scale = (light.radius * 2) / 64
+      const scale = (light.radius * 2) / this.stampSize
       eraser.setScale(scale).setAlpha(Math.min(1, light.intensity * 1.25))
       shade.erase(eraser, sx, sy)
 
@@ -197,4 +200,4 @@ export default class Lighting {
   }
 }
 
-const GLOW_STAMP_KEY = 'fx:soft'
+const GLOW_STAMP_KEY = 'fx:light'

@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { save } from '../core/save'
 import { AGE_THEMES } from './palette'
 import { css, shade } from './painter'
+import { RES } from './pixel'
 
 const RIDGE_SCROLL = [0.1, 0.24, 0.45]
 
@@ -15,7 +16,7 @@ export default class Background {
   private worldWidth: number
   private groundY: number
 
-  private sky!: Phaser.GameObjects.Graphics
+  private sky!: Phaser.GameObjects.Image
   private sun!: Phaser.GameObjects.Image
   private clouds: Phaser.GameObjects.Image[] = []
   private ridges: Phaser.GameObjects.TileSprite[] = []
@@ -41,13 +42,20 @@ export default class Background {
     const w = cam.width
     const h = cam.height
 
-    this.sky = this.scene.add.graphics().setScrollFactor(0).setDepth(-1000)
+    // The sky is a pre-dithered texture rather than a gradient: a smooth blend
+    // is the one thing that would give the whole pixel-art scene away.
+    this.sky = this.scene.add
+      .image(0, 0, 'sky:0')
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(-1000)
+      .setDisplaySize(w, h)
 
     this.sun = this.scene.add
       .image(w * 0.72, h * 0.2, 'sky:sun')
       .setScrollFactor(0.02)
       .setDepth(-990)
-      .setScale(0.85)
+      .setScale(1.4)
       .setBlendMode(Phaser.BlendModes.ADD)
 
     // Deliberately faint: clouds add depth, but at high alpha they flatten the
@@ -57,19 +65,23 @@ export default class Background {
         .image(Math.random() * this.worldWidth, h * (0.07 + Math.random() * 0.24), 'sky:cloud')
         .setScrollFactor(0.06)
         .setDepth(-980)
-        .setScale(0.55 + Math.random() * 0.7)
-        .setAlpha(0.1 + Math.random() * 0.14)
+        .setScale(1 / RES)
+        .setAlpha(0.12 + Math.random() * 0.16)
       this.clouds.push(cloud)
     }
 
+    // Every band reaches down to the ground line. Staggering their bottoms
+    // instead leaves a horizontal seam across the screen wherever one band
+    // ends and the one in front of it has not started yet.
+    const crests = [81, 173, 265]
     for (let i = 0; i < 3; i += 1) {
-      const heights = [300, 260, 220]
-      const yOffsets = [0.62, 0.74, 0.86]
+      const bottom = this.groundY + 8
       const ridge = this.scene.add
-        .tileSprite(0, this.groundY - h * (1 - yOffsets[i]) * 0.6, w, heights[i], 'ridge:0:0')
+        .tileSprite(0, bottom, w, bottom - crests[i], 'ridge:0:0')
         .setOrigin(0, 1)
         .setScrollFactor(0)
         .setDepth(-970 + i)
+      ridge.setTileScale(1 / RES, 1 / RES)
       this.ridges.push(ridge)
     }
 
@@ -78,6 +90,7 @@ export default class Background {
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-900)
+    this.ground.setTileScale(1 / RES, 1 / RES)
 
     this.groundShade = this.scene.add.graphics().setScrollFactor(0).setDepth(-899)
 
@@ -88,6 +101,7 @@ export default class Background {
       .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(760)
+    this.foreground.setTileScale(1 / RES, 1 / RES)
 
     if (save.settings.particleQuality === 'high') {
       this.motes = this.scene.add
@@ -127,34 +141,15 @@ export default class Background {
     const w = cam.width
     const h = cam.height
 
-    this.sky.clear()
-    const bands = 48
-    for (let i = 0; i < bands; i += 1) {
-      const t = i / (bands - 1)
-      const color =
-        t < 0.55
-          ? Phaser.Display.Color.Interpolate.ColorWithColor(
-              Phaser.Display.Color.IntegerToColor(theme.sky[0]),
-              Phaser.Display.Color.IntegerToColor(theme.sky[1]),
-              100,
-              Math.round((t / 0.55) * 100)
-            )
-          : Phaser.Display.Color.Interpolate.ColorWithColor(
-              Phaser.Display.Color.IntegerToColor(theme.sky[1]),
-              Phaser.Display.Color.IntegerToColor(theme.sky[2]),
-              100,
-              Math.round(((t - 0.55) / 0.45) * 100)
-            )
-      this.sky.fillStyle(Phaser.Display.Color.GetColor(color.r, color.g, color.b), 1)
-      this.sky.fillRect(0, (h * i) / bands - 1, w, h / bands + 2)
-    }
+    this.sky.setTexture(`sky:${clamped}`).setDisplaySize(w, h)
 
     this.sun.setTint(shade(theme.sun, -0.5))
     this.clouds.forEach(c => c.setTint(shade(theme.fog, -0.2)))
 
     this.ridges.forEach((ridge, i) => {
       ridge.setTexture(`ridge:${clamped}:${i}`)
-      ridge.setAlpha(i === 0 ? 0.72 : i === 1 ? 0.88 : 1)
+      // Distance is baked into each band's colour, so no alpha tricks here.
+      ridge.setAlpha(1)
     })
 
     this.ground.setTexture(`ground:${clamped}`)

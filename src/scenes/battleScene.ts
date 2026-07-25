@@ -76,7 +76,7 @@ export default class BattleScene extends Phaser.Scene {
 
     const setup = session.setup
     const level = setup.level
-    const profile = { ...AI_PROFILES[setup.difficulty] }
+    const profile = { ...(AI_PROFILES[setup.difficulty] ?? AI_PROFILES.veteran) }
     // One seed drives combat rolls, the AI and spawn jitter, so a match is
     // fully reproducible — and identical on both machines when networked.
     this.matchSeed = setup.seed ?? (Date.now() >>> 0)
