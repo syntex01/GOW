@@ -40,6 +40,13 @@ const TRAIL: Partial<Record<ProjectileId, { color: number; rate: number; additiv
 
 const STICKY: ProjectileId[] = ['arrow', 'bolt']
 
+/**
+ * How hard the air pushes back. Small enough that a shot still lands roughly
+ * where it was aimed, large enough that a long lob falls short — which is what
+ * makes wind worth reading before committing to artillery.
+ */
+const DRAG_COEFFICIENT = 0.12
+
 /** Projectiles that cast light while in flight. */
 const PROJECTILE_LIGHT: Partial<Record<ProjectileId, { color: number; radius: number; intensity: number }>> = {
   laserbolt: { color: 0x5ce1ff, radius: 72, intensity: 0.85 },
@@ -64,6 +71,8 @@ export default class Projectile {
   penetration = 0
   /** Targets already resolved, so one shot cannot hit the same body twice. */
   private deflected = new Set<Damageable>()
+  /** Sideways push from the age's weather, set by the battlefield. */
+  wind = 0
   /** Cluster Shells: splits at the top of its arc. */
   cluster = false
   private split = false
@@ -124,6 +133,20 @@ export default class Projectile {
     }
 
     this.vy += this.gravity * dt
+
+    // Air. Only things that actually arc are slowed noticeably — a rail slug
+    // does not care about the breeze, a thrown boulder does — so drag scales
+    // with the projectile's own gravity rather than being applied flat.
+    if (this.gravity > 0) {
+      const speed = Math.hypot(this.vx, this.vy)
+      if (speed > 1) {
+        const drag = DRAG_COEFFICIENT * speed * dt
+        const scale = Math.max(0, 1 - drag / speed)
+        this.vx *= scale
+        this.vy *= scale
+      }
+      this.vx += this.wind * dt
+    }
 
     const prevX = this.x
     const prevY = this.y

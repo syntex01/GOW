@@ -289,6 +289,9 @@ export default class Base implements Damageable {
     return best
   }
 
+  /** Raised when the wall takes a hit, so the battlefield can shed rubble. */
+  onWallHit?: (x: number, y: number, amount: number) => void
+
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {
     void source
     void knockback
@@ -302,6 +305,11 @@ export default class Base implements Damageable {
     this.shakeOffset = Math.min(9, applied / 40) * (rng.chance(0.5) ? 1 : -1)
     this.vfx.damageNumber(this.x + rng.spread(50), this.y - BASE_H * 0.55, applied, 0xffd166)
     this.vfx.ricochet(this.getImpactX(), this.y - BASE_H * (0.2 + rng.next() * 0.4), 0xffca7a, 1.2)
+
+    // A hit knocks masonry out of the wall. The rubble is real, it piles at
+    // the foot of the fortress, and a wall that has been shelled for a minute
+    // looks it.
+    this.onWallHit?.(this.getImpactX(), this.y - BASE_H * (0.15 + rng.next() * 0.5), applied)
     audio.play('base_hit', Math.min(1, 0.3 + applied / 400))
 
     // Splash damage bleeds into the turrets mounted on the wall.

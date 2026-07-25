@@ -61,6 +61,10 @@ passively and from kills; experience arrives from kills alone.
   barrages, bomber runs, and a sweeping orbital beam.
 - **Economy upgrades** — five levels of compounding income. Buying early wins
   long games; buying late loses short ones.
+- **Research** — three tech branches whose nodes change what your army *does*.
+  Shots that skip off armour, explosions that throw fragments, soldiers who eat
+  the dead, corpses that stop bullets, sappers who tunnel past a stalled line.
+  Not one of them is a percentage.
 
 Win by destroying the enemy fortress.
 
@@ -88,6 +92,7 @@ that opponent.
 | `E`              | Evolve to the next age          |
 | `Q` / `Space`    | Fire the special ability        |
 | `U`              | Buy the next economy upgrade    |
+| `R`              | Open the research tree          |
 | `F`              | Cycle game speed (1x / 2x / 3x) |
 | `Backspace`      | Cancel the last queued unit     |
 | `Esc` / `P`      | Pause                           |
@@ -136,6 +141,7 @@ for how that is kept honest.
 - **32 units** across melee, ranged, siege, tank, support and air roles
 - **12 turrets** in five tiers, including dedicated anti-air
 - **5 special abilities**, one per age
+- **15 research nodes** across three branches, every one a new behaviour
 - **12 campaign missions** and **12 achievements**
 
 ## Architecture
@@ -143,15 +149,15 @@ for how that is kept honest.
 ```
 src/
   core/         event bus, save/settings, procedural audio synth, seeded RNG
-  data/         ages, units, turrets, abilities, campaign levels (pure data)
+  data/         ages, units, turrets, abilities, tech trees, levels (pure data)
   gfx/          canvas painters, unit rigs, props, parallax, particles, VFX
-  sim/          units, projectiles, bases, armies, AI, the battlefield
+  sim/          units, projectiles, bases, armies, AI, physics, the battlefield
   net/          wire protocol, WebRTC peer, deterministic lockstep driver
   scenes/       boot, preload, menu, battle, HUD, multiplayer lobby, results
   ui/           buttons, bars, tooltips, modals
 ```
 
-Two design decisions shape everything else:
+Three design decisions shape everything else:
 
 **All art is code, and all of it is pixel art.** `gfx/pixel.ts` owns an integer
 pixel grid with Bresenham lines, midpoint ellipses, scanline polygons, ordered
@@ -168,6 +174,16 @@ Art is authored at half scale and displayed at double, with the renderer
 sampling nearest-neighbour, so a foot soldier is 33 real pixels tall. See
 [docs/DESIGN.md](docs/DESIGN.md#drawing-pixel-art-procedurally) for what that
 budget buys and what it forbids.
+
+**The battlefield is physical.** Every loose object — gibs, scrap, casings,
+blood, masonry, shrapnel — is a point mass with its own material properties,
+integrated on the same fixed sub-step as the rest of the simulation. Soldiers
+come apart when the killing blow is heavy enough, and each piece is thrown
+along the line the blow came from. Explosions throw everything in range. The
+mess is permanent: blood, oil and scorch are stamped into a layer that is never
+cleared, so by the fifth minute you can read the history of a match off the
+floor. All of it is deterministic, because corpses block shots and soaked
+ground makes soldiers fight faster.
 
 **The simulation is hand-rolled.** There is no physics engine. `sim/unit.ts`
 integrates knockback, gravity and friction directly, drives a procedural walk

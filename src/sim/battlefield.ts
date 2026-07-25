@@ -4,6 +4,7 @@ import type { MatchStats } from '../core/events'
 import { Rng } from '../core/rng'
 import { ABILITIES_BY_ID } from '../data/abilities'
 import { ageDef } from '../data/ages'
+import { AGE_THEMES } from '../gfx/palette'
 import { rosterForAge } from '../data/units'
 import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
 import { TECHS_BY_ID, TECH_ORDER, type TechId } from '../data/tech'
@@ -218,6 +219,19 @@ export default class Battlefield {
 
     this.playerBase.onTurretFire = this.handleTurretFire
     this.enemyBase.onTurretFire = this.handleTurretFire
+    const shedRubble = (x: number, y: number, amount: number) => {
+      const chunks = Math.min(4, 1 + Math.floor(amount / 90))
+      for (let i = 0; i < chunks; i += 1) {
+        this.physics.spawn('rubble', x, y, this.rng.spread(150), -this.rng.range(40, 200), {
+          size: this.rng.range(0.45, 1),
+          spin: this.rng.spread(9),
+          ttl: 14000
+        })
+      }
+    }
+    this.playerBase.onWallHit = shedRubble
+    this.enemyBase.onWallHit = shedRubble
+
     this.playerBase.onDestroyed = () => this.endMatch(false)
     this.enemyBase.onDestroyed = () => this.endMatch(true)
 
@@ -240,6 +254,7 @@ export default class Battlefield {
       { x0: this.enemyBase.x - BASE_W * 0.5, x1: this.enemyBase.x + BASE_W * 0.5, top: config.groundY - BASE_H * 0.8 }
     ])
 
+    this.updateWind()
     this.baseHealthGfx = scene.add.graphics().setDepth(290)
   }
 
@@ -768,6 +783,7 @@ export default class Battlefield {
    */
   private equipProjectile(p: Projectile): Projectile {
     const army = this.armyFor(p.faction)
+    p.wind = this.physics.wind
     if (army.hasTech('ricochet')) p.ricochets = 2
     if (army.hasTech('penetrator')) p.penetration = 1
     if (army.hasTech('cluster') && p.config.gravity > 0) {
@@ -882,6 +898,16 @@ export default class Battlefield {
       )
       if (FIREARMS.has(unit.def.visual.weapon)) {
         this.vfx.gunSmoke(muzzle.x, muzzle.y, finalAngle, unit.dir)
+        // Brass. Purely texture, but a firing line that leaves nothing behind
+        // reads as a line of statues.
+        this.physics.spawn(
+          'casing',
+          muzzle.x,
+          muzzle.y,
+          -unit.dir * this.rng.range(40, 130),
+          -this.rng.range(60, 170),
+          { spin: this.rng.spread(24), size: 0.7 }
+        )
       }
 
       this.equipProjectile(
@@ -1155,7 +1181,19 @@ export default class Battlefield {
     this.vfx.flash(0xffffff, 320, 0.5)
     this.vfx.explosion(base.x, base.y - 120, 200, 0xffe08a, true)
     this.onAgeAdvanced?.(faction, army.age)
+    this.updateWind()
     return true
+  }
+
+  /**
+   * Weather blows debris and lobbed shots downrange. Taken from the player's
+   * age so both sides fight in the same conditions, and derived rather than
+   * rolled so it stays identical on both peers.
+   */
+  private updateWind(): void {
+    const weather = AGE_THEMES[Math.max(0, Math.min(AGE_THEMES.length - 1, this.player.age))].weather
+    const strength: Record<string, number> = { clear: 0, embers: 14, ash: -26, rain: -42, snow: 18 }
+    this.physics.wind = strength[weather] ?? 0
   }
 
   buildTurret(faction: Faction, slotIndex: number, turretId: string): boolean {

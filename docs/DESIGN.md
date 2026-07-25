@@ -226,6 +226,88 @@ particle meant magnifying its dither tenfold into a checkerboard the size of a
 fortress. `drawLightFalloff` is authored at 192 pixels and quantised into nine
 banded steps, so it stays a glow at any radius the game asks for.
 
+## Physics, and why it is in the simulation
+
+Every loose object on the field — gibs, scrap, shell casings, blood droplets,
+masonry, shrapnel — is a point mass in `sim/physics.ts` with mass, drag,
+restitution, rolling friction and spin, colliding with the ground and with the
+fortress walls.
+
+**It lives in the simulation, not the effects layer.** That is the decision
+everything else follows from. A corpse can block a shot, shrapnel wounds, and
+soaked ground makes a soldier fight faster, so debris changes who wins. It has
+to be as deterministic as anything else: same seed, same fixed sub-step, same
+result on both peers. Debris is folded into the state fingerprint. Droplets and
+casings are deliberately left out — there are hundreds of them, they cannot
+affect anything, and hashing them would make desync detection expensive for no
+gain.
+
+**Material properties do the characterisation.** Brass pings and skitters,
+flesh lands wet and stops, masonry thuds, blood does not bounce at all. Those
+are five numbers per kind in one table, and they are most of what makes a
+battlefield read as full of different substances rather than of one debris type
+with different sprites.
+
+**Death is measured by overkill.** How far past zero the killing blow carried a
+unit — as a fraction of its own health — decides whether it topples or comes
+apart. A spearman finished by one more jab falls over; one hit by a shell does
+not stay in one piece. When it does come apart, each rigged part becomes a body
+carrying its own sprite, thrown along the line the blow came from, so what
+lands on the ground is recognisably the soldier who was standing there.
+
+**Explosions are impulses.** `applySplash` does damage in a circle and then
+throws every loose object in range, which is the difference between a shell
+landing in a crowd and a red number appearing over one.
+
+### The two splatter maps
+
+There are two, and conflating them would break multiplayer.
+
+The one the player sees is a `DynamicTexture` that is never cleared, stamped
+wherever something lands wetly. By the fifth minute you can read the history of
+a match off the floor. It is *purely cosmetic* — a texture cannot be hashed
+cheaply and must never decide anything.
+
+The one the simulation keeps is `Battlefield.goreMap`: one float per 16 pixels
+of ground, deterministic, and the only thing gameplay is ever allowed to read.
+Bloodlust asks it how soaked the ground under a soldier is. If a tech ever needs
+to know about the mess, it asks the map, not the picture.
+
+## Tech trees
+
+Fifteen nodes across three branches, with one rule: **a node must change what
+the game does, not what a number says.** There is no "+10% damage" in
+`data/tech.ts`. A tech either gives an army a behaviour it did not have or it
+does not belong.
+
+That constraint is also what makes the branches feel different. Carnage wants a
+long, static, bloody front line — it turns the dead into a resource and the
+ground into terrain. Ordnance wants open space and physics. Engineering refuses
+the shape of the lane: it goes under it, salvages it, or blows it up.
+
+They interact, which is where builds come from rather than shopping lists:
+shrapnel feeds corpse walls, sappers make a mess behind the enemy line for
+bonepickers to eat, salvage turns a losing engagement into income.
+
+A few are worth calling out for how they are implemented:
+
+- **Ricochet** tests the *angle of incidence*, not a probability. A flat shot
+  that catches heavy armour obliquely skips off it; the same shot at close
+  range does not. That makes it a range decision instead of a passive.
+- **Corpse Wall** is checked against the physics world before the projectile's
+  own hit test, so a pile of the dead genuinely shields what stands behind it.
+- **Necropolis** consumes twelve settled pieces from your own half and returns
+  the cheapest unit of your age at half health — so it competes with
+  Bonepickers for the same corpses.
+- **EMP** shuts a machine down rather than damaging it, which is a hard counter
+  to armour instead of a discount on it.
+
+Research is a lockstep command, and owned techs are packed into the state
+fingerprint as a bitmask, so a networked match applies a purchase on the same
+tick on both machines. The AI commits to one branch per match chosen from its
+seed, and will not spend on research until it has troops on the field — a
+teched-up army of nobody loses.
+
 ## Lockstep multiplayer
 
 Multiplayer is deterministic lockstep over a direct WebRTC data channel. Neither
