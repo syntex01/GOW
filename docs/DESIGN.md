@@ -175,10 +175,74 @@ initialisers do not re-run. `BattleScene.resetSceneState` and
 restarted battle came back still paused, and the HUD kept updating widgets from
 the previous match that had already been destroyed.
 
+## Lockstep multiplayer
+
+Multiplayer is deterministic lockstep over a direct WebRTC data channel. Neither
+peer is authoritative, no game state is ever transmitted, and there is no server
+of any kind — not for matchmaking, not for relaying. Players exchange two text
+codes by whatever channel they already have (chat, email, reading them aloud)
+and the browsers connect to each other.
+
+**Why lockstep and not state replication.** The thing being simulated is a few
+dozen units with knockback, ragdolls and swept projectile collision. Replicating
+that state sixty times a second would need far more bandwidth than a
+copy-paste-signalled peer connection deserves, and would need interpolation and
+reconciliation on top. Commands are tiny — a build order is a dozen bytes — and
+the simulation was already fixed-step and seeded, so lockstep was close to free.
+
+**The tick.** `TICK_SUBSTEPS = 5` sub-steps per network tick, and the sub-step is
+20 ms, so a tick is 100 ms. Commands are scheduled `INPUT_DELAY_TICKS = 2` ticks
+ahead — 200 ms of latency hiding. That would be intolerable in a shooter and is
+invisible here: every action in this game is a build order queued behind a
+production timer, so nobody can perceive the delay.
+
+A tick executes only when *both* sides' commands for it have arrived. If the
+peer's input is late the local clock simply holds; after 600 ms the HUD says so.
+Running ahead is never an option, because there is nothing to reconcile against.
+
+**Ordering.** `LockstepDriver.executeTick` applies local commands first, then
+remote, then steps the simulation. Both peers use that same fixed order rather
+than, say, arrival order — otherwise two commands landing on the same tick could
+resolve differently on the two machines. The order is arbitrary; being identical
+is the whole point.
+
+**Seeding the pipeline.** With a two-tick input delay, ticks 0 and 1 can never
+carry a command, so the driver commits them empty in its constructor. They must
+still be *sent*: the executor waits for the peer's tick 0 regardless of whether
+it could possibly contain anything, so skipping the transmission deadlocks both
+peers at tick 0 forever. That bug is exactly why the sends live in the
+constructor next to the commits.
+
+**Desync detection.** Every `HASH_INTERVAL_TICKS = 12` ticks (1.2 s) each peer
+fingerprints its world with FNV-1a over `Battlefield.stateHash` — elapsed time,
+both economies, base HP, and every unit's id, position and HP, all quantised —
+and piggybacks it on the next tick message. A mismatch stops the match and says
+so plainly. Silently drifting into two different games is much worse than an
+honest error, and quantisation means a fingerprint mismatch is a real logic
+divergence rather than a float rounding artifact.
+
+**What determinism costs.** All gameplay randomness goes through the seeded
+mulberry32 generator in `core/rng.ts`; nothing in `sim/` may call `Math.random`
+directly. `Battlefield.stepFixed` exists so the netcode advances the world in
+whole sub-steps with no wall-clock input at all — the accumulator in `update` is
+bypassed entirely during a networked match. Match speed controls are locked, and
+pause stops the HUD rather than the simulation, since one peer cannot freeze
+time for the other.
+
+**Result orientation.** `Battlefield` decides victory from the *player* side's
+point of view because that is what single-player means. In a networked match the
+guest controls the enemy side, so `BattleScene.finish` inverts:
+`victory === (this.localFaction === 'player')`, and pulls its summary from
+`statsFor(localFaction)` rather than the player-side stats. Networked matches do
+not touch campaign records or achievements — an opponent who lets you win is not
+an accomplishment.
+
 ## Things intentionally left simple
 
 - No pathfinding: one lane, units queue behind each other with a fixed gap.
 - No fog of war: both sides see everything, as the genre expects.
-- No multiplayer: the AI is the opponent. The simulation is deterministic given
-  a seed (`core/rng.ts`), so a replay or lockstep netcode layer is feasible
-  later without restructuring.
+- No rollback: lockstep holds the clock instead of predicting and rewinding.
+  Rollback would buy responsiveness this game has no use for, and would require
+  the whole simulation to be snapshot- and replay-safe.
+- No reconnect: if a peer drops, the match ends. Resuming would mean shipping a
+  full state snapshot, which is precisely the thing lockstep avoids needing.

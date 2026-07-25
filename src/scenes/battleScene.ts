@@ -9,9 +9,13 @@ import Background from '../gfx/background'
 import Lighting from '../gfx/lighting'
 import { AGE_THEMES } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
+import LockstepDriver, { applyCommand } from '../net/lockstep'
+import { TICK_SUBSTEPS, type Command, type NetMessage } from '../net/protocol'
 import AiController, { AI_PROFILES } from '../sim/ai'
+import type Army from '../sim/army'
+import type Base from '../sim/base'
 import Battlefield from '../sim/battlefield'
-import type { Faction } from '../sim/types'
+import { OPPOSITE, type Faction } from '../sim/types'
 
 export const WORLD_WIDTH = 1380
 export const GROUND_Y = 545
@@ -31,7 +35,8 @@ export default class BattleScene extends Phaser.Scene {
   private background!: Background
   private lighting!: Lighting
   private vfx!: Vfx
-  private ai!: AiController
+  /** Absent in peer-to-peer matches, where both sides are human. */
+  ai?: AiController
   private waveTimer = 0
   private cameraFocus = 0
   private dragStartX = 0
@@ -39,6 +44,15 @@ export default class BattleScene extends Phaser.Scene {
   private dragging = false
   private manualCameraUntil = 0
   private ended = false
+  private matchSeed = 0
+
+  /**
+   * Which side this client commands. Always 'player' offline; the guest in a
+   * networked match commands 'enemy' in the shared world.
+   */
+  localFaction: Faction = 'player'
+  /** Present only in peer-to-peer matches. */
+  lockstep?: LockstepDriver
 
   private readonly speeds = [1, 2, 3]
 
@@ -60,6 +74,9 @@ export default class BattleScene extends Phaser.Scene {
     const setup = session.setup
     const level = setup.level
     const profile = { ...AI_PROFILES[setup.difficulty] }
+    // One seed drives combat rolls, the AI and spawn jitter, so a match is
+    // fully reproducible — and identical on both machines when networked.
+    this.matchSeed = setup.seed ?? (Date.now() >>> 0)
 
     this.battlefield = new Battlefield(
       this,
@@ -69,6 +86,7 @@ export default class BattleScene extends Phaser.Scene {
         airY: AIR_Y,
         startingGold: level?.startingGold ?? (setup.mode === 'endless' ? 1600 : 900),
         enemyStartAge: level?.enemyStartAge ?? 0,
+        seed: this.matchSeed,
         playerModifiers: level?.playerModifiers,
         enemyModifiers: {
           income: profile.incomeMultiplier,
@@ -88,7 +106,10 @@ export default class BattleScene extends Phaser.Scene {
       }
     }
 
-    this.ai = new AiController(this.battlefield, profile)
+    // A networked match has two humans; nobody is driving the AI.
+    if (!setup.netRole) {
+      this.ai = new AiController(this.battlefield, profile, (this.matchSeed ^ 0x9e3779b9) >>> 0)
+    }
     this.background.setAge(this.battlefield.player.age)
     this.lighting.setAge(this.battlefield.player.age)
 
@@ -107,6 +128,7 @@ export default class BattleScene extends Phaser.Scene {
 
     if (session.setup.mode === 'endless') this.configureEndless()
 
+    this.setupNetworking()
     this.setupInput()
     this.scene.launch('HUDScene')
     this.scene.bringToTop('HUDScene')
@@ -136,6 +158,86 @@ export default class BattleScene extends Phaser.Scene {
     this.manualCameraUntil = 0
   }
 
+  /** The army and fortress this client is playing. */
+  get localArmy(): Army {
+    return this.battlefield.armyFor(this.localFaction)
+  }
+
+  get localBase(): Base {
+    return this.battlefield.baseFor(this.localFaction)
+  }
+
+  get foeArmy(): Army {
+    return this.battlefield.armyFor(OPPOSITE[this.localFaction])
+  }
+
+  get foeBase(): Base {
+    return this.battlefield.baseFor(OPPOSITE[this.localFaction])
+  }
+
+  get isNetworked(): boolean {
+    return this.lockstep !== undefined
+  }
+
+  // ───────────────────────────── Networking ─────────────────────────────
+
+  private setupNetworking(): void {
+    const setup = session.setup
+    if (!setup.netRole) return
+
+    // Host commands the left fortress, guest the right. Both simulate the
+    // same world; only the point of view differs.
+    this.localFaction = setup.netRole === 'host' ? 'player' : 'enemy'
+    const peer = session.peer ?? undefined
+
+    this.lockstep = new LockstepDriver(this.battlefield, this.localFaction, {
+      send: message => peer?.send(message),
+      onDesync: (tick, mine, theirs) => this.handleDesync(tick, mine, theirs),
+      onStall: stalled =>
+        gameEvents.emit('hud:flash', {
+          message: stalled ? 'Waiting for opponent…' : 'Opponent reconnected',
+          tone: stalled ? 'warn' : 'good'
+        })
+    })
+
+    if (peer) {
+      this.netHandler = (message: NetMessage) => {
+        if (message.k === 'tick') this.lockstep?.receive(message)
+        else if (message.k === 'bye') this.handleOpponentLeft(message.reason)
+      }
+      session.setNetHandler(this.netHandler)
+    }
+  }
+
+  private netHandler?: (message: NetMessage) => void
+
+  private handleDesync(tick: number, mine: number, theirs: number): void {
+    console.warn(`[gow] desync at tick ${tick}: ${mine} vs ${theirs}`)
+    gameEvents.emit('hud:flash', {
+      message: 'Simulations diverged — match ended',
+      tone: 'warn'
+    })
+    this.endNetworkedMatch('The two games fell out of sync, so the match was stopped.')
+  }
+
+  private handleOpponentLeft(reason: string): void {
+    gameEvents.emit('hud:flash', { message: 'Opponent left', tone: 'warn' })
+    this.endNetworkedMatch(`Your opponent disconnected (${reason}).`)
+  }
+
+  private endNetworkedMatch(reason: string): void {
+    if (this.ended) return
+    this.ended = true
+    this.lockstep?.stop()
+    session.endNetworkMatch(reason)
+    session.netEndReason = reason
+    audio.stopMusic()
+    this.time.delayedCall(400, () => {
+      this.scene.stop('HUDScene')
+      this.scene.start('MenuScene')
+    })
+  }
+
   // ─────────────────────────────── Modes ───────────────────────────────
 
   private configureEndless(): void {
@@ -158,7 +260,7 @@ export default class BattleScene extends Phaser.Scene {
     this.wave += 1
     const bf = this.battlefield
     bf.registerWave(this.wave)
-    this.ai.escalate(this.wave)
+    this.ai?.escalate(this.wave)
 
     const mods = bf.enemy.modifiers
     mods.income *= 1.1
@@ -202,8 +304,9 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-SPACE', () => this.tryAbility())
     keyboard.on('keydown-U', () => this.tryEconomy())
     keyboard.on('keydown-BACKSPACE', () => {
-      const refund = this.battlefield.player.cancelLast()
-      if (refund > 0) audio.play('coin', 0.4)
+      if (this.localArmy.queue.length === 0) return
+      this.dispatch({ t: 'cancel' })
+      audio.play('coin', 0.4)
     })
 
     for (let i = 1; i <= 7; i += 1) {
@@ -230,22 +333,41 @@ export default class BattleScene extends Phaser.Scene {
     })
   }
 
+  /**
+   * Every player action funnels through here. Offline it applies immediately;
+   * networked it becomes a command that both peers execute on the same tick.
+   */
+  private dispatch(command: Command): void {
+    if (this.lockstep) this.lockstep.issue(command)
+    else applyCommand(this.battlefield, this.localFaction, command)
+  }
+
   queueByIndex(index: number): void {
-    const roster = this.battlefield.player.roster
-    const def = roster[index]
+    const army = this.localArmy
+    const def = army.roster[index]
     if (!def) return
-    const reason = this.battlefield.player.blockReason(def)
+    const reason = army.blockReason(def)
     if (reason) {
       audio.play('ui_denied', 0.5)
       gameEvents.emit('hud:flash', { message: reason, tone: 'warn' })
       return
     }
-    this.battlefield.queueUnit('player', def.id)
+    this.dispatch({ t: 'unit', id: def.id })
+    audio.play('ui_click', 0.4)
+  }
+
+  buildTurret(slot: number, turretId: string): void {
+    this.dispatch({ t: 'turret', slot, id: turretId })
+    audio.play('ui_click', 0.4)
+  }
+
+  sellTurret(slot: number): void {
+    this.dispatch({ t: 'sell', slot })
     audio.play('ui_click', 0.4)
   }
 
   tryEvolve(): boolean {
-    const army = this.battlefield.player
+    const army = this.localArmy
     if (army.age >= 4) {
       gameEvents.emit('hud:flash', { message: 'Already at the final age', tone: 'info' })
       return false
@@ -260,42 +382,45 @@ export default class BattleScene extends Phaser.Scene {
       audio.play('ui_denied', 0.5)
       return false
     }
-    return this.battlefield.evolve('player')
+    this.dispatch({ t: 'evolve' })
+    return true
   }
 
   tryAbility(): boolean {
-    if (!this.battlefield.player.abilityReady) {
+    if (!this.localArmy.abilityReady) {
       audio.play('ui_denied', 0.5)
       gameEvents.emit('hud:flash', { message: 'Special ability is still charging', tone: 'warn' })
       return false
     }
-    const used = this.battlefield.useAbility('player')
-    if (used) {
-      this.checkAbilityAchievement()
-      this.manualCameraUntil = 0
-    }
-    return used
+    this.dispatch({ t: 'ability' })
+    if (!this.isNetworked) this.checkAbilityAchievement()
+    this.manualCameraUntil = 0
+    return true
   }
 
   tryEconomy(): boolean {
-    const army = this.battlefield.player
+    const army = this.localArmy
     const cost = army.incomeUpgradeCost()
     if (cost === null) {
       gameEvents.emit('hud:flash', { message: 'Economy fully upgraded', tone: 'info' })
       return false
     }
-    if (!army.buyIncomeUpgrade()) {
+    if (army.gold < cost) {
       audio.play('ui_denied', 0.5)
       gameEvents.emit('hud:flash', { message: `Economy upgrade costs ${cost} gold`, tone: 'warn' })
       return false
     }
-    this.battlefield.stats.goldSpent += cost
+    this.dispatch({ t: 'econ' })
     audio.play('coin', 0.6)
     gameEvents.emit('hud:flash', { message: 'Income increased', tone: 'good' })
     return true
   }
 
   cycleSpeed(): void {
+    if (this.isNetworked) {
+      gameEvents.emit('hud:flash', { message: 'Game speed is fixed in multiplayer', tone: 'info' })
+      return
+    }
     this.speedIndex = (this.speedIndex + 1) % this.speeds.length
     this.battlefield.speedScale = this.speeds[this.speedIndex]
     audio.play('ui_click', 0.4)
@@ -307,6 +432,11 @@ export default class BattleScene extends Phaser.Scene {
 
   togglePause(): void {
     if (this.ended) return
+    if (this.isNetworked && !this.paused) {
+      // Pausing cannot stop the opponent's clock, so the menu opens without
+      // freezing the world.
+      gameEvents.emit('hud:flash', { message: 'The battle continues while this menu is open', tone: 'info' })
+    }
     this.paused = !this.paused
     gameEvents.emit('match:paused', { paused: this.paused })
     audio.play('ui_click', 0.5)
@@ -328,10 +458,16 @@ export default class BattleScene extends Phaser.Scene {
     this.background.update(delta, cam.scrollX)
     // Composite lighting from whatever registered a light this frame.
     this.lighting.render(cam.worldView.x, cam.worldView.y)
-    if (this.paused || this.ended) return
+    if (this.ended) return
+    if (this.paused && !this.isNetworked) return
 
-    this.battlefield.update(delta)
-    this.ai.update(delta * this.battlefield.speedScale)
+    if (this.lockstep) {
+      // Fixed network ticks; wall-clock only decides *when* a tick may run.
+      this.lockstep.update(delta, TICK_SUBSTEPS * Battlefield.stepMs)
+    } else {
+      this.battlefield.update(delta)
+      this.ai?.update(delta * this.battlefield.speedScale)
+    }
     this.updateCamera(delta)
     this.updateMusicIntensity()
 
@@ -380,13 +516,39 @@ export default class BattleScene extends Phaser.Scene {
     this.ended = true
     const bf = this.battlefield
     const setup = session.setup
-    const stats = { ...bf.stats }
+
+    // `victory` is expressed from the left-hand fortress's point of view. The
+    // guest in a networked match commands the right-hand one, so the meaning
+    // has to be flipped for them.
+    const localVictory = this.isNetworked ? victory === (this.localFaction === 'player') : victory
+    const stats = { ...bf.statsFor(this.localFaction) }
     stats.wavesSurvived = this.wave
 
-    const healthRatio = bf.playerBase.hp / bf.playerBase.maxHp
+    const healthRatio = this.localBase.hp / this.localBase.maxHp
     const seconds = bf.elapsedMs / 1000
     let stars = 0
     let newRecord = false
+
+    if (this.isNetworked) {
+      // A peer match has no campaign progress and no achievements: the
+      // opponent controls half the inputs, so neither would mean anything.
+      session.result = {
+        victory: localVictory,
+        stats,
+        setup,
+        stars: 0,
+        newRecord: false,
+        unlockedAchievements: []
+      }
+      gameEvents.emit('match:ended', { victory: localVictory, stats })
+      session.endNetworkMatch('match finished')
+      audio.stopMusic()
+      this.time.delayedCall(600, () => {
+        this.scene.stop('HUDScene')
+        this.scene.start('ResultScene')
+      })
+      return
+    }
 
     if (setup.mode === 'campaign' && setup.level && victory) {
       stars = computeStars(setup.level, healthRatio, seconds)
@@ -463,6 +625,8 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
+    if (session.onNetMessage === this.netHandler) session.onNetMessage = null
+    this.lockstep?.stop()
     this.battlefield.destroy()
     this.background.destroy()
     this.lighting.destroy()

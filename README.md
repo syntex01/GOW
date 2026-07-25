@@ -26,6 +26,24 @@ The `dist/` folder is fully self-contained and works from any static host or
 from `file://`. A service worker caches it for offline play, and the PWA
 manifest lets it install to a phone home screen.
 
+### Desktop app
+
+```bash
+npm run app        # run the desktop build locally
+npm run dist       # installers for the current platform, into release/
+npm run dist:linux # AppImage + .deb + tar.gz
+npm run dist:win   # NSIS installer + portable .exe
+npm run dist:mac   # .dmg + .zip
+```
+
+The desktop build is Electron loading the bundle over `file://`. It needs no
+network connection and has none available: `electron/main.cjs` installs a
+request filter that blocks every `http`, `https` and `ws` request at the session
+level, and disables Chromium's background networking. The only exception is the
+WebRTC peer connection multiplayer opens directly to the other player, which
+does not go through the request filter. Nothing phones home, and there is no
+account, telemetry or licence check to fail years from now.
+
 ## How it plays
 
 You and an AI commander face each other across a single lane. Gold arrives
@@ -86,9 +104,31 @@ Everything is also reachable by mouse or touch from the command bar.
   Breaking through their fortress does not end it; it buys you three waves.
   Best wave count is recorded per difficulty.
 - **Quick Battle** — a single even skirmish at the difficulty you choose.
+- **Multiplayer** — one-on-one against another person, peer to peer, with no
+  server anywhere in the loop. See below.
 
 Four difficulties change the AI's reaction speed, aggression, economy and how
 reliably it picks the unit that counters yours.
+
+## Multiplayer without a server
+
+Two players connect directly to each other by swapping a pair of text codes —
+there is no matchmaking service, no lobby server and no relay. One player picks
+**HOST** and copies the invite code; the other picks **JOIN**, pastes it, and
+sends back the reply code. Paste that into the host's box and the match starts.
+
+The codes are complete WebRTC session descriptions, so once they are exchanged
+the two browsers talk to each other and nothing else. **LAN only** mode goes
+further and configures zero ICE servers, so the game makes no outbound contact
+of any kind — useful on a local network, at an event, or on an air-gapped
+machine. With it switched off, a public STUN server is consulted purely to
+discover your own public address; game traffic still never passes through it.
+
+What actually crosses the wire is only the commands each player issues — "queue
+a spearman", "evolve", "sell turret 2". Both machines run the same fixed-step
+simulation from the same seed, so the two worlds stay identical without any
+game state being transmitted. See [docs/DESIGN.md](docs/DESIGN.md#lockstep-multiplayer)
+for how that is kept honest.
 
 ## Content
 
@@ -106,7 +146,8 @@ src/
   data/         ages, units, turrets, abilities, campaign levels (pure data)
   gfx/          canvas painters, unit rigs, props, parallax, particles, VFX
   sim/          units, projectiles, bases, armies, AI, the battlefield
-  scenes/       boot, preload, menu, battle, HUD, results
+  net/          wire protocol, WebRTC peer, deterministic lockstep driver
+  scenes/       boot, preload, menu, battle, HUD, multiplayer lobby, results
   ui/           buttons, bars, tooltips, modals
 ```
 

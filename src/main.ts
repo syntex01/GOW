@@ -7,6 +7,7 @@ import BootScene from './scenes/bootScene'
 import HUDScene from './scenes/hudScene'
 import MenuScene from './scenes/menuScene'
 import PreloadScene from './scenes/preloadScene'
+import MultiplayerScene from './scenes/multiplayerScene'
 import ResultScene from './scenes/resultScene'
 
 const DESIGN_WIDTH = 1280
@@ -23,13 +24,16 @@ function start(): void {
       width: DESIGN_WIDTH,
       height: DESIGN_HEIGHT
     },
+    // Real DOM elements are layered over the canvas so the multiplayer lobby
+    // can offer genuine copy/paste text fields for connection codes.
+    dom: { createContainer: true },
     render: {
       antialias: true,
       roundPixels: false,
       powerPreference: 'high-performance'
     },
     // The battle simulation is hand-rolled, so no physics engine is needed.
-    scene: [BootScene, PreloadScene, MenuScene, BattleScene, HUDScene, ResultScene],
+    scene: [BootScene, PreloadScene, MenuScene, MultiplayerScene, BattleScene, HUDScene, ResultScene],
     input: {
       activePointers: 3
     },
@@ -43,8 +47,17 @@ function start(): void {
   const debug = window as unknown as {
     __gowGame: Phaser.Game
     __gowStart: (mode: GameMode, difficulty: Difficulty, levelId?: string) => void
+    __gowStartSeeded: (mode: GameMode, difficulty: Difficulty, seed: number) => void
   }
   debug.__gowGame = game
+  debug.__gowStartSeeded = (mode, difficulty, seed) => {
+    session.start({ mode, difficulty, seed })
+    for (const scene of game.scene.scenes) {
+      if (scene.scene.isActive() && scene.scene.key !== 'BattleScene') scene.scene.stop()
+    }
+    game.scene.stop('BattleScene')
+    game.scene.start('BattleScene')
+  }
   debug.__gowStart = (mode, difficulty, levelId) => {
     const level = levelId ? LEVELS_BY_ID[levelId] : undefined
     session.start(level ? { mode, difficulty, level } : { mode, difficulty })

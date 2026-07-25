@@ -4,7 +4,7 @@ import { session } from '../core/session'
 import { ageDef } from '../data/ages'
 import { TURRET_SLOTS, turretsForAge } from '../data/turrets'
 import type { UnitDef } from '../data/types'
-import { AGE_THEMES, TIER_COLORS, UI } from '../gfx/palette'
+import { AGE_THEMES, FACTION_COLOR, TIER_COLORS, UI } from '../gfx/palette'
 import Tutorial from '../ui/tutorial'
 import { Bar, Button, Modal, Tooltip, formatNumber, formatTime, hex, label, panel } from '../ui/widgets'
 import BattleScene from './battleScene'
@@ -241,7 +241,7 @@ export default class HUDScene extends Phaser.Scene {
     this.unitCards.forEach(c => c.button.destroy())
     this.unitCards = []
 
-    const army = this.battle.battlefield.player
+    const army = this.battle.localArmy
     const roster = army.roster
     roster.forEach((def, i) => {
       const button = new Button(this, 12 + i * (CARD_W + 6), CARD_Y, {
@@ -278,7 +278,7 @@ export default class HUDScene extends Phaser.Scene {
   // ──────────────────────────── Turret handling ────────────────────────────
 
   private handleTurretSlot(index: number): void {
-    const base = this.battle.battlefield.playerBase
+    const base = this.battle.localBase
     const slot = base.slots[index]
     this.closeTurretPopup()
     if (slot.def) {
@@ -289,8 +289,8 @@ export default class HUDScene extends Phaser.Scene {
   }
 
   private openTurretPopup(slotIndex: number, occupied: boolean): void {
-    const army = this.battle.battlefield.player
-    const base = this.battle.battlefield.playerBase
+    const army = this.battle.localArmy
+    const base = this.battle.localBase
     const options = occupied ? [] : turretsForAge(army.age).slice(-4)
     const rows = occupied ? 1 : options.length
     const popupW = 320
@@ -326,7 +326,7 @@ export default class HUDScene extends Phaser.Scene {
         fontSize: 16,
         accent: UI.bad,
         onClick: () => {
-          this.battle.battlefield.sellTurret('player', slotIndex)
+          this.battle.sellTurret(slotIndex)
           this.closeTurretPopup()
         }
       })
@@ -346,11 +346,12 @@ export default class HUDScene extends Phaser.Scene {
           fontSize: 16,
           accent: TIER_COLORS[def.age],
           onClick: () => {
-            if (this.battle.battlefield.buildTurret('player', slotIndex, def.id)) {
-              this.closeTurretPopup()
-            } else {
+            if (army.gold < def.cost) {
               this.showToast({ message: 'Not enough gold', tone: 'warn' })
+              return
             }
+            this.battle.buildTurret(slotIndex, def.id)
+            this.closeTurretPopup()
           }
         })
         b.setEnabled(affordable).setDepth(1601)
@@ -440,8 +441,12 @@ export default class HUDScene extends Phaser.Scene {
     const bf = this.battle?.battlefield
     if (!bf) return
     if (!this.battle.paused) this.tutorial?.update(delta)
-    const player = bf.player
-    const enemy = bf.enemy
+    // "player"/"enemy" here mean *this client's* side and its opponent, which
+    // for the guest in a networked match is the world's 'enemy' faction.
+    const player = this.battle.localArmy
+    const enemy = this.battle.foeArmy
+    const myBase = this.battle.localBase
+    const foeBase = this.battle.foeBase
 
     if (player.age !== this.lastAge) this.rebuildRoster()
 
@@ -452,10 +457,12 @@ export default class HUDScene extends Phaser.Scene {
     this.enemyGoldText.setText(formatNumber(enemy.gold))
     this.enemyAgeText.setText(ageDef(enemy.age).name)
 
-    this.playerHpBar.setValue(bf.playerBase.hp / bf.playerBase.maxHp)
-    this.playerHpBar.setColor(healthColor(bf.playerBase.hp / bf.playerBase.maxHp, UI.player))
-    this.enemyHpBar.setValue(bf.enemyBase.hp / bf.enemyBase.maxHp)
-    this.enemyHpBar.setColor(healthColor(bf.enemyBase.hp / bf.enemyBase.maxHp, UI.enemy))
+    const mine = FACTION_COLOR[this.battle.localFaction]
+    const theirs = FACTION_COLOR[this.battle.foeArmy.faction]
+    this.playerHpBar.setValue(myBase.hp / myBase.maxHp)
+    this.playerHpBar.setColor(healthColor(myBase.hp / myBase.maxHp, mine))
+    this.enemyHpBar.setValue(foeBase.hp / foeBase.maxHp)
+    this.enemyHpBar.setColor(healthColor(foeBase.hp / foeBase.maxHp, theirs))
 
     this.playerXpBar.setValue(player.age >= 4 ? 1 : player.xp / player.xpToAdvance)
     this.enemyXpBar.setValue(enemy.age >= 4 ? 1 : enemy.xp / enemy.xpToAdvance)
@@ -463,7 +470,11 @@ export default class HUDScene extends Phaser.Scene {
     this.timerText.setText(formatTime(bf.elapsedMs))
     const statusBits: string[] = []
     if (session.setup.mode === 'endless') statusBits.push(`WAVE ${this.battle.wave}`)
-    if (this.battle.speed !== 1) statusBits.push(`${this.battle.speed}x`)
+    if (this.battle.isNetworked) {
+      statusBits.push(this.battle.lockstep?.isStalled ? 'WAITING FOR OPPONENT' : 'VERSUS')
+    } else if (this.battle.speed !== 1) {
+      statusBits.push(`${this.battle.speed}x`)
+    }
     this.waveText.setText(statusBits.join('  ·  '))
     this.speedButton.setText(`${this.battle.speed}x`)
 
@@ -474,7 +485,7 @@ export default class HUDScene extends Phaser.Scene {
   }
 
   private updateUnitCards(): void {
-    const army = this.battle.battlefield.player
+    const army = this.battle.localArmy
     for (const { button, def } of this.unitCards) {
       const blocked = army.blockReason(def)
       button.setEnabled(blocked === null)
@@ -483,7 +494,7 @@ export default class HUDScene extends Phaser.Scene {
   }
 
   private updateQueue(): void {
-    const queue = this.battle.battlefield.player.queue
+    const queue = this.battle.localArmy.queue
     while (this.queueIcons.length < queue.length) {
       const index = this.queueIcons.length
       const icon = this.add.image(24 + index * 46, 566, 'ui:pixel').setScale(0.5).setDepth(3)
@@ -504,7 +515,7 @@ export default class HUDScene extends Phaser.Scene {
   }
 
   private updateActionButtons(): void {
-    const army = this.battle.battlefield.player
+    const army = this.battle.localArmy
 
     // Evolve.
     if (army.age >= 4) {
@@ -544,8 +555,8 @@ export default class HUDScene extends Phaser.Scene {
   }
 
   private updateTurretButtons(): void {
-    const base = this.battle.battlefield.playerBase
-    const army = this.battle.battlefield.player
+    const base = this.battle.localBase
+    const army = this.battle.localArmy
     base.slots.forEach((slot, i) => {
       const button = this.turretButtons[i]
       if (slot.def) {

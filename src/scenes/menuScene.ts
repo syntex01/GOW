@@ -14,7 +14,7 @@ import Vfx from '../gfx/vfx'
 import Unit from '../sim/unit'
 import { Button, formatNumber, formatTime, label, panel } from '../ui/widgets'
 
-type View = 'main' | 'campaign' | 'skirmish' | 'endless' | 'codex' | 'settings' | 'achievements'
+type View = 'main' | 'campaign' | 'skirmish' | 'endless' | 'codex' | 'settings' | 'achievements' | 'howto'
 
 const GROUND_Y = 640
 
@@ -116,6 +116,9 @@ export default class MenuScene extends Phaser.Scene {
       case 'achievements':
         this.buildAchievements()
         break
+      case 'howto':
+        this.buildHowTo()
+        break
     }
   }
 
@@ -169,16 +172,18 @@ export default class MenuScene extends Phaser.Scene {
       })
     )
 
-    const entries: { text: string; sub: string; accent: number; view: View }[] = [
+    const entries: { text: string; sub: string; accent: number; view: View | 'multiplayer' }[] = [
       { text: 'CAMPAIGN', sub: '12 missions', accent: UI.gold, view: 'campaign' },
       { text: 'ENDLESS SIEGE', sub: 'survive the waves', accent: UI.bad, view: 'endless' },
       { text: 'QUICK BATTLE', sub: 'one-off skirmish', accent: UI.player, view: 'skirmish' },
+      { text: 'MULTIPLAYER', sub: 'peer-to-peer, no server', accent: 0x30d5c8, view: 'multiplayer' },
       { text: 'ARMORY', sub: 'unit codex', accent: UI.accent, view: 'codex' },
       { text: 'ACHIEVEMENTS', sub: `${this.unlockedCount()}/${ACHIEVEMENTS.length}`, accent: UI.good, view: 'achievements' },
+      { text: 'HOW TO PLAY', sub: 'controls & rules', accent: UI.xp, view: 'howto' },
       { text: 'SETTINGS', sub: 'audio & graphics', accent: UI.panelEdge, view: 'settings' }
     ]
 
-    const cols = 3
+    const cols = 4
     const bw = 236
     const bh = 92
     const gap = 18
@@ -195,10 +200,25 @@ export default class MenuScene extends Phaser.Scene {
         text: entry.text,
         subtext: entry.sub,
         accent: entry.accent,
-        fontSize: 21,
-        onClick: () => this.showView(entry.view)
+        fontSize: entry.text.length > 12 ? 18 : 21,
+        onClick: () => {
+          if (entry.view === 'multiplayer') this.launchMultiplayer()
+          else this.showView(entry.view)
+        }
       })
     })
+
+    // Explain why a networked match ended, if one just did.
+    if (session.netEndReason) {
+      this.viewContainer.add(
+        label(this, cx, 460, session.netEndReason, {
+          size: 15,
+          align: 'center',
+          color: UI.warn,
+          wrap: 900
+        })
+      )
+    }
 
     const s = save.all
     const stars = Object.values(save.campaign.stars).reduce((a, b) => a + b, 0)
@@ -595,6 +615,62 @@ export default class MenuScene extends Phaser.Scene {
         align: 'right'
       })
       this.viewContainer.add([card, star, name, desc, barBg, barFill, count])
+    })
+  }
+
+  private buildHowTo(): void {
+    this.header('HOW TO PLAY', 'The whole game in one screen.')
+    const cam = this.cameras.main
+    const colW = (cam.width - 140) / 2
+
+    const left = [
+      ['The loop', ''],
+      ['', 'Gold arrives every second and from kills. Spend it on units, which march out and fight on their own.'],
+      ['', 'Kills also earn experience. Fill the EVOLUTION bar and press E to advance an age: a new roster, more income, a tougher fortress and a stronger special ability.'],
+      ['', 'Destroy the enemy fortress to win.'],
+      ['Counters', ''],
+      ['', 'Pierce shreds unarmoured troops but glances off heavy armour. Blunt does the opposite. Explosive is what breaks fortresses. Energy is even against everything.'],
+      ['', 'Air units can only be hit by anti-air. Field a gunship against someone with none and the game is over.']
+    ]
+
+    const right = [
+      ['Controls', ''],
+      ['', '1 – 7        Train the matching unit'],
+      ['', 'E             Evolve to the next age'],
+      ['', 'Q / Space  Fire the special ability'],
+      ['', 'U             Buy the next economy upgrade'],
+      ['', 'F             Cycle game speed (single-player)'],
+      ['', 'Backspace  Cancel the last queued unit'],
+      ['', 'Esc / P      Pause'],
+      ['', 'Drag         Pan the camera'],
+      ['Defences', ''],
+      ['', 'Three turret slots sit on your fortress. Click one to build, click an existing turret to sell it. Turrets take splash damage when the wall is hit.']
+    ]
+
+    const render = (rows: string[][], x: number) => {
+      let y = 130
+      for (const [heading, body] of rows) {
+        if (heading) {
+          this.viewContainer.add(label(this, x, y, heading.toUpperCase(), { size: 15, bold: true, color: UI.gold }))
+          y += 26
+        }
+        if (body) {
+          const text = label(this, x, y, body, { size: 14, color: UI.text, wrap: colW })
+          this.viewContainer.add(text)
+          y += text.height + 12
+        }
+      }
+    }
+
+    render(left, 60)
+    render(right, 80 + colW)
+  }
+
+  private launchMultiplayer(): void {
+    audio.stopMusic()
+    this.cameras.main.fadeOut(220, 0, 0, 0)
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.start('MultiplayerScene')
     })
   }
 

@@ -41,8 +41,9 @@ export default class ResultScene extends Phaser.Scene {
     title.setScale(0.7).setAlpha(0)
     this.tweens.add({ targets: title, scale: 1, alpha: 1, duration: 420, ease: 'Back.easeOut' })
 
-    const subtitle =
-      setup.mode === 'campaign' && setup.level
+    const subtitle = setup.netRole
+      ? `Multiplayer — versus ${session.opponentName}`
+      : setup.mode === 'campaign' && setup.level
         ? setup.level.name
         : setup.mode === 'endless'
           ? `Endless Siege — survived ${stats.wavesSurvived} waves`
@@ -161,15 +162,25 @@ export default class ResultScene extends Phaser.Scene {
       })
     }
 
-    buttons.push({
-      text: 'FIGHT AGAIN',
-      sub: 'same setup',
-      accent: UI.player,
-      onClick: () => {
-        session.start(setup)
-        this.scene.start('BattleScene')
-      }
-    })
+    if (!setup.netRole) {
+      buttons.push({
+        text: 'FIGHT AGAIN',
+        sub: 'same setup',
+        accent: UI.player,
+        onClick: () => {
+          session.start(setup)
+          this.scene.start('BattleScene')
+        }
+      })
+    } else {
+      // A rematch needs a fresh handshake, so send them back to the lobby.
+      buttons.push({
+        text: 'NEW MATCH',
+        sub: 'back to the lobby',
+        accent: UI.player,
+        onClick: () => this.scene.start('MultiplayerScene')
+      })
+    }
 
     buttons.push({
       text: 'MAIN MENU',

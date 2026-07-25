@@ -106,7 +106,7 @@ export default class Projectile {
       const maxTurn = this.config.homing * dt
       diff = Phaser.Math.Clamp(diff, -maxTurn, maxTurn)
       current += diff
-      const speed = Math.hypot(this.vx, this.vy)
+      const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy)
       this.vx = Math.cos(current) * speed
       this.vy = Math.sin(current) * speed
     }

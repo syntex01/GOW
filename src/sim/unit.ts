@@ -86,7 +86,14 @@ export default class Unit implements Damageable {
   onHealPulse?: (unit: Unit) => void
   onDamageDealt?: (unit: Unit, amount: number) => void
 
-  constructor(scene: Phaser.Scene, def: UnitDef, faction: Faction, x: number, world: UnitWorld) {
+  constructor(
+    scene: Phaser.Scene,
+    def: UnitDef,
+    faction: Faction,
+    x: number,
+    world: UnitWorld,
+    spawnJitter?: number
+  ) {
     this.scene = scene
     this.def = def
     this.faction = faction
@@ -101,7 +108,10 @@ export default class Unit implements Damageable {
     this.centerOffsetY = -def.height * 0.5
 
     this.x = x
-    this.y = def.layer === 'air' ? world.airY + rng.spread(26) : world.groundY
+    // Air lane jitter is gameplay-affecting (it changes engagement range),
+    // so it comes from the caller's deterministic stream, not the shared
+    // cosmetic one.
+    this.y = def.layer === 'air' ? world.airY + (spawnJitter ?? 0) : world.groundY
 
     this.scaleFactor = 1 / RES
     this.container = scene.add.container(this.x, this.y)
@@ -303,7 +313,9 @@ export default class Unit implements Damageable {
   distanceTo(other: Damageable): number {
     const dx = Math.abs(other.x - this.x)
     const dy = Math.abs(other.y + other.centerOffsetY - this.centerY)
-    return Math.max(0, Math.hypot(dx, dy) - other.radius - this.radius * 0.4)
+    // sqrt is correctly rounded by IEEE-754; Math.hypot is not specified
+    // exactly, so it can differ between engines and break lockstep.
+    return Math.max(0, Math.sqrt(dx * dx + dy * dy) - other.radius - this.radius * 0.4)
   }
 
   canTarget(other: Damageable): boolean {

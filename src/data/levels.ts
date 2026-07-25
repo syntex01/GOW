@@ -204,6 +204,13 @@ export interface MatchSetup {
   difficulty: Difficulty
   /** Endless only: seconds between escalation waves. */
   waveSeconds?: number
+  /**
+   * Seeds every gameplay random. Both peers in a networked match share one, so
+   * their simulations line up; single-player picks a fresh one per battle.
+   */
+  seed?: number
+  /** Set for peer-to-peer matches; absent means play against the AI. */
+  netRole?: 'host' | 'guest'
 }
 
 export const ENDLESS_WAVE_SECONDS = 45

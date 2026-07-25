@@ -1,3 +1,4 @@
+import { Rng } from '../core/rng'
 import type { Difficulty } from '../core/save'
 import { MAX_AGE } from '../data/ages'
 import type { UnitDef } from '../data/types'
@@ -87,10 +88,17 @@ export default class AiController {
   private turretCooldown = 4000
   /** Rises when the AI is losing, making it play more desperately. */
   private pressure = 0
+  /**
+   * Seeded so an AI match replays identically from the same seed. Kept
+   * separate from the battlefield's stream so AI decisions cannot shift the
+   * combat rolls, which keeps the two independently reproducible.
+   */
+  private rng: Rng
 
-  constructor(bf: Battlefield, profile: AiProfile) {
+  constructor(bf: Battlefield, profile: AiProfile, seed = 0x5eed) {
     this.bf = bf
     this.profile = profile
+    this.rng = new Rng(seed)
   }
 
   update(dtMs: number): void {
@@ -134,8 +142,8 @@ export default class AiController {
     const enemiesClose = this.bf.units.filter(
       u => u.alive && u.faction === 'player' && Math.abs(u.x - this.bf.enemyBase.x) < 520
     ).length
-    if (enemiesClose > 4 && Math.random() > this.profile.evolveEagerness) return false
-    if (Math.random() > this.profile.evolveEagerness) return false
+    if (enemiesClose > 4 && this.rng.next() > this.profile.evolveEagerness) return false
+    if (this.rng.next() > this.profile.evolveEagerness) return false
     return this.bf.evolve('enemy')
   }
 
@@ -194,7 +202,7 @@ export default class AiController {
     if (army.gold < reserve && this.pressure < 0.5) return
 
     const pick =
-      Math.random() < this.profile.counterPlay ? this.pickCounter(roster) : this.pickAffordableBest(roster)
+      this.rng.next() < this.profile.counterPlay ? this.pickCounter(roster) : this.pickAffordableBest(roster)
     if (pick) this.bf.queueUnit('enemy', pick.id)
   }
 
@@ -243,7 +251,7 @@ export default class AiController {
     // Weight toward the top of the list but keep some variety in the army.
     const cutoff = Math.max(1, Math.ceil(sorted.length * (0.3 + this.profile.aggression * 0.5)))
     const pool = sorted.slice(0, cutoff)
-    return pool[Math.floor(Math.random() * pool.length)] ?? null
+    return pool[this.rng.int(0, pool.length - 1)] ?? null
   }
 
   /** Endless mode ramps the profile between waves. */

@@ -66,6 +66,23 @@ const SUBSTEP_MS = 20
 /** Hard ceiling on sub-steps per frame so a stall cannot lock the tab. */
 const MAX_SUBSTEPS = 16
 
+function emptyStats(): MatchStats {
+  return {
+    unitsBuilt: 0,
+    unitsLost: 0,
+    kills: 0,
+    goldEarned: 0,
+    goldSpent: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+    agesReached: 1,
+    abilitiesUsed: 0,
+    durationMs: 0,
+    score: 0,
+    wavesSurvived: 0
+  }
+}
+
 function mergeModifiers(patch?: Partial<ArmyModifiers>): ArmyModifiers {
   return { ...defaultModifiers(), ...(patch ?? {}) }
 }
@@ -90,22 +107,28 @@ export default class Battlefield {
 
   speedScale = 1
   elapsedMs = 0
+  /** Leftover real time not yet consumed by a fixed sub-step. */
+  private accumulator = 0
   finished = false
   victory = false
 
-  stats: MatchStats = {
-    unitsBuilt: 0,
-    unitsLost: 0,
-    kills: 0,
-    goldEarned: 0,
-    goldSpent: 0,
-    damageDealt: 0,
-    damageTaken: 0,
-    agesReached: 1,
-    abilitiesUsed: 0,
-    durationMs: 0,
-    score: 0,
-    wavesSurvived: 0
+  /**
+   * Statistics are kept for both sides. In a networked match each client is
+   * playing a different faction, so a single "player" record would show the
+   * guest their opponent's numbers.
+   */
+  private statsByFaction: Record<Faction, MatchStats> = {
+    player: emptyStats(),
+    enemy: emptyStats()
+  }
+
+  /** The left-hand side's record; kept for single-player call sites. */
+  get stats(): MatchStats {
+    return this.statsByFaction.player
+  }
+
+  statsFor(faction: Faction): MatchStats {
+    return this.statsByFaction[faction]
   }
 
   onMatchEnd?: (victory: boolean) => void
@@ -177,26 +200,88 @@ export default class Battlefield {
     }
     if (this.vfx.isHitStopped()) return
 
-    // The simulation runs in fixed sub-steps. Integrating knockback, gravity
-    // and attack timers over a single long frame makes the game behave
-    // differently at 20 fps than at 144 fps, and makes 3x speed feel broken;
-    // sub-stepping keeps it identical everywhere.
-    const total = Math.min(MAX_FRAME_MS, rawDtMs) * this.speedScale
-    const steps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(total / SUBSTEP_MS)))
-    const step = total / steps
-    for (let i = 0; i < steps; i += 1) {
-      this.simulate(step)
+    // Fixed timestep with an accumulator. Every simulate() call advances
+    // exactly SUBSTEP_MS, which is what makes the game behave identically at
+    // 20 fps and 144 fps — and what makes a networked match reproducible on
+    // both machines from the same inputs.
+    this.accumulator += Math.min(MAX_FRAME_MS, rawDtMs) * this.speedScale
+    let steps = 0
+    while (this.accumulator >= SUBSTEP_MS && steps < MAX_SUBSTEPS) {
+      this.simulate(SUBSTEP_MS)
+      this.accumulator -= SUBSTEP_MS
+      steps += 1
       if (this.finished) break
     }
+    // If we could not keep up, drop the backlog rather than spiralling.
+    if (steps >= MAX_SUBSTEPS) this.accumulator = 0
 
     this.updateBeams(rawDtMs)
     this.drawBaseHealth()
   }
 
+  /**
+   * Advances the simulation by an exact number of fixed sub-steps, bypassing
+   * wall-clock time entirely. Networked matches drive the world through this
+   * so both peers execute precisely the same sequence.
+   */
+  stepFixed(count: number): void {
+    for (let i = 0; i < count && !this.finished; i += 1) this.simulate(SUBSTEP_MS)
+    this.updateBeams(SUBSTEP_MS * count)
+    this.drawBaseHealth()
+  }
+
+  /** Sub-steps per second, for netcode that needs to line ticks up. */
+  static get stepMs(): number {
+    return SUBSTEP_MS
+  }
+
+  /**
+   * A cheap fingerprint of everything that matters to the outcome. Peers swap
+   * these periodically; a mismatch means the two simulations have drifted and
+   * the match can be stopped honestly instead of silently diverging.
+   *
+   * Values are quantised so that harmless last-bit float noise does not raise
+   * a false alarm, while any real divergence changes the hash immediately.
+   */
+  stateHash(): number {
+    let h = 0x811c9dc5
+    const mix = (value: number) => {
+      // FNV-1a over the quantised integer.
+      let v = Math.round(value) | 0
+      for (let i = 0; i < 4; i += 1) {
+        h ^= v & 0xff
+        h = Math.imul(h, 0x01000193)
+        v >>>= 8
+      }
+    }
+
+    mix(Math.round(this.elapsedMs))
+    for (const army of [this.player, this.enemy]) {
+      mix(army.gold)
+      mix(army.xp)
+      mix(army.age)
+      mix(army.queue.length)
+      mix(army.incomeLevel)
+    }
+    mix(this.playerBase.hp * 10)
+    mix(this.enemyBase.hp * 10)
+    mix(this.units.length)
+    for (const u of this.units) {
+      if (!u.alive) continue
+      mix(u.id)
+      mix(u.x * 10)
+      mix(u.y * 10)
+      mix(u.hp * 10)
+    }
+    mix(this.projectiles.length)
+    return h >>> 0
+  }
+
   /** One fixed-length slice of simulation. */
   private simulate(dtMs: number): void {
     this.elapsedMs += dtMs
-    this.stats.durationMs = this.elapsedMs
+    this.statsByFaction.player.durationMs = this.elapsedMs
+    this.statsByFaction.enemy.durationMs = this.elapsedMs
     this.world.speedScale = this.speedScale
 
     this.tickArmy(this.player, dtMs)
@@ -210,7 +295,7 @@ export default class Battlefield {
   private tickArmy(army: Army, dtMs: number): void {
     const before = army.gold
     const { ready } = army.tick(dtMs)
-    if (army === this.player) this.stats.goldEarned += Math.max(0, army.gold - before)
+    this.statsFor(army.faction).goldEarned += Math.max(0, army.gold - before)
     for (const def of ready) this.spawnUnit(army.faction, def)
   }
 
@@ -381,7 +466,7 @@ export default class Battlefield {
     const dir = ADVANCE_DIR[faction]
     const spawnX = base.x + dir * (base.radius + 30)
 
-    const unit = new Unit(this.scene, def, faction, spawnX, this.world)
+    const unit = new Unit(this.scene, def, faction, spawnX, this.world, this.rng.spread(26))
     const army = this.armyFor(faction)
     unit.hp *= army.modifiers.unitHp
     unit.maxHp *= army.modifiers.unitHp
@@ -391,10 +476,9 @@ export default class Battlefield {
     unit.onDeath = this.handleUnitDeath
 
     this.units.push(unit)
-    if (faction === 'player') {
-      this.stats.unitsBuilt += 1
-      this.stats.goldSpent += def.cost
-    }
+    const stats = this.statsFor(faction)
+    stats.unitsBuilt += 1
+    stats.goldSpent += def.cost
     audio.play('spawn', 0.3)
     return unit
   }
@@ -522,14 +606,11 @@ export default class Battlefield {
   private handleUnitDeath = (unit: Unit): void => {
     const winner = OPPOSITE[unit.faction]
     this.armyFor(winner).rewardKill(unit.def.bounty, unit.def.xp)
-    if (winner === 'player') {
-      this.stats.kills += 1
-      this.stats.goldEarned += unit.def.bounty
-      this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.4, `+${unit.def.bounty}`, '#f2c14e')
-      audio.play('coin', 0.25)
-    } else {
-      this.stats.unitsLost += 1
-    }
+    this.statsFor(winner).kills += 1
+    this.statsFor(winner).goldEarned += unit.def.bounty
+    this.statsFor(unit.faction).unitsLost += 1
+    this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.4, `+${unit.def.bounty}`, '#f2c14e')
+    audio.play('coin', 0.25)
     this.onUnitKilled?.(winner)
   }
 
@@ -609,8 +690,8 @@ export default class Battlefield {
     const crit = event.crit ? this.rng.chance(event.crit) : false
     if (crit) amount *= 2
 
-    if (attacker && attacker.faction === 'player') this.stats.damageDealt += amount
-    if (target.faction === 'player') this.stats.damageTaken += amount
+    if (attacker) this.statsFor(attacker.faction).damageDealt += amount
+    this.statsFor(target.faction).damageTaken += amount
 
     target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback)
   }
@@ -629,7 +710,7 @@ export default class Battlefield {
       if (!t.alive || t.faction === faction) continue
       const dx = t.x - x
       const dy = t.y + t.centerOffsetY - y
-      const dist = Math.hypot(dx, dy) - t.radius
+      const dist = Math.sqrt(dx * dx + dy * dy) - t.radius
       if (dist > radius) continue
       const falloff = Phaser.Math.Clamp(1 - dist / radius, 0.32, 1)
       this.applyDamage(attacker, t, {
@@ -652,7 +733,7 @@ export default class Battlefield {
     const def = ageDef(army.age)
     const base = this.baseFor(faction)
     base.setAge(army.age, def.baseHp * army.modifiers.baseHp)
-    if (faction === 'player') this.stats.agesReached = army.age + 1
+    this.statsFor(faction).agesReached = army.age + 1
     audio.play('evolve', 0.8)
     this.vfx.flash(0xffffff, 320, 0.5)
     this.vfx.explosion(base.x, base.y - 120, 200, 0xffe08a, true)
@@ -668,7 +749,7 @@ export default class Battlefield {
     if (base.slots[slotIndex]?.def) return false
     if (army.gold < def.cost) return false
     army.gold -= def.cost
-    if (faction === 'player') this.stats.goldSpent += def.cost
+    this.statsFor(faction).goldSpent += def.cost
     base.buildTurret(slotIndex, turretId)
     audio.play('shield', 0.5)
     return true
@@ -687,7 +768,7 @@ export default class Battlefield {
     const army = this.armyFor(faction)
     if (!army.consumeAbility()) return false
     const ability = army.ability
-    if (faction === 'player') this.stats.abilitiesUsed += 1
+    this.statsFor(faction).abilitiesUsed += 1
     audio.play('ability', 0.9)
     this.onAbilityUsed?.(faction, ability.id)
     this.runAbility(faction, ability.id)
@@ -882,7 +963,8 @@ export default class Battlefield {
     if (this.finished) return
     this.finished = true
     this.victory = victory
-    this.stats.score = this.computeScore(victory)
+    this.statsByFaction.player.score = this.computeScore('player', victory)
+    this.statsByFaction.enemy.score = this.computeScore('enemy', !victory)
     const loser = victory ? this.enemyBase : this.playerBase
     loser.playDestruction()
     this.vfx.shake(0.02, 1400)
@@ -891,9 +973,10 @@ export default class Battlefield {
     this.scene.time.delayedCall(1800, () => this.onMatchEnd?.(victory))
   }
 
-  private computeScore(victory: boolean): number {
-    const s = this.stats
-    const survivalBonus = Math.round((this.playerBase.hp / this.playerBase.maxHp) * 4000)
+  private computeScore(faction: Faction, victory: boolean): number {
+    const s = this.statsFor(faction)
+    const base = this.baseFor(faction)
+    const survivalBonus = Math.round((base.hp / base.maxHp) * 4000)
     const speedBonus = victory ? Math.max(0, 6000 - Math.round(this.elapsedMs / 100)) : 0
     return Math.max(
       0,
@@ -909,7 +992,8 @@ export default class Battlefield {
 
   /** Used by Endless mode to award a survived wave. */
   registerWave(wave: number): void {
-    this.stats.wavesSurvived = wave
+    this.statsByFaction.player.wavesSurvived = wave
+    this.statsByFaction.enemy.wavesSurvived = wave
   }
 
   destroy(): void {
