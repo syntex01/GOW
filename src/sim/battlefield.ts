@@ -56,6 +56,9 @@ const WEAPON_SFX: Partial<Record<WeaponVisual, SfxName>> = {
   none: 'melee_heavy'
 }
 
+/** Weapons that eject brass and cough propellant smoke. */
+const FIREARMS = new Set<WeaponVisual>(['musket', 'rifle', 'lmg'])
+
 /** Longest real frame the simulation will honour, to avoid a spiral of death. */
 const MAX_FRAME_MS = 100
 /** Target length of one simulation sub-step. */
@@ -452,6 +455,9 @@ export default class Battlefield {
         unit.def.damageType === 'energy' ? 0x8ff0ff : 0xffd08a,
         unit.def.height / 46
       )
+      if (FIREARMS.has(unit.def.visual.weapon)) {
+        this.vfx.gunSmoke(muzzle.x, muzzle.y, finalAngle, unit.dir)
+      }
 
       this.projectiles.push(
         new Projectile(

@@ -6,6 +6,7 @@ import { session } from '../core/session'
 import { ageDef } from '../data/ages'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
 import Background from '../gfx/background'
+import Lighting from '../gfx/lighting'
 import { AGE_THEMES } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
 import AiController, { AI_PROFILES } from '../sim/ai'
@@ -28,6 +29,7 @@ export default class BattleScene extends Phaser.Scene {
   wave = 1
 
   private background!: Background
+  private lighting!: Lighting
   private vfx!: Vfx
   private ai!: AiController
   private waveTimer = 0
@@ -51,7 +53,8 @@ export default class BattleScene extends Phaser.Scene {
     cam.setBounds(0, 0, WORLD_WIDTH, cam.height)
     cam.setZoom(CAMERA_ZOOM)
 
-    this.vfx = new Vfx(this, GROUND_Y)
+    this.lighting = new Lighting(this, 700)
+    this.vfx = new Vfx(this, GROUND_Y, this.lighting)
     this.background = new Background(this, WORLD_WIDTH, GROUND_Y)
 
     const setup = session.setup
@@ -87,6 +90,7 @@ export default class BattleScene extends Phaser.Scene {
 
     this.ai = new AiController(this.battlefield, profile)
     this.background.setAge(this.battlefield.player.age)
+    this.lighting.setAge(this.battlefield.player.age)
 
     this.battlefield.onMatchEnd = victory => this.finish(victory)
     this.battlefield.onAgeAdvanced = (faction, age) => this.handleAgeAdvanced(faction, age)
@@ -176,6 +180,7 @@ export default class BattleScene extends Phaser.Scene {
   private handleAgeAdvanced(faction: Faction, age: number): void {
     if (faction === 'player') {
       this.background.setAge(age)
+      this.lighting.setAge(age)
       audio.setAge(age)
       gameEvents.emit('hud:flash', { message: `${ageDef(age).name.toUpperCase()} REACHED`, tone: 'good' })
       if (age >= 4) this.unlockAchievement('evolved')
@@ -319,7 +324,10 @@ export default class BattleScene extends Phaser.Scene {
   // ─────────────────────────────── Loop ───────────────────────────────
 
   override update(_time: number, delta: number): void {
-    this.background.update(delta, this.cameras.main.scrollX)
+    const cam = this.cameras.main
+    this.background.update(delta, cam.scrollX)
+    // Composite lighting from whatever registered a light this frame.
+    this.lighting.render(cam.worldView.x, cam.worldView.y)
     if (this.paused || this.ended) return
 
     this.battlefield.update(delta)
@@ -457,6 +465,7 @@ export default class BattleScene extends Phaser.Scene {
   private cleanup(): void {
     this.battlefield.destroy()
     this.background.destroy()
+    this.lighting.destroy()
     this.vfx.destroy()
   }
 }

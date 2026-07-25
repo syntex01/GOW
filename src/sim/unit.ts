@@ -700,6 +700,19 @@ export default class Unit implements Damageable {
 
     this.updateHpBar()
     this.applyTints()
+    this.emitLight()
+  }
+
+  /** Future-age gear and shield auras cast their own light. */
+  private emitLight(): void {
+    const v = this.def.visual
+    if (v.torso === 'exo' || v.helmet === 'visor' || v.helmet === 'halo') {
+      const pulse = 0.7 + Math.sin(this.animTime / 340) * 0.12
+      this.world.vfx.light(this.x, this.centerY, this.def.height * 0.9, v.accent, pulse * 0.5)
+    }
+    if (this.auraShield > 0) {
+      this.world.vfx.light(this.x, this.centerY, this.def.height * 1.5, 0x74f0ff, 0.45)
+    }
   }
 
   private lastStepPhase = -1

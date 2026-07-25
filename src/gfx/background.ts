@@ -21,6 +21,8 @@ export default class Background {
   private ridges: Phaser.GameObjects.TileSprite[] = []
   private ground!: Phaser.GameObjects.TileSprite
   private groundShade!: Phaser.GameObjects.Graphics
+  private foreground!: Phaser.GameObjects.TileSprite
+  private motes?: Phaser.GameObjects.Particles.ParticleEmitter
   private weather?: Phaser.GameObjects.Particles.ParticleEmitter
   private vignette!: Phaser.GameObjects.Image
   private age = -1
@@ -79,6 +81,35 @@ export default class Background {
 
     this.groundShade = this.scene.add.graphics().setScrollFactor(0).setDepth(-899)
 
+    // Sits in front of everything except the vignette, and scrolls faster than
+    // the world so it reads as being very close to the camera.
+    this.foreground = this.scene.add
+      .tileSprite(0, this.groundY + 62, w, 110, 'fg:0')
+      .setOrigin(0, 1)
+      .setScrollFactor(0)
+      .setDepth(760)
+
+    if (save.settings.particleQuality === 'high') {
+      this.motes = this.scene.add
+        .particles(0, 0, 'fx:soft', {
+          emitZone: {
+            type: 'random',
+            source: new Phaser.Geom.Rectangle(-40, h * 0.45, w + 80, h * 0.5),
+            quantity: 1
+          },
+          lifespan: { min: 4000, max: 9000 },
+          speedX: { min: -14, max: 10 },
+          speedY: { min: -18, max: 6 },
+          scale: { min: 0.012, max: 0.035 },
+          alpha: { start: 0.3, end: 0, ease: 'Sine.easeInOut' },
+          frequency: 190,
+          quantity: 1,
+          blendMode: Phaser.BlendModes.ADD
+        })
+        .setScrollFactor(0)
+        .setDepth(770)
+    }
+
     this.vignette = this.scene.add
       .image(w / 2, h / 2, 'fx:vignette')
       .setScrollFactor(0)
@@ -127,6 +158,8 @@ export default class Background {
     })
 
     this.ground.setTexture(`ground:${clamped}`)
+    this.foreground.setTexture(`fg:${clamped}`)
+    this.motes?.setParticleTint(shade(theme.fog, 0.25))
 
     // Ground fog band so units read against the floor.
     this.groundShade.clear()
@@ -222,6 +255,8 @@ export default class Background {
       ridge.tilePositionX = scrollX * RIDGE_SCROLL[i]
     })
     this.ground.tilePositionX = scrollX
+    // Faster than 1:1 — the closer something is, the more it slides.
+    this.foreground.tilePositionX = scrollX * 1.35
 
     const w = this.scene.cameras.main.width
     this.clouds.forEach((cloud, i) => {
@@ -255,6 +290,8 @@ export default class Background {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    this.motes?.destroy()
+    this.foreground.destroy()
     this.weather?.destroy()
     this.sky.destroy()
     this.sun.destroy()

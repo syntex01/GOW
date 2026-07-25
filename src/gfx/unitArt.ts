@@ -59,10 +59,23 @@ function drawHead(v: UnitVisual, m: RigMetrics): PartSpec['canvas'] {
   ctx.globalAlpha = 0.35
   ellipse(ctx, cx - r * 0.35, cy + r * 0.25, r * 0.72, r * 0.7, shade(v.skin, -0.32), { shaded: false })
   ctx.restore()
-  ctx.fillStyle = css(shade(v.skin, -0.75), 0.85)
+  // Eye, brow and a hint of a mouth, all facing right.
+  ctx.fillStyle = css(shade(v.skin, -0.78), 0.9)
   ctx.beginPath()
-  ctx.ellipse(cx + r * 0.34, cy - r * 0.12, r * 0.15, r * 0.19, 0, 0, Math.PI * 2)
+  ctx.ellipse(cx + r * 0.34, cy - r * 0.1, r * 0.14, r * 0.18, 0, 0, Math.PI * 2)
   ctx.fill()
+  ctx.strokeStyle = css(shade(v.skin, -0.65), 0.75)
+  ctx.lineWidth = Math.max(1.2, r * 0.11)
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(cx + r * 0.16, cy - r * 0.36)
+  ctx.lineTo(cx + r * 0.56, cy - r * 0.3)
+  ctx.stroke()
+  ctx.lineWidth = Math.max(1, r * 0.08)
+  ctx.beginPath()
+  ctx.moveTo(cx + r * 0.3, cy + r * 0.42)
+  ctx.lineTo(cx + r * 0.58, cy + r * 0.4)
+  ctx.stroke()
 
   switch (v.helmet) {
     case 'band': {
@@ -362,8 +375,108 @@ function drawTorso(v: UnitVisual, m: RigMetrics): Canvas2D {
       break
   }
 
+  drawBackGear(ctx, v, cx, top, h, shoulderW)
   grain(c, 0.045)
   return c
+}
+
+/**
+ * Kit slung on a soldier's back. Units face right, so this all hangs off the
+ * left edge of the torso where it stays visible without hiding the weapon.
+ */
+function drawBackGear(
+  ctx: CanvasRenderingContext2D,
+  v: UnitVisual,
+  cx: number,
+  top: number,
+  h: number,
+  shoulderW: number
+): void {
+  const backX = cx - shoulderW * 0.52
+
+  switch (v.weapon) {
+    case 'bow': {
+      // Quiver with fletched arrows poking over the shoulder.
+      plate(ctx, backX - h * 0.09, top + h * 0.08, h * 0.17, h * 0.6, h * 0.05, 0x6b4a2b, {
+        outline: 0x2c2118,
+        outlineWidth: 1.4,
+        specular: 0.15
+      })
+      ctx.strokeStyle = css(0xe4e0d0)
+      ctx.lineWidth = 2
+      for (let i = -1; i <= 1; i += 1) {
+        const x = backX + i * h * 0.05
+        ctx.beginPath()
+        ctx.moveTo(x, top + h * 0.1)
+        ctx.lineTo(x - h * 0.03, top - h * 0.12)
+        ctx.stroke()
+      }
+      break
+    }
+    case 'rifle':
+    case 'lmg':
+    case 'rpg': {
+      // Webbing pack with a bedroll.
+      plate(ctx, backX - h * 0.11, top + h * 0.14, h * 0.24, h * 0.46, h * 0.06, shade(v.cloth, -0.28), {
+        outline: shade(v.cloth, -0.7),
+        outlineWidth: 1.5,
+        specular: 0.1
+      })
+      plate(ctx, backX - h * 0.13, top + h * 0.1, h * 0.28, h * 0.1, h * 0.05, shade(v.cloth2, -0.1), {
+        outline: shade(v.cloth, -0.7),
+        outlineWidth: 1.3,
+        specular: 0.12
+      })
+      break
+    }
+    case 'laser':
+    case 'railgun':
+    case 'plasma': {
+      // Power cell with an emissive strip and a feed line to the weapon.
+      plate(ctx, backX - h * 0.1, top + h * 0.12, h * 0.22, h * 0.44, h * 0.07, shade(v.metal, -0.3), {
+        outline: shade(v.metal, -0.75),
+        outlineWidth: 1.5,
+        specular: 0.6
+      })
+      ctx.fillStyle = css(v.accent, 0.95)
+      roundRect(ctx, backX - h * 0.05, top + h * 0.18, h * 0.12, h * 0.06, h * 0.03)
+      ctx.fill()
+      glow(ctx, backX + h * 0.01, top + h * 0.21, h * 0.22, v.accent, 0.7)
+      ctx.strokeStyle = css(shade(v.metal, -0.45))
+      ctx.lineWidth = 2.2
+      ctx.beginPath()
+      ctx.moveTo(backX + h * 0.06, top + h * 0.3)
+      ctx.quadraticCurveTo(cx, top + h * 0.52, cx + shoulderW * 0.4, top + h * 0.34)
+      ctx.stroke()
+      break
+    }
+    case 'musket':
+    case 'saber':
+    case 'grenade': {
+      // Powder horn and a haversack.
+      ellipse(ctx, backX, top + h * 0.34, h * 0.09, h * 0.13, 0x8a6b3f, {
+        outline: 0x2c2118,
+        outlineWidth: 1.4
+      })
+      break
+    }
+    case 'sword':
+    case 'axe': {
+      // Scabbard belted across the back.
+      ctx.save()
+      ctx.translate(backX, top + h * 0.55)
+      ctx.rotate(-0.5)
+      plate(ctx, -h * 0.06, -h * 0.3, h * 0.12, h * 0.6, h * 0.05, 0x4a3524, {
+        outline: 0x241a10,
+        outlineWidth: 1.4,
+        specular: 0.15
+      })
+      ctx.restore()
+      break
+    }
+    default:
+      break
+  }
 }
 
 function drawLimb(

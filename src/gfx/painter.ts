@@ -73,8 +73,10 @@ export function roundRect(
 }
 
 /**
- * Fills a rounded shape with a vertical light-to-dark gradient plus a rim
- * highlight — the workhorse look for armour plates and limbs.
+ * Fills a rounded shape with a vertical light-to-dark gradient, a rim
+ * highlight and an angled specular streak — the workhorse look for armour
+ * plates and limbs. The specular is what makes metal read as metal rather
+ * than as flat colour.
  */
 export function plate(
   ctx: CanvasRenderingContext2D,
@@ -84,22 +86,47 @@ export function plate(
   h: number,
   r: number,
   color: number,
-  opts: { lightFrom?: number; darkTo?: number; outline?: number; outlineWidth?: number; rim?: boolean } = {}
+  opts: {
+    lightFrom?: number
+    darkTo?: number
+    outline?: number
+    outlineWidth?: number
+    rim?: boolean
+    /** 0 = matte, 1 = polished steel. */
+    specular?: number
+  } = {}
 ): void {
-  const lightFrom = opts.lightFrom ?? 0.28
-  const darkTo = opts.darkTo ?? -0.34
+  const lightFrom = opts.lightFrom ?? 0.3
+  const darkTo = opts.darkTo ?? -0.38
   const grad = ctx.createLinearGradient(x, y, x + w * 0.25, y + h)
   grad.addColorStop(0, css(shade(color, lightFrom)))
-  grad.addColorStop(0.45, css(color))
+  grad.addColorStop(0.42, css(color))
   grad.addColorStop(1, css(shade(color, darkTo)))
 
   roundRect(ctx, x, y, w, h, r)
   ctx.fillStyle = grad
   ctx.fill()
 
+  const specular = opts.specular ?? 0.35
+  if (specular > 0) {
+    ctx.save()
+    roundRect(ctx, x, y, w, h, r)
+    ctx.clip()
+    const streak = ctx.createLinearGradient(x, y, x + w * 0.9, y + h * 0.9)
+    streak.addColorStop(0, css(0xffffff, 0))
+    streak.addColorStop(0.34, css(0xffffff, 0.28 * specular))
+    streak.addColorStop(0.46, css(0xffffff, 0.06 * specular))
+    streak.addColorStop(1, css(0xffffff, 0))
+    ctx.fillStyle = streak
+    ctx.fillRect(x, y, w, h)
+    ctx.restore()
+  }
+
   if (opts.outline !== undefined) {
+    roundRect(ctx, x, y, w, h, r)
     ctx.lineWidth = opts.outlineWidth ?? 2
     ctx.strokeStyle = css(opts.outline)
+    ctx.lineJoin = 'round'
     ctx.stroke()
   }
 
@@ -107,12 +134,12 @@ export function plate(
     ctx.save()
     roundRect(ctx, x, y, w, h, r)
     ctx.clip()
-    ctx.globalAlpha = 0.4
-    ctx.strokeStyle = css(shade(color, 0.55))
+    ctx.globalAlpha = 0.45
+    ctx.strokeStyle = css(shade(color, 0.6))
     ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.moveTo(x + r * 0.6, y + 1)
-    ctx.lineTo(x + w - r * 0.6, y + 1)
+    ctx.moveTo(x + r * 0.6, y + 1.2)
+    ctx.lineTo(x + w - r * 0.6, y + 1.2)
     ctx.stroke()
     ctx.restore()
     ctx.globalAlpha = 1
@@ -140,7 +167,29 @@ export function ellipse(
     ctx.fillStyle = css(color)
   }
   ctx.fill()
+  if (opts.shaded !== false) {
+    // A small offset highlight reads as a curved, lit surface.
+    ctx.save()
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+    ctx.clip()
+    const hl = ctx.createRadialGradient(
+      cx - rx * 0.38,
+      cy - ry * 0.44,
+      0,
+      cx - rx * 0.38,
+      cy - ry * 0.44,
+      Math.max(rx, ry) * 0.85
+    )
+    hl.addColorStop(0, css(0xffffff, 0.3))
+    hl.addColorStop(1, css(0xffffff, 0))
+    ctx.fillStyle = hl
+    ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2)
+    ctx.restore()
+  }
   if (opts.outline !== undefined) {
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
     ctx.lineWidth = opts.outlineWidth ?? 2
     ctx.strokeStyle = css(opts.outline)
     ctx.stroke()

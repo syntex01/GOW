@@ -8,6 +8,7 @@ import { LEVELS } from '../data/levels'
 import { TURRETS } from '../data/turrets'
 import { UNITS } from '../data/units'
 import Background from '../gfx/background'
+import Lighting from '../gfx/lighting'
 import { AGE_THEMES, TIER_COLORS, UI } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
 import Unit from '../sim/unit'
@@ -20,6 +21,7 @@ const GROUND_Y = 640
 /** Main menu, mode selection, codex, settings and achievements. */
 export default class MenuScene extends Phaser.Scene {
   private background!: Background
+  private lighting!: Lighting
   private vfx!: Vfx
   private parade: Unit[] = []
   private viewContainer!: Phaser.GameObjects.Container
@@ -35,7 +37,9 @@ export default class MenuScene extends Phaser.Scene {
     const cam = this.cameras.main
     this.paradeAge = rng.int(0, AGE_THEMES.length - 1)
 
-    this.vfx = new Vfx(this, GROUND_Y)
+    this.lighting = new Lighting(this, 300)
+    this.lighting.setAge(this.paradeAge)
+    this.vfx = new Vfx(this, GROUND_Y, this.lighting)
     this.background = new Background(this, cam.width, GROUND_Y)
     this.background.setAge(this.paradeAge)
 
@@ -79,6 +83,7 @@ export default class MenuScene extends Phaser.Scene {
       unit.update(delta, null, null)
       if (unit.x > width + 180) unit.x = -180
     }
+    this.lighting.render(0, 0)
   }
 
   // ──────────────────────────────── Views ────────────────────────────────
@@ -610,6 +615,7 @@ export default class MenuScene extends Phaser.Scene {
     this.parade = []
     this.buttons.forEach(b => b.destroy())
     this.background.destroy()
+    this.lighting.destroy()
     this.vfx.destroy()
   }
 }

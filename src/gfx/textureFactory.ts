@@ -7,6 +7,7 @@ import { Canvas2D, css, glow, makeCanvas, roundRect, shade } from './painter'
 import {
   drawBase,
   drawCloud,
+  drawForeground,
   drawGround,
   drawParticles,
   drawProjectile,
@@ -252,6 +253,7 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
         addCanvas(scene, `ridge:${age}:0`, drawRidge(age, 0, 1024, 260))
         addCanvas(scene, `ridge:${age}:1`, drawRidge(age, 1, 1024, 230))
         addCanvas(scene, `ridge:${age}:2`, drawRidge(age, 2, 1024, 200))
+        addCanvas(scene, `fg:${age}`, drawForeground(age, 1024, 150))
       }
       addCanvas(scene, 'sky:cloud', drawCloud(0xffffff))
       addCanvas(scene, 'fx:vignette', drawVignette(1280, 720))

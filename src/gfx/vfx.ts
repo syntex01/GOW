@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { save } from '../core/save'
 import { rng } from '../core/rng'
+import type Lighting from './lighting'
 
 const MAX_DECALS = 90
 
@@ -23,10 +24,19 @@ export default class Vfx {
   private numberPool: Phaser.GameObjects.Text[] = []
   private hitStopUntil = 0
 
-  constructor(scene: Phaser.Scene, groundY: number) {
+  /** Optional lighting rig; every effect below also emits light through it. */
+  readonly lighting?: Lighting
+
+  constructor(scene: Phaser.Scene, groundY: number, lighting?: Lighting) {
     this.scene = scene
     this.groundY = groundY
+    this.lighting = lighting
     this.buildEmitters()
+  }
+
+  /** Convenience passthrough so callers do not need their own lighting ref. */
+  light(x: number, y: number, radius: number, color: number, intensity = 1): void {
+    this.lighting?.add(x, y, radius, color, intensity)
   }
 
   private get quality(): number {
@@ -108,6 +118,7 @@ export default class Vfx {
   /** Weapon strike on a target: sparks plus, optionally, blood. */
   impact(x: number, y: number, color: number, power = 1, organic = true): void {
     const q = this.quality
+    this.lighting?.flash(x, y, 40 * power, color, 0.35)
     this.sparks.setParticleTint(color)
     this.sparks.emitParticleAt(x, y, Math.max(1, Math.round(5 * power * q)))
     if (organic && save.settings.bloodEffects) {
@@ -118,6 +129,7 @@ export default class Vfx {
 
   /** Sparks with no gore, for hitting armour, structures and machines. */
   ricochet(x: number, y: number, color = 0xffe08a, power = 1): void {
+    this.lighting?.flash(x, y, 46 * power, color, 0.5)
     this.sparks.setParticleTint(color)
     this.sparks.emitParticleAt(x, y, Math.max(1, Math.round(7 * power * this.quality)))
   }
@@ -125,6 +137,7 @@ export default class Vfx {
   explosion(x: number, y: number, radius: number, color = 0xffa640, big = false): void {
     const q = this.quality
     const scale = radius / 90
+    this.lighting?.flash(x, y, radius * (big ? 3.4 : 2.6), color, big ? 1.5 : 1.1)
 
     const flash = this.scene.add
       .image(x, y, 'fx:flash')
@@ -170,6 +183,7 @@ export default class Vfx {
   }
 
   muzzleFlash(x: number, y: number, angle: number, color: number, scale = 1): void {
+    this.lighting?.flash(x, y, 110 * scale, color, 0.95)
     const flash = this.scene.add
       .image(x, y, 'fx:flash')
       .setDepth(330)
@@ -191,7 +205,20 @@ export default class Vfx {
     }
   }
 
+  /**
+   * Ejected brass plus a puff of propellant smoke. Small, but it is the
+   * difference between "a sprite fired" and "a gun went off".
+   */
+  gunSmoke(x: number, y: number, angle: number, dir: number): void {
+    if (this.quality < 0.5) return
+    this.smoke.setParticleTint(0xb8b0a0)
+    this.smoke.emitParticleAt(x + Math.cos(angle) * 10, y + Math.sin(angle) * 10, 1)
+    this.debris.setParticleTint(0xd9c07a)
+    this.debris.emitParticleAt(x - dir * 8, y - 2, 1)
+  }
+
   energyBurst(x: number, y: number, color: number, power = 1): void {
+    this.lighting?.flash(x, y, 90 * power, color, 0.8)
     this.energy.setParticleTint(color)
     this.energy.emitParticleAt(x, y, Math.max(2, Math.round(8 * power * this.quality)))
   }
@@ -222,6 +249,7 @@ export default class Vfx {
   }
 
   healPulse(x: number, y: number, radius: number, color = 0x9ff0c8): void {
+    this.lighting?.flash(x, y, radius * 1.1, color, 0.55)
     const ring = this.scene.add
       .image(x, y, 'fx:ring')
       .setDepth(316)

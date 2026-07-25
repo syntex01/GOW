@@ -42,6 +42,7 @@ export default class Base implements Damageable {
   private vfx: Vfx
   private sprite: Phaser.GameObjects.Image
   private smoke?: Phaser.GameObjects.Particles.ParticleEmitter
+  private brazier?: Phaser.GameObjects.Particles.ParticleEmitter
   private age = -1
   private flashTimer = 0
   private shakeOffset = 0
@@ -83,10 +84,34 @@ export default class Base implements Damageable {
     this.sprite.setTexture(`base:${age}:${this.faction}`)
     this.sprite.setDisplaySize(BASE_W, BASE_H)
     this.sprite.setFlipX(this.faction === 'enemy')
+    this.buildBrazier(age)
     // Rebuild turret visuals so they sit correctly on the new silhouette.
     this.slots.forEach((slot, i) => {
       if (slot.def) this.placeTurretSprites(i, slot.def)
     })
+  }
+
+  /**
+   * Fire at the gate: an open brazier through the Renaissance, a glowing
+   * exhaust vent once the fortress is industrial.
+   */
+  private buildBrazier(age: number): void {
+    this.brazier?.destroy()
+    const industrial = age >= 3
+    const tint = industrial ? [0x8fd6ff, 0xc8f0ff] : [0xff8a2a, 0xffd07a]
+    this.brazier = this.scene.add
+      .particles(this.x + this.dir * BASE_W * 0.34, this.y - BASE_H * 0.12, 'fx:soft', {
+        lifespan: { min: 520, max: 1000 },
+        speedY: { min: -70, max: -26 },
+        speedX: { min: -12, max: 12 },
+        scale: { start: industrial ? 0.14 : 0.2, end: 0 },
+        alpha: { start: 0.75, end: 0 },
+        tint,
+        frequency: industrial ? 90 : 55,
+        quantity: 1,
+        blendMode: Phaser.BlendModes.ADD
+      })
+      .setDepth(46)
   }
 
   /** Where attackers stop and start hitting the wall. */
@@ -158,6 +183,7 @@ export default class Base implements Damageable {
   }
 
   update(dtMs: number, candidates: Damageable[]): void {
+    this.emitLight()
     if (this.flashTimer > 0) {
       this.flashTimer -= dtMs
       if (this.flashTimer <= 0) this.sprite.clearTint()
@@ -215,6 +241,22 @@ export default class Base implements Damageable {
         }
       }
     })
+  }
+
+  /**
+   * Every fortress is a light source: braziers and windows early on, a
+   * shielded reactor core in the Future Age.
+   */
+  private emitLight(): void {
+    const lighting = this.vfx.lighting
+    if (!lighting) return
+    const glowColor = this.age >= 4 ? FACTION_COLOR[this.faction] : this.age >= 3 ? 0xffb347 : 0xff9a4a
+    const radius = this.age >= 4 ? BASE_H * 1.5 : BASE_H * 1.15
+    const intensity = this.age >= 4 ? 1.15 : 0.95
+    const phase = this.faction === 'player' ? 0 : 2.1
+    lighting.addFlickering(this.x, this.y - BASE_H * (this.age >= 4 ? 0.62 : 0.34), radius, glowColor, intensity, phase)
+    // A warm pool at the gate so units silhouette against it as they march out.
+    lighting.addFlickering(this.x + this.dir * BASE_W * 0.3, this.y - 24, BASE_W * 0.95, glowColor, 0.8, phase + 1)
   }
 
   private applyTurretTransform(index: number, slot: TurretSlot): void {
@@ -330,6 +372,8 @@ export default class Base implements Damageable {
       ease: 'Quad.easeIn'
     })
     this.slots.forEach(slot => this.clearTurretSprites(slot))
+    this.brazier?.destroy()
+    this.brazier = undefined
   }
 
   drawHealthBar(graphics: Phaser.GameObjects.Graphics): void {
@@ -348,6 +392,7 @@ export default class Base implements Damageable {
   }
 
   destroy(): void {
+    this.brazier?.destroy()
     this.smoke?.destroy()
     this.slots.forEach(slot => this.clearTurretSprites(slot))
     this.sprite.destroy()

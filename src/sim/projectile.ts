@@ -39,6 +39,16 @@ const TRAIL: Partial<Record<ProjectileId, { color: number; rate: number; additiv
 
 const STICKY: ProjectileId[] = ['arrow', 'bolt']
 
+/** Projectiles that cast light while in flight. */
+const PROJECTILE_LIGHT: Partial<Record<ProjectileId, { color: number; radius: number; intensity: number }>> = {
+  laserbolt: { color: 0x5ce1ff, radius: 72, intensity: 0.85 },
+  plasmaball: { color: 0x7affe0, radius: 96, intensity: 1 },
+  railslug: { color: 0xffd06a, radius: 88, intensity: 0.95 },
+  rocket: { color: 0xffa640, radius: 64, intensity: 0.7 },
+  shell: { color: 0xffd08a, radius: 40, intensity: 0.35 },
+  cannonball: { color: 0xffc07a, radius: 34, intensity: 0.25 }
+}
+
 export default class Projectile {
   readonly faction: Faction
   readonly config: ProjectileConfig
@@ -110,6 +120,9 @@ export default class Projectile {
 
     this.sprite.setPosition(this.x, this.y)
     this.sprite.setRotation(Math.atan2(this.vy, this.vx))
+
+    const lit = PROJECTILE_LIGHT[this.config.projectile]
+    if (lit) this.vfx.light(this.x, this.y, lit.radius, lit.color, lit.intensity)
 
     this.emitTrail(dtMs)
 

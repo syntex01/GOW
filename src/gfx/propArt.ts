@@ -663,6 +663,98 @@ function drawProp(
   }
 }
 
+/**
+ * A near-camera silhouette strip: grass, rubble and debris that sits *in front*
+ * of the battle. Nothing sells depth in a side-view faster than something
+ * passing between the camera and the action.
+ */
+export function drawForeground(age: number, width: number, height: number): Canvas2D {
+  const theme = AGE_THEMES[age]
+  const c = makeCanvas(width, height)
+  const { ctx } = c
+  const silhouette = shade(theme.groundDark, -0.55)
+  const base = height * 0.94
+
+  // A low, uneven bank of earth along the very bottom.
+  const bank = fbm(age * 5 + 91, 3)
+  ctx.beginPath()
+  ctx.moveTo(0, height)
+  for (let x = 0; x <= width; x += 4) {
+    ctx.lineTo(x, base - bank(x * 0.012) * height * 0.22)
+  }
+  ctx.lineTo(width, height)
+  ctx.closePath()
+  ctx.fillStyle = css(silhouette)
+  ctx.fill()
+
+  const clump = (x: number, y: number, scale: number) => {
+    switch (theme.props) {
+      case 'ferns':
+      case 'pines':
+      case 'oaks': {
+        // Grass blades fanning out.
+        ctx.strokeStyle = css(silhouette)
+        ctx.lineCap = 'round'
+        for (let i = -4; i <= 4; i += 1) {
+          ctx.lineWidth = 2 + Math.random() * 2.4
+          ctx.beginPath()
+          ctx.moveTo(x, y)
+          ctx.quadraticCurveTo(
+            x + i * scale * 0.16,
+            y - scale * (0.5 + Math.random() * 0.3),
+            x + i * scale * 0.34,
+            y - scale * (0.55 + Math.random() * 0.5)
+          )
+          ctx.stroke()
+        }
+        break
+      }
+      case 'ruins': {
+        // Broken concrete and rebar.
+        polygon(ctx, [
+          [x - scale * 0.3, y],
+          [x - scale * 0.22, y - scale * 0.75],
+          [x + scale * 0.1, y - scale * 0.62],
+          [x + scale * 0.32, y]
+        ], silhouette, { gradient: false })
+        ctx.strokeStyle = css(silhouette)
+        ctx.lineWidth = 2.4
+        for (let i = -1; i <= 1; i += 1) {
+          ctx.beginPath()
+          ctx.moveTo(x + i * scale * 0.14, y - scale * 0.6)
+          ctx.lineTo(x + i * scale * 0.2, y - scale * 1.0)
+          ctx.stroke()
+        }
+        break
+      }
+      default: {
+        // Angular alloy shards with a faint emissive edge.
+        polygon(ctx, [
+          [x - scale * 0.26, y],
+          [x - scale * 0.06, y - scale * 0.95],
+          [x + scale * 0.16, y - scale * 0.6],
+          [x + scale * 0.34, y]
+        ], silhouette, { gradient: false })
+        ctx.strokeStyle = css(0x6affe0, 0.22)
+        ctx.lineWidth = 1.6
+        ctx.beginPath()
+        ctx.moveTo(x - scale * 0.06, y - scale * 0.95)
+        ctx.lineTo(x + scale * 0.16, y - scale * 0.6)
+        ctx.stroke()
+        break
+      }
+    }
+  }
+
+  const count = Math.round(width / 90)
+  for (let i = 0; i < count; i += 1) {
+    const x = (i + 0.5) * (width / count) + (Math.random() - 0.5) * 60
+    const y = base - bank(x * 0.012) * height * 0.22 + 6
+    clump(x, y, height * (0.34 + Math.random() * 0.34))
+  }
+  return c
+}
+
 /** A soft cloud sprite for the sky layer. */
 export function drawCloud(tint: number): Canvas2D {
   const w = 260
