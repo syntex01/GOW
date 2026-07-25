@@ -1,14 +1,23 @@
 {
   "compilerOptions": {
-    "target": "es5",
-    "module": "commonjs",
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "strict": true,
     "noImplicitAny": true,
-    "esModuleInterop": true,
-    "allowUnreachableCode": false,
-    "sourceMap": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
     "strictPropertyInitialization": false,
-    "typeRoots": ["node_modules/@types", "typings"],
-    "lib": ["dom", "es2015.promise", "es5"]
-  }
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "sourceMap": true,
+    "noEmit": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2020"]
+  },
+  "include": ["src/**/*.ts"]
 }

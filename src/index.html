@@ -2,30 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#05070d" />
+    <meta name="description" content="GOW — a side-view autobattler across five ages of warfare. Build an army, evolve your technology, and level the enemy fortress." />
 
     <link rel="manifest" href="./manifest.json" />
 
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="application-name" content="Platformer PWA" />
-    <meta name="apple-mobile-web-app-title" content="Platformer PWA" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="application-name" content="GOW" />
+    <meta name="apple-mobile-web-app-title" content="GOW" />
     <meta name="msapplication-starturl" content="./" />
 
     <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/icons-192.png" />
     <link rel="apple-touch-icon" type="image/png" sizes="192x192" href="./assets/icons/icons-192.png" />
-
     <link rel="icon" type="image/png" sizes="512x512" href="./assets/icons/icons-512.png" />
-    <link rel="apple-touch-icon" type="image/png" sizes="512x512" href="./assets/icons/icons-512.png" />
-
     <link rel="shortcut icon" href="./favicon.ico" type="image/x-icon" />
 
-    <title>Platformer PWA</title>
-  </head>
-  <body>
+    <title>GOW — Gears of War Through the Ages</title>
+
     <style>
       html,
       body {
@@ -33,57 +30,70 @@
         height: 100%;
         margin: 0;
         padding: 0;
-        background-color: #000000;
+        background-color: #05070d;
         overflow: hidden;
+        overscroll-behavior: none;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
       }
       #phaser-game {
         position: fixed;
-        top: 0;
-        left: 0;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #phaser-game canvas {
+        display: block;
       }
       #loading-screen {
         position: fixed;
-        width: 100%;
-        height: 100%;
+        inset: 0;
         display: flex;
+        flex-direction: column;
         justify-content: center;
         align-items: center;
-        z-index: 1;
-        background-color: teal;
+        z-index: 10;
+        background: radial-gradient(circle at 50% 40%, #16203a 0%, #05070d 70%);
         user-select: none;
-        transition: opacity 1s ease-in-out;
+        transition: opacity 0.8s ease-in-out;
       }
-      .transparent {
+      #loading-screen.transparent {
         opacity: 0;
+        pointer-events: none;
       }
-      h2 {
-        font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
-        color: #ffffff;
+      #loading-screen h1 {
+        font-family: Impact, Haettenschweiler, 'Arial Black', sans-serif;
+        font-size: 76px;
+        letter-spacing: 6px;
+        color: #e9eefb;
+        margin: 0;
+      }
+      #loading-screen p {
+        font-family: 'Trebuchet MS', system-ui, sans-serif;
+        font-size: 14px;
+        letter-spacing: 3px;
+        color: #93a3c4;
+        margin-top: 10px;
+        text-transform: uppercase;
       }
     </style>
-
-    <noscript>Please enable javascript to continue using this application.</noscript>
+  </head>
+  <body>
+    <noscript>This game requires JavaScript. Please enable it to play.</noscript>
 
     <div id="loading-screen">
-      <h2 id="item">loading...</h2>
+      <h1>GOW</h1>
+      <p>Gears of war through the ages</p>
     </div>
 
     <div id="phaser-game"></div>
 
+    <script src="./game.bundle.js"></script>
     <script>
-      // var loadingScreen = document.getElementsByTagName('body')
-      // loadingScreen[0].addEventListener('click', function(event) {
-      //   event.preventDefault()
-      //   console.log('click')
-      // })
-    </script>
-
-    <script>
-      // Check that service workers are registered
-      if ('serviceWorker' in navigator) {
-        // Use the window load event to keep the page load performant
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js')
+      if ('serviceWorker' in navigator && location.protocol === 'https:') {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function () {})
         })
       }
     </script>

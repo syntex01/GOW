@@ -1,22 +1,25 @@
 {
-  "short_name": "Platformer PWA",
-  "name": "Phaser 3 Platformer Example",
+  "short_name": "GOW",
+  "name": "GOW — Gears of War Through the Ages",
+  "description": "A side-view autobattler across five ages of warfare.",
   "icons": [
     {
       "src": "./assets/icons/icons-192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
       "src": "./assets/icons/icons-512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
   "start_url": "./index.html",
-  "background_color": "#e6e6e6",
+  "background_color": "#05070d",
   "display": "fullscreen",
   "orientation": "landscape",
   "scope": "./",
-  "theme_color": "#000000"
+  "theme_color": "#05070d"
 }

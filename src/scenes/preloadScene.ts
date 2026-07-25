@@ -1,105 +1,102 @@
-type ImageAsset = { key: string; url: string }
-type SpritesheetAsset = ImageAsset & { frameWidth: number; frameHeight: number }
-type AtlasAsset = { key: string; textureURL: string; atlasURL: string }
+import Phaser from 'phaser'
+import { createTextureJobs, texturesReady, type TextureJob } from '../gfx/textureFactory'
+import { UI } from '../gfx/palette'
+import { FONT, FONT_DISPLAY, hex } from '../ui/widgets'
 
-type AssetManifest = {
-  images?: ImageAsset[]
-  spritesheets?: SpritesheetAsset[]
-  audio?: { key: string; urls: string[] }[]
-  atlases?: AtlasAsset[]
-}
-
-const ASSET_MANIFEST_KEY = 'asset-manifest'
-
+/**
+ * All game art is generated procedurally, so "loading" is really "drawing".
+ * The work is sliced across frames so the progress bar stays responsive.
+ */
 export default class PreloadScene extends Phaser.Scene {
-  private loadingText?: Phaser.GameObjects.Text
+  private bar!: Phaser.GameObjects.Graphics
+  private statusText!: Phaser.GameObjects.Text
+  private percentText!: Phaser.GameObjects.Text
+  private progress = 0
+  private targetProgress = 0
 
   constructor() {
-    super({
-      key: 'PreloadScene'
-    })
+    super({ key: 'PreloadScene' })
   }
 
-  preload() {
-    this.cameras.main.setBackgroundColor('#0b0d17')
-    const { centerX, centerY } = this.cameras.main
+  create(): void {
+    this.cameras.main.setBackgroundColor(UI.ink)
+    const { centerX, centerY, width } = this.cameras.main
 
-    this.loadingText = this.add
-      .text(centerX, centerY, 'Loading…', {
-        fontFamily: 'Arial',
-        fontSize: '32px',
-        color: '#ffffff'
+    this.add
+      .text(centerX, centerY - 96, 'GOW', {
+        fontFamily: FONT_DISPLAY,
+        fontSize: '76px',
+        color: hex(UI.text)
       })
-      .setOrigin(0.5, 0.5)
+      .setOrigin(0.5)
 
-    this.load.on(Phaser.Loader.Events.PROGRESS, this.handleProgress, this)
-    this.load.on(Phaser.Loader.Events.COMPLETE, this.handleComplete, this)
+    this.statusText = this.add
+      .text(centerX, centerY + 42, 'Preparing…', {
+        fontFamily: FONT,
+        fontSize: '16px',
+        color: hex(UI.textDim)
+      })
+      .setOrigin(0.5)
 
-    this.load.json(ASSET_MANIFEST_KEY, 'assets/manifest/core.json')
-  }
+    this.percentText = this.add
+      .text(centerX, centerY - 22, '0%', {
+        fontFamily: FONT_DISPLAY,
+        fontSize: '30px',
+        color: hex(UI.gold)
+      })
+      .setOrigin(0.5)
 
-  create() {
-    const manifest = this.cache.json.get(ASSET_MANIFEST_KEY) as AssetManifest | null
-    this.load.off(Phaser.Loader.Events.PROGRESS, this.handleProgress, this)
-    this.load.off(Phaser.Loader.Events.COMPLETE, this.handleComplete, this)
+    this.bar = this.add.graphics()
+    this.barWidth = Math.min(520, width - 120)
 
-    this.loadFromManifest(manifest).then(() => {
-      this.scene.start('MenuScene')
-    })
-  }
-
-  private handleProgress(value: number) {
-    if (this.loadingText) {
-      const percentage = Math.round(value * 100)
-      this.loadingText.setText(`Loading… ${percentage}%`)
+    this.jobs = createTextureJobs(this)
+    if (this.jobs.length === 0 && texturesReady()) {
+      this.targetProgress = 1
+      this.finish()
     }
   }
 
-  private handleComplete() {
-    if (this.loadingText) {
-      this.loadingText.setText('Preparing world…')
+  private barWidth = 480
+  private jobs: TextureJob[] = []
+  private jobIndex = 0
+  private finished = false
+
+  /** Runs as much generation as fits in one frame budget, then yields. */
+  private pumpJobs(): void {
+    if (this.jobIndex >= this.jobs.length) return
+    const budgetMs = 14
+    const start = performance.now()
+    while (this.jobIndex < this.jobs.length && performance.now() - start < budgetMs) {
+      const job = this.jobs[this.jobIndex]
+      this.statusText.setText(job.label)
+      job.run()
+      this.jobIndex += 1
+      this.targetProgress = this.jobIndex / this.jobs.length
     }
+    if (this.jobIndex >= this.jobs.length) this.finish()
   }
 
-  private loadFromManifest(manifest: AssetManifest | null | undefined) {
-    if (!manifest) {
-      return Promise.resolve()
-    }
+  private finish(): void {
+    if (this.finished) return
+    this.finished = true
+    this.statusText.setText('Ready')
+    this.time.delayedCall(280, () => this.scene.start('MenuScene'))
+  }
 
-    const hasAssets =
-      !!manifest.images?.length ||
-      !!manifest.spritesheets?.length ||
-      !!manifest.audio?.length ||
-      !!manifest.atlases?.length
+  override update(_time: number, delta: number): void {
+    this.pumpJobs()
+    this.progress = Phaser.Math.Linear(this.progress, this.targetProgress, Math.min(1, delta / 90))
+    this.percentText.setText(`${Math.round(this.progress * 100)}%`)
 
-    if (!hasAssets) {
-      return Promise.resolve()
-    }
-
-    if (manifest.images) {
-      manifest.images.forEach(asset => this.load.image(asset.key, asset.url))
-    }
-
-    if (manifest.spritesheets) {
-      manifest.spritesheets.forEach(asset =>
-        this.load.spritesheet(asset.key, asset.url, {
-          frameWidth: asset.frameWidth,
-          frameHeight: asset.frameHeight
-        })
-      )
-    }
-
-    if (manifest.atlases) {
-      manifest.atlases.forEach(asset => this.load.atlas(asset.key, asset.textureURL, asset.atlasURL))
-    }
-
-    if (manifest.audio) {
-      manifest.audio.forEach(asset => this.load.audio(asset.key, asset.urls))
-    }
-
-    return new Promise<void>(resolve => {
-      this.load.once(Phaser.Loader.Events.COMPLETE, () => resolve())
-      this.load.start()
-    })
+    const { centerX, centerY } = this.cameras.main
+    const x = centerX - this.barWidth / 2
+    const y = centerY + 6
+    this.bar.clear()
+    this.bar.fillStyle(UI.panel, 1)
+    this.bar.fillRoundedRect(x - 3, y - 3, this.barWidth + 6, 20, 10)
+    this.bar.fillStyle(0x1b2436, 1)
+    this.bar.fillRoundedRect(x, y, this.barWidth, 14, 7)
+    this.bar.fillStyle(UI.gold, 1)
+    this.bar.fillRoundedRect(x, y, Math.max(14, this.barWidth * this.progress), 14, 7)
   }
 }
