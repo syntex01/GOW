@@ -1,28 +1,119 @@
 {
-  "name": "gears-of-war-ages",
+  "name": "gow",
+  "productName": "GOW",
   "version": "1.0.0",
-  "description": "GOW — a side-view autobattler across five ages of warfare",
+  "description": "GOW \u2014 a side-view autobattler across five ages of warfare",
   "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "start": "node build.mjs --serve",
     "dev": "node build.mjs --watch",
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build"
+    "check": "npm run typecheck && npm run build",
+    "app": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:all": "npm run build && electron-builder --linux --win --publish never"
   },
   "keywords": [
     "phaser",
     "game",
     "autobattler",
-    "typescript"
+    "typescript",
+    "electron"
   ],
-  "author": "",
+  "author": {
+    "name": "GOW Contributors",
+    "email": "noreply@github.com"
+  },
   "license": "MIT",
   "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "esbuild": "^0.28.1",
     "typescript": "^5.9.0"
   },
   "dependencies": {
     "phaser": "^3.90.0"
+  },
+  "build": {
+    "appId": "com.gow.game",
+    "productName": "GOW",
+    "copyright": "MIT licensed",
+    "directories": {
+      "output": "release",
+      "buildResources": "electron/icons"
+    },
+    "files": [
+      "electron/**/*",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": "game"
+      }
+    ],
+    "compression": "maximum",
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Game",
+      "icon": "electron/icons/icon.png",
+      "synopsis": "Side-view autobattler across five ages of warfare",
+      "description": "Build an army, evolve your civilisation from bone clubs to orbital ion cannons, and level the enemy fortress. Single-player campaign, endless siege and serverless peer-to-peer multiplayer.",
+      "maintainer": "GOW Contributors <noreply@github.com>",
+      "desktop": {
+        "entry": {
+          "Name": "GOW",
+          "Comment": "Side-view autobattler across five ages of warfare",
+          "Categories": "Game;StrategyGame;",
+          "Keywords": "game;strategy;autobattler;"
+        }
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icons/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GOW"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.games",
+      "icon": "electron/icons/icon.png"
+    }
+  },
+  "homepage": "https://github.com/syntex01/GOW",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/syntex01/GOW.git"
   }
 }
