@@ -45,6 +45,8 @@ export default class BattleScene extends Phaser.Scene {
   private dragging = false
   private manualCameraUntil = 0
   private ended = false
+  /** A disconnect has been seen and is waiting out its grace window. */
+  private leaving = false
   private matchSeed = 0
 
   /**
@@ -149,6 +151,7 @@ export default class BattleScene extends Phaser.Scene {
   private resetSceneState(): void {
     this.paused = false
     this.ended = false
+    this.leaving = false
     this.speedIndex = 0
     this.wave = 1
     this.waveTimer = 0
@@ -238,8 +241,18 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private handleOpponentLeft(reason: string): void {
-    gameEvents.emit('hud:flash', { message: 'Opponent left', tone: 'warn' })
-    this.endNetworkedMatch(`Your opponent disconnected (${reason}).`)
+    if (this.ended || this.leaving) return
+    this.leaving = true
+    // The peer may simply have finished the match a tick before we did — the
+    // link goes down the same way either way. Our own simulation is only
+    // milliseconds behind and already holds their queued commands, so give it
+    // a moment to reach the same conclusion. A real result beats a disconnect
+    // notice every time.
+    this.time.delayedCall(1500, () => {
+      if (this.ended) return
+      gameEvents.emit('hud:flash', { message: 'Opponent left', tone: 'warn' })
+      this.endNetworkedMatch(`Your opponent disconnected (${reason}).`)
+    })
   }
 
   private endNetworkedMatch(reason: string): void {
@@ -558,7 +571,7 @@ export default class BattleScene extends Phaser.Scene {
         unlockedAchievements: []
       }
       gameEvents.emit('match:ended', { victory: localVictory, stats })
-      session.endNetworkMatch('match finished')
+      session.endNetworkMatch('match finished', false)
       audio.stopMusic()
       this.time.delayedCall(600, () => {
         this.scene.stop('HUDScene')

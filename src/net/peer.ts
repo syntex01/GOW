@@ -181,8 +181,8 @@ export default class Peer {
     else if (this.outbox.length < 256) this.outbox.push(payload)
   }
 
+  /** Tells the peer why we are going, then tears the link down. */
   close(reason = 'closed'): void {
-    this.clearGrace()
     try {
       if (this.channel?.readyState === 'open') {
         this.channel.send(JSON.stringify({ k: 'bye', reason }))
@@ -190,6 +190,17 @@ export default class Peer {
     } catch {
       /* Already gone. */
     }
+    this.dispose(reason)
+  }
+
+  /**
+   * Tears the link down without announcing it. Used when the match ended on
+   * its own: both simulations reach that conclusion on the same tick, so a
+   * farewell is not just redundant — it races the other peer's last tick and
+   * arrives looking like a disconnect.
+   */
+  dispose(reason = 'closed'): void {
+    this.clearGrace()
     this.channel?.close()
     this.pc?.close()
     this.channel = null

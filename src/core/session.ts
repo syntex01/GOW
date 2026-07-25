@@ -74,13 +74,21 @@ class Session {
     this.result = null
   }
 
-  /** Tears the peer link down and returns to single-player defaults. */
-  endNetworkMatch(reason = 'ended'): void {
-    this.peer?.close(reason)
+  /**
+   * Tears the peer link down and returns to single-player defaults. Pass
+   * `announce: false` when the match ended by itself — both peers reach that
+   * conclusion independently, so saying goodbye only races their last tick.
+   */
+  endNetworkMatch(reason = 'ended', announce = true): void {
+    // Detach first: closing the link fires a state change, and by this point
+    // nobody is left who should react to it.
+    const peer = this.peer
     this.peer = null
     this.onNetMessage = null
     this.onNetState = null
     this.inbox = []
+    if (announce) peer?.close(reason)
+    else peer?.dispose(reason)
   }
 }
 
