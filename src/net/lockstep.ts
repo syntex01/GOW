@@ -16,7 +16,16 @@ export interface LockstepCallbacks {
   onDesync: (tick: number, mine: number, theirs: number) => void
   /** Called when the peer's input stops arriving, and again when it resumes. */
   onStall: (stalled: boolean) => void
+  /**
+   * The peer's input has been missing long enough that it is not coming back.
+   * The transport can still look healthy here — a frozen tab holds its data
+   * channel open — so the command stream drying up is the only symptom.
+   */
+  onLost: () => void
 }
+
+/** How long the peer's input may be missing before the match is called off. */
+const STALL_TIMEOUT_MS = 30000
 
 /**
  * The single place a command turns into a change in the world. Single-player
@@ -163,6 +172,10 @@ export default class LockstepDriver {
         if (!this.stalled && this.stallMs > 600) {
           this.stalled = true
           this.callbacks.onStall(true)
+        }
+        if (this.stallMs > STALL_TIMEOUT_MS) {
+          this.finished = true
+          this.callbacks.onLost()
         }
         return executed
       }

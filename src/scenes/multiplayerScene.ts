@@ -78,7 +78,10 @@ export default class MultiplayerScene extends Phaser.Scene {
     }
 
     // Own the wire until the battle scene takes over.
-    session.setNetHandler(message => this.handleMessage(message))
+    session.setNetHandler(
+      message => this.handleMessage(message),
+      (state, detail) => this.handlePeerState(state, detail)
+    )
     this.showChoose()
   }
 
@@ -208,7 +211,9 @@ export default class MultiplayerScene extends Phaser.Scene {
     const peer = new Peer({
       lanOnly: this.lanOnly,
       onMessage: message => session.deliver(message),
-      onStateChange: (state, detail) => this.handlePeerState(state, detail)
+      // Routed through the session so the battle scene inherits link health
+      // when it takes over; a peer that vanishes never sends a `bye`.
+      onStateChange: (state, detail) => session.deliverState(state, detail)
     })
     this.peer = peer
     session.peer = peer

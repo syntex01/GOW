@@ -10,6 +10,7 @@ import Lighting from '../gfx/lighting'
 import { AGE_THEMES } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
 import LockstepDriver, { applyCommand } from '../net/lockstep'
+import type { PeerState } from '../net/peer'
 import { TICK_SUBSTEPS, type Command, type NetMessage } from '../net/protocol'
 import AiController, { AI_PROFILES } from '../sim/ai'
 import type Army from '../sim/army'
@@ -197,7 +198,8 @@ export default class BattleScene extends Phaser.Scene {
         gameEvents.emit('hud:flash', {
           message: stalled ? 'Waiting for opponent…' : 'Opponent reconnected',
           tone: stalled ? 'warn' : 'good'
-        })
+        }),
+      onLost: () => this.handleOpponentLeft('they stopped responding')
     })
 
     if (peer) {
@@ -205,7 +207,7 @@ export default class BattleScene extends Phaser.Scene {
         if (message.k === 'tick') this.lockstep?.receive(message)
         else if (message.k === 'bye') this.handleOpponentLeft(message.reason)
       }
-      session.setNetHandler(this.netHandler)
+      session.setNetHandler(this.netHandler, (state, detail) => this.handleLinkState(state, detail))
     }
   }
 
@@ -218,6 +220,21 @@ export default class BattleScene extends Phaser.Scene {
       tone: 'warn'
     })
     this.endNetworkedMatch('The two games fell out of sync, so the match was stopped.')
+  }
+
+  /**
+   * A peer that closes its tab or loses its network never gets to send a
+   * `bye`, so the link's own health is the only signal that the match is over.
+   */
+  private handleLinkState(state: PeerState, detail?: string): void {
+    if (this.ended) return
+    if (state === 'interrupted') {
+      gameEvents.emit('hud:flash', { message: 'Connection interrupted…', tone: 'warn' })
+      return
+    }
+    if (state === 'failed' || state === 'closed') {
+      this.handleOpponentLeft(detail ?? 'connection lost')
+    }
   }
 
   private handleOpponentLeft(reason: string): void {

@@ -10,7 +10,19 @@ import type { NetMessage } from './protocol'
  * travel over any channel the players already have: chat, email, a phone call.
  */
 
-export type PeerState = 'idle' | 'creating' | 'awaiting-answer' | 'connecting' | 'open' | 'closed' | 'failed'
+export type PeerState =
+  | 'idle'
+  | 'creating'
+  | 'awaiting-answer'
+  | 'connecting'
+  | 'open'
+  /** Quiet, but inside the grace window and still expected to recover. */
+  | 'interrupted'
+  | 'closed'
+  | 'failed'
+
+/** How long a quiet link is given to come back before the match is called off. */
+const RECONNECT_GRACE_MS = 10000
 
 export interface PeerOptions {
   /**
@@ -36,6 +48,8 @@ export default class Peer {
   private currentState: PeerState = 'idle'
   /** Queued outbound messages while the channel finishes opening. */
   private outbox: string[] = []
+  /** Pending grace period for a link that has gone quiet but may recover. */
+  private graceTimer = 0
 
   constructor(options: PeerOptions) {
     this.options = options
@@ -62,11 +76,41 @@ export default class Peer {
     })
     pc.onconnectionstatechange = () => {
       const s = pc.connectionState
-      if (s === 'failed') this.setState('failed', 'connection failed')
-      else if (s === 'disconnected' || s === 'closed') this.setState('closed', s)
+      if (s === 'failed') {
+        this.clearGrace()
+        this.setState('failed', 'connection failed')
+      } else if (s === 'closed') {
+        this.clearGrace()
+        this.setState('closed', 'connection closed')
+      } else if (s === 'disconnected') {
+        // WebRTC reports `disconnected` for any blip — a Wi-Fi handover, a
+        // moment of packet loss — and very often recovers on its own. Ending
+        // the match immediately would throw away games that were fine.
+        this.startGrace()
+      } else if (s === 'connected') {
+        this.clearGrace()
+        if (this.channel?.readyState === 'open') this.setState('open')
+      }
     }
     this.pc = pc
     return pc
+  }
+
+  /** Starts the wait-and-see window for a link that has gone quiet. */
+  private startGrace(): void {
+    if (this.graceTimer) return
+    this.setState('interrupted', 'connection interrupted')
+    this.graceTimer = window.setTimeout(() => {
+      this.graceTimer = 0
+      if (this.pc?.connectionState === 'connected') return
+      this.setState('failed', 'the connection did not recover')
+    }, RECONNECT_GRACE_MS)
+  }
+
+  private clearGrace(): void {
+    if (!this.graceTimer) return
+    window.clearTimeout(this.graceTimer)
+    this.graceTimer = 0
   }
 
   private bindChannel(channel: RTCDataChannel): void {
@@ -138,6 +182,7 @@ export default class Peer {
   }
 
   close(reason = 'closed'): void {
+    this.clearGrace()
     try {
       if (this.channel?.readyState === 'open') {
         this.channel.send(JSON.stringify({ k: 'bye', reason }))

@@ -1,6 +1,7 @@
 import type { MatchStats } from './events'
 import type { MatchSetup } from '../data/levels'
 import type Peer from '../net/peer'
+import type { PeerState } from '../net/peer'
 import type { NetMessage } from '../net/protocol'
 import { save } from './save'
 
@@ -24,6 +25,12 @@ class Session {
   /** Set by whichever scene currently owns the peer link. */
   onNetMessage: ((message: NetMessage) => void) | null = null
   /**
+   * Link-health handler, owned by the same scene as `onNetMessage`. A peer that
+   * simply vanishes never sends a `bye`, so without this the battle scene would
+   * wait for input that is never coming.
+   */
+  onNetState: ((state: PeerState, detail?: string) => void) | null = null
+  /**
    * Messages that arrived while no scene owned the link — during the lobby to
    * battle handover, for instance. Lockstep sends each tick exactly once, so
    * dropping even one would stall the match forever.
@@ -44,9 +51,18 @@ class Session {
     if (this.inbox.length > 1024) this.inbox.shift()
   }
 
+  /** Entry point for link-health changes. */
+  deliverState(state: PeerState, detail?: string): void {
+    this.onNetState?.(state, detail)
+  }
+
   /** Installs a handler and immediately replays anything that queued up. */
-  setNetHandler(handler: ((message: NetMessage) => void) | null): void {
+  setNetHandler(
+    handler: ((message: NetMessage) => void) | null,
+    onState: ((state: PeerState, detail?: string) => void) | null = null
+  ): void {
     this.onNetMessage = handler
+    this.onNetState = onState
     if (!handler) return
     const pending = this.inbox
     this.inbox = []
@@ -63,6 +79,7 @@ class Session {
     this.peer?.close(reason)
     this.peer = null
     this.onNetMessage = null
+    this.onNetState = null
     this.inbox = []
   }
 }
