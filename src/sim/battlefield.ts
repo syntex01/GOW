@@ -681,11 +681,19 @@ export default class Battlefield {
   }
 
   private fireBeam(x: number, y: number, target: Damageable, owner: Unit, event: DamageEvent): void {
+    // Snapped to the art grid at both ends and given an even thickness, so a
+    // beam lands on whole pixels instead of smearing a soft diagonal across a
+    // scene where nothing else has one.
+    const snap = (v: number) => Math.round(v / 2) * 2
+    const x0 = snap(x)
+    const y0 = snap(y)
+    const x1 = snap(target.x)
+    const y1 = snap(target.y + target.centerOffsetY)
     const gfx = this.scene.add.graphics().setDepth(260).setBlendMode(Phaser.BlendModes.ADD)
     gfx.lineStyle(6, 0x8ff0ff, 0.85)
-    gfx.lineBetween(x, y, target.x, target.y + target.centerOffsetY)
+    gfx.lineBetween(x0, y0, x1, y1)
     gfx.lineStyle(2, 0xffffff, 1)
-    gfx.lineBetween(x, y, target.x, target.y + target.centerOffsetY)
+    gfx.lineBetween(x0, y0, x1, y1)
     this.beams.push({ gfx, ttl: 140 })
     this.applyDamage(owner, target, event)
   }
