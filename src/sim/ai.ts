@@ -5,6 +5,7 @@ import type { UnitDef } from '../data/types'
 import { turretsForAge } from '../data/turrets'
 import type Battlefield from './battlefield'
 import type { ArmorType } from './types'
+import { TECH_BRANCHES, branchTechs, type TechBranch } from '../data/tech'
 
 export interface AiProfile {
   name: string
@@ -86,6 +87,8 @@ export default class AiController {
   private profile: AiProfile
   private timer = 0
   private turretCooldown = 4000
+  /** The branch this opponent has committed to for the match. */
+  private readonly branch: TechBranch
   /** Rises when the AI is losing, making it play more desperately. */
   private pressure = 0
   /**
@@ -99,6 +102,7 @@ export default class AiController {
     this.bf = bf
     this.profile = profile
     this.rng = new Rng(seed)
+    this.branch = this.rng.pick(TECH_BRANCHES).id
   }
 
   update(dtMs: number): void {
@@ -113,6 +117,7 @@ export default class AiController {
     this.pressure = 1 - base.hp / base.maxHp
 
     if (this.considerAbility()) return
+    if (this.considerTech()) return
     if (this.considerEvolve()) return
     if (this.considerEconomy()) return
     if (this.considerTurret()) return
@@ -129,6 +134,27 @@ export default class AiController {
     const desperate = this.pressure > 0.55
     if (enemiesOnField.length >= this.profile.abilityTrigger || threatValue > 2200 || desperate) {
       this.bf.useAbility('enemy')
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Research. The AI commits to one branch for the whole match, picked from
+   * its seed, and works down it — which is how a human plays a tree, and means
+   * facing the same difficulty twice does not feel like facing the same
+   * opponent. It only spends on research once it has troops on the field, so
+   * it never techs itself out of an army.
+   */
+  private considerTech(): boolean {
+    const army = this.bf.enemy
+    const fielded = this.bf.units.filter(u => u.alive && u.faction === 'enemy').length
+    if (fielded < 3) return false
+    for (const node of branchTechs(this.branch)) {
+      if (army.techAvailability(node.id) !== 'ready') continue
+      // Leave enough behind to keep building; a teched-up army of nobody loses.
+      if (army.gold - node.cost < 400) return false
+      this.bf.buyTech('enemy', node.id)
       return true
     }
     return false

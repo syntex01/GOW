@@ -17,6 +17,7 @@ export type Command =
   | { t: 'turret'; slot: number; id: string }
   | { t: 'sell'; slot: number }
   | { t: 'cancel' }
+  | { t: 'tech'; id: string }
 
 /** One tick's worth of a peer's intent, plus an optional integrity check. */
 export interface TickMessage {

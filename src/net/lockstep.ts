@@ -56,6 +56,9 @@ export function applyCommand(bf: Battlefield, faction: Faction, command: Command
     case 'cancel':
       army.cancelLast()
       break
+    case 'tech':
+      bf.buyTech(faction, command.id)
+      break
   }
 }
 

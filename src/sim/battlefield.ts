@@ -4,7 +4,9 @@ import type { MatchStats } from '../core/events'
 import { Rng } from '../core/rng'
 import { ABILITIES_BY_ID } from '../data/abilities'
 import { ageDef } from '../data/ages'
+import { rosterForAge } from '../data/units'
 import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
+import { TECHS_BY_ID, TECH_ORDER, type TechId } from '../data/tech'
 import { TURRETS_BY_ID } from '../data/turrets'
 import type Vfx from '../gfx/vfx'
 import Army, { type ArmyModifiers, defaultModifiers } from './army'
@@ -182,7 +184,17 @@ export default class Battlefield {
     this.enemy.age = Math.max(0, Math.min(4, config.enemyStartAge ?? 0))
 
     // The physics world is created below; the unit world holds the same one.
-    this.world = { groundY: config.groundY, airY: config.airY, vfx, speedScale: 1, physics: null as never, rng: this.rng }
+    this.world = {
+      groundY: config.groundY,
+      airY: config.airY,
+      vfx,
+      speedScale: 1,
+      physics: null as never,
+      rng: this.rng,
+      goreAt: x => this.goreAt(x),
+      scavenge: unit => this.scavenge(unit),
+      onDeathCharge: unit => this.detonateCorpse(unit)
+    }
 
     const margin = 150
     this.playerBase = new Base(
@@ -257,6 +269,7 @@ export default class Battlefield {
   }
 
   private handleSettle(body: Body): void {
+    this.handleSalvage(body)
     this.onSettle?.(body)
   }
 
@@ -273,9 +286,180 @@ export default class Battlefield {
     }
   }
 
+  /**
+   * Bonepickers. A wounded soldier eats the nearest piece of the dead, which
+   * removes it from the field — so the tech trades the corpse wall you might
+   * have built for the health you need now.
+   */
+  private scavenge(unit: Unit): void {
+    const reach = unit.def.height * 0.7
+    for (const body of this.physics.bodies) {
+      if (!body.settled || body.kind !== 'gib' || body.dead) continue
+      if (Math.abs(body.x - unit.x) > reach) continue
+      body.dead = true
+      unit.heal(unit.maxHp * 0.06 + 8)
+      this.vfx.impact(body.x, body.y - 6, 0xc0392b, 0.7, true)
+      return
+    }
+  }
+
+  /** Demolition charges. The body was armed, and whatever killed it is close. */
+  private detonateCorpse(unit: Unit): void {
+    const power = 40 + unit.def.height * 1.4
+    this.vfx.explosion(unit.x, unit.centerY, power * 1.6, 0xffb347, false)
+    this.applySplash(unit.x, unit.centerY, power, unit.faction, {
+      amount: unit.def.damage * 1.3 + 40,
+      type: 'explosive',
+      knockback: 320
+    })
+  }
+
+  /**
+   * Salvage. Wreckage that comes to rest is stripped where it lies, which
+   * quietly turns a losing engagement into an income stream.
+   */
+  private handleSalvage(body: Body): void {
+    if (body.kind !== 'scrap' && body.kind !== 'shrapnel') return
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      if (!this.armyFor(faction).hasTech('salvage')) continue
+      // Only what falls on your own half is yours to strip.
+      const ownHalf = faction === 'player' ? body.x < this.config.worldWidth / 2 : body.x >= this.config.worldWidth / 2
+      if (!ownHalf) continue
+      const value = Math.round(12 + body.size * 18)
+      this.armyFor(faction).gold += value
+      this.statsFor(faction).goldEarned += value
+      body.dead = true
+      this.vfx.damageNumber(body.x, body.y - 14, value, 0xf2c14e)
+      return
+    }
+  }
+
+  /**
+   * Corpse walls. Remains stop shots, so a side that has been losing ground
+   * ends up with cover exactly where it needs it.
+   */
+  blockedByRemains(x: number, y: number, faction: Faction): boolean {
+    const foe = this.armyFor(OPPOSITE[faction])
+    if (!foe.hasTech('corpse_wall')) return false
+    for (const body of this.physics.bodies) {
+      if (!body.settled || body.dead) continue
+      if (body.kind !== 'gib' && body.kind !== 'scrap' && body.kind !== 'rubble') continue
+      if (Math.abs(body.x - x) > 7) continue
+      if (y < body.y - 16 || y > body.y + 8) continue
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Sappers, EMP, Aegis and Necropolis. These four need a view of the whole
+   * field rather than of one unit, so they run once per sub-step here instead
+   * of inside the units themselves.
+   */
+  private runArmyBehaviours(dtMs: number): void {
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      const army = this.armyFor(faction)
+      if (army.techs.size === 0) continue
+      const dir = ADVANCE_DIR[faction]
+
+      // Sappers: a melee soldier that has been stuck against the front line
+      // for a few seconds goes under it and comes up on the far side. It turns
+      // a grinding stalemate into a flanking problem for the other player.
+      if (army.hasTech('sappers')) {
+        for (const u of this.units) {
+          if (u.faction !== faction || !u.alive) continue
+          if (u.def.attack.kind !== 'melee' || u.layer !== 'ground') continue
+          u.burrowTimer = u.state === 'engage' ? u.burrowTimer + dtMs : 0
+          if (u.burrowTimer < 4200) continue
+          u.burrowTimer = 0
+          const front = this.frontLine(OPPOSITE[faction])
+          if (front === null) continue
+          this.vfx.footDust(u.x, this.config.groundY)
+          u.x = front + dir * 70
+          this.vfx.footDust(u.x, this.config.groundY)
+        }
+      }
+
+      // Aegis: soldiers standing shoulder to shoulder spread what they take.
+      if (army.hasTech('aegis')) {
+        for (const u of this.units) {
+          if (u.faction !== faction || !u.alive) continue
+          let neighbours = 0
+          for (const o of this.units) {
+            if (o === u || o.faction !== faction || !o.alive) continue
+            if (Math.abs(o.x - u.x) < u.def.height * 0.9) neighbours += 1
+          }
+          u.linked = Math.min(3, neighbours)
+        }
+      }
+
+      // Necropolis: enough of the dead lying on your own ground and some of
+      // them get up again.
+      if (army.hasTech('necropolis')) {
+        this.necroTimer[faction] -= dtMs
+        if (this.necroTimer[faction] <= 0) {
+          this.necroTimer[faction] = 4000
+          this.tryRaiseDead(faction)
+        }
+      }
+    }
+  }
+
+  /** X of the enemy's leading unit, or null if they have none on the field. */
+  private frontLine(faction: Faction): number | null {
+    let front: number | null = null
+    for (const u of this.units) {
+      if (u.faction !== faction || !u.alive) continue
+      if (front === null) front = u.x
+      else front = faction === 'player' ? Math.max(front, u.x) : Math.min(front, u.x)
+    }
+    return front
+  }
+
+  private necroTimer: Record<Faction, number> = { player: 4000, enemy: 4000 }
+
+  /** Consumes a pile of settled remains and returns a soldier to the field. */
+  private tryRaiseDead(faction: Faction): void {
+    const half = this.config.worldWidth / 2
+    const mine: Body[] = []
+    for (const b of this.physics.bodies) {
+      if (!b.settled || b.dead || b.kind !== 'gib') continue
+      if (faction === 'player' ? b.x >= half : b.x < half) continue
+      mine.push(b)
+    }
+    if (mine.length < 12) return
+    const army = this.armyFor(faction)
+    const roster = rosterForAge(army.age)
+    if (roster.length === 0) return
+    // The cheapest thing the age can field: what gets up is rabble, not elite.
+    const def = roster.reduce((a, b) => (b.cost < a.cost ? b : a))
+    const x = mine[0].x
+    for (let i = 0; i < 12; i += 1) mine[i].dead = true
+    const risen = this.spawnUnit(faction, def, x)
+    risen.hp = risen.maxHp * 0.5
+    this.vfx.impact(x, this.config.groundY - 20, 0x8fd694, 1.4, true)
+  }
+
   /** Set by the scene so it can paint what the simulation decided happened. */
   onStain?: (body: Body, x: number, y: number, speed: number, onWall: boolean) => void
   onSettle?: (body: Body) => void
+
+  /**
+   * Researches a behaviour. Routed through here rather than called on the army
+   * directly so that a networked match applies it as a command, in tick order,
+   * on both peers.
+   */
+  buyTech(faction: Faction, id: string): boolean {
+    const army = this.armyFor(faction)
+    const bought = army.buyTech(id as TechId)
+    if (bought) {
+      this.statsFor(faction).goldSpent += TECHS_BY_ID[id as TechId].cost
+      this.onTechResearched?.(faction, id as TechId)
+    }
+    return bought
+  }
+
+  onTechResearched?: (faction: Faction, id: TechId) => void
 
   armyFor(faction: Faction): Army {
     return faction === 'player' ? this.player : this.enemy
@@ -356,6 +540,13 @@ export default class Battlefield {
       mix(army.age)
       mix(army.queue.length)
       mix(army.incomeLevel)
+      // Owned behaviours change how the simulation runs, so they are part of
+      // the fingerprint — packed as a bitmask over a stable order.
+      let techBits = 0
+      for (let i = 0; i < TECH_ORDER.length; i += 1) {
+        if (army.hasTech(TECH_ORDER[i])) techBits |= 1 << i
+      }
+      mix(techBits)
     }
     mix(this.playerBase.hp * 10)
     mix(this.enemyBase.hp * 10)
@@ -391,6 +582,7 @@ export default class Battlefield {
     // Debris advances on the same fixed sub-step as everything else, so a
     // corpse lands in the same place on both machines.
     this.physics.step(dtMs)
+    this.runArmyBehaviours(dtMs)
   }
 
   private tickArmy(army: Army, dtMs: number): void {
@@ -497,6 +689,13 @@ export default class Battlefield {
     const remaining: Projectile[] = []
     for (const p of this.projectiles) {
       const candidates = p.faction === 'player' ? aliveEnemy : alivePlayer
+      // Corpse walls stop a shot in flight. Checked before the hit test so a
+      // pile of the dead genuinely shields whatever stands behind it.
+      if (this.blockedByRemains(p.x, p.y, p.faction)) {
+        this.vfx.impact(p.x, p.y, 0x7a1216, 0.8, true)
+        p.destroy()
+        continue
+      }
       const result = p.update(dtMs, candidates)
       if (result.hit) {
         this.resolveProjectileHit(p, result.hit)
@@ -562,16 +761,57 @@ export default class Battlefield {
 
   // ───────────────────────────── Spawning ─────────────────────────────
 
-  spawnUnit(faction: Faction, def: UnitDef): Unit {
+  /**
+   * Stamps the owning army's researched behaviours onto a shot. Every
+   * projectile in the game goes through here, so a tech applies to unit fire,
+   * turret fire and abilities alike without each call site knowing about it.
+   */
+  private equipProjectile(p: Projectile): Projectile {
+    const army = this.armyFor(p.faction)
+    if (army.hasTech('ricochet')) p.ricochets = 2
+    if (army.hasTech('penetrator')) p.penetration = 1
+    if (army.hasTech('cluster') && p.config.gravity > 0) {
+      p.cluster = true
+      p.onSplit = parent => this.splitCluster(parent)
+    }
+    this.projectiles.push(p)
+    return p
+  }
+
+  /** A cluster shell coming apart at the top of its arc. */
+  private splitCluster(parent: Projectile): void {
+    for (let i = -1; i <= 1; i += 2) {
+      const child = new Projectile(
+        this.scene,
+        {
+          ...parent.config,
+          x: parent.x,
+          y: parent.y,
+          vx: parent.vx * 0.7 + i * 90,
+          vy: parent.vy - 40,
+          damage: parent.config.damage * 0.5,
+          splash: (parent.config.splash ?? 0) * 0.7
+        },
+        this.config.groundY,
+        this.vfx
+      )
+      // Children do not split again, or one shell becomes an artillery barrage.
+      child.ricochets = parent.ricochets
+      this.projectiles.push(child)
+    }
+  }
+
+  spawnUnit(faction: Faction, def: UnitDef, atX?: number): Unit {
     const base = this.baseFor(faction)
     const dir = ADVANCE_DIR[faction]
-    const spawnX = base.x + dir * (base.radius + 30)
+    const spawnX = atX ?? base.x + dir * (base.radius + 30)
 
     const unit = new Unit(this.scene, def, faction, spawnX, this.world, this.rng.spread(26))
     const army = this.armyFor(faction)
     unit.hp *= army.modifiers.unitHp
     unit.maxHp *= army.modifiers.unitHp
 
+    unit.techs = army.techs
     unit.onFire = this.handleUnitFire
     unit.onHealPulse = this.handleHealPulse
     unit.onDeath = this.handleUnitDeath
@@ -644,7 +884,7 @@ export default class Battlefield {
         this.vfx.gunSmoke(muzzle.x, muzzle.y, finalAngle, unit.dir)
       }
 
-      this.projectiles.push(
+      this.equipProjectile(
         new Projectile(
           this.scene,
           {
@@ -731,7 +971,7 @@ export default class Battlefield {
     audio.play(this.turretSfx(def), 0.4)
     this.vfx.muzzleFlash(muzzle.x, muzzle.y, finalAngle, def.age >= 4 ? 0x8ff0ff : 0xffd08a, 1.4)
 
-    this.projectiles.push(
+    this.equipProjectile(
       new Projectile(
         this.scene,
         {
@@ -790,6 +1030,12 @@ export default class Battlefield {
     this.applyDamage(owner, target, event)
   }
 
+  /** True for the things an EMP can actually shut down. */
+  private isMachine(target: Damageable): boolean {
+    const kind = (target as Unit).def?.visual?.kind
+    return kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
+  }
+
   /** Core damage pipeline: modifiers, crits, stats, then the target's own logic. */
   applyDamage(attacker: Damageable | null, target: Damageable, event: DamageEvent): void {
     if (!target.alive) return
@@ -803,6 +1049,21 @@ export default class Battlefield {
     this.statsFor(target.faction).damageTaken += amount
 
     target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback)
+
+    // EMP: an energy hit shuts a machine down outright for a few seconds,
+    // which is a hard counter to armour rather than a discount on it.
+    if (
+      event.type === 'energy' &&
+      attacker &&
+      this.armyFor(attacker.faction).hasTech('emp') &&
+      this.isMachine(target)
+    ) {
+      const machine = target as Unit
+      if (machine.alive) {
+        machine.disable(2600)
+        this.vfx.impact(machine.x, machine.y + machine.centerOffsetY, 0x8fe8ff, 1.2, false)
+      }
+    }
   }
 
   /** Radial damage with linear falloff and outward knockback. */
@@ -829,10 +1090,37 @@ export default class Battlefield {
       })
     }
 
-    // The blast is not just damage in a circle: it throws every loose object
-    // in range, which is what makes a shell landing in a crowd read as an
-    // explosion rather than as a red number.
-    this.physics.blast(x, y, radius * 1.6, event.knockback * 1.5 + 220)
+    const army = this.armyFor(faction)
+    // Overpressure turns a shove into a throw. The impulse is what does the
+    // work — units leave the ground and come down somewhere else.
+    const force = army.hasTech('overpressure') ? 3.4 : 1
+    this.physics.blast(x, y, radius * 1.6 * (force > 1 ? 1.35 : 1), (event.knockback * 1.5 + 220) * force)
+    if (force > 1) {
+      for (const u of this.units) {
+        if (!u.alive || u.faction === faction || u.layer !== 'ground') continue
+        const dx = u.x - x
+        const d = Math.abs(dx)
+        if (d > radius * 1.5) continue
+        const falloff = 1 - d / (radius * 1.5)
+        u.launch(Math.sign(dx || 1) * 260 * falloff, -420 * falloff)
+      }
+    }
+
+    // Shrapnel: the explosion throws fragments that are real objects with
+    // somewhere to be. They arc, fall, and wound whatever they reach.
+    if (army.hasTech('shrapnel')) {
+      const count = Math.min(14, 5 + Math.round(radius / 26))
+      for (let i = 0; i < count; i += 1) {
+        const a = this.rng.range(-Math.PI, 0)
+        const speed = this.rng.range(260, 620)
+        this.physics.spawn('shrapnel', x, y, Math.cos(a) * speed, Math.sin(a) * speed, {
+          faction,
+          damage: Math.max(8, event.amount * 0.16),
+          armTime: 40,
+          spin: this.rng.spread(14)
+        })
+      }
+    }
 
     // Explosive hits chip the ground and throw up dirt.
     if (event.type === 'explosive' && y > this.config.groundY - 60) {
@@ -960,7 +1248,7 @@ export default class Battlefield {
         const startY = this.config.groundY - 900
         const speed = 900
         const angle = Math.PI / 2 + this.rng.spread(0.14)
-        this.projectiles.push(
+        this.equipProjectile(
           new Projectile(
             this.scene,
             {
@@ -1023,7 +1311,7 @@ export default class Battlefield {
     for (let i = 0; i < 12; i += 1) {
       this.scene.time.delayedCall(360 + i * 130, () => {
         if (this.finished) return
-        this.projectiles.push(
+        this.equipProjectile(
           new Projectile(
             this.scene,
             {

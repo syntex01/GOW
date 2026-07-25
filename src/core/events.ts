@@ -5,6 +5,8 @@ import type { Faction } from '../sim/types'
 export interface GameEventMap {
   'hud:sync': HudSnapshot
   'hud:flash': { message: string; tone: 'info' | 'warn' | 'good' }
+  /** Open or close the research screen. */
+  'hud:tech': void
   'match:ended': { victory: boolean; stats: MatchStats }
   'match:paused': { paused: boolean }
   'ability:used': { faction: Faction; abilityId: string }

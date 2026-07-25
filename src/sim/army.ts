@@ -3,6 +3,7 @@ import { AGES, MAX_AGE, ageDef } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import type { Faction } from './types'
+import { TECHS_BY_ID, type TechId } from '../data/tech'
 
 export interface QueueEntry {
   def: UnitDef
@@ -44,6 +45,12 @@ export default class Army {
 
   /** Purchased in-match economy upgrades, each level adds income. */
   incomeLevel = 0
+
+  /**
+   * Researched behaviours. A Set rather than flags because the simulation asks
+   * "can we do this?" in a dozen places and nowhere cares how many we own.
+   */
+  readonly techs = new Set<TechId>()
 
   private incomeCarry = 0
 
@@ -90,6 +97,29 @@ export default class Army {
   }
 
   /** Cost of the next economy upgrade, or null once maxed. */
+  hasTech(id: TechId): boolean {
+    return this.techs.has(id)
+  }
+
+  /** Whether this army could research a node right now, and why not if not. */
+  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'gold' {
+    const node = TECHS_BY_ID[id]
+    if (!node) return 'locked'
+    if (this.techs.has(id)) return 'owned'
+    if (!node.requires.every(r => this.techs.has(r))) return 'locked'
+    if (this.age < node.age) return 'age'
+    if (this.gold < node.cost) return 'gold'
+    return 'ready'
+  }
+
+  /** Buys a node. Returns false if it was not available, changing nothing. */
+  buyTech(id: TechId): boolean {
+    if (this.techAvailability(id) !== 'ready') return false
+    this.gold -= TECHS_BY_ID[id].cost
+    this.techs.add(id)
+    return true
+  }
+
   incomeUpgradeCost(): number | null {
     if (this.incomeLevel >= 5) return null
     return Math.round(500 * Math.pow(2.15, this.incomeLevel) * (1 + this.age * 0.75))

@@ -6,6 +6,8 @@ import { TURRET_SLOTS, turretsForAge } from '../data/turrets'
 import type { UnitDef } from '../data/types'
 import { AGE_THEMES, FACTION_COLOR, TIER_COLORS, UI } from '../gfx/palette'
 import Tutorial from '../ui/tutorial'
+import { audio } from '../core/audio'
+import TechTree from '../ui/techTree'
 import { Bar, Button, Modal, Tooltip, formatNumber, formatTime, hex, label, panel } from '../ui/widgets'
 import BattleScene from './battleScene'
 
@@ -37,6 +39,8 @@ export default class HUDScene extends Phaser.Scene {
   private evolveButton!: Button
   private abilityButton!: Button
   private economyButton!: Button
+  private techButton!: Button
+  private techTree?: TechTree
   private speedButton!: Button
   private pauseButton!: Button
 
@@ -55,6 +59,7 @@ export default class HUDScene extends Phaser.Scene {
 
   create(): void {
     this.resetWidgets()
+    gameEvents.on('hud:tech', () => this.toggleTechTree())
     this.battle = this.scene.get('BattleScene') as BattleScene
     this.buildTopBar()
     this.buildBottomBar()
@@ -98,6 +103,8 @@ export default class HUDScene extends Phaser.Scene {
    * from poking objects whose textures are already gone.
    */
   private resetWidgets(): void {
+    this.techTree?.destroy()
+    this.techTree = undefined
     this.unitCards = []
     this.turretButtons = []
     this.queueIcons = []
@@ -199,7 +206,19 @@ export default class HUDScene extends Phaser.Scene {
       this.turretButtons.push(button)
     }
 
-    this.economyButton = new Button(this, 900, CARD_Y, {
+    this.techButton = new Button(this, 900, CARD_Y, {
+      width: 84,
+      height: CARD_H,
+      text: 'TECH',
+      subtext: 'research',
+      fontSize: 16,
+      accent: 0xb46bff,
+      corner: 'R',
+      onClick: () => this.toggleTechTree()
+    })
+    this.techButton.setDepth(2)
+
+    this.economyButton = new Button(this, 992, CARD_Y, {
       width: 84,
       height: CARD_H,
       text: 'ECON',
@@ -211,7 +230,7 @@ export default class HUDScene extends Phaser.Scene {
     })
     this.economyButton.setDepth(2)
 
-    this.evolveButton = new Button(this, 992, CARD_Y, {
+    this.evolveButton = new Button(this, 1084, CARD_Y, {
       width: 128,
       height: CARD_H,
       text: 'EVOLVE',
@@ -223,7 +242,7 @@ export default class HUDScene extends Phaser.Scene {
     })
     this.evolveButton.setDepth(2)
 
-    this.abilityButton = new Button(this, 1128, CARD_Y, {
+    this.abilityButton = new Button(this, 1216, CARD_Y, {
       width: 140,
       height: CARD_H,
       text: 'ABILITY',
@@ -276,6 +295,27 @@ export default class HUDScene extends Phaser.Scene {
   }
 
   // ──────────────────────────── Turret handling ────────────────────────────
+
+  /** Opens or closes the research screen. */
+  private toggleTechTree(): void {
+    if (this.techTree) {
+      this.techTree.destroy()
+      this.techTree = undefined
+      return
+    }
+    audio.play('ui_click', 0.5)
+    this.techTree = new TechTree(
+      this,
+      this.battle.localArmy,
+      id => {
+        if (this.battle.tryTech(id)) this.techTree?.refresh()
+      },
+      () => {
+        this.techTree?.destroy()
+        this.techTree = undefined
+      }
+    )
+  }
 
   private handleTurretSlot(index: number): void {
     const base = this.battle.localBase
@@ -441,6 +481,9 @@ export default class HUDScene extends Phaser.Scene {
     const bf = this.battle?.battlefield
     if (!bf) return
     if (!this.battle.paused) this.tutorial?.update(delta)
+    // Gold and ages move while the research screen is open, so what it says is
+    // affordable has to keep up.
+    this.techTree?.refresh()
     // "player"/"enemy" here mean *this client's* side and its opponent, which
     // for the guest in a networked match is the world's 'enemy' faction.
     const player = this.battle.localArmy

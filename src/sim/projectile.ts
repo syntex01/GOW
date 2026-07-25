@@ -58,6 +58,16 @@ export default class Projectile {
   vx: number
   vy: number
   alive = true
+  /** Ricochet Rounds: skips left before the shot commits. */
+  ricochets = 0
+  /** Penetrators: bodies it may pass through. */
+  penetration = 0
+  /** Targets already resolved, so one shot cannot hit the same body twice. */
+  private deflected = new Set<Damageable>()
+  /** Cluster Shells: splits at the top of its arc. */
+  cluster = false
+  private split = false
+  onSplit?: (p: Projectile) => void
   private gravity: number
   private sprite: Phaser.GameObjects.Image
   private scene: Phaser.Scene
@@ -126,6 +136,13 @@ export default class Projectile {
     const lit = PROJECTILE_LIGHT[this.config.projectile]
     if (lit) this.vfx.light(this.x, this.y, lit.radius, lit.color, lit.intensity)
 
+    // Cluster shells come apart at the top of the arc, where the vertical
+    // speed crosses zero — the one moment that is unambiguous for any lob.
+    if (this.cluster && !this.split && this.config.gravity > 0 && this.vy >= 0 && this.life > 120) {
+      this.split = true
+      this.onSplit?.(this)
+    }
+
     this.emitTrail(dtMs)
 
     // Swept hit test against the segment travelled this frame.
@@ -146,6 +163,30 @@ export default class Projectile {
     if (best) {
       this.x = prevX + (this.x - prevX) * bestT
       this.y = prevY + (this.y - prevY) * bestT
+
+      // Ricochet: a flat shot that catches armour at a shallow angle skips off
+      // it rather than stopping. The angle test is what makes it a skill —
+      // long-range fire glances, point-blank fire does not.
+      if (this.ricochets > 0 && (best.armor === 'heavy' || best.armor === 'structure')) {
+        const speed = Math.hypot(this.vx, this.vy)
+        const incidence = Math.abs(this.vy) / Math.max(1, speed)
+        if (incidence < 0.42) {
+          this.ricochets -= 1
+          this.deflected.add(best)
+          this.vy = -Math.abs(this.vy) - speed * 0.12
+          this.vx *= 0.82
+          this.y -= 4
+          return { hit: null, done: false }
+        }
+      }
+
+      // Penetrators pass through the first body and carry on into the next.
+      if (this.penetration > 0 && !this.deflected.has(best)) {
+        this.penetration -= 1
+        this.deflected.add(best)
+        return { hit: best, done: false }
+      }
+
       this.detonate(false)
       return { hit: best, done: true }
     }

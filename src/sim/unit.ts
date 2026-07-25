@@ -8,6 +8,7 @@ import { FACTION_COLOR } from '../gfx/palette'
 import type Vfx from '../gfx/vfx'
 import type { Rng } from '../core/rng'
 import type PhysicsWorld from './physics'
+import type { TechId } from '../data/tech'
 import { ADVANCE_DIR, damageMultiplier, type ArmorType, type Damageable, type DamageType, type Faction, type Layer } from './types'
 
 export type UnitState = 'advance' | 'engage' | 'dead'
@@ -22,6 +23,12 @@ export interface UnitWorld {
   physics: PhysicsWorld
   /** The deterministic stream, so debris lands identically on both peers. */
   rng: Rng
+  /** A soldier carrying a demolition charge died. */
+  onDeathCharge?: (unit: Unit) => void
+  /** How soaked the ground is under a point, for Bloodlust. */
+  goreAt?: (x: number) => number
+  /** A unit wants to eat the remains around it, for Bonepickers. */
+  scavenge?: (unit: Unit) => void
 }
 
 /** Subtle warm grade applied to hostile units on top of their own palette. */
@@ -84,6 +91,24 @@ export default class Unit implements Damageable {
 
   /** Damage reduction granted by a nearby aura unit; recomputed each tick. */
   auraShield = 0
+
+  /** The owning army's researched behaviours, or null outside a battle. */
+  techs: ReadonlySet<TechId> | null = null
+
+  /**
+   * Bloodlust: how much faster this soldier is moving and swinging because of
+   * what is underfoot. 1 on clean ground, up to 1.45 on a killing field — so
+   * the tech rewards fighting where the fighting has already been.
+   */
+  private frenzy = 1
+  private scavengeTimer = 0
+
+  /** Sappers: how long this soldier has been stuck against the enemy line. */
+  burrowTimer = 0
+  /** EMP: milliseconds this machine is dead in the water. */
+  private disabledFor = 0
+  /** Aegis: how many friendly soldiers are shoulder to shoulder with this one. */
+  linked = 0
 
   private world: UnitWorld
   private scene: Phaser.Scene
@@ -342,7 +367,10 @@ export default class Unit implements Damageable {
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {
     if (!this.alive) return
     const mult = damageMultiplier(type, this.armor)
-    const reduced = amount * mult * (1 - this.auraShield)
+    // Aegis: a soldier in formation takes a share, not the whole blow. Break
+    // the formation and the protection goes with it.
+    const shared = this.linked > 0 ? 1 - Math.min(0.4, this.linked * 0.14) : 1
+    const reduced = amount * mult * (1 - this.auraShield) * shared
     const before = this.hp
     this.hp -= reduced
     this.lastHitType = type
@@ -368,6 +396,24 @@ export default class Unit implements Damageable {
     }
 
     if (this.hp <= 0) this.kill(source)
+  }
+
+  /** Shuts this unit down for a while. It cannot move, turn or shoot. */
+  disable(ms: number): void {
+    this.disabledFor = Math.max(this.disabledFor, ms)
+  }
+
+  get disabled(): boolean {
+    return this.disabledFor > 0
+  }
+
+  /** Throws this unit bodily. Used by blasts strong enough to lift a man. */
+  launch(vx: number, vy: number): void {
+    if (!this.alive || this.layer !== 'ground') return
+    this.vx += vx
+    this.vy = vy
+    this.airborne = true
+    this.stagger = Math.max(this.stagger, 420)
   }
 
   heal(amount: number): void {
@@ -404,7 +450,11 @@ export default class Unit implements Damageable {
     // falls over or a body that comes apart. Overkill is the honest measure:
     // a spearman finished by one more jab topples, one hit by a shell does not
     // stay in one piece.
-    if (this.overkill >= 0.55 || this.lastHitType === 'explosive') {
+    // Butchery makes every death a dismemberment; demolition means the body
+    // was carrying something that has not gone off yet.
+    const butchery = this.techs?.has('butchery') ?? false
+    if (this.techs?.has('demolition')) this.world.onDeathCharge?.(this)
+    if (butchery || this.overkill >= 0.55 || this.lastHitType === 'explosive') {
       this.dismember(mechanical)
     } else {
       this.bleedOut(mechanical)
@@ -558,7 +608,28 @@ export default class Unit implements Damageable {
     if (this.healPulseTimer > 0) this.healPulseTimer -= dtMs
     if (this.stagger > 0) this.stagger -= dtMs
     if (this.attackCooldown > 0) this.attackCooldown -= dtMs
+    if (this.disabledFor > 0) {
+      this.disabledFor -= dtMs
+      // A disabled machine still falls, still gets shot, and still slides —
+      // it just stops deciding things.
+      this.x += this.vx * dt
+      this.container.setPosition(this.x, this.y)
+      return
+    }
     if (this.def.regen) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
+
+    this.frenzy =
+      this.techs?.has('bloodlust') && this.layer === 'ground'
+        ? 1 + Math.min(0.45, (this.world.goreAt?.(this.x) ?? 0) * 0.45)
+        : 1
+    // Bonepickers feed on what is lying around them while they are hurt.
+    if (this.techs?.has('bonepickers') && this.hp < this.maxHp * 0.92) {
+      this.scavengeTimer -= dtMs
+      if (this.scavengeTimer <= 0) {
+        this.scavengeTimer = 500
+        this.world.scavenge?.(this)
+      }
+    }
 
     // Knockback physics.
     if (this.airborne) {
@@ -597,7 +668,7 @@ export default class Unit implements Damageable {
   }
 
   private advance(dt: number, blockerX: number | null): void {
-    const step = this.def.speed * dt * this.dir
+    const step = this.def.speed * this.frenzy * dt * this.dir
     const nextX = this.x + step
     if (blockerX !== null) {
       const limit = blockerX - this.dir * (this.radius + QUEUE_GAP)
@@ -616,12 +687,12 @@ export default class Unit implements Damageable {
     const attack = this.def.attack
 
     if (attack.kind === 'heal' || attack.kind === 'aura') {
-      this.attackCooldown = this.def.attackMs
+      this.attackCooldown = this.def.attackMs / this.frenzy
       this.onHealPulse?.(this)
       return
     }
 
-    this.attackCooldown = this.def.attackMs
+    this.attackCooldown = this.def.attackMs / this.frenzy
     this.swing = 1
 
     if (attack.kind === 'projectile' && attack.burst) {

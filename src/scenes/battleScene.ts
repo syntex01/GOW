@@ -4,6 +4,7 @@ import { gameEvents } from '../core/events'
 import { ACHIEVEMENTS, save } from '../core/save'
 import { session } from '../core/session'
 import { ageDef } from '../data/ages'
+import { TECHS_BY_ID, type TechId } from '../data/tech'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
 import Background from '../gfx/background'
 import DebrisLayer from '../gfx/debrisLayer'
@@ -360,6 +361,7 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-Q', () => this.tryAbility())
     keyboard.on('keydown-SPACE', () => this.tryAbility())
     keyboard.on('keydown-U', () => this.tryEconomy())
+    keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
     keyboard.on('keydown-BACKSPACE', () => {
       if (this.localArmy.queue.length === 0) return
       this.dispatch({ t: 'cancel' })
@@ -452,6 +454,36 @@ export default class BattleScene extends Phaser.Scene {
     this.dispatch({ t: 'ability' })
     if (!this.isNetworked) this.checkAbilityAchievement()
     this.manualCameraUntil = 0
+    return true
+  }
+
+  /**
+   * Researches a behaviour. Like every other action it goes out as a command,
+   * so a networked match applies it on the same tick on both machines.
+   */
+  tryTech(id: TechId): boolean {
+    const army = this.localArmy
+    const node = TECHS_BY_ID[id]
+    const state = army.techAvailability(id)
+    if (state === 'owned') return false
+    if (state === 'locked') {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message: `${node.name} needs its prerequisite first`, tone: 'warn' })
+      return false
+    }
+    if (state === 'age') {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message: `${node.name} unlocks in a later age`, tone: 'warn' })
+      return false
+    }
+    if (state === 'gold') {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message: `${node.name} costs ${node.cost} gold`, tone: 'warn' })
+      return false
+    }
+    this.dispatch({ t: 'tech', id })
+    audio.play('evolve', 0.6)
+    gameEvents.emit('hud:flash', { message: `${node.name} researched`, tone: 'good' })
     return true
   }
 
