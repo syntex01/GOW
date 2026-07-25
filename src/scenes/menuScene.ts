@@ -630,7 +630,10 @@ export default class MenuScene extends Phaser.Scene {
       ['', 'Destroy the enemy fortress to win.'],
       ['Counters', ''],
       ['', 'Pierce shreds unarmoured troops but glances off heavy armour. Blunt does the opposite. Explosive is what breaks fortresses. Energy is even against everything.'],
-      ['', 'Air units can only be hit by anti-air. Field a gunship against someone with none and the game is over.']
+      ['', 'Air units can only be hit by anti-air. Field a gunship against someone with none and the game is over.'],
+      ['Multiplayer', ''],
+      ['', 'One player hosts and copies the invite code; the other joins, pastes it, and sends the reply code back. No server, no account, no lobby — the two games talk straight to each other.'],
+      ['', 'LAN ONLY makes the connection entirely local, with no outside contact at all. Leave it off to play over the internet.']
     ]
 
     const right = [
