@@ -4,9 +4,9 @@ A side-view autobattler that spans five ages of warfare. Feed gold into a build
 queue, evolve your civilisation from bone clubs to orbital ion cannons, and
 level the enemy fortress before they level yours.
 
-Built with **Phaser 3**, **TypeScript** and **esbuild**. Every sprite, every
-background and every sound is generated procedurally at runtime — the game
-ships with no art or audio files at all.
+Built with **Phaser 3**, **TypeScript** and **esbuild**. It is pixel art, and
+every pixel of it is generated procedurally at runtime — along with every
+sound. The game ships with no art or audio files at all.
 
 ![Battle](screenshots/battle.png)
 
@@ -153,11 +153,21 @@ src/
 
 Two design decisions shape everything else:
 
-**All art is code.** `gfx/painter.ts` provides drawing primitives; `unitArt.ts`
-turns a `UnitVisual` description (helmet, torso, weapon, chassis, palette) into
-a set of body-part textures. `textureFactory.ts` runs those generators once at
-load, spread across frames so the loading bar keeps moving. Adding a unit means
-adding a data entry, not an asset.
+**All art is code, and all of it is pixel art.** `gfx/pixel.ts` owns an integer
+pixel grid with Bresenham lines, midpoint ellipses, scanline polygons, ordered
+dithering and hue-shifted colour ramps. Nothing goes through the canvas path
+API — `fill()` and `stroke()` antialias, and one row of half-transparent edge
+pixels is the difference between pixel art and a small blurry drawing.
+`unitArt.ts` turns a `UnitVisual` description (helmet, torso, weapon, chassis,
+palette) into a set of body-part textures on that grid; `propArt.ts` does the
+fortresses, ammunition and terrain. `textureFactory.ts` runs the generators
+once at load, spread across frames so the loading bar keeps moving. Adding a
+unit means adding a data entry, not an asset.
+
+Art is authored at half scale and displayed at double, with the renderer
+sampling nearest-neighbour, so a foot soldier is 33 real pixels tall. See
+[docs/DESIGN.md](docs/DESIGN.md#drawing-pixel-art-procedurally) for what that
+budget buys and what it forbids.
 
 **The simulation is hand-rolled.** There is no physics engine. `sim/unit.ts`
 integrates knockback, gravity and friction directly, drives a procedural walk

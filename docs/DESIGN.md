@@ -148,8 +148,13 @@ Everything is generated at load into the Phaser texture manager:
 
 - ~250 unit body-part textures (32 units × 6–8 parts)
 - 32 unit icons, 10 fortresses, 24 turret pieces
-- 15 projectiles, 9 particle sprites
-- 5 ages × (1 ground + 3 ridge bands)
+- 15 projectiles, 9 particle sprites, 1 light falloff
+- 5 ages × (1 sky + 1 ground + 3 ridge bands + 1 foreground)
+
+Authoring at half scale makes this cheaper than it looks: a fortress is 100×125
+pixels rather than 300×375, and a unit part is a few hundred pixels rather than
+a few thousand. The whole set is well under what the old smooth-shaded pipeline
+allocated, and the per-pixel loops are plain typed-array writes.
 
 Generation is chunked to a **14 ms per frame** budget in `PreloadScene` so the
 progress bar keeps animating instead of the tab freezing.
@@ -174,6 +179,52 @@ initialisers do not re-run. `BattleScene.resetSceneState` and
 `HUDScene.resetWidgets` clear every mutable field by hand; without them a
 restarted battle came back still paused, and the HUD kept updating widgets from
 the previous match that had already been destroyed.
+
+## Drawing pixel art procedurally
+
+The whole world is pixel art generated at boot. That combination — procedural
+*and* pixel art — is unusual, and it only works because of a few decisions that
+are easy to get wrong.
+
+**Never touch the canvas path API.** `fill()` and `stroke()` antialias. A single
+row of half-transparent edge pixels is the entire difference between pixel art
+and a small blurry drawing, and no amount of care elsewhere recovers from it.
+`gfx/pixel.ts` writes into a `Uint32Array` directly: Bresenham lines, midpoint
+ellipses, scanline polygons, integer rectangles. The only softness in the game
+comes from ordered Bayer dithering, which is a pattern of hard pixels.
+
+**Colour comes from hue-shifted ramps.** Every material is five tones from one
+base colour, with shadows rotated toward blue and highlights toward yellow.
+Plain lighten/darken is what makes procedural art look procedural — it produces
+a grey axis through every material and the result reads as plastic. The hue
+shift costs nothing and does most of the work of making the art look drawn.
+
+**The outline is a pass, not a stroke.** Outlining each shape as it is drawn
+gives a unit a tangle of internal borders and no silhouette. `Pix.outline` runs
+over the finished part and wraps whatever is opaque in one pixel, so a soldier
+reads as one object. The outline colour is derived from the material rather
+than being black, which keeps sprites in the scene instead of on top of it.
+
+**Scale sets the detail budget.** Art is authored at `RES = 1/2` and displayed
+at double with nearest-neighbour sampling, so a 66-pixel-tall soldier is 33 real
+pixels. At that size a face is three pixels — brow, eye, mouth — a quiver is
+four pixels of fletching, and a horse's head is a wedge with two ears. Anything
+beyond that turns to noise the moment the sprite moves. Most of the work in
+`unitArt.ts` is deciding what to leave out.
+
+**Everything shares the grid.** The interface is drawn the same way, because a
+smoothly rounded panel over a hard-edged battlefield reads as two different
+games. Textures whose dimensions are fixed by their consumer — the particle
+sprites, sized by the emitters that spawn them — are authored small and emitted
+through `toCanvasScaled(2)`, so their pixels match the world without every call
+site being retuned.
+
+**Light is the exception that proves the rule.** A glow with a crisp rim reads
+as a solid disc, so lights use a dithered falloff instead. It needs its own
+stamp: a light's radius runs to several hundred pixels, and reusing the 32-pixel
+particle meant magnifying its dither tenfold into a checkerboard the size of a
+fortress. `drawLightFalloff` is authored at 192 pixels and quantised into nine
+banded steps, so it stays a glow at any radius the game asks for.
 
 ## Lockstep multiplayer
 
