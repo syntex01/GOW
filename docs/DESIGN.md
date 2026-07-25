@@ -24,20 +24,34 @@ The three levers that break a snowball:
 
 | Age         | XP to advance | Evolve cost | Base HP | Income/s | Pop cap |
 |-------------|---------------|-------------|---------|----------|---------|
-| Stone       | 3,600         | 900         | 2,600   | 14       | 12      |
-| Medieval    | 9,500         | 2,400       | 5,200   | 26       | 15      |
-| Renaissance | 21,000        | 5,200       | 9,000   | 44       | 18      |
-| Modern      | 46,000        | 11,000      | 15,500  | 72       | 21      |
-| Future      | —             | —           | 26,000  | 112      | 26      |
+| Stone       | 700           | 700         | 6,000   | 16       | 12      |
+| Medieval    | 1,900         | 1,700       | 11,000  | 30       | 15      |
+| Renaissance | 3,600         | 3,400       | 19,000  | 52       | 18      |
+| Modern      | 6,400         | 6,500       | 32,000  | 86       | 21      |
+| Future      | —             | —           | 52,000  | 130      | 26      |
 
-Each age is roughly **2.2x** the previous one in XP and cost, and about **1.7x**
+Each age is roughly **1.9x** the previous one in XP and cost, and about **1.7x**
 in base health. Unit power budgets scale slightly faster than costs, which is
 deliberate: reaching the next age should feel like a real power spike, not a
 sidegrade. The counterweight is that evolving drains the treasury at the exact
 moment your old units stop being buildable, so a badly timed evolution is
 punishing.
 
-Target match length on Veteran is **4–7 minutes**, reaching Age 3–4.
+**How these numbers were derived.** The first pass sized XP thresholds against
+unit cost, which produced an unwinnable stalemate: the population cap bounds
+how many units can die per minute, so experience income is bounded by the *kill
+rate*, not by how much gold is being spent. Measured against a scripted player
+on Veteran, the front line trades roughly one unit every six seconds once the
+armies meet, and a Stone Age kill is worth ~46 XP. A 700 XP threshold therefore
+puts the first evolution around the 60-second mark, and each later age lands on
+a similar cadence because XP-per-kill roughly doubles as kill counts stay flat.
+
+Fortress health is set so that a Stone Age rush *cannot* end the game: twelve
+population of early infantry need roughly twenty seconds of completely
+unopposed contact to break a 6,000 HP wall, which never happens against a
+defender who is still producing.
+
+Target match length on Veteran is **5–7 minutes**, reaching Age 3–4.
 
 ## Unit budgets
 
@@ -59,6 +73,24 @@ Deviations from that line are intentional and always paired with a drawback:
   *good* line, not an average one.
 - **Air** (gunship, drone swarm) is priced as if the opponent has anti-air. If
   they do not, it is wildly overtuned — which is the point of the counter.
+
+## Time to kill
+
+Damage values are lifted 1.5x above the "obvious" numbers implied by the cost
+formula. A same-age mirror melee matchup resolves in **6–7 seconds**, which is
+what makes experience flow fast enough for the age ladder to matter. Slower
+than that and the game stalls; much faster and there is no time to react to a
+composition with a counter.
+
+Support units are priced against this: healing was originally strong enough
+that two stacked healers out-healed focused damage outright and froze the front
+line permanently. Heal pulses now cover the two most wounded allies (not three)
+and restore roughly a quarter of incoming DPS per healer.
+
+As a backstop, `Battlefield.escalation` raises all unit damage by 12% per
+minute after the three-minute mark. Two perfectly matched commanders can
+otherwise grind at the midline indefinitely; the ramp makes the front line
+progressively more brittle until someone breaks through.
 
 ## Damage matrix
 
@@ -126,6 +158,22 @@ Per-frame cost in a heavy battle is dominated by the O(n²) targeting scan in
 `Battlefield.stepSide`. With the population caps above, `n` stays under ~50, so
 this stays comfortably cheap. If caps are ever raised significantly, replace it
 with a sorted sweep — the unit lists are already sorted by x.
+
+## Frame-rate independence
+
+`Battlefield.update` splits each frame into fixed 20 ms sub-steps (capped at 16
+per frame). This is not an optimisation — it is a correctness requirement.
+Knockback is applied as an instantaneous velocity change, so integrating it
+over a single 300 ms frame shoved units 30+ pixels apart, out of a 36-pixel
+melee range, and combat simply stopped resolving on slow devices and at 3x
+speed. Sub-stepping makes 20 fps, 144 fps and every speed setting behave
+identically.
+
+Related: Phaser reuses a scene instance across `scene.restart()`, so class field
+initialisers do not re-run. `BattleScene.resetSceneState` and
+`HUDScene.resetWidgets` clear every mutable field by hand; without them a
+restarted battle came back still paused, and the HUD kept updating widgets from
+the previous match that had already been destroyed.
 
 ## Things intentionally left simple
 

@@ -45,6 +45,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.resetSceneState()
     const cam = this.cameras.main
     cam.fadeIn(320, 0, 0, 0)
     cam.setBounds(0, 0, WORLD_WIDTH, cam.height)
@@ -110,6 +111,25 @@ export default class BattleScene extends Phaser.Scene {
     audio.startMusic(this.battlefield.player.age)
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup())
+  }
+
+  /**
+   * Phaser reuses a scene instance across `restart()`, so class field
+   * initialisers only ever run once. Every mutable field has to be reset by
+   * hand or a restarted battle inherits the previous match's paused flag,
+   * wave counter and camera state.
+   */
+  private resetSceneState(): void {
+    this.paused = false
+    this.ended = false
+    this.speedIndex = 0
+    this.wave = 1
+    this.waveTimer = 0
+    this.cameraFocus = 0
+    this.dragging = false
+    this.dragStartX = 0
+    this.dragCameraX = 0
+    this.manualCameraUntil = 0
   }
 
   // ─────────────────────────────── Modes ───────────────────────────────
@@ -288,6 +308,8 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   quitToMenu(): void {
+    // Guard against a second call once the scene has already handed off.
+    if (!this.scene.isActive()) return
     this.ended = true
     audio.stopMusic()
     this.scene.stop('HUDScene')

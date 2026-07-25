@@ -25,6 +25,7 @@ export default class Background {
   private vignette!: Phaser.GameObjects.Image
   private age = -1
   private time = 0
+  private destroyed = false
 
   constructor(scene: Phaser.Scene, worldWidth: number, groundY: number) {
     this.scene = scene
@@ -86,6 +87,7 @@ export default class Background {
   }
 
   setAge(age: number): void {
+    if (this.destroyed) return
     const clamped = Math.max(0, Math.min(AGE_THEMES.length - 1, age))
     if (clamped === this.age) return
     this.age = clamped
@@ -211,6 +213,9 @@ export default class Background {
 
   /** Called every frame with the camera scroll so layers slide at their own rate. */
   update(delta: number, scrollX: number): void {
+    // Scene restarts can land an update between teardown and rebuild; touching
+    // a destroyed TileSprite throws inside Phaser's UV update.
+    if (this.destroyed) return
     this.time += delta
 
     this.ridges.forEach((ridge, i) => {
@@ -231,6 +236,7 @@ export default class Background {
 
   /** Briefly washes the sky when a special ability fires. */
   flashSky(color: number, intensity = 0.5, durationMs = 260): void {
+    if (this.destroyed) return
     const cam = this.scene.cameras.main
     const flash = this.scene.add
       .rectangle(0, 0, cam.width, cam.height, color, intensity)
@@ -247,6 +253,8 @@ export default class Background {
   }
 
   destroy(): void {
+    if (this.destroyed) return
+    this.destroyed = true
     this.weather?.destroy()
     this.sky.destroy()
     this.sun.destroy()

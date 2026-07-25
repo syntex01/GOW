@@ -54,6 +54,7 @@ export default class HUDScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.resetWidgets()
     this.battle = this.scene.get('BattleScene') as BattleScene
     this.buildTopBar()
     this.buildBottomBar()
@@ -89,6 +90,21 @@ export default class HUDScene extends Phaser.Scene {
     if (session.setup.mode === 'campaign' && level && Tutorial.shouldRun(level.id)) {
       this.tutorial = new Tutorial(this, this.battle.battlefield)
     }
+  }
+
+  /**
+   * The scene instance is reused across restarts, so these arrays still hold
+   * the previous match's destroyed widgets. Clearing them stops `update()`
+   * from poking objects whose textures are already gone.
+   */
+  private resetWidgets(): void {
+    this.unitCards = []
+    this.turretButtons = []
+    this.queueIcons = []
+    this.turretPopup = undefined
+    this.pauseModal = undefined
+    this.tutorial = undefined
+    this.lastAge = -1
   }
 
   // ─────────────────────────────── Top bar ───────────────────────────────
