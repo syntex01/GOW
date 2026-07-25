@@ -131,7 +131,13 @@ function buildUnitIcon(scene: Phaser.Scene, id: string): void {
   const size = 96
   const c = makeCanvas(size, size)
   const { ctx } = c
-  const scale = (size * 0.78) / (art.metrics.height * RES)
+  // Fit by height for a soldier, but a tank is three times wider than it is
+  // tall — fit those by width or they get cropped to a slab of hull.
+  const bulk = art.metrics.bodyW / (art.metrics.height * 0.25)
+  const widest = art.parts.includes('body')
+    ? art.metrics.height * 2 * bulk * RES
+    : art.metrics.height * 0.6 * RES
+  const scale = Math.min((size * 0.78) / (art.metrics.height * RES), (size * 0.94) / widest)
 
   // The icon composites the parts straight from their canvases via the texture
   // manager, so it always matches the in-game sprite.

@@ -1,8 +1,22 @@
 import type { UnitVisual, WeaponVisual } from '../data/types'
-import { Canvas2D, contactShadow, css, ellipse, glow, grain, makeCanvas, plate, polygon, roundRect, shade } from './painter'
+import type { Canvas2D } from './painter'
+import Pix, { RES, ramp, tone, type Ramp } from './pixel'
 
-/** Supersampling factor: art is drawn at 2x and displayed at 0.5 scale. */
-export const RES = 2
+export { RES }
+
+/**
+ * Every soldier, machine and mount in the game, drawn one pixel at a time.
+ *
+ * A unit is a set of separately drawn parts that the battle scene assembles
+ * into an animated rig, so each part has to read on its own and still fit the
+ * silhouette when stacked. At this scale — a foot soldier is about 33 pixels
+ * tall — that means committing to a few strong tones per material and letting
+ * the outline carry the shape. Detail added past that point turns to noise the
+ * moment the sprite moves.
+ *
+ * Light comes from the upper right throughout, so the face and weapon of a
+ * right-facing unit are lit and the back edge falls into shadow.
+ */
 
 export interface RigMetrics {
   height: number
@@ -32,1212 +46,1114 @@ export function rigMetrics(height: number, bulk = 1): RigMetrics {
 export interface PartSpec {
   key: string
   canvas: Canvas2D
-  /** Normalised origin used when the sprite is created. */
   originX: number
   originY: number
 }
 
-const PAD = 6 * RES
+/** Breathing room so outlines and overhangs are never clipped. */
+const PAD = 3
 
-function newPart(w: number, h: number): Canvas2D {
-  return makeCanvas(w + PAD * 2, h + PAD * 2)
-}
-
-// ─────────────────────────────── Body parts ───────────────────────────────
-
-function drawHead(v: UnitVisual, m: RigMetrics): PartSpec['canvas'] {
-  const r = m.headR * RES
-  const c = newPart(r * 3.2, r * 3.4)
-  const { ctx } = c
-  const cx = c.w / 2
-  const cy = c.h - PAD - r * 1.5
-
-  // Skull.
-  ellipse(ctx, cx, cy, r * 1.02, r * 1.16, v.skin, { outline: shade(v.skin, -0.55), outlineWidth: 1.6 })
-  // Jaw shading and a hint of a face facing right.
-  ctx.save()
-  ctx.globalAlpha = 0.35
-  ellipse(ctx, cx - r * 0.35, cy + r * 0.25, r * 0.72, r * 0.7, shade(v.skin, -0.32), { shaded: false })
-  ctx.restore()
-  // Eye, brow and a hint of a mouth, all facing right.
-  ctx.fillStyle = css(shade(v.skin, -0.78), 0.9)
-  ctx.beginPath()
-  ctx.ellipse(cx + r * 0.34, cy - r * 0.1, r * 0.14, r * 0.18, 0, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.strokeStyle = css(shade(v.skin, -0.65), 0.75)
-  ctx.lineWidth = Math.max(1.2, r * 0.11)
-  ctx.lineCap = 'round'
-  ctx.beginPath()
-  ctx.moveTo(cx + r * 0.16, cy - r * 0.36)
-  ctx.lineTo(cx + r * 0.56, cy - r * 0.3)
-  ctx.stroke()
-  ctx.lineWidth = Math.max(1, r * 0.08)
-  ctx.beginPath()
-  ctx.moveTo(cx + r * 0.3, cy + r * 0.42)
-  ctx.lineTo(cx + r * 0.58, cy + r * 0.4)
-  ctx.stroke()
-
-  switch (v.helmet) {
-    case 'band': {
-      ctx.fillStyle = css(v.cloth2)
-      roundRect(ctx, cx - r * 1.05, cy - r * 0.58, r * 2.1, r * 0.4, r * 0.16)
-      ctx.fill()
-      break
-    }
-    case 'horns': {
-      ctx.fillStyle = css(v.cloth2)
-      roundRect(ctx, cx - r * 1.05, cy - r * 0.66, r * 2.1, r * 0.44, r * 0.18)
-      ctx.fill()
-      polygon(ctx, [
-        [cx - r * 0.85, cy - r * 0.55],
-        [cx - r * 1.55, cy - r * 1.5],
-        [cx - r * 0.5, cy - r * 0.85]
-      ], v.accent, { outline: shade(v.accent, -0.5), outlineWidth: 1.2 })
-      polygon(ctx, [
-        [cx + r * 0.85, cy - r * 0.55],
-        [cx + r * 1.55, cy - r * 1.5],
-        [cx + r * 0.5, cy - r * 0.85]
-      ], v.accent, { outline: shade(v.accent, -0.5), outlineWidth: 1.2 })
-      break
-    }
-    case 'hood': {
-      polygon(ctx, [
-        [cx - r * 1.2, cy + r * 0.9],
-        [cx - r * 1.1, cy - r * 0.7],
-        [cx - r * 0.2, cy - r * 1.45],
-        [cx + r * 0.9, cy - r * 1.0],
-        [cx + r * 1.05, cy + r * 0.1],
-        [cx + r * 0.35, cy + r * 0.35],
-        [cx + r * 0.1, cy - r * 0.3],
-        [cx - r * 0.6, cy + r * 0.95]
-      ], v.cloth, { outline: shade(v.cloth, -0.5), outlineWidth: 1.4 })
-      break
-    }
-    case 'kettle': {
-      ctx.save()
-      ctx.beginPath()
-      ctx.ellipse(cx, cy - r * 0.28, r * 1.18, r * 0.98, 0, Math.PI, 0)
-      ctx.closePath()
-      const g = ctx.createLinearGradient(0, cy - r * 1.3, 0, cy)
-      g.addColorStop(0, css(shade(v.metal, 0.42)))
-      g.addColorStop(1, css(shade(v.metal, -0.25)))
-      ctx.fillStyle = g
-      ctx.fill()
-      ctx.strokeStyle = css(shade(v.metal, -0.55))
-      ctx.lineWidth = 1.5
-      ctx.stroke()
-      ctx.restore()
-      ctx.fillStyle = css(shade(v.metal, -0.1))
-      roundRect(ctx, cx - r * 1.4, cy - r * 0.42, r * 2.8, r * 0.3, r * 0.12)
-      ctx.fill()
-      break
-    }
-    case 'great': {
-      plate(ctx, cx - r * 1.05, cy - r * 1.25, r * 2.1, r * 2.3, r * 0.5, v.metal, {
-        outline: shade(v.metal, -0.6),
-        outlineWidth: 1.6
-      })
-      ctx.fillStyle = css(0x0b1020)
-      roundRect(ctx, cx - r * 0.2, cy - r * 0.42, r * 1.25, r * 0.24, r * 0.1)
-      ctx.fill()
-      ctx.fillStyle = css(v.accent, 0.9)
-      roundRect(ctx, cx - r * 0.1, cy - r * 1.35, r * 0.22, r * 0.6, r * 0.1)
-      ctx.fill()
-      break
-    }
-    case 'tricorn': {
-      polygon(ctx, [
-        [cx - r * 1.6, cy - r * 0.45],
-        [cx - r * 0.3, cy - r * 1.5],
-        [cx + r * 1.4, cy - r * 0.9],
-        [cx + r * 1.1, cy - r * 0.25],
-        [cx - r * 0.9, cy - r * 0.1]
-      ], v.cloth2, { outline: shade(v.cloth2, -0.55), outlineWidth: 1.4 })
-      ctx.fillStyle = css(v.accent)
-      ctx.beginPath()
-      ctx.arc(cx + r * 0.55, cy - r * 0.85, r * 0.2, 0, Math.PI * 2)
-      ctx.fill()
-      break
-    }
-    case 'kepi': {
-      plate(ctx, cx - r * 1.0, cy - r * 1.15, r * 2.0, r * 0.8, r * 0.22, v.cloth2, {
-        outline: shade(v.cloth2, -0.5)
-      })
-      ctx.fillStyle = css(shade(v.cloth2, -0.35))
-      roundRect(ctx, cx + r * 0.4, cy - r * 0.48, r * 1.35, r * 0.22, r * 0.1)
-      ctx.fill()
-      break
-    }
-    case 'combat': {
-      ctx.save()
-      ctx.beginPath()
-      ctx.ellipse(cx, cy - r * 0.12, r * 1.16, r * 1.06, 0, Math.PI * 1.02, Math.PI * 2.02)
-      ctx.closePath()
-      const g = ctx.createLinearGradient(0, cy - r * 1.2, 0, cy + r * 0.2)
-      g.addColorStop(0, css(shade(v.cloth, 0.34)))
-      g.addColorStop(1, css(shade(v.cloth, -0.32)))
-      ctx.fillStyle = g
-      ctx.fill()
-      ctx.strokeStyle = css(shade(v.cloth, -0.6))
-      ctx.lineWidth = 1.5
-      ctx.stroke()
-      ctx.restore()
-      ctx.fillStyle = css(shade(v.cloth, -0.45))
-      roundRect(ctx, cx - r * 0.6, cy + r * 0.05, r * 1.5, r * 0.22, r * 0.08)
-      ctx.fill()
-      break
-    }
-    case 'visor': {
-      plate(ctx, cx - r * 1.08, cy - r * 1.2, r * 2.16, r * 2.1, r * 0.62, v.metal, {
-        outline: shade(v.metal, -0.6),
-        outlineWidth: 1.6
-      })
-      const vg = ctx.createLinearGradient(cx - r, cy - r * 0.4, cx + r, cy + r * 0.2)
-      vg.addColorStop(0, css(shade(v.accent, 0.5)))
-      vg.addColorStop(1, css(shade(v.accent, -0.35)))
-      ctx.fillStyle = vg
-      roundRect(ctx, cx - r * 0.35, cy - r * 0.55, r * 1.4, r * 0.5, r * 0.2)
-      ctx.fill()
-      glow(ctx, cx + r * 0.4, cy - r * 0.3, r * 1.1, v.accent, 0.5)
-      break
-    }
-    case 'halo': {
-      ctx.strokeStyle = css(v.accent, 0.9)
-      ctx.lineWidth = r * 0.16
-      ctx.beginPath()
-      ctx.ellipse(cx, cy - r * 1.5, r * 1.05, r * 0.3, 0, 0, Math.PI * 2)
-      ctx.stroke()
-      glow(ctx, cx, cy - r * 1.5, r * 1.5, v.accent, 0.4)
-      break
-    }
-    case 'none':
-    default: {
-      // Simple hair mass so bare heads still read.
-      ctx.fillStyle = css(shade(v.cloth2, -0.2))
-      ctx.beginPath()
-      ctx.ellipse(cx - r * 0.15, cy - r * 0.55, r * 1.0, r * 0.62, 0, Math.PI, 0)
-      ctx.fill()
-      break
-    }
-  }
-
-  grain(c, 0.05)
-  return c
-}
-
-function drawTorso(v: UnitVisual, m: RigMetrics): Canvas2D {
-  const w = m.bodyW * RES
-  const h = m.torsoH * RES
-  const c = newPart(w * 1.5, h * 1.15)
-  const { ctx } = c
-  const cx = c.w / 2
-  const top = c.h - PAD - h
-
-  const shoulderW = w * (v.torso === 'plate' || v.torso === 'exo' ? 1.28 : 1.1)
-  const waistW = w * 0.86
-
-  const shape: [number, number][] = [
-    [cx - shoulderW / 2, top + h * 0.06],
-    [cx - shoulderW * 0.42, top],
-    [cx + shoulderW * 0.42, top],
-    [cx + shoulderW / 2, top + h * 0.06],
-    [cx + waistW / 2, top + h],
-    [cx - waistW / 2, top + h]
-  ]
-
-  const bodyColor = v.torso === 'bare' ? v.skin : v.cloth
-  polygon(ctx, shape, bodyColor, { outline: shade(bodyColor, -0.55), outlineWidth: 1.6 })
-
-  switch (v.torso) {
-    case 'fur': {
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(shape[0][0], shape[0][1])
-      shape.slice(1).forEach(p => ctx.lineTo(p[0], p[1]))
-      ctx.closePath()
-      ctx.clip()
-      ctx.fillStyle = css(v.cloth2, 0.85)
-      for (let i = 0; i < 7; i += 1) {
-        const y = top + h * (0.2 + i * 0.11)
-        ctx.beginPath()
-        ctx.ellipse(cx + (i % 2 ? -1 : 1) * w * 0.16, y, w * 0.34, h * 0.07, 0, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      ctx.restore()
-      break
-    }
-    case 'mail': {
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(shape[0][0], shape[0][1])
-      shape.slice(1).forEach(p => ctx.lineTo(p[0], p[1]))
-      ctx.closePath()
-      ctx.clip()
-      ctx.strokeStyle = css(shade(v.metal, -0.15), 0.55)
-      ctx.lineWidth = 1
-      const step = Math.max(3, w * 0.13)
-      for (let y = top; y < top + h; y += step) {
-        for (let x = cx - shoulderW / 2; x < cx + shoulderW / 2; x += step) {
-          ctx.beginPath()
-          ctx.arc(x + ((Math.round(y / step) % 2) * step) / 2, y, step * 0.32, 0, Math.PI * 2)
-          ctx.stroke()
-        }
-      }
-      ctx.restore()
-      // Tabard.
-      ctx.fillStyle = css(v.cloth2, 0.9)
-      roundRect(ctx, cx - w * 0.2, top + h * 0.22, w * 0.4, h * 0.76, 2)
-      ctx.fill()
-      break
-    }
-    case 'plate':
-    case 'exo': {
-      plate(ctx, cx - shoulderW * 0.5, top, shoulderW, h * 0.52, h * 0.16, v.metal, {
-        outline: shade(v.metal, -0.6),
-        outlineWidth: 1.4
-      })
-      plate(ctx, cx - waistW * 0.5, top + h * 0.5, waistW, h * 0.5, h * 0.1, shade(v.metal, -0.12), {
-        outline: shade(v.metal, -0.6),
-        outlineWidth: 1.4
-      })
-      // Pauldrons.
-      ellipse(ctx, cx - shoulderW * 0.48, top + h * 0.12, w * 0.28, h * 0.19, v.metal, {
-        outline: shade(v.metal, -0.6),
-        outlineWidth: 1.4
-      })
-      ellipse(ctx, cx + shoulderW * 0.48, top + h * 0.12, w * 0.28, h * 0.19, v.metal, {
-        outline: shade(v.metal, -0.6),
-        outlineWidth: 1.4
-      })
-      if (v.torso === 'exo') {
-        ctx.fillStyle = css(v.accent, 0.95)
-        roundRect(ctx, cx - w * 0.12, top + h * 0.2, w * 0.24, h * 0.2, w * 0.1)
-        ctx.fill()
-        glow(ctx, cx, top + h * 0.3, w * 0.6, v.accent, 0.7)
-      } else {
-        ctx.fillStyle = css(v.accent, 0.9)
-        roundRect(ctx, cx - w * 0.1, top + h * 0.22, w * 0.2, h * 0.18, 2)
-        ctx.fill()
-      }
-      break
-    }
-    case 'robe': {
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(shape[0][0], shape[0][1])
-      shape.slice(1).forEach(p => ctx.lineTo(p[0], p[1]))
-      ctx.closePath()
-      ctx.clip()
-      ctx.strokeStyle = css(shade(v.cloth, -0.3), 0.6)
-      ctx.lineWidth = 1.4
-      for (let i = 1; i < 4; i += 1) {
-        ctx.beginPath()
-        ctx.moveTo(cx - shoulderW * 0.4 + (i * shoulderW * 0.8) / 4, top)
-        ctx.lineTo(cx - waistW * 0.4 + (i * waistW * 0.8) / 4, top + h)
-        ctx.stroke()
-      }
-      ctx.restore()
-      ctx.fillStyle = css(v.cloth2, 0.95)
-      roundRect(ctx, cx - w * 0.16, top + h * 0.04, w * 0.32, h * 0.94, 2)
-      ctx.fill()
-      break
-    }
-    case 'coat': {
-      ctx.fillStyle = css(shade(v.cloth, -0.25))
-      roundRect(ctx, cx - w * 0.06, top + h * 0.04, w * 0.12, h * 0.92, 2)
-      ctx.fill()
-      // Cross-belts.
-      ctx.strokeStyle = css(v.cloth2)
-      ctx.lineWidth = Math.max(2, w * 0.11)
-      ctx.beginPath()
-      ctx.moveTo(cx - shoulderW * 0.34, top + h * 0.08)
-      ctx.lineTo(cx + waistW * 0.34, top + h * 0.72)
-      ctx.stroke()
-      ctx.fillStyle = css(v.metal)
-      roundRect(ctx, cx - waistW * 0.5, top + h * 0.7, waistW, h * 0.14, 2)
-      ctx.fill()
-      break
-    }
-    case 'vest': {
-      plate(ctx, cx - shoulderW * 0.46, top + h * 0.08, shoulderW * 0.92, h * 0.62, h * 0.08, shade(v.cloth, -0.3), {
-        outline: shade(v.cloth, -0.65),
-        outlineWidth: 1.3
-      })
-      ctx.fillStyle = css(shade(v.cloth2, -0.1))
-      for (let i = 0; i < 3; i += 1) {
-        roundRect(ctx, cx - shoulderW * 0.3 + i * shoulderW * 0.24, top + h * 0.24, shoulderW * 0.17, h * 0.2, 2)
-        ctx.fill()
-      }
-      break
-    }
-    case 'bare':
-    default:
-      break
-  }
-
-  drawBackGear(ctx, v, cx, top, h, shoulderW)
-  grain(c, 0.045)
-  return c
+function part(w: number, h: number): Pix {
+  return new Pix(Math.ceil(w) + PAD * 2, Math.ceil(h) + PAD * 2)
 }
 
 /**
- * Kit slung on a soldier's back. Units face right, so this all hangs off the
- * left edge of the torso where it stays visible without hiding the weapon.
+ * Wraps the finished part in its silhouette outline. Running this once over
+ * the whole part — rather than outlining each shape as it is drawn — is what
+ * keeps a unit reading as one object instead of a pile of pieces.
  */
-function drawBackGear(
-  ctx: CanvasRenderingContext2D,
-  v: UnitVisual,
-  cx: number,
-  top: number,
-  h: number,
-  shoulderW: number
-): void {
-  const backX = cx - shoulderW * 0.52
+function finish(p: Pix, base: number): Canvas2D {
+  // One pixel, on the outside only. Darkening the sprite's own edge as well
+  // would look richer on a large sprite and eat a third of a three-pixel arm
+  // on this one.
+  p.outline(tone(base, -0.82), { diagonals: true })
+  return p.toCanvas() as Canvas2D
+}
 
-  switch (v.weapon) {
-    case 'bow': {
-      // Quiver with fletched arrows poking over the shoulder.
-      plate(ctx, backX - h * 0.09, top + h * 0.08, h * 0.17, h * 0.6, h * 0.05, 0x6b4a2b, {
-        outline: 0x2c2118,
-        outlineWidth: 1.4,
-        specular: 0.15
-      })
-      ctx.strokeStyle = css(0xe4e0d0)
-      ctx.lineWidth = 2
-      for (let i = -1; i <= 1; i += 1) {
-        const x = backX + i * h * 0.05
-        ctx.beginPath()
-        ctx.moveTo(x, top + h * 0.1)
-        ctx.lineTo(x - h * 0.03, top - h * 0.12)
-        ctx.stroke()
+// ─────────────────────────────── Shape helpers ───────────────────────────────
+
+/**
+ * A shaded box: lit top row, base body, shadow along the bottom and the left
+ * (away-from-light) edge. This is the workhorse for armour, crates and hulls.
+ */
+function box(p: Pix, x: number, y: number, w: number, h: number, r: Ramp, opts: { flat?: boolean } = {}): void {
+  const W = Math.max(1, Math.round(w))
+  const H = Math.max(1, Math.round(h))
+  const X = Math.round(x)
+  const Y = Math.round(y)
+  p.fill(X, Y, W, H, r[2])
+  if (opts.flat || H < 3 || W < 2) return
+  p.fill(X, Y, W, 1, r[3])
+  p.fill(X, Y + H - 1, W, 1, r[1])
+  p.fill(X, Y, 1, H, r[1])
+  if (W > 3) p.fill(X + W - 1, Y + 1, 1, H - 2, r[3])
+}
+
+/** A box with its four corner pixels knocked out, so it reads as rounded. */
+function chamfer(p: Pix, x: number, y: number, w: number, h: number, r: Ramp): void {
+  box(p, x, y, w, h, r)
+  const X = Math.round(x)
+  const Y = Math.round(y)
+  const W = Math.max(1, Math.round(w))
+  const H = Math.max(1, Math.round(h))
+  if (W < 3 || H < 3) return
+  p.set(X, Y, 0, 0)
+  p.set(X + W - 1, Y, 0, 0)
+  p.set(X, Y + H - 1, 0, 0)
+  p.set(X + W - 1, Y + H - 1, 0, 0)
+}
+
+/** A shaded blob: lit crescent up-right, core, shadow crescent down-left. */
+function orb(p: Pix, cx: number, cy: number, rx: number, ry: number, r: Ramp): void {
+  p.ellipse(cx, cy, rx, ry, r[1])
+  p.ellipse(cx + rx * 0.12, cy - ry * 0.12, rx * 0.88, ry * 0.88, r[2])
+  if (rx >= 2.2 && ry >= 2.2) p.ellipse(cx + rx * 0.3, cy - ry * 0.32, rx * 0.5, ry * 0.5, r[3])
+  if (rx >= 3.6 && ry >= 3.6) p.set(Math.round(cx + rx * 0.42), Math.round(cy - ry * 0.5), r[4])
+}
+
+/** A limb or haft drawn along a vector, with a lit edge on the upper side. */
+function shaft(p: Pix, x0: number, y0: number, x1: number, y1: number, width: number, r: Ramp): void {
+  p.thickLine(x0, y0, x1, y1, Math.max(1, Math.round(width)), r[2])
+  if (width >= 2) {
+    const dx = x1 - x0
+    const dy = y1 - y0
+    const len = Math.hypot(dx, dy) || 1
+    const nx = -dy / len
+    const ny = dx / len
+    const off = (Math.max(1, Math.round(width)) - 1) / 2
+    p.line(x0 + nx * off, y0 + ny * off, x1 + nx * off, y1 + ny * off, r[3])
+  }
+}
+
+// ─────────────────────────────── Head ───────────────────────────────
+
+function drawHead(v: UnitVisual, m: RigMetrics): Canvas2D {
+  const r = Math.max(2, m.headR * RES)
+  const skin = ramp(v.skin)
+  const cloth = ramp(v.cloth)
+  const cloth2 = ramp(v.cloth2)
+  const metal = ramp(v.metal, { contrast: 1.15, hueShift: 0.02 })
+  const accent = ramp(v.accent)
+
+  const p = part(r * 3.4, r * 3.6)
+  const cx = Math.round(p.w / 2)
+  const cy = Math.round(p.h - PAD - r * 1.5)
+
+  // Skull: a touch taller than wide so it never reads as a ball.
+  orb(p, cx, cy, r * 1.02, r * 1.14, skin)
+  // Jaw and neck shadow on the away side.
+  p.ellipse(cx - r * 0.5, cy + r * 0.45, r * 0.55, r * 0.45, skin[1])
+
+  // A face at this size is three pixels: brow, eye, mouth line.
+  const eyeX = Math.round(cx + r * 0.42)
+  const eyeY = Math.round(cy - r * 0.1)
+  p.set(eyeX, eyeY, tone(v.skin, -0.75))
+  p.set(eyeX - 1, eyeY - 1, skin[1])
+  if (r >= 3) p.line(cx + r * 0.15, cy + r * 0.5, cx + r * 0.6, cy + r * 0.5, skin[1])
+
+  switch (v.helmet) {
+    case 'band':
+      p.fill(cx - r * 1.05, cy - r * 0.62, r * 2.1, Math.max(1, r * 0.34), cloth2[2])
+      p.fill(cx - r * 1.05, cy - r * 0.62, r * 2.1, 1, cloth2[3])
+      break
+    case 'horns':
+      p.fill(cx - r * 1.05, cy - r * 0.7, r * 2.1, Math.max(1, r * 0.38), cloth2[2])
+      // Horns sweep up and out; drawn as tapering wedges so they stay sharp.
+      for (const side of [-1, 1]) {
+        p.poly(
+          [
+            [cx + side * r * 0.8, cy - r * 0.5],
+            [cx + side * r * 1.6, cy - r * 1.55],
+            [cx + side * r * 1.05, cy - r * 0.5]
+          ],
+          accent[side > 0 ? 3 : 1]
+        )
       }
       break
-    }
-    case 'rifle':
-    case 'lmg':
-    case 'rpg': {
-      // Webbing pack with a bedroll.
-      plate(ctx, backX - h * 0.11, top + h * 0.14, h * 0.24, h * 0.46, h * 0.06, shade(v.cloth, -0.28), {
-        outline: shade(v.cloth, -0.7),
-        outlineWidth: 1.5,
-        specular: 0.1
-      })
-      plate(ctx, backX - h * 0.13, top + h * 0.1, h * 0.28, h * 0.1, h * 0.05, shade(v.cloth2, -0.1), {
-        outline: shade(v.cloth, -0.7),
-        outlineWidth: 1.3,
-        specular: 0.12
-      })
+    case 'hood':
+      p.poly(
+        [
+          [cx - r * 1.2, cy + r * 0.95],
+          [cx - r * 1.15, cy - r * 0.75],
+          [cx - r * 0.2, cy - r * 1.5],
+          [cx + r * 0.95, cy - r * 1.0],
+          [cx + r * 1.1, cy + r * 0.15],
+          [cx + r * 0.35, cy + r * 0.3]
+        ],
+        cloth[2]
+      )
+      // Lit crown and shadowed inner fold, so the hood has depth.
+      p.line(cx - r * 0.2, cy - r * 1.5, cx + r * 0.95, cy - r * 1.0, cloth[3])
+      p.line(cx + r * 0.3, cy + r * 0.28, cx + r * 1.05, cy + r * 0.1, cloth[1])
+      break
+    case 'kettle': {
+      const brim = r * 1.45
+      p.ellipse(cx, cy - r * 0.5, brim, r * 0.72, metal[2])
+      p.ellipse(cx + r * 0.15, cy - r * 0.62, brim * 0.85, r * 0.58, metal[3])
+      p.fill(cx - brim, cy - r * 0.42, brim * 2, 1, metal[1])
       break
     }
-    case 'laser':
-    case 'railgun':
-    case 'plasma': {
-      // Power cell with an emissive strip and a feed line to the weapon.
-      plate(ctx, backX - h * 0.1, top + h * 0.12, h * 0.22, h * 0.44, h * 0.07, shade(v.metal, -0.3), {
-        outline: shade(v.metal, -0.75),
-        outlineWidth: 1.5,
-        specular: 0.6
-      })
-      ctx.fillStyle = css(v.accent, 0.95)
-      roundRect(ctx, backX - h * 0.05, top + h * 0.18, h * 0.12, h * 0.06, h * 0.03)
-      ctx.fill()
-      glow(ctx, backX + h * 0.01, top + h * 0.21, h * 0.22, v.accent, 0.7)
-      ctx.strokeStyle = css(shade(v.metal, -0.45))
-      ctx.lineWidth = 2.2
-      ctx.beginPath()
-      ctx.moveTo(backX + h * 0.06, top + h * 0.3)
-      ctx.quadraticCurveTo(cx, top + h * 0.52, cx + shoulderW * 0.4, top + h * 0.34)
-      ctx.stroke()
+    case 'great': {
+      chamfer(p, cx - r * 1.05, cy - r * 1.25, r * 2.1, r * 2.15, metal)
+      // Vision slit and breath holes: the whole read of a great helm.
+      p.fill(cx - r * 0.7, cy - r * 0.35, r * 1.5, Math.max(1, r * 0.22), tone(v.metal, -0.8))
+      p.set(Math.round(cx + r * 0.2), Math.round(cy + r * 0.35), tone(v.metal, -0.7))
+      p.set(Math.round(cx + r * 0.55), Math.round(cy + r * 0.35), tone(v.metal, -0.7))
+      if (r >= 3) p.fill(cx - r * 0.1, cy - r * 1.35, Math.max(1, r * 0.3), r * 0.5, accent[3])
       break
     }
-    case 'musket':
-    case 'saber':
-    case 'grenade': {
-      // Powder horn and a haversack.
-      ellipse(ctx, backX, top + h * 0.34, h * 0.09, h * 0.13, 0x8a6b3f, {
-        outline: 0x2c2118,
-        outlineWidth: 1.4
-      })
+    case 'tricorn':
+      p.poly(
+        [
+          [cx - r * 1.6, cy - r * 0.5],
+          [cx, cy - r * 1.45],
+          [cx + r * 1.6, cy - r * 0.5],
+          [cx + r * 0.9, cy - r * 0.2],
+          [cx - r * 0.9, cy - r * 0.2]
+        ],
+        cloth[2]
+      )
+      p.line(cx - r * 1.6, cy - r * 0.5, cx, cy - r * 1.45, cloth[3])
+      p.line(cx, cy - r * 1.45, cx + r * 1.6, cy - r * 0.5, cloth[1])
       break
-    }
-    case 'sword':
-    case 'axe': {
-      // Scabbard belted across the back.
-      ctx.save()
-      ctx.translate(backX, top + h * 0.55)
-      ctx.rotate(-0.5)
-      plate(ctx, -h * 0.06, -h * 0.3, h * 0.12, h * 0.6, h * 0.05, 0x4a3524, {
-        outline: 0x241a10,
-        outlineWidth: 1.4,
-        specular: 0.15
-      })
-      ctx.restore()
+    case 'kepi':
+      box(p, cx - r * 0.95, cy - r * 1.15, r * 1.9, r * 0.85, cloth)
+      // Forward peak.
+      p.fill(cx + r * 0.5, cy - r * 0.42, r * 1.15, 1, cloth[1])
+      p.fill(cx - r * 0.95, cy - r * 0.42, r * 1.9, 1, cloth2[2])
+      break
+    case 'combat':
+      p.ellipse(cx, cy - r * 0.42, r * 1.18, r * 0.95, cloth2[2])
+      p.ellipse(cx + r * 0.16, cy - r * 0.55, r * 0.95, r * 0.72, cloth2[3])
+      p.fill(cx - r * 1.18, cy - r * 0.3, r * 2.36, 1, cloth2[1])
+      // Chin strap.
+      p.line(cx - r * 0.95, cy - r * 0.1, cx - r * 0.7, cy + r * 0.55, cloth2[1])
+      break
+    case 'visor':
+      chamfer(p, cx - r * 1.1, cy - r * 1.15, r * 2.2, r * 1.9, metal)
+      p.fill(cx - r * 0.55, cy - r * 0.5, r * 1.7, Math.max(1, r * 0.5), accent[3])
+      p.fill(cx - r * 0.55, cy - r * 0.5, r * 1.7, 1, accent[4])
+      break
+    case 'halo': {
+      p.ellipse(cx, cy - r * 0.35, r * 1.08, r * 1.0, metal[2])
+      p.ellipse(cx + r * 0.18, cy - r * 0.5, r * 0.8, r * 0.7, metal[3])
+      // A floating ring above the head, broken at the back so it reads as 3D.
+      const ringY = Math.round(cy - r * 1.9)
+      p.line(cx - r * 1.0, ringY, cx + r * 1.0, ringY, accent[4])
+      p.set(Math.round(cx - r * 1.0), ringY + 1, accent[2])
+      p.set(Math.round(cx + r * 1.0), ringY + 1, accent[2])
       break
     }
     default:
       break
   }
+
+  return finish(p, v.skin)
 }
 
+// ─────────────────────────────── Torso ───────────────────────────────
+
+function drawTorso(v: UnitVisual, m: RigMetrics): Canvas2D {
+  const w = Math.max(4, m.bodyW * RES)
+  const h = Math.max(5, m.torsoH * RES)
+  const p = part(w * 2.4, h * 1.5)
+  const cx = Math.round(p.w / 2)
+  const bottom = p.h - PAD
+  const top = bottom - Math.round(h)
+
+  const cloth = ramp(v.cloth)
+  const cloth2 = ramp(v.cloth2)
+  const metal = ramp(v.metal, { contrast: 1.15, hueShift: 0.02 })
+  const skin = ramp(v.skin)
+  const accent = ramp(v.accent)
+
+  drawBackGear(p, v, m, cx, top, Math.round(h))
+
+  const shoulderW = Math.round(w * 1.15)
+  const waistW = Math.round(w * 0.86)
+
+  // The trunk is a slight taper: wide at the shoulders, narrow at the waist.
+  const trunk = (r: Ramp) => {
+    for (let i = 0; i < Math.round(h); i += 1) {
+      const t = i / Math.max(1, Math.round(h) - 1)
+      const rowW = Math.round(shoulderW + (waistW - shoulderW) * t)
+      const x = cx - (rowW >> 1)
+      p.fill(x, top + i, rowW, 1, r[2])
+      p.set(x, top + i, r[1])
+      p.set(x + rowW - 1, top + i, r[3])
+    }
+    p.fill(cx - (shoulderW >> 1), top, shoulderW, 1, r[3])
+  }
+
+  switch (v.torso) {
+    case 'bare':
+      trunk(skin)
+      // Chest and stomach definition, two shadow strokes only.
+      p.line(cx - w * 0.2, top + h * 0.34, cx + w * 0.28, top + h * 0.3, skin[1])
+      p.line(cx - w * 0.1, top + h * 0.58, cx + w * 0.2, top + h * 0.56, skin[1])
+      break
+    case 'fur':
+      trunk(cloth)
+      // Ragged hem and a shoulder pelt.
+      for (let i = 0; i < shoulderW; i += 2) {
+        p.set(cx - (shoulderW >> 1) + i, bottom, cloth[1])
+      }
+      p.ellipse(cx - w * 0.15, top + h * 0.2, w * 0.62, h * 0.24, cloth2[2])
+      p.ellipse(cx - w * 0.05, top + h * 0.14, w * 0.5, h * 0.16, cloth2[3])
+      break
+    case 'robe':
+      trunk(cloth)
+      // Robes flare rather than taper, so widen the hem back out.
+      for (let i = 0; i < Math.round(h * 0.35); i += 1) {
+        const rowW = Math.round(waistW + i * 0.9)
+        p.fill(cx - (rowW >> 1), bottom - Math.round(h * 0.35) + i, rowW, 1, cloth[2])
+        p.set(cx - (rowW >> 1), bottom - Math.round(h * 0.35) + i, cloth[1])
+      }
+      p.line(cx + w * 0.05, top + h * 0.15, cx + w * 0.05, bottom - 1, cloth[1])
+      p.fill(cx - w * 0.5, top + h * 0.62, w, 1, accent[3])
+      break
+    case 'mail': {
+      trunk(metal)
+      // Mail is read as texture, not as rings: a broken speckle over the base.
+      for (let y = 1; y < Math.round(h) - 1; y += 2) {
+        for (let x = -Math.round(w * 0.42); x < Math.round(w * 0.42); x += 2) {
+          p.set(cx + x + (y % 4 === 1 ? 0 : 1), top + y, metal[1])
+        }
+      }
+      p.fill(cx - waistW / 2, bottom - Math.max(1, h * 0.16), waistW, Math.max(1, h * 0.16), cloth2[2])
+      break
+    }
+    case 'plate': {
+      trunk(metal)
+      // Pauldrons and a breastplate ridge give plate its unmistakable outline.
+      p.ellipse(cx - shoulderW * 0.52, top + h * 0.14, w * 0.36, h * 0.18, metal[2])
+      p.ellipse(cx + shoulderW * 0.52, top + h * 0.14, w * 0.36, h * 0.18, metal[3])
+      p.line(cx + w * 0.08, top + 1, cx + w * 0.08, top + h * 0.72, metal[4])
+      p.fill(cx - waistW / 2, top + h * 0.68, waistW, Math.max(1, h * 0.14), cloth2[2])
+      p.fill(cx - w * 0.16, top + h * 0.3, Math.max(1, w * 0.3), Math.max(1, h * 0.16), accent[3])
+      break
+    }
+    case 'coat':
+      trunk(cloth)
+      // Lapels and a centre seam.
+      p.line(cx - w * 0.4, top + 1, cx + w * 0.02, top + h * 0.44, cloth[3])
+      p.line(cx + w * 0.42, top + 1, cx + w * 0.04, top + h * 0.44, cloth[1])
+      p.line(cx + w * 0.03, top + h * 0.44, cx + w * 0.03, bottom - 1, cloth[1])
+      p.fill(cx - waistW / 2, top + h * 0.6, waistW, Math.max(1, h * 0.12), cloth2[1])
+      p.set(Math.round(cx + w * 0.12), Math.round(top + h * 0.62), accent[4])
+      break
+    case 'vest':
+      trunk(cloth)
+      // Webbing: two pouches and a strap, the whole modern-infantry read.
+      p.fill(cx - w * 0.46, top + h * 0.34, Math.round(w * 0.92), Math.max(2, h * 0.28), cloth2[2])
+      p.fill(cx - w * 0.46, top + h * 0.34, Math.round(w * 0.92), 1, cloth2[3])
+      p.fill(cx - w * 0.3, top + h * 0.4, Math.max(1, w * 0.22), Math.max(1, h * 0.18), cloth2[1])
+      p.fill(cx + w * 0.08, top + h * 0.4, Math.max(1, w * 0.22), Math.max(1, h * 0.18), cloth2[1])
+      p.line(cx - w * 0.2, top + 1, cx - w * 0.2, top + h * 0.34, cloth2[1])
+      break
+    case 'exo': {
+      trunk(metal)
+      // Hard-surface panelling with a glowing core.
+      p.fill(cx - shoulderW / 2, top + h * 0.3, shoulderW, 1, metal[1])
+      p.fill(cx - shoulderW / 2, top + h * 0.62, shoulderW, 1, metal[1])
+      p.ellipse(cx + w * 0.05, top + h * 0.46, Math.max(1.2, w * 0.2), Math.max(1.2, h * 0.12), accent[4])
+      p.ellipse(cx - shoulderW * 0.55, top + h * 0.12, w * 0.34, h * 0.2, metal[1])
+      p.ellipse(cx + shoulderW * 0.55, top + h * 0.12, w * 0.34, h * 0.2, metal[3])
+      break
+    }
+  }
+
+  return finish(p, v.cloth)
+}
+
+/**
+ * What a unit carries on its back. Drawn before the torso so it sits behind,
+ * and kept to a strong silhouette — at this size a quiver is four pixels of
+ * fletching and nothing more.
+ */
+function drawBackGear(p: Pix, v: UnitVisual, m: RigMetrics, cx: number, top: number, h: number): void {
+  const w = Math.max(3, m.bodyW * RES)
+  const cloth2 = ramp(v.cloth2)
+  const metal = ramp(v.metal, { contrast: 1.15 })
+  const accent = ramp(v.accent)
+  const wood = ramp(0x7a5433)
+
+  switch (v.weapon) {
+    case 'bow':
+    case 'sling': {
+      // Quiver over the far shoulder, arrows showing above it.
+      const qx = Math.round(cx - w * 0.85)
+      box(p, qx, top + h * 0.18, Math.max(2, w * 0.3), h * 0.6, wood)
+      for (let i = 0; i < 3; i += 1) {
+        p.line(qx + i, top + h * 0.18, qx + i - 1, top - h * 0.12, i === 1 ? accent[3] : accent[2])
+      }
+      break
+    }
+    case 'musket':
+    case 'rifle':
+    case 'lmg': {
+      const bx = Math.round(cx - w * 0.9)
+      box(p, bx, top + h * 0.24, Math.max(2, w * 0.34), h * 0.46, cloth2)
+      p.fill(bx, top + h * 0.42, Math.max(2, w * 0.34), 1, cloth2[1])
+      break
+    }
+    case 'rpg': {
+      const bx = Math.round(cx - w * 0.95)
+      box(p, bx, top + h * 0.12, Math.max(2, w * 0.32), h * 0.7, metal)
+      p.fill(bx, top + h * 0.3, Math.max(2, w * 0.32), 1, accent[3])
+      break
+    }
+    case 'laser':
+    case 'plasma':
+    case 'railgun': {
+      // Power cells, with the accent colour reading as charge.
+      const bx = Math.round(cx - w * 0.9)
+      box(p, bx, top + h * 0.2, Math.max(2, w * 0.36), h * 0.5, metal)
+      p.fill(bx + 1, top + h * 0.28, Math.max(1, w * 0.2), Math.max(1, h * 0.32), accent[4])
+      break
+    }
+    case 'sword':
+    case 'saber':
+    case 'axe': {
+      // An empty scabbard hanging on the far hip.
+      p.thickLine(cx - w * 0.55, top + h * 0.6, cx - w * 0.95, top + h * 1.05, 2, cloth2[1])
+      break
+    }
+    case 'grenade': {
+      const bx = Math.round(cx - w * 0.85)
+      box(p, bx, top + h * 0.3, Math.max(2, w * 0.3), h * 0.38, cloth2)
+      break
+    }
+    default:
+      break
+  }
+
+  if (v.torso === 'exo') {
+    // Backpack thrusters for powered armour.
+    box(p, cx - w * 0.95, top + h * 0.16, Math.max(2, w * 0.34), h * 0.5, metal)
+    p.fill(cx - w * 0.95, top + h * 0.6, Math.max(2, w * 0.34), 1, accent[4])
+  }
+}
+
+// ─────────────────────────────── Limbs ───────────────────────────────
+
+/**
+ * An arm or leg, drawn hanging straight down from a pivot at the top. The
+ * battle scene rotates these around that point, so the art is authored in one
+ * neutral pose and the animation does the rest.
+ */
 function drawLimb(
   length: number,
   thickness: number,
-  color: number,
+  clothColor: number,
   endColor: number,
-  accent: number | null,
-  isLeg: boolean
+  stripe: number | null,
+  boot: boolean
 ): Canvas2D {
-  const L = length * RES
-  const T = thickness * RES
-  const c = newPart(T * 2.2, L * 1.12)
-  const { ctx } = c
-  const cx = c.w / 2
+  const L = Math.max(3, Math.round(length * RES))
+  const T = Math.max(2, Math.round(thickness * RES))
+  const p = part(T + 4, L + 3)
+  const cx = Math.round(p.w / 2)
   const top = PAD
 
-  plate(ctx, cx - T / 2, top, T, L * 0.98, T * 0.45, color, {
-    outline: shade(color, -0.6),
-    outlineWidth: 1.4
-  })
-  // Joint highlight.
-  ellipse(ctx, cx, top + L * 0.48, T * 0.42, T * 0.34, shade(color, -0.18), { shaded: false })
+  const cloth = ramp(clothColor)
+  const end = ramp(endColor)
 
-  if (isLeg) {
-    // Boot.
-    polygon(ctx, [
-      [cx - T * 0.55, top + L * 0.86],
-      [cx + T * 0.55, top + L * 0.86],
-      [cx + T * 1.0, top + L * 1.02],
-      [cx + T * 1.0, top + L * 1.12],
-      [cx - T * 0.6, top + L * 1.12]
-    ], endColor, { outline: shade(endColor, -0.6), outlineWidth: 1.4 })
+  // Upper limb, tapering by a pixel toward the joint.
+  for (let i = 0; i < L; i += 1) {
+    const t = i / Math.max(1, L - 1)
+    const rowW = Math.max(1, Math.round(T - (t > 0.55 ? 1 : 0)))
+    const x = cx - (rowW >> 1)
+    p.fill(x, top + i, rowW, 1, cloth[2])
+    p.set(x + rowW - 1, top + i, cloth[3])
+    p.set(x, top + i, cloth[1])
+  }
+  p.fill(cx - (T >> 1), top, T, 1, cloth[3])
+
+  // Hand or boot at the far end.
+  if (boot) {
+    const bw = T + 2
+    box(p, cx - (bw >> 1), top + L - Math.max(2, T * 0.7), bw, Math.max(2, T * 0.7), end)
+    // Toe pointing the way the unit faces.
+    p.fill(cx + (bw >> 1), top + L - 1, 2, 1, end[2])
   } else {
-    ellipse(ctx, cx, top + L * 1.0, T * 0.56, T * 0.5, endColor, {
-      outline: shade(endColor, -0.6),
-      outlineWidth: 1.4
-    })
+    orb(p, cx, top + L - T * 0.4, T * 0.6, T * 0.6, end)
   }
 
-  if (accent !== null) {
-    ctx.fillStyle = css(accent, 0.9)
-    roundRect(ctx, cx - T * 0.18, top + L * 0.16, T * 0.36, L * 0.12, T * 0.16)
-    ctx.fill()
+  if (stripe !== null) {
+    const s = ramp(stripe)
+    p.fill(cx - (T >> 1), top + Math.round(L * 0.45), T, 1, s[4])
   }
 
-  grain(c, 0.04)
-  return c
+  return finish(p, clothColor)
 }
 
 // ─────────────────────────────── Weapons ───────────────────────────────
 
 export interface WeaponArt {
   canvas: Canvas2D
-  /** Grip point in canvas pixels — where the hand holds the weapon. */
+  /** Where the hand grips the weapon, in canvas pixels. */
   grip: [number, number]
 }
 
-/**
- * Weapons are drawn pointing right. Each one reports the exact pixel its user
- * grips it by, so the sprite pins to the hand no matter how it is shaped.
- */
 function drawWeapon(kind: WeaponVisual, v: UnitVisual, m: RigMetrics): WeaponArt | null {
   if (kind === 'none' || kind === 'fist') return null
+
   const s = m.height * RES
-  const wood = 0x6b4a2b
-  const dark = 0x2c2118
+  const metal = ramp(v.metal, { contrast: 1.2, hueShift: 0.02 })
+  const wood = ramp(0x7a5433)
+  const dark = ramp(0x3a3f4a)
+  const accent = ramp(v.accent)
+  const cloth = ramp(v.cloth)
 
   switch (kind) {
     case 'club': {
-      const c = newPart(s * 0.62, s * 0.24)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.03, s * 0.34, s * 0.06, s * 0.03, wood, { outline: dark })
-      polygon(ctx, [
-        [PAD + s * 0.3, y - s * 0.1],
-        [PAD + s * 0.56, y - s * 0.12],
-        [PAD + s * 0.62, y],
-        [PAD + s * 0.56, y + s * 0.12],
-        [PAD + s * 0.3, y + s * 0.1]
-      ], shade(wood, 0.12), { outline: dark, outlineWidth: 1.5 })
-      ctx.fillStyle = css(v.metal)
-      for (let i = 0; i < 4; i += 1) {
-        ctx.beginPath()
-        ctx.arc(PAD + s * (0.4 + i * 0.05), y + (i % 2 ? -s * 0.05 : s * 0.05), s * 0.018, 0, Math.PI * 2)
-        ctx.fill()
+      const L = Math.round(s * 0.5)
+      const p = part(s * 0.3, L)
+      const cx = Math.round(p.w / 2)
+      shaft(p, cx, PAD + L, cx, PAD + L * 0.35, Math.max(2, s * 0.06), wood)
+      // Heavy head, wider than the haft so the weight reads.
+      orb(p, cx, PAD + L * 0.2, s * 0.11, s * 0.15, wood)
+      for (let i = 0; i < 3; i += 1) {
+        p.set(Math.round(cx - s * 0.09 + i * s * 0.09), Math.round(PAD + L * 0.14), dark[1])
       }
-      return { canvas: c, grip: [PAD, c.h / 2] }
+      return { canvas: finish(p, 0x7a5433), grip: [cx, PAD + L - 1] }
     }
-    case 'spear': {
-      const c = newPart(s * 0.95, s * 0.14)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.018, s * 0.82, s * 0.036, s * 0.018, wood, { outline: dark })
-      polygon(ctx, [
-        [PAD + s * 0.78, y - s * 0.05],
-        [PAD + s * 0.95, y],
-        [PAD + s * 0.78, y + s * 0.05],
-        [PAD + s * 0.82, y]
-      ], v.metal, { outline: shade(v.metal, -0.6), outlineWidth: 1.4 })
-      return { canvas: c, grip: [PAD + s * 0.22, c.h / 2] }
+    case 'spear':
+    case 'lance': {
+      const L = Math.round(s * (kind === 'lance' ? 0.95 : 0.85))
+      const p = part(s * 0.22, L)
+      const cx = Math.round(p.w / 2)
+      shaft(p, cx, PAD + L, cx, PAD, Math.max(1, s * 0.045), wood)
+      // Leaf-shaped head.
+      p.poly(
+        [
+          [cx, PAD - 1],
+          [cx + s * 0.055, PAD + L * 0.14],
+          [cx, PAD + L * 0.2],
+          [cx - s * 0.055, PAD + L * 0.14]
+        ],
+        metal[2]
+      )
+      p.line(cx, PAD - 1, cx + s * 0.055, PAD + L * 0.14, metal[3])
+      if (kind === 'lance') p.fill(cx - s * 0.06, PAD + L * 0.24, Math.max(1, s * 0.12), Math.max(1, s * 0.05), cloth[2])
+      return { canvas: finish(p, 0x7a5433), grip: [cx, PAD + L * 0.82] }
     }
     case 'sling': {
-      const c = newPart(s * 0.3, s * 0.3)
-      const { ctx } = c
-      ctx.strokeStyle = css(0x6b5a40)
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(PAD, c.h / 2)
-      ctx.quadraticCurveTo(PAD + s * 0.16, c.h / 2 + s * 0.18, PAD + s * 0.26, c.h / 2 + s * 0.04)
-      ctx.stroke()
-      ellipse(ctx, PAD + s * 0.2, c.h / 2 + s * 0.13, s * 0.05, s * 0.04, 0x8a8378)
-      return { canvas: c, grip: [PAD, c.h / 2] }
+      const L = Math.round(s * 0.3)
+      const p = part(s * 0.24, L)
+      const cx = Math.round(p.w / 2)
+      p.line(cx, PAD, cx - s * 0.06, PAD + L * 0.8, cloth[2])
+      p.line(cx, PAD, cx + s * 0.06, PAD + L * 0.8, cloth[1])
+      orb(p, cx, PAD + L * 0.88, s * 0.05, s * 0.045, ramp(0x8d8371))
+      return { canvas: finish(p, v.cloth), grip: [cx, PAD] }
     }
     case 'bow': {
-      const c = newPart(s * 0.28, s * 0.62)
-      const { ctx } = c
-      const cx = PAD + s * 0.1
-      ctx.strokeStyle = css(shade(wood, 0.15))
-      ctx.lineWidth = Math.max(2, s * 0.025)
-      ctx.beginPath()
-      ctx.arc(cx - s * 0.12, c.h / 2, s * 0.28, -Math.PI * 0.42, Math.PI * 0.42)
-      ctx.stroke()
-      ctx.strokeStyle = 'rgba(240,238,228,0.85)'
-      ctx.lineWidth = 1.4
-      ctx.beginPath()
-      ctx.moveTo(cx + s * 0.0, c.h / 2 - s * 0.25)
-      ctx.lineTo(cx + s * 0.02, c.h / 2)
-      ctx.lineTo(cx + s * 0.0, c.h / 2 + s * 0.25)
-      ctx.stroke()
-      return { canvas: c, grip: [PAD + s * 0.1, c.h / 2] }
+      const L = Math.round(s * 0.62)
+      const p = part(s * 0.24, L)
+      const cx = Math.round(p.w / 2 + s * 0.05)
+      // The limbs curve forward; the string is a straight line behind them.
+      for (let i = 0; i <= L; i += 1) {
+        const t = i / L
+        const bend = Math.sin(t * Math.PI) * s * 0.1
+        p.set(Math.round(cx + bend), PAD + i, t < 0.12 || t > 0.88 ? wood[1] : wood[2])
+        if (bend > 1) p.set(Math.round(cx + bend - 1), PAD + i, wood[3])
+      }
+      p.line(cx, PAD, cx, PAD + L, dark[3])
+      return { canvas: finish(p, 0x7a5433), grip: [cx + Math.round(s * 0.1), PAD + L * 0.5] }
     }
-    case 'sword': {
-      const c = newPart(s * 0.58, s * 0.2)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.022, s * 0.1, s * 0.044, s * 0.02, dark, {})
-      ctx.fillStyle = css(v.metal)
-      roundRect(ctx, PAD + s * 0.08, y - s * 0.075, s * 0.035, s * 0.15, 2)
-      ctx.fill()
-      polygon(ctx, [
-        [PAD + s * 0.11, y - s * 0.035],
-        [PAD + s * 0.5, y - s * 0.028],
-        [PAD + s * 0.58, y],
-        [PAD + s * 0.5, y + s * 0.028],
-        [PAD + s * 0.11, y + s * 0.035]
-      ], v.metal, { outline: shade(v.metal, -0.6), outlineWidth: 1.3 })
-      ctx.strokeStyle = css(shade(v.metal, 0.55), 0.7)
-      ctx.lineWidth = 1.2
-      ctx.beginPath()
-      ctx.moveTo(PAD + s * 0.13, y)
-      ctx.lineTo(PAD + s * 0.5, y)
-      ctx.stroke()
-      return { canvas: c, grip: [PAD + s * 0.05, c.h / 2] }
-    }
+    case 'sword':
     case 'saber': {
-      const c = newPart(s * 0.56, s * 0.26)
-      const { ctx } = c
-      const y = c.h / 2 + s * 0.05
-      plate(ctx, PAD, y - s * 0.02, s * 0.09, s * 0.04, s * 0.018, dark, {})
-      ctx.strokeStyle = css(v.metal)
-      ctx.lineWidth = Math.max(2, s * 0.035)
-      ctx.lineCap = 'round'
-      ctx.beginPath()
-      ctx.moveTo(PAD + s * 0.1, y)
-      ctx.quadraticCurveTo(PAD + s * 0.34, y - s * 0.12, PAD + s * 0.55, y - s * 0.16)
-      ctx.stroke()
-      ctx.strokeStyle = css(shade(v.metal, 0.5), 0.8)
-      ctx.lineWidth = 1
-      ctx.stroke()
-      return { canvas: c, grip: [PAD + s * 0.05, c.h / 2 + s * 0.05] }
+      const L = Math.round(s * 0.52)
+      const p = part(s * 0.2, L)
+      const cx = Math.round(p.w / 2)
+      const curve = kind === 'saber' ? s * 0.06 : 0
+      // Blade: a lit edge on the right, body, dark spine on the left.
+      for (let i = 0; i < L * 0.78; i += 1) {
+        const t = i / (L * 0.78)
+        const off = Math.round(Math.sin(t * 1.5) * curve)
+        p.set(cx + off, PAD + i, metal[2])
+        p.set(cx + off + 1, PAD + i, metal[4])
+        p.set(cx + off - 1, PAD + i, metal[1])
+      }
+      // Crossguard and grip.
+      p.fill(cx - s * 0.075, PAD + L * 0.78, Math.max(2, s * 0.16), 1, metal[3])
+      shaft(p, cx, PAD + L * 0.8, cx, PAD + L, Math.max(1, s * 0.035), dark)
+      p.set(cx, Math.round(PAD + L), accent[3])
+      return { canvas: finish(p, v.metal), grip: [cx, PAD + L * 0.9] }
     }
     case 'axe': {
-      const c = newPart(s * 0.5, s * 0.3)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.02, s * 0.44, s * 0.04, s * 0.02, wood, { outline: dark })
-      polygon(ctx, [
-        [PAD + s * 0.3, y - s * 0.02],
-        [PAD + s * 0.5, y - s * 0.14],
-        [PAD + s * 0.5, y + s * 0.14],
-        [PAD + s * 0.3, y + s * 0.02]
-      ], v.metal, { outline: shade(v.metal, -0.6), outlineWidth: 1.4 })
-      return { canvas: c, grip: [PAD + s * 0.04, c.h / 2] }
-    }
-    case 'lance': {
-      const c = newPart(s * 1.15, s * 0.16)
-      const { ctx } = c
-      const y = c.h / 2
-      polygon(ctx, [
-        [PAD, y - s * 0.05],
-        [PAD + s * 1.06, y - s * 0.012],
-        [PAD + s * 1.15, y],
-        [PAD + s * 1.06, y + s * 0.012],
-        [PAD, y + s * 0.05]
-      ], shade(wood, 0.2), { outline: dark, outlineWidth: 1.4 })
-      ctx.fillStyle = css(v.accent)
-      roundRect(ctx, PAD + s * 0.12, y - s * 0.055, s * 0.05, s * 0.11, 1)
-      ctx.fill()
-      return { canvas: c, grip: [PAD + s * 0.22, c.h / 2] }
+      const L = Math.round(s * 0.55)
+      const p = part(s * 0.3, L)
+      const cx = Math.round(p.w / 2)
+      shaft(p, cx, PAD + L, cx, PAD + L * 0.1, Math.max(1, s * 0.045), wood)
+      // A crescent bit, hollow on the inside edge.
+      p.poly(
+        [
+          [cx, PAD + L * 0.06],
+          [cx + s * 0.14, PAD + L * 0.12],
+          [cx + s * 0.15, PAD + L * 0.3],
+          [cx, PAD + L * 0.32],
+          [cx + s * 0.05, PAD + L * 0.2]
+        ],
+        metal[2]
+      )
+      p.line(cx + s * 0.14, PAD + L * 0.12, cx + s * 0.15, PAD + L * 0.3, metal[4])
+      return { canvas: finish(p, v.metal), grip: [cx, PAD + L * 0.9] }
     }
     case 'staff': {
-      const c = newPart(s * 0.24, s * 0.7)
-      const { ctx } = c
-      const cx = PAD + s * 0.08
-      plate(ctx, cx - s * 0.016, PAD, s * 0.032, s * 0.66, s * 0.016, wood, { outline: dark })
-      ellipse(ctx, cx, PAD + s * 0.04, s * 0.06, s * 0.06, v.accent, { outline: shade(v.accent, -0.5) })
-      glow(ctx, cx, PAD + s * 0.04, s * 0.16, v.accent, 0.85)
-      return { canvas: c, grip: [PAD + s * 0.08, PAD + s * 0.32] }
+      const L = Math.round(s * 0.8)
+      const p = part(s * 0.24, L)
+      const cx = Math.round(p.w / 2)
+      shaft(p, cx, PAD + L, cx, PAD + L * 0.14, Math.max(1, s * 0.045), wood)
+      orb(p, cx, PAD + L * 0.1, s * 0.075, s * 0.075, accent)
+      p.set(cx, Math.round(PAD + L * 0.1), accent[4])
+      return { canvas: finish(p, 0x7a5433), grip: [cx, PAD + L * 0.85] }
     }
     case 'musket': {
-      const c = newPart(s * 0.85, s * 0.22)
-      const { ctx } = c
-      const y = c.h / 2
-      polygon(ctx, [
-        [PAD, y + s * 0.02],
-        [PAD + s * 0.02, y - s * 0.045],
-        [PAD + s * 0.24, y - s * 0.035],
-        [PAD + s * 0.24, y + s * 0.05]
-      ], wood, { outline: dark, outlineWidth: 1.3 })
-      plate(ctx, PAD + s * 0.2, y - s * 0.028, s * 0.65, s * 0.05, s * 0.014, shade(wood, -0.1), { outline: dark })
-      plate(ctx, PAD + s * 0.42, y - s * 0.022, s * 0.43, s * 0.03, s * 0.012, 0x50565e, { outline: 0x20242a })
-      ctx.fillStyle = css(0x3a3f46)
-      roundRect(ctx, PAD + s * 0.28, y + s * 0.012, s * 0.05, s * 0.06, 1)
-      ctx.fill()
-      return { canvas: c, grip: [PAD + s * 0.14, c.h / 2] }
-    }
-    case 'grenade': {
-      const c = newPart(s * 0.26, s * 0.26)
-      const { ctx } = c
-      ellipse(ctx, PAD + s * 0.1, c.h / 2, s * 0.075, s * 0.085, 0x3d4a35, { outline: 0x1c2418, outlineWidth: 1.4 })
-      ctx.strokeStyle = css(0x2a3226)
-      ctx.lineWidth = 1.2
-      for (let i = -1; i <= 1; i += 1) {
-        ctx.beginPath()
-        ctx.moveTo(PAD + s * 0.1 - s * 0.07, c.h / 2 + i * s * 0.035)
-        ctx.lineTo(PAD + s * 0.1 + s * 0.07, c.h / 2 + i * s * 0.035)
-        ctx.stroke()
-      }
-      ctx.fillStyle = css(0x8a8070)
-      roundRect(ctx, PAD + s * 0.08, c.h / 2 - s * 0.12, s * 0.04, s * 0.05, 1)
-      ctx.fill()
-      return { canvas: c, grip: [PAD + s * 0.1, c.h / 2] }
+      const L = Math.round(s * 0.72)
+      const p = part(s * 0.22, L)
+      const cx = Math.round(p.w / 2)
+      // Barrel above the grip, stock below — long and thin.
+      shaft(p, cx, PAD + L * 0.55, cx, PAD, Math.max(1, s * 0.045), dark)
+      shaft(p, cx, PAD + L * 0.5, cx - s * 0.02, PAD + L, Math.max(2, s * 0.07), wood)
+      p.fill(cx - s * 0.05, PAD + L * 0.5, Math.max(1, s * 0.1), 1, metal[3])
+      return { canvas: finish(p, 0x3a3f4a), grip: [cx, PAD + L * 0.62] }
     }
     case 'rifle': {
-      const c = newPart(s * 0.72, s * 0.24)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.04, s * 0.2, s * 0.075, s * 0.02, 0x33372f, { outline: 0x14170f })
-      plate(ctx, PAD + s * 0.16, y - s * 0.03, s * 0.34, s * 0.06, s * 0.015, 0x3b4038, { outline: 0x14170f })
-      plate(ctx, PAD + s * 0.45, y - s * 0.017, s * 0.27, s * 0.026, s * 0.01, 0x484e44, { outline: 0x14170f })
-      ctx.fillStyle = css(0x22261f)
-      roundRect(ctx, PAD + s * 0.22, y + s * 0.03, s * 0.06, s * 0.09, 1)
-      ctx.fill()
-      roundRect(ctx, PAD + s * 0.3, y - s * 0.09, s * 0.14, s * 0.055, 1)
-      ctx.fill()
-      return { canvas: c, grip: [PAD + s * 0.16, c.h / 2] }
+      const L = Math.round(s * 0.66)
+      const p = part(s * 0.26, L)
+      const cx = Math.round(p.w / 2)
+      shaft(p, cx, PAD + L * 0.5, cx, PAD, Math.max(1, s * 0.05), dark)
+      box(p, cx - s * 0.06, PAD + L * 0.42, Math.max(2, s * 0.12), Math.max(3, L * 0.3), dark)
+      // Magazine and stock.
+      box(p, cx - s * 0.03, PAD + L * 0.7, Math.max(1, s * 0.06), Math.max(2, L * 0.16), dark)
+      shaft(p, cx, PAD + L * 0.72, cx - s * 0.03, PAD + L, Math.max(2, s * 0.06), dark)
+      p.set(cx, PAD + 1, metal[3])
+      return { canvas: finish(p, 0x3a3f4a), grip: [cx, PAD + L * 0.6] }
     }
     case 'lmg': {
-      const c = newPart(s * 0.8, s * 0.3)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.045, s * 0.22, s * 0.085, s * 0.02, 0x2f332c, { outline: 0x12150f })
-      plate(ctx, PAD + s * 0.18, y - s * 0.038, s * 0.4, s * 0.075, s * 0.016, 0x383d34, { outline: 0x12150f })
-      plate(ctx, PAD + s * 0.52, y - s * 0.02, s * 0.28, s * 0.036, s * 0.01, 0x4a5046, { outline: 0x12150f })
-      ellipse(ctx, PAD + s * 0.32, y + s * 0.06, s * 0.075, s * 0.06, 0x545b4c, { outline: 0x12150f, outlineWidth: 1.3 })
-      // Barrel shroud vents.
-      ctx.fillStyle = css(0x1a1e16)
-      for (let i = 0; i < 5; i += 1) {
-        roundRect(ctx, PAD + s * (0.56 + i * 0.045), y - s * 0.014, s * 0.018, s * 0.028, 1)
-        ctx.fill()
-      }
-      return { canvas: c, grip: [PAD + s * 0.18, c.h / 2] }
+      const L = Math.round(s * 0.7)
+      const p = part(s * 0.34, L)
+      const cx = Math.round(p.w / 2)
+      shaft(p, cx, PAD + L * 0.55, cx, PAD, Math.max(2, s * 0.07), dark)
+      box(p, cx - s * 0.09, PAD + L * 0.45, Math.max(3, s * 0.18), Math.max(3, L * 0.3), dark)
+      // Drum magazine — the shape that says machine gun at a glance.
+      orb(p, cx - s * 0.1, PAD + L * 0.62, s * 0.09, s * 0.09, metal)
+      p.fill(cx - s * 0.03, PAD + L * 0.08, Math.max(1, s * 0.06), 1, metal[1])
+      return { canvas: finish(p, 0x3a3f4a), grip: [cx, PAD + L * 0.62] }
+    }
+    case 'grenade': {
+      const p = part(s * 0.16, s * 0.2)
+      const cx = Math.round(p.w / 2)
+      const cy = Math.round(p.h / 2)
+      orb(p, cx, cy, s * 0.06, s * 0.07, ramp(0x4b5a3a))
+      p.fill(cx - 1, cy - s * 0.09, 2, Math.max(1, s * 0.03), metal[3])
+      return { canvas: finish(p, 0x4b5a3a), grip: [cx, cy] }
     }
     case 'rpg': {
-      const c = newPart(s * 0.86, s * 0.3)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.03, s * 0.62, s * 0.06, s * 0.03, 0x4a4a3e, { outline: 0x191a13 })
-      polygon(ctx, [
-        [PAD, y - s * 0.03],
-        [PAD - 0, y + s * 0.03],
-        [PAD - s * 0.0, y + s * 0.03]
-      ], 0x333, {})
-      // Warhead.
-      polygon(ctx, [
-        [PAD + s * 0.58, y - s * 0.055],
-        [PAD + s * 0.78, y - s * 0.03],
-        [PAD + s * 0.86, y],
-        [PAD + s * 0.78, y + s * 0.03],
-        [PAD + s * 0.58, y + s * 0.055]
-      ], v.accent, { outline: shade(v.accent, -0.55), outlineWidth: 1.4 })
-      ctx.fillStyle = css(0x2b2b22)
-      roundRect(ctx, PAD + s * 0.22, y + s * 0.03, s * 0.06, s * 0.09, 1)
-      ctx.fill()
-      return { canvas: c, grip: [PAD + s * 0.22, c.h / 2] }
+      const L = Math.round(s * 0.8)
+      const p = part(s * 0.3, L)
+      const cx = Math.round(p.w / 2)
+      shaft(p, cx, PAD + L, cx, PAD + L * 0.22, Math.max(3, s * 0.09), dark)
+      // Warhead: a cone at the muzzle end.
+      p.poly(
+        [
+          [cx, PAD],
+          [cx + s * 0.07, PAD + L * 0.22],
+          [cx - s * 0.07, PAD + L * 0.22]
+        ],
+        accent[2]
+      )
+      p.line(cx, PAD, cx + s * 0.07, PAD + L * 0.22, accent[3])
+      p.fill(cx - s * 0.09, PAD + L * 0.66, Math.max(2, s * 0.18), 1, dark[1])
+      return { canvas: finish(p, 0x3a3f4a), grip: [cx, PAD + L * 0.74] }
     }
     case 'laser': {
-      const c = newPart(s * 0.74, s * 0.26)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.04, s * 0.26, s * 0.08, s * 0.03, 0x3a4468, { outline: 0x161c34 })
-      plate(ctx, PAD + s * 0.22, y - s * 0.03, s * 0.36, s * 0.06, s * 0.02, 0x54619a, { outline: 0x161c34 })
-      plate(ctx, PAD + s * 0.52, y - s * 0.018, s * 0.22, s * 0.036, s * 0.014, 0x8f9fd8, { outline: 0x161c34 })
-      ctx.fillStyle = css(v.accent, 0.95)
-      roundRect(ctx, PAD + s * 0.26, y - s * 0.012, s * 0.28, s * 0.024, s * 0.012)
-      ctx.fill()
-      glow(ctx, PAD + s * 0.72, y, s * 0.12, v.accent, 0.9)
-      return { canvas: c, grip: [PAD + s * 0.16, c.h / 2] }
+      const L = Math.round(s * 0.6)
+      const p = part(s * 0.26, L)
+      const cx = Math.round(p.w / 2)
+      box(p, cx - s * 0.06, PAD + L * 0.3, Math.max(2, s * 0.12), Math.max(3, L * 0.5), metal)
+      shaft(p, cx, PAD + L * 0.34, cx, PAD, Math.max(2, s * 0.055), metal)
+      // Emitter and charge strip.
+      p.fill(cx - s * 0.03, PAD, Math.max(1, s * 0.06), Math.max(1, s * 0.04), accent[4])
+      p.fill(cx - s * 0.05, PAD + L * 0.44, Math.max(1, s * 0.1), 1, accent[4])
+      return { canvas: finish(p, v.metal), grip: [cx, PAD + L * 0.66] }
     }
     case 'plasma': {
-      const c = newPart(s * 0.78, s * 0.34)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.055, s * 0.34, s * 0.11, s * 0.04, 0x3c4478, { outline: 0x171d3c })
-      ellipse(ctx, PAD + s * 0.42, y, s * 0.13, s * 0.11, 0x5a68b0, { outline: 0x171d3c, outlineWidth: 1.6 })
-      plate(ctx, PAD + s * 0.5, y - s * 0.045, s * 0.28, s * 0.09, s * 0.03, 0x8b9ade, { outline: 0x171d3c })
-      ctx.fillStyle = css(v.accent, 0.95)
-      ctx.beginPath()
-      ctx.arc(PAD + s * 0.42, y, s * 0.06, 0, Math.PI * 2)
-      ctx.fill()
-      glow(ctx, PAD + s * 0.42, y, s * 0.22, v.accent, 1)
-      glow(ctx, PAD + s * 0.78, y, s * 0.13, v.accent, 0.8)
-      return { canvas: c, grip: [PAD + s * 0.2, c.h / 2] }
+      const L = Math.round(s * 0.62)
+      const p = part(s * 0.34, L)
+      const cx = Math.round(p.w / 2)
+      box(p, cx - s * 0.08, PAD + L * 0.32, Math.max(3, s * 0.16), Math.max(3, L * 0.46), metal)
+      shaft(p, cx, PAD + L * 0.36, cx, PAD + L * 0.08, Math.max(3, s * 0.08), metal)
+      // A glowing containment sphere at the muzzle.
+      orb(p, cx, PAD + L * 0.06, s * 0.08, s * 0.08, accent)
+      p.set(cx, Math.round(PAD + L * 0.06), accent[4])
+      return { canvas: finish(p, v.metal), grip: [cx, PAD + L * 0.68] }
     }
     case 'railgun': {
-      const c = newPart(s * 1.0, s * 0.3)
-      const { ctx } = c
-      const y = c.h / 2
-      plate(ctx, PAD, y - s * 0.05, s * 0.3, s * 0.1, s * 0.03, 0x333c60, { outline: 0x141a30 })
-      plate(ctx, PAD + s * 0.24, y - s * 0.062, s * 0.76, s * 0.028, s * 0.012, 0x9fb0dc, { outline: 0x141a30 })
-      plate(ctx, PAD + s * 0.24, y + s * 0.034, s * 0.76, s * 0.028, s * 0.012, 0x9fb0dc, { outline: 0x141a30 })
-      ctx.fillStyle = css(v.accent, 0.8)
-      roundRect(ctx, PAD + s * 0.3, y - s * 0.016, s * 0.66, s * 0.032, s * 0.016)
-      ctx.fill()
-      glow(ctx, PAD + s * 0.98, y, s * 0.16, v.accent, 0.9)
-      return { canvas: c, grip: [PAD + s * 0.18, c.h / 2] }
+      const L = Math.round(s * 0.95)
+      const p = part(s * 0.3, L)
+      const cx = Math.round(p.w / 2)
+      // Twin rails with the charge running between them.
+      shaft(p, cx - s * 0.045, PAD + L * 0.55, cx - s * 0.045, PAD, Math.max(1, s * 0.035), metal)
+      shaft(p, cx + s * 0.045, PAD + L * 0.55, cx + s * 0.045, PAD, Math.max(1, s * 0.035), metal)
+      p.line(cx, PAD + L * 0.5, cx, PAD + L * 0.06, accent[4])
+      box(p, cx - s * 0.08, PAD + L * 0.5, Math.max(3, s * 0.16), Math.max(3, L * 0.34), metal)
+      shaft(p, cx, PAD + L * 0.78, cx - s * 0.03, PAD + L, Math.max(2, s * 0.06), metal)
+      return { canvas: finish(p, v.metal), grip: [cx, PAD + L * 0.66] }
     }
     default:
       return null
   }
 }
 
+// ─────────────────────────────── Shields & capes ───────────────────────────────
+
 function drawShield(kind: NonNullable<UnitVisual['shield']>, v: UnitVisual, m: RigMetrics): Canvas2D | null {
   if (kind === 'none') return null
   const s = m.height * RES
-  const c = newPart(s * 0.3, s * 0.44)
-  const { ctx } = c
-  const cx = c.w / 2
-  const cy = c.h / 2
+  const wood = ramp(0x8a6237)
+  const metal = ramp(v.metal, { contrast: 1.2 })
+  const accent = ramp(v.accent)
 
-  if (kind === 'wood') {
-    ellipse(ctx, cx, cy, s * 0.13, s * 0.16, 0x7a5a34, { outline: 0x33230f, outlineWidth: 2 })
-    ctx.strokeStyle = css(0x5a4126, 0.8)
-    ctx.lineWidth = 1.4
-    for (let i = -2; i <= 2; i += 1) {
-      ctx.beginPath()
-      ctx.moveTo(cx + i * s * 0.045, cy - s * 0.15)
-      ctx.lineTo(cx + i * s * 0.045, cy + s * 0.15)
-      ctx.stroke()
+  switch (kind) {
+    case 'wood': {
+      const r = s * 0.15
+      const p = part(r * 2.4, r * 2.4)
+      const cx = Math.round(p.w / 2)
+      const cy = Math.round(p.h / 2)
+      orb(p, cx, cy, r, r, wood)
+      // Planking and a metal boss.
+      p.line(cx - r * 0.7, cy - r * 0.5, cx + r * 0.7, cy - r * 0.5, wood[1])
+      p.line(cx - r * 0.7, cy + r * 0.5, cx + r * 0.7, cy + r * 0.5, wood[1])
+      orb(p, cx, cy, r * 0.28, r * 0.28, metal)
+      return finish(p, 0x8a6237)
     }
-    ellipse(ctx, cx, cy, s * 0.035, s * 0.035, 0x9c8f78, { outline: 0x33230f })
-  } else if (kind === 'kite') {
-    polygon(ctx, [
-      [cx - s * 0.11, cy - s * 0.19],
-      [cx + s * 0.11, cy - s * 0.19],
-      [cx + s * 0.11, cy + s * 0.06],
-      [cx, cy + s * 0.21],
-      [cx - s * 0.11, cy + s * 0.06]
-    ], v.cloth, { outline: shade(v.cloth, -0.6), outlineWidth: 2 })
-    ctx.fillStyle = css(v.accent, 0.9)
-    roundRect(ctx, cx - s * 0.022, cy - s * 0.15, s * 0.044, s * 0.28, 1)
-    ctx.fill()
-    roundRect(ctx, cx - s * 0.085, cy - s * 0.09, s * 0.17, s * 0.04, 1)
-    ctx.fill()
-  } else if (kind === 'tower') {
-    plate(ctx, cx - s * 0.12, cy - s * 0.21, s * 0.24, s * 0.42, s * 0.03, v.metal, {
-      outline: shade(v.metal, -0.6),
-      outlineWidth: 2
-    })
-  } else {
-    // Energy barrier.
-    ctx.save()
-    const g = ctx.createLinearGradient(cx - s * 0.14, 0, cx + s * 0.14, 0)
-    g.addColorStop(0, css(v.accent, 0.15))
-    g.addColorStop(0.5, css(v.accent, 0.5))
-    g.addColorStop(1, css(v.accent, 0.15))
-    ctx.fillStyle = g
-    roundRect(ctx, cx - s * 0.13, cy - s * 0.22, s * 0.26, s * 0.44, s * 0.1)
-    ctx.fill()
-    ctx.strokeStyle = css(v.accent, 0.95)
-    ctx.lineWidth = 2
-    ctx.stroke()
-    ctx.restore()
-    glow(ctx, cx, cy, s * 0.26, v.accent, 0.55)
+    case 'kite': {
+      const w = s * 0.22
+      const h = s * 0.34
+      const p = part(w * 1.3, h * 1.2)
+      const cx = Math.round(p.w / 2)
+      const top = PAD
+      p.poly(
+        [
+          [cx - w / 2, top],
+          [cx + w / 2, top],
+          [cx + w / 2, top + h * 0.55],
+          [cx, top + h],
+          [cx - w / 2, top + h * 0.55]
+        ],
+        metal[2]
+      )
+      p.line(cx + w / 2, top, cx + w / 2, top + h * 0.55, metal[3])
+      p.line(cx - w / 2, top, cx - w / 2, top + h * 0.55, metal[1])
+      // A heraldic bar so the shield is not a blank slab.
+      p.fill(cx - w / 2, top + h * 0.28, w, Math.max(1, h * 0.12), accent[2])
+      return finish(p, v.metal)
+    }
+    case 'tower': {
+      const w = s * 0.26
+      const h = s * 0.46
+      const p = part(w * 1.3, h * 1.2)
+      const cx = Math.round(p.w / 2)
+      chamfer(p, cx - w / 2, PAD, w, h, metal)
+      p.fill(cx - w / 2, PAD + h * 0.44, w, Math.max(1, h * 0.1), accent[2])
+      p.line(cx, PAD + 1, cx, PAD + h - 2, metal[3])
+      return finish(p, v.metal)
+    }
+    case 'energy': {
+      const r = s * 0.2
+      const p = part(r * 2.4, r * 2.6)
+      const cx = Math.round(p.w / 2)
+      const cy = Math.round(p.h / 2)
+      // A hexagonal field: bright edge, sparse interior so it reads as see-through.
+      const pts: [number, number][] = []
+      for (let i = 0; i < 6; i += 1) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2
+        pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r * 1.1])
+      }
+      for (let i = 0; i < 6; i += 1) {
+        const [ax, ay] = pts[i]
+        const [bx, by] = pts[(i + 1) % 6]
+        p.line(ax, ay, bx, by, accent[4])
+      }
+      for (let y = -Math.round(r); y <= r; y += 2) {
+        for (let x = -Math.round(r); x <= r; x += 2) {
+          if ((x * x) / (r * r) + (y * y) / (r * r * 1.2) < 0.8) p.blend(cx + x, cy + y, v.accent, 0.4)
+        }
+      }
+      return finish(p, v.accent)
+    }
+    default:
+      return null
   }
-  return c
 }
 
 function drawCape(v: UnitVisual, m: RigMetrics): Canvas2D {
-  const w = m.bodyW * RES * 1.1
-  const h = m.torsoH * RES * 1.5
-  const c = newPart(w * 1.6, h * 1.1)
-  const { ctx } = c
-  const cx = c.w / 2
-  polygon(ctx, [
-    [cx - w * 0.42, PAD],
-    [cx + w * 0.42, PAD],
-    [cx + w * 0.62, PAD + h * 0.96],
-    [cx, PAD + h * 0.82],
-    [cx - w * 0.62, PAD + h * 0.96]
-  ], v.cloth2, { outline: shade(v.cloth2, -0.6), outlineWidth: 1.5 })
-  grain(c, 0.05)
-  return c
+  const w = Math.max(3, m.bodyW * RES * 0.95)
+  const h = Math.max(5, m.torsoH * RES * 1.5)
+  const p = part(w * 1.6, h * 1.15)
+  const cx = Math.round(p.w / 2)
+  const cloth = ramp(v.cloth2, { contrast: 1.1 })
+
+  // Cloth widens as it falls and ends in a torn hem.
+  for (let i = 0; i < h; i += 1) {
+    const t = i / h
+    const rowW = Math.max(2, Math.round(w * (0.62 + t * 0.75)))
+    const x = cx - (rowW >> 1)
+    p.fill(x, PAD + i, rowW, 1, cloth[2])
+    p.set(x, PAD + i, cloth[1])
+    p.set(x + rowW - 1, PAD + i, cloth[3])
+    // A vertical fold, offset as the cloth falls.
+    p.set(Math.round(cx + Math.sin(t * 2.2) * w * 0.28), PAD + i, cloth[1])
+  }
+  const hemW = Math.max(2, Math.round(w * 1.37))
+  for (let i = 0; i < hemW; i += 3) p.set(cx - (hemW >> 1) + i, PAD + Math.round(h), cloth[1])
+
+  return finish(p, v.cloth2)
 }
 
 // ─────────────────────────── Vehicles & machines ───────────────────────────
 
 function drawVehicleBody(v: UnitVisual, m: RigMetrics): Canvas2D {
-  const w = m.height * 1.9 * (v.bulk ?? 1) * RES
-  const h = m.height * 0.72 * RES
-  const c = newPart(w, h * 1.1)
-  const { ctx } = c
-  const left = PAD
-  const top = PAD
+  const w = Math.max(8, m.height * 1.9 * (v.bulk ?? 1) * RES)
+  const h = Math.max(5, m.height * 0.72 * RES)
+  const p = part(w * 1.12, h * 1.5)
+  const cx = Math.round(p.w / 2)
+  const cy = Math.round(p.h / 2)
+  const metal = ramp(v.metal, { contrast: 1.2, hueShift: 0.02 })
+  const wood = ramp(0x7a5433)
+  const accent = ramp(v.accent)
+  const dark = ramp(0x353b46)
 
-  if (v.chassis === 'tracks') {
-    // Hull.
-    polygon(ctx, [
-      [left + w * 0.06, top + h * 0.5],
-      [left + w * 0.2, top + h * 0.24],
-      [left + w * 0.62, top + h * 0.2],
-      [left + w * 0.66, top + h * 0.44],
-      [left + w * 0.96, top + h * 0.5],
-      [left + w * 0.96, top + h * 0.66],
-      [left + w * 0.04, top + h * 0.66]
-    ], v.metal, { outline: shade(v.metal, -0.65), outlineWidth: 2 })
-    // Turret.
-    plate(ctx, left + w * 0.26, top + h * 0.06, w * 0.34, h * 0.24, h * 0.07, shade(v.metal, 0.08), {
-      outline: shade(v.metal, -0.65),
-      outlineWidth: 2
-    })
-    // Hatch + details.
-    ellipse(ctx, left + w * 0.36, top + h * 0.08, w * 0.05, h * 0.04, shade(v.metal, -0.2), { shaded: false })
-    ctx.fillStyle = css(v.accent, 0.8)
-    roundRect(ctx, left + w * 0.3, top + h * 0.5, w * 0.12, h * 0.05, 2)
-    ctx.fill()
-  } else if (v.chassis === 'wheels') {
-    // Timber carriage shared by every wheeled war machine.
-    polygon(ctx, [
-      [left + w * 0.14, top + h * 0.5],
-      [left + w * 0.86, top + h * 0.44],
-      [left + w * 0.88, top + h * 0.6],
-      [left + w * 0.16, top + h * 0.68]
-    ], v.metal, { outline: shade(v.metal, -0.6), outlineWidth: 2 })
+  if (v.machine) {
+    // A timber carriage shared by every wheeled war machine.
+    const bw = Math.round(w * 0.78)
+    const bh = Math.max(3, Math.round(h * 0.3))
+    box(p, cx - bw / 2, cy + h * 0.12, bw, bh, wood)
+    // Diagonal bracing.
+    p.line(cx - bw * 0.4, cy + h * 0.12 + bh, cx + bw * 0.1, cy + h * 0.12, wood[1])
+    p.line(cx + bw * 0.4, cy + h * 0.12 + bh, cx - bw * 0.1, cy + h * 0.12, wood[1])
 
     if (v.machine === 'cannon') {
-      // Trunnion mount plus a long iron barrel.
-      polygon(ctx, [
-        [left + w * 0.2, top + h * 0.46],
-        [left + w * 0.34, top + h * 0.2],
-        [left + w * 0.44, top + h * 0.22],
-        [left + w * 0.32, top + h * 0.5]
-      ], shade(v.metal, -0.25), { outline: shade(v.metal, -0.65), outlineWidth: 1.6 })
-      plate(ctx, left + w * 0.3, top + h * 0.2, w * 0.62, h * 0.13, h * 0.06, 0x4a4a44, {
-        outline: 0x16160f,
-        outlineWidth: 2
-      })
-      plate(ctx, left + w * 0.28, top + h * 0.17, w * 0.14, h * 0.19, h * 0.07, 0x3c3c36, {
-        outline: 0x16160f,
-        outlineWidth: 2
-      })
-      ellipse(ctx, left + w * 0.36, top + h * 0.265, w * 0.05, h * 0.06, 0x5c5c52, {
-        outline: 0x16160f,
-        outlineWidth: 1.6
-      })
+      // A tapering barrel with a reinforcing band and a muzzle ring.
+      const bl = Math.round(w * 0.72)
+      const by = Math.round(cy - h * 0.12)
+      for (let i = 0; i < bl; i += 1) {
+        const t = i / bl
+        const th = Math.max(2, Math.round(h * (0.3 - t * 0.1)))
+        p.fill(cx - bl * 0.38 + i, by - (th >> 1), 1, th, metal[2])
+        p.set(cx - bl * 0.38 + i, by - (th >> 1), metal[3])
+        p.set(cx - bl * 0.38 + i, by + (th >> 1) - 1, metal[1])
+      }
+      p.fill(cx - bl * 0.05, by - h * 0.18, 1, Math.max(3, h * 0.36), metal[1])
+      p.fill(cx + bl * 0.6, by - h * 0.13, 1, Math.max(3, h * 0.26), metal[4])
     } else if (v.machine === 'mortar') {
-      // Short tube angled steeply upward on a base plate.
-      polygon(ctx, [
-        [left + w * 0.3, top + h * 0.5],
-        [left + w * 0.44, top + h * 0.08],
-        [left + w * 0.58, top + h * 0.12],
-        [left + w * 0.46, top + h * 0.52]
-      ], 0x4e5346, { outline: 0x191c15, outlineWidth: 2 })
-      plate(ctx, left + w * 0.24, top + h * 0.5, w * 0.34, h * 0.1, 3, 0x3c4038, {
-        outline: 0x191c15,
-        outlineWidth: 1.8
-      })
-      polygon(ctx, [
-        [left + w * 0.56, top + h * 0.52],
-        [left + w * 0.78, top + h * 0.34],
-        [left + w * 0.82, top + h * 0.42],
-        [left + w * 0.6, top + h * 0.6]
-      ], shade(v.metal, -0.3), { outline: 0x191c15, outlineWidth: 1.6 })
+      // A short, fat tube angled up.
+      const bl = Math.round(w * 0.4)
+      for (let i = 0; i < bl; i += 1) {
+        const t = i / bl
+        const th = Math.max(3, Math.round(h * 0.42))
+        const x = Math.round(cx - bl * 0.2 + i * 0.85)
+        const y = Math.round(cy - h * 0.08 - i * 0.55)
+        p.fill(x, y - (th >> 1), 1, th, t > 0.9 ? metal[4] : metal[2])
+        p.set(x, y - (th >> 1), metal[3])
+      }
+      box(p, cx - w * 0.3, cy - h * 0.1, Math.max(3, w * 0.16), Math.max(3, h * 0.3), metal)
     } else {
-      // Catapult: A-frame, torsion bundle and a loaded throwing arm.
-      polygon(ctx, [
-        [left + w * 0.26, top + h * 0.62],
-        [left + w * 0.4, top + h * 0.16],
-        [left + w * 0.48, top + h * 0.18],
-        [left + w * 0.36, top + h * 0.64]
-      ], shade(v.metal, -0.15), { outline: shade(v.metal, -0.65), outlineWidth: 1.8 })
-      polygon(ctx, [
-        [left + w * 0.5, top + h * 0.62],
-        [left + w * 0.42, top + h * 0.18],
-        [left + w * 0.5, top + h * 0.16],
-        [left + w * 0.6, top + h * 0.6]
-      ], shade(v.metal, -0.28), { outline: shade(v.metal, -0.65), outlineWidth: 1.8 })
-      ellipse(ctx, left + w * 0.44, top + h * 0.19, w * 0.05, h * 0.06, 0x6b5a3f, {
-        outline: 0x2c2118,
-        outlineWidth: 1.6
-      })
-      // Throwing arm reaching back over the frame, with a stone in the sling.
-      polygon(ctx, [
-        [left + w * 0.44, top + h * 0.22],
-        [left + w * 0.1, top + h * 0.02],
-        [left + w * 0.14, top + h * 0.12],
-        [left + w * 0.46, top + h * 0.3]
-      ], shade(0x6b4a2b, 0.16), { outline: 0x2c2118, outlineWidth: 1.8 })
-      ellipse(ctx, left + w * 0.11, top + h * 0.09, w * 0.06, h * 0.09, 0x8a8378, {
-        outline: 0x3d382f,
-        outlineWidth: 1.6
-      })
-      // Winch rope.
-      ctx.strokeStyle = css(0xd8cbae, 0.75)
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(left + w * 0.13, top + h * 0.12)
-      ctx.lineTo(left + w * 0.7, top + h * 0.5)
-      ctx.stroke()
+      // Catapult: a throwing arm, a bucket and a taut rope.
+      const armX = Math.round(cx - w * 0.1)
+      p.thickLine(armX, cy + h * 0.12, armX - w * 0.3, cy - h * 0.55, Math.max(2, h * 0.1), wood[2])
+      p.line(armX - 1, cy + h * 0.1, armX - w * 0.3 - 1, cy - h * 0.55, wood[3])
+      orb(p, cx - w * 0.34, cy - h * 0.62, w * 0.08, h * 0.16, wood)
+      p.line(cx + w * 0.3, cy + h * 0.12, cx - w * 0.28, cy - h * 0.5, dark[3])
+      // Counterweight box at the back.
+      box(p, cx + w * 0.16, cy - h * 0.16, Math.max(3, w * 0.16), Math.max(3, h * 0.3), wood)
     }
-  } else if (v.chassis === 'legs') {
-    plate(ctx, left + w * 0.24, top + h * 0.12, w * 0.5, h * 0.4, h * 0.12, v.metal, {
-      outline: shade(v.metal, -0.65),
-      outlineWidth: 2
-    })
-    ctx.fillStyle = css(v.accent, 0.85)
-    roundRect(ctx, left + w * 0.34, top + h * 0.22, w * 0.18, h * 0.08, 3)
-    ctx.fill()
+    return finish(p, v.metal)
   }
 
-  grain(c, 0.05)
-  return c
+  // A powered hull: sloped glacis at the front, engine deck at the back.
+  const hullH = Math.round(h * 0.62)
+  const hullY = Math.round(cy - hullH * 0.35)
+  p.poly(
+    [
+      [cx - w / 2, hullY + hullH],
+      [cx - w / 2, hullY + hullH * 0.35],
+      [cx - w * 0.28, hullY],
+      [cx + w * 0.42, hullY],
+      [cx + w / 2, hullY + hullH * 0.45],
+      [cx + w / 2, hullY + hullH]
+    ],
+    metal[2]
+  )
+  p.line(cx - w * 0.28, hullY, cx + w * 0.42, hullY, metal[3])
+  p.line(cx - w / 2, hullY + hullH * 0.35, cx - w * 0.28, hullY, metal[3])
+  p.fill(cx - w / 2, hullY + hullH - 1, w, 1, metal[1])
+
+  if (v.chassis === 'hover') {
+    // A glowing skirt instead of a running gear.
+    p.fill(cx - w * 0.44, hullY + hullH, Math.round(w * 0.88), 1, accent[4])
+    for (let x = 0; x < w * 0.88; x += 3) p.set(Math.round(cx - w * 0.44 + x), hullY + hullH + 1, accent[2])
+  }
+
+  // Turret and gun for anything that is not a hauler.
+  const tw = Math.round(w * 0.34)
+  const th = Math.max(3, Math.round(h * 0.3))
+  chamfer(p, cx - tw * 0.35, hullY - th, tw, th, metal)
+  const barrelY = Math.round(hullY - th * 0.45)
+  p.fill(cx + tw * 0.6, barrelY, Math.round(w * 0.32), Math.max(2, Math.round(h * 0.1)), metal[2])
+  p.fill(cx + tw * 0.6, barrelY, Math.round(w * 0.32), 1, metal[3])
+  p.fill(cx + tw * 0.6 + w * 0.3, barrelY - 1, 2, Math.max(3, h * 0.14), metal[1])
+
+  // Panel lines and a faction stripe keep a large flat hull from going dead.
+  p.line(cx - w * 0.1, hullY + 2, cx - w * 0.1, hullY + hullH - 2, metal[1])
+  p.fill(cx + w * 0.16, hullY + hullH * 0.5, Math.max(2, w * 0.1), 1, accent[3])
+
+  return finish(p, v.metal)
 }
 
 function drawWheel(v: UnitVisual, m: RigMetrics, kind: 'wheel' | 'road'): Canvas2D {
-  const r = m.height * (kind === 'wheel' ? 0.28 : 0.14) * RES
-  const c = newPart(r * 2.2, r * 2.2)
-  const { ctx } = c
-  const cx = c.w / 2
-  const cy = c.h / 2
+  const r = Math.max(2, m.height * (kind === 'wheel' ? 0.28 : 0.14) * RES)
+  const p = part(r * 2.4, r * 2.4)
+  const cx = Math.round(p.w / 2)
+  const cy = Math.round(p.h / 2)
+  const wood = ramp(0x7a5433)
+  const rubber = ramp(0x2c3038)
+  const metal = ramp(v.metal, { contrast: 1.2 })
+
   if (kind === 'wheel') {
-    ellipse(ctx, cx, cy, r, r, 0x6b4a2b, { outline: 0x2c2118, outlineWidth: 2.4 })
-    ellipse(ctx, cx, cy, r * 0.74, r * 0.74, 0x8a6b3f, { outline: 0x2c2118, outlineWidth: 1.6 })
-    ctx.strokeStyle = css(0x4a3220)
-    ctx.lineWidth = Math.max(2, r * 0.12)
+    // Spoked cartwheel: rim, hub, and spokes that survive at this size.
+    p.ellipse(cx, cy, r, r, wood[2])
+    p.ellipseFrame(cx, cy, r, r, wood[3])
+    p.eraseEllipse(cx, cy, r * 0.72, r * 0.72)
     for (let i = 0; i < 6; i += 1) {
       const a = (i / 6) * Math.PI * 2
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.lineTo(cx + Math.cos(a) * r * 0.72, cy + Math.sin(a) * r * 0.72)
-      ctx.stroke()
+      p.line(cx + Math.cos(a) * r * 0.3, cy + Math.sin(a) * r * 0.3, cx + Math.cos(a) * r * 0.82, cy + Math.sin(a) * r * 0.82, wood[2])
     }
-    ellipse(ctx, cx, cy, r * 0.16, r * 0.16, 0x3a2a1a, { shaded: false })
+    orb(p, cx, cy, r * 0.3, r * 0.3, metal)
   } else {
-    ellipse(ctx, cx, cy, r, r, shade(v.metal, -0.3), { outline: 0x14170f, outlineWidth: 2 })
-    ellipse(ctx, cx, cy, r * 0.5, r * 0.5, shade(v.metal, 0.1), { outline: 0x14170f, outlineWidth: 1.4 })
+    orb(p, cx, cy, r, r, rubber)
+    p.ellipse(cx, cy, r * 0.45, r * 0.45, metal[2])
   }
-  return c
+  return finish(p, kind === 'wheel' ? 0x7a5433 : 0x2c3038)
 }
 
 function drawTrackBelt(v: UnitVisual, m: RigMetrics): Canvas2D {
-  const w = m.height * 1.7 * (v.bulk ?? 1) * RES
-  const h = m.height * 0.3 * RES
-  const c = newPart(w, h)
-  const { ctx } = c
-  plate(ctx, PAD, PAD, w, h, h * 0.45, shade(v.metal, -0.45), {
-    outline: 0x101208,
-    outlineWidth: 2
-  })
-  ctx.fillStyle = css(0x14170f, 0.8)
-  const links = 14
-  for (let i = 0; i < links; i += 1) {
-    roundRect(ctx, PAD + (i + 0.2) * (w / links), PAD + h * 0.12, (w / links) * 0.55, h * 0.76, 2)
-    ctx.fill()
+  const w = Math.max(8, m.height * 1.7 * (v.bulk ?? 1) * RES)
+  const h = Math.max(3, m.height * 0.3 * RES)
+  const p = part(w * 1.1, h * 1.6)
+  const cx = Math.round(p.w / 2)
+  const cy = Math.round(p.h / 2)
+  const rubber = ramp(0x2c3038)
+
+  // A rounded belt with visible links.
+  box(p, cx - w / 2, cy - h / 2, w, h, rubber)
+  p.set(Math.round(cx - w / 2), Math.round(cy - h / 2), 0, 0)
+  p.set(Math.round(cx + w / 2 - 1), Math.round(cy - h / 2), 0, 0)
+  for (let x = 1; x < w - 1; x += 3) {
+    p.fill(cx - w / 2 + x, cy - h / 2 + 1, 1, Math.max(1, h - 2), rubber[1])
   }
-  return c
+  return finish(p, 0x2c3038)
 }
 
 function drawMechLeg(v: UnitVisual, m: RigMetrics): Canvas2D {
-  // Matches the humanoid hip height so the foot lands exactly on the ground.
-  const L = m.legLen * 1.06 * RES
-  // Bulk only partly widens the legs, or a heavy mech reads as a single slab.
-  const T = m.height * 0.105 * (1 + ((v.bulk ?? 1) - 1) * 0.45) * RES
-  const c = newPart(T * 2.6, L * 1.2)
-  const { ctx } = c
-  const cx = c.w / 2
-  plate(ctx, cx - T * 0.5, PAD, T, L * 0.52, T * 0.3, v.metal, {
-    outline: shade(v.metal, -0.65),
-    outlineWidth: 1.8
-  })
-  plate(ctx, cx - T * 0.38, PAD + L * 0.46, T * 0.76, L * 0.4, T * 0.24, shade(v.metal, -0.15), {
-    outline: shade(v.metal, -0.65),
-    outlineWidth: 1.8
-  })
-  polygon(ctx, [
-    [cx - T * 0.7, PAD + L * 0.84],
-    [cx + T * 0.9, PAD + L * 0.84],
-    [cx + T * 1.05, PAD + L * 1.02],
-    [cx - T * 0.85, PAD + L * 1.02]
-  ], shade(v.metal, -0.3), { outline: shade(v.metal, -0.7), outlineWidth: 1.8 })
-  ellipse(ctx, cx, PAD + L * 0.46, T * 0.3, T * 0.3, v.accent, { outline: shade(v.metal, -0.6) })
-  grain(c, 0.04)
-  return c
+  const L = Math.max(5, m.legLen * 1.06 * RES)
+  const p = part(L * 0.7, L * 1.2)
+  const cx = Math.round(p.w / 2)
+  const metal = ramp(v.metal, { contrast: 1.2 })
+  const accent = ramp(v.accent)
+
+  // A digitigrade leg: heavy thigh forward, shin raked back, foot forward
+  // again. The mass has to sit high or the machine looks like it is on stilts.
+  const kneeY = PAD + L * 0.45
+  const ankleY = PAD + L * 0.8
+  shaft(p, cx, PAD, cx + L * 0.18, kneeY, Math.max(4, L * 0.3), metal)
+  // Hip actuator.
+  box(p, cx - L * 0.16, PAD, Math.max(3, L * 0.32), Math.max(3, L * 0.16), metal)
+  shaft(p, cx + L * 0.18, kneeY, cx - L * 0.12, ankleY, Math.max(3, L * 0.2), metal)
+  // Knee joint, and a piston running down the front of the shin.
+  orb(p, cx + L * 0.18, kneeY, L * 0.16, L * 0.16, metal)
+  p.line(cx + L * 0.3, kneeY + L * 0.04, cx + L * 0.02, ankleY - L * 0.06, metal[1])
+  p.set(Math.round(cx + L * 0.18), Math.round(kneeY), accent[4])
+  // A broad foot with a raised toe, so it plants instead of hovering.
+  box(p, cx - L * 0.26, ankleY, Math.max(4, L * 0.54), Math.max(3, L * 0.16), metal)
+  p.fill(cx + L * 0.24, ankleY - L * 0.06, Math.max(2, L * 0.1), Math.max(2, L * 0.1), metal[3])
+  return finish(p, v.metal)
 }
 
 function drawAircraftBody(v: UnitVisual, m: RigMetrics): Canvas2D {
-  const w = m.height * 2.2 * (v.bulk ?? 1) * RES
-  const h = m.height * 0.8 * RES
-  const c = newPart(w, h)
-  const { ctx } = c
-  const left = PAD
-  const top = PAD
+  const w = Math.max(10, m.height * 1.8 * RES)
+  const h = Math.max(4, m.height * 0.5 * RES)
+  const p = part(w * 1.15, h * 2)
+  const cx = Math.round(p.w / 2)
+  const cy = Math.round(p.h / 2)
+  const metal = ramp(v.metal, { contrast: 1.2, hueShift: 0.02 })
+  const accent = ramp(v.accent)
+  const glass = ramp(0x69b6d8)
 
-  if (v.chassis === 'rotor') {
-    // Fuselage.
-    polygon(ctx, [
-      [left + w * 0.08, top + h * 0.5],
-      [left + w * 0.22, top + h * 0.3],
-      [left + w * 0.56, top + h * 0.28],
-      [left + w * 0.72, top + h * 0.4],
-      [left + w * 0.98, top + h * 0.46],
-      [left + w * 0.98, top + h * 0.54],
-      [left + w * 0.66, top + h * 0.62],
-      [left + w * 0.2, top + h * 0.66]
-    ], v.metal, { outline: shade(v.metal, -0.65), outlineWidth: 2 })
-    // Canopy.
-    polygon(ctx, [
-      [left + w * 0.1, top + h * 0.48],
-      [left + w * 0.2, top + h * 0.33],
-      [left + w * 0.34, top + h * 0.33],
-      [left + w * 0.34, top + h * 0.55]
-    ], v.accent, { outline: shade(v.metal, -0.6), outlineWidth: 1.6 })
-    // Tail fin.
-    polygon(ctx, [
-      [left + w * 0.9, top + h * 0.46],
-      [left + w * 0.99, top + h * 0.12],
-      [left + w * 1.0, top + h * 0.44]
-    ], shade(v.metal, -0.15), { outline: shade(v.metal, -0.65), outlineWidth: 1.6 })
-    // Weapon pylons.
-    plate(ctx, left + w * 0.3, top + h * 0.64, w * 0.26, h * 0.08, 3, shade(v.metal, -0.3), {
-      outline: shade(v.metal, -0.7)
-    })
-    // Rotor mast.
-    plate(ctx, left + w * 0.4, top + h * 0.18, w * 0.04, h * 0.14, 2, shade(v.metal, -0.2), {})
+  // Fuselage: a flat-bottomed hull with a chined spine and a blunt nose, so it
+  // reads as a machine rather than as a fish. The bottom line stays straight —
+  // that single horizontal is what makes an aircraft look engineered.
+  const noseX = Math.round(cx + w * 0.5)
+  const tailX = Math.round(cx - w * 0.5)
+  const belly = Math.round(cy + h * 0.3)
+  p.poly(
+    [
+      [tailX, belly - h * 0.12],
+      [tailX + w * 0.1, cy - h * 0.42],
+      [cx + w * 0.16, cy - h * 0.5],
+      [noseX - w * 0.04, cy - h * 0.22],
+      [noseX, cy + h * 0.06],
+      [noseX - w * 0.1, belly],
+      [tailX + w * 0.06, belly]
+    ],
+    metal[2]
+  )
+  // Lit spine and shadowed belly.
+  p.line(tailX + w * 0.1, cy - h * 0.42, cx + w * 0.16, cy - h * 0.5, metal[3])
+  p.line(cx + w * 0.16, cy - h * 0.5, noseX - w * 0.04, cy - h * 0.22, metal[4])
+  p.fill(tailX + w * 0.06, belly - 1, Math.round(w * 0.84), 1, metal[1])
+  // A panel seam breaks up the flank.
+  p.line(tailX + w * 0.12, cy + h * 0.02, noseX - w * 0.12, cy + h * 0.02, metal[1])
+
+  // Canopy, set into the spine rather than floating on it.
+  p.poly(
+    [
+      [cx + w * 0.12, cy - h * 0.48],
+      [cx + w * 0.34, cy - h * 0.42],
+      [cx + w * 0.34, cy - h * 0.16],
+      [cx + w * 0.1, cy - h * 0.2]
+    ],
+    glass[2]
+  )
+  p.line(cx + w * 0.12, cy - h * 0.48, cx + w * 0.34, cy - h * 0.42, glass[4])
+  p.set(Math.round(cx + w * 0.3), Math.round(cy - h * 0.34), glass[4])
+
+  // Tail fin and horizontal stabiliser.
+  p.poly(
+    [
+      [tailX + w * 0.04, cy - h * 0.35],
+      [tailX + w * 0.02, cy - h * 1.05],
+      [tailX + w * 0.16, cy - h * 1.0],
+      [tailX + w * 0.2, cy - h * 0.32]
+    ],
+    metal[2]
+  )
+  p.line(tailX + w * 0.02, cy - h * 1.05, tailX + w * 0.16, cy - h * 1.0, metal[3])
+  p.fill(tailX, cy - h * 0.62, Math.max(3, w * 0.14), Math.max(1, h * 0.12), metal[1])
+
+  if (v.chassis !== 'rotor') {
+    // A swept wing seen edge-on, with a pylon and a stores pod beneath it.
+    p.poly(
+      [
+        [cx - w * 0.24, cy + h * 0.16],
+        [cx + w * 0.14, cy + h * 0.16],
+        [cx + w * 0.02, cy + h * 0.34],
+        [cx - w * 0.34, cy + h * 0.34]
+      ],
+      metal[1]
+    )
+    p.fill(cx - w * 0.12, belly, Math.max(2, w * 0.06), Math.max(2, h * 0.16), metal[1])
+    p.fill(cx - w * 0.2, belly + h * 0.16, Math.max(3, w * 0.2), Math.max(2, h * 0.14), accent[2])
+    p.fill(cx - w * 0.2, belly + h * 0.16, Math.max(3, w * 0.2), 1, accent[3])
   } else {
-    // Quad drone frame.
-    plate(ctx, left + w * 0.34, top + h * 0.4, w * 0.32, h * 0.2, h * 0.09, v.metal, {
-      outline: shade(v.metal, -0.65),
-      outlineWidth: 2
-    })
-    ctx.strokeStyle = css(shade(v.metal, -0.3))
-    ctx.lineWidth = Math.max(2, h * 0.05)
-    ctx.beginPath()
-    ctx.moveTo(left + w * 0.36, top + h * 0.46)
-    ctx.lineTo(left + w * 0.14, top + h * 0.3)
-    ctx.moveTo(left + w * 0.64, top + h * 0.46)
-    ctx.lineTo(left + w * 0.86, top + h * 0.3)
-    ctx.moveTo(left + w * 0.36, top + h * 0.54)
-    ctx.lineTo(left + w * 0.16, top + h * 0.66)
-    ctx.moveTo(left + w * 0.64, top + h * 0.54)
-    ctx.lineTo(left + w * 0.84, top + h * 0.66)
-    ctx.stroke()
-    ellipse(ctx, left + w * 0.5, top + h * 0.5, w * 0.05, h * 0.07, v.accent, { outline: shade(v.metal, -0.6) })
-    glow(ctx, left + w * 0.5, top + h * 0.5, w * 0.12, v.accent, 0.7)
+    // A rotor mast for the helicopter, so the blade has something to sit on.
+    p.fill(cx - w * 0.02, cy - h * 0.72, Math.max(2, w * 0.05), Math.max(2, h * 0.26), metal[1])
+    // Skids.
+    p.fill(cx - w * 0.26, belly + h * 0.22, Math.round(w * 0.5), 1, metal[1])
+    p.fill(cx - w * 0.18, belly, 1, Math.max(2, h * 0.22), metal[1])
+    p.fill(cx + w * 0.16, belly, 1, Math.max(2, h * 0.22), metal[1])
   }
-  grain(c, 0.045)
-  return c
+
+  // Engine exhaust glow at the tail, and a faction flash on the nose.
+  p.fill(tailX + w * 0.02, cy - h * 0.16, Math.max(2, w * 0.05), Math.max(2, h * 0.2), accent[4])
+  p.fill(noseX - w * 0.16, cy - h * 0.1, Math.max(2, w * 0.08), 1, accent[3])
+  return finish(p, v.metal)
 }
 
 function drawRotor(v: UnitVisual, m: RigMetrics, span: number): Canvas2D {
-  const w = m.height * span * RES
-  const h = m.height * 0.1 * RES
-  const c = newPart(w, h)
-  const { ctx } = c
-  plate(ctx, PAD, PAD + h * 0.34, w, h * 0.32, h * 0.16, shade(v.metal, -0.35), {
-    outline: 0x0d1018,
-    outlineWidth: 1.4
-  })
-  ctx.fillStyle = css(shade(v.metal, 0.3), 0.5)
-  roundRect(ctx, PAD + w * 0.44, PAD + h * 0.2, w * 0.12, h * 0.6, h * 0.2)
-  ctx.fill()
-  return c
+  const L = Math.max(6, m.height * span * RES)
+  const p = part(L, Math.max(3, L * 0.1))
+  const cy = Math.round(p.h / 2)
+  const dark = ramp(0x30353f)
+  p.fill(PAD, cy, Math.round(L), 1, dark[2])
+  p.fill(PAD, cy - 1, Math.round(L), 1, dark[3])
+  // A hub so the blade does not read as a floating line.
+  orb(p, Math.round(p.w / 2), cy, Math.max(1.5, L * 0.04), Math.max(1.5, L * 0.04), ramp(v.metal))
+  return finish(p, 0x30353f)
 }
 
 function drawMount(v: UnitVisual, m: RigMetrics): { body: Canvas2D; leg: Canvas2D } {
-  const w = m.height * 1.15 * RES
-  const h = m.height * 0.52 * RES
-  const c = newPart(w, h)
-  const { ctx } = c
-  const left = PAD
-  const top = PAD
-  const isBeast = v.chassis === 'beast'
-  const hide = isBeast ? mixHide(v) : 0x6b4a2b
+  // Roughly 1.7 long to 1 deep. Any longer and the animal reads as a dachshund.
+  const bodyW = Math.max(8, m.height * 0.78 * RES)
+  const bodyH = Math.max(5, m.height * 0.42 * RES)
+  const p = part(bodyW * 1.25, bodyH * 2.4)
+  const cx = Math.round(p.w / 2)
+  const cy = Math.round(p.h * 0.58)
+  const hide = ramp(0x6a4a32, { contrast: 1.05 })
+  const mane = ramp(0x3b2a1c)
+  const cloth = ramp(v.cloth2)
 
-  // Body mass.
-  ellipse(ctx, left + w * 0.48, top + h * 0.5, w * 0.34, h * 0.28, hide, {
-    outline: shade(hide, -0.6),
-    outlineWidth: 2
-  })
-  // Neck + head reaching forward-right.
-  polygon(ctx, [
-    [left + w * 0.7, top + h * 0.42],
-    [left + w * 0.9, top + h * 0.18],
-    [left + w * 1.0, top + h * 0.24],
-    [left + w * 0.84, top + h * 0.52]
-  ], hide, { outline: shade(hide, -0.6), outlineWidth: 1.8 })
-  ellipse(ctx, left + w * 0.95, top + h * 0.22, w * 0.09, h * 0.1, shade(hide, 0.08), {
-    outline: shade(hide, -0.6),
-    outlineWidth: 1.6
-  })
-  ctx.fillStyle = css(0x120d08)
-  ctx.beginPath()
-  ctx.arc(left + w * 0.99, top + h * 0.2, w * 0.014, 0, Math.PI * 2)
-  ctx.fill()
-  // Tail.
-  ctx.strokeStyle = css(shade(hide, -0.15))
-  ctx.lineWidth = Math.max(3, h * 0.1)
-  ctx.lineCap = 'round'
-  ctx.beginPath()
-  ctx.moveTo(left + w * 0.16, top + h * 0.44)
-  ctx.quadraticCurveTo(left + w * 0.02, top + h * (isBeast ? 0.3 : 0.62), left + w * 0.0, top + h * (isBeast ? 0.5 : 0.78))
-  ctx.stroke()
-
-  if (isBeast) {
-    // Dorsal crest.
-    ctx.fillStyle = css(v.accent)
-    for (let i = 0; i < 5; i += 1) {
-      const x = left + w * (0.34 + i * 0.09)
-      polygon(ctx, [
-        [x, top + h * 0.26],
-        [x + w * 0.03, top + h * 0.12],
-        [x + w * 0.06, top + h * 0.26]
-      ], v.accent, { gradient: false })
-    }
-  } else {
-    // Barding.
-    ctx.fillStyle = css(v.cloth, 0.9)
-    roundRect(ctx, left + w * 0.3, top + h * 0.46, w * 0.32, h * 0.3, 3)
-    ctx.fill()
+  // Barrel of the body: deep at the chest, tucked at the flank, with the
+  // withers rising toward the neck. An even ellipse reads as a sausage.
+  for (let i = 0; i < bodyW; i += 1) {
+    const t = i / bodyW
+    const depth = 0.62 + Math.sin(Math.min(1, t * 1.12) * Math.PI) * 0.3 + t * 0.34
+    const th = Math.max(3, Math.round(bodyH * depth))
+    const lift = Math.round(bodyH * 0.14 * t)
+    const x = Math.round(cx - bodyW / 2 + i)
+    p.fill(x, cy - (th >> 1) - lift, 1, th, hide[2])
+    p.set(x, cy - (th >> 1) - lift, hide[3])
+    p.set(x, cy + th - (th >> 1) - 1 - lift, hide[1])
   }
+  // Neck rising forward, then a long wedge head with a muzzle and ears.
+  const neckX = Math.round(cx + bodyW * 0.32)
+  const headY = Math.round(cy - bodyH * 1.05)
+  shaft(p, neckX, cy - bodyH * 0.3, neckX + bodyW * 0.14, headY + bodyH * 0.1, Math.max(3, bodyH * 0.46), hide)
+  const muzzleX = neckX + bodyW * 0.2
+  p.poly(
+    [
+      [muzzleX - bodyW * 0.06, headY + bodyH * 0.22],
+      [muzzleX + bodyW * 0.13, headY - bodyH * 0.02],
+      [muzzleX + bodyW * 0.13, headY - bodyH * 0.24],
+      [muzzleX - bodyW * 0.05, headY - bodyH * 0.3]
+    ],
+    hide[2]
+  )
+  p.line(muzzleX - bodyW * 0.05, headY - bodyH * 0.3, muzzleX + bodyW * 0.13, headY - bodyH * 0.24, hide[3])
+  p.set(Math.round(muzzleX + bodyW * 0.11), Math.round(headY - bodyH * 0.06), mane[0])
+  p.set(Math.round(muzzleX + bodyW * 0.03), Math.round(headY - bodyH * 0.16), mane[0])
+  // Ears.
+  p.line(muzzleX - bodyW * 0.04, headY - bodyH * 0.3, muzzleX - bodyW * 0.05, headY - bodyH * 0.5, hide[2])
+  p.line(muzzleX + bodyW * 0.01, headY - bodyH * 0.3, muzzleX + bodyW * 0.02, headY - bodyH * 0.48, hide[3])
+  // Mane down the neck, and a tail that falls and flicks.
+  for (let i = 0; i < 6; i += 1) {
+    const t = i / 5
+    p.line(
+      neckX - bodyW * 0.04 + t * bodyW * 0.16,
+      cy - bodyH * 0.42 - t * bodyH * 0.5,
+      neckX - bodyW * 0.12 + t * bodyW * 0.16,
+      cy - bodyH * 0.2 - t * bodyH * 0.42,
+      i % 2 ? mane[1] : mane[2]
+    )
+  }
+  for (let i = 0; i < 4; i += 1) {
+    p.line(cx - bodyW * 0.5, cy - bodyH * 0.15 + i, cx - bodyW * 0.7, cy + bodyH * 0.45 + i * 1.2, i % 2 ? mane[1] : mane[2])
+  }
+  // Saddle blanket in the rider's colours.
+  p.fill(cx - bodyW * 0.14, cy - bodyH * 0.66, Math.round(bodyW * 0.32), Math.max(2, bodyH * 0.24), cloth[2])
+  p.fill(cx - bodyW * 0.14, cy - bodyH * 0.66, Math.round(bodyW * 0.32), 1, cloth[3])
 
-  grain(c, 0.05)
+  const legLen = Math.max(4, m.height * 0.3 * RES)
+  const legPix = part(Math.max(3, legLen * 0.4), legLen * 1.15)
+  const lcx = Math.round(legPix.w / 2)
+  shaft(legPix, lcx, PAD, lcx - legLen * 0.1, PAD + legLen * 0.62, Math.max(2, legLen * 0.22), hide)
+  shaft(legPix, lcx - legLen * 0.1, PAD + legLen * 0.62, lcx - legLen * 0.04, PAD + legLen, Math.max(1, legLen * 0.14), hide)
+  legPix.fill(lcx - legLen * 0.12, PAD + legLen, Math.max(2, legLen * 0.2), 1, mane[1])
 
-  const legLen = m.height * 0.3
-  const leg = drawLimb(legLen, m.height * 0.075, shade(hide, -0.08), shade(hide, -0.35), null, true)
-  return { body: c, leg }
-}
-
-function mixHide(v: UnitVisual): number {
-  return shade(v.accent, -0.35)
+  return { body: finish(p, 0x6a4a32), leg: finish(legPix, 0x6a4a32) }
 }
 
 // ─────────────────────────────── Assembly ───────────────────────────────
@@ -1275,7 +1191,7 @@ export function buildUnitArt(v: UnitVisual, height: number): UnitPartSet {
   const handColor = v.torso === 'exo' || v.torso === 'plate' ? v.metal : v.skin
   const sleeve = v.torso === 'bare' ? v.skin : v.cloth
   const legColor = v.torso === 'bare' || v.torso === 'fur' ? v.skin : v.cloth2
-  const bootColor = v.torso === 'exo' || v.torso === 'plate' ? v.metal : shade(v.cloth2, -0.3)
+  const bootColor = v.torso === 'exo' || v.torso === 'plate' ? v.metal : tone(v.cloth2, -0.3)
   const accentStripe = v.torso === 'exo' ? v.accent : null
 
   if (v.kind === 'vehicle') {
@@ -1307,11 +1223,11 @@ export function buildUnitArt(v: UnitVisual, height: number): UnitPartSet {
   // Humanoid and rider share the upper-body rig.
   put('torso', drawTorso(v, m), 0.5, 1)
   put('head', drawHead(v, m), 0.5, 0.82)
-  put('armB', drawLimb(m.armLen, limbThickness, shade(sleeve, -0.28), shade(handColor, -0.2), accentStripe, false), 0.5, 0.09)
+  put('armB', drawLimb(m.armLen, limbThickness, tone(sleeve, -0.28), tone(handColor, -0.2), accentStripe, false), 0.5, 0.09)
   put('armF', drawLimb(m.armLen, limbThickness, sleeve, handColor, accentStripe, false), 0.5, 0.09)
 
   if (v.kind === 'humanoid') {
-    put('legB', drawLimb(m.legLen, limbThickness * 1.1, shade(legColor, -0.3), shade(bootColor, -0.25), null, true), 0.5, 0.07)
+    put('legB', drawLimb(m.legLen, limbThickness * 1.1, tone(legColor, -0.3), tone(bootColor, -0.25), null, true), 0.5, 0.07)
     put('legF', drawLimb(m.legLen, limbThickness * 1.1, legColor, bootColor, null, true), 0.5, 0.07)
   } else {
     const mount = drawMount(v, m)
@@ -1326,9 +1242,18 @@ export function buildUnitArt(v: UnitVisual, height: number): UnitPartSet {
   return { parts, metrics: m, origins }
 }
 
-/** A ground shadow blob shared by all units, scaled per unit at runtime. */
+/**
+ * The ground shadow every unit stands on, scaled per unit at runtime. Banded
+ * rather than blurred, so it belongs to the same world as the sprites.
+ */
 export function buildShadowCanvas(): Canvas2D {
-  const c = makeCanvas(96, 32)
-  contactShadow(c.ctx, 48, 16, 46, 15)
-  return c
+  const w = 48
+  const h = 16
+  const p = new Pix(w, h)
+  const cx = w / 2
+  const cy = h / 2
+  p.ellipse(cx, cy, cx - 1, cy - 1, 0x000000, 70)
+  p.ellipse(cx, cy, (cx - 1) * 0.68, (cy - 1) * 0.68, 0x000000, 60)
+  p.ellipse(cx, cy, (cx - 1) * 0.36, (cy - 1) * 0.36, 0x000000, 55)
+  return p.toCanvas() as Canvas2D
 }

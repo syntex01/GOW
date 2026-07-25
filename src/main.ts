@@ -27,9 +27,15 @@ function start(): void {
     // Real DOM elements are layered over the canvas so the multiplayer lobby
     // can offer genuine copy/paste text fields for connection codes.
     dom: { createContainer: true },
+    // The world is authored as pixel art at half scale and shown at double, so
+    // every texture must be sampled nearest-neighbour. `antialias: false` is
+    // what keeps an upscaled sprite crisp instead of smeared; `pixelArt` sets
+    // the same for every texture the game creates afterwards.
+    pixelArt: true,
     render: {
-      antialias: true,
-      roundPixels: false,
+      antialias: false,
+      antialiasGL: false,
+      roundPixels: true,
       powerPreference: 'high-performance'
     },
     // The battle simulation is hand-rolled, so no physics engine is needed.
