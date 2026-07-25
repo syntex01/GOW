@@ -358,6 +358,29 @@ The four generic modifiers stat research moves — `unitSpeed`, `unitRange`,
 def, because a def is shared by every copy ever built. Research equips the next
 wave; it does not retrofit the one already dying in the lane.
 
+A morph id is `base@creedN`, and resolving one must never depend on a cache. A
+peer receiving a build order for the *enemy* army's morphed unit has no reason
+to have derived that def — nothing on that machine renders a card for the enemy
+roster — so `enqueue` parses the id back to its authored base and re-derives the
+morph from the techs the two peers already agree on. Resolving through a lazily
+populated map instead would desync a networked match the moment an opponent
+researched a morph gate.
+
+### Veterancy
+
+Research changes the wave you build next; veterancy changes the soldier standing
+in front of you while you watch. Confirmed kills buy three promotions at 2, 5 and
+9 kills, each worth +15% damage, +7% toughness, +10% max health and a little
+speed and reach. Rank pips appear over the soldier and the sprite grows two
+percent per rank — under the threshold of "that sprite is the wrong size" and
+over the threshold of "that one has been here a while".
+
+The point is the decision it creates: a hurt rank-three unit is worth pulling
+back out of a fight, and there was previously no reason to care about any
+individual soldier. Credit goes to the unit that landed the killing blow, not to
+the side, and kills are simulation state, so it is as deterministic as
+everything else.
+
 A few are worth calling out for how they are implemented:
 
 - **Ricochet** tests the *angle of incidence*, not a probability. A flat shot

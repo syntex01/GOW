@@ -122,6 +122,22 @@ export default class Unit implements Damageable {
   speedMult = 1
   rangeMult = 1
   toughness = 1
+  damageMult = 1
+
+  /**
+   * Veterancy.
+   *
+   * Research changes the wave you build next; this changes the soldier standing
+   * in front of you, while you watch. A unit that keeps killing keeps getting
+   * better and keeps looking like it — three promotions, each one worth
+   * defending, which is the whole argument for pulling a hurt veteran back
+   * instead of feeding it. Purely a function of confirmed kills, so it is as
+   * deterministic as everything else in the simulation.
+   */
+  kills = 0
+  rank = 0
+  /** Rank pips drawn over the soldier, created on the first promotion. */
+  private rankMark?: Phaser.GameObjects.Text
 
   /** Aegis: how many friendly soldiers are shoulder to shoulder with this one. */
   linked = 0
@@ -461,6 +477,8 @@ export default class Unit implements Damageable {
     this.hp = 0
     this.hpBar.destroy()
     this.hpBarBg.destroy()
+    this.rankMark?.destroy()
+    this.rankMark = undefined
     this.teamRing.setAlpha(0.25)
 
     const kind = this.def.visual.kind
@@ -974,7 +992,56 @@ export default class Unit implements Damageable {
     return Phaser.Math.Clamp(Math.atan2(dy, Math.max(20, dx)) + lift, -1.35, 1.1)
   }
 
+  /** Kills needed for each rank. Deliberately reachable inside one push. */
+  private static readonly RANK_KILLS = [2, 5, 9]
+
+  /**
+   * Credits a kill and promotes if that was enough.
+   *
+   * The gains are small individually and large together: a rank-three soldier
+   * hits about half again as hard as it did and shrugs off about a fifth more,
+   * which is enough that losing one hurts.
+   */
+  creditKill(): void {
+    this.kills += 1
+    while (this.rank < Unit.RANK_KILLS.length && this.kills >= Unit.RANK_KILLS[this.rank]) {
+      this.rank += 1
+      this.damageMult *= 1.15
+      this.toughness *= 1.07
+      this.speedMult *= 1.04
+      this.rangeMult *= 1.03
+      const grown = this.maxHp * 1.1
+      this.hp += grown - this.maxHp
+      this.maxHp = grown
+      this.showRank()
+    }
+  }
+
+  /** The visible half of a promotion: pips, a flash, and a slightly bigger soldier. */
+  private showRank(): void {
+    const colour = this.rank >= 3 ? '#f2c14e' : this.rank === 2 ? '#e9eefb' : '#c9a227'
+    if (!this.rankMark) {
+      this.rankMark = this.scene.add
+        .text(this.x, this.container.y - this.def.height - 22, '', {
+          fontFamily: '"Trebuchet MS", system-ui, sans-serif',
+          fontSize: '11px',
+          color: colour,
+          stroke: '#05070d',
+          strokeThickness: 3
+        })
+        .setOrigin(0.5)
+        .setDepth(282)
+    }
+    this.rankMark.setText('▲'.repeat(this.rank)).setColor(colour)
+    // A veteran stands a little taller. Two percent per rank is under the
+    // threshold of "that sprite is the wrong size" and over the threshold of
+    // "that one has been here a while".
+    this.scaleFactor *= 1.02
+    this.world.vfx.floatingLabel(this.x, this.centerY - this.def.height * 0.5, 'PROMOTED', colour)
+  }
+
   private updateHpBar(): void {
+    this.rankMark?.setPosition(this.x, this.container.y - this.def.height - 24)
     const damaged = this.hp < this.maxHp - 0.5
     this.hpBarBg.setVisible(damaged)
     this.hpBar.setVisible(damaged)
@@ -1031,6 +1098,7 @@ export default class Unit implements Damageable {
     this.shadow.destroy()
     this.teamRing.destroy()
     this.auraSprite?.destroy()
+    this.rankMark?.destroy()
     if (this.hpBar.active) this.hpBar.destroy()
     if (this.hpBarBg.active) this.hpBarBg.destroy()
   }

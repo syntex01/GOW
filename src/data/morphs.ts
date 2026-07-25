@@ -309,9 +309,24 @@ export interface MorphInfo {
 const morphInfo = new Map<string, MorphInfo>()
 const morphCache = new Map<string, UnitDef>()
 
-/** The derived def for a morph id, if that id names one. */
+/** The derived def for a morph id, if that id has already been derived here. */
 export function morphDefById(id: string): UnitDef | undefined {
   return morphCache.get(id)
+}
+
+/**
+ * The authored unit behind an id, morphed or not.
+ *
+ * Morph ids are `base@creedN`, and the important property is that this needs no
+ * cache: a peer receiving a build order for a unit it has never derived — the
+ * *enemy* army's units, which nothing on that machine ever renders a card for —
+ * must still be able to find the base and re-derive the morph from the techs it
+ * already agrees on. Anything that resolved through a lazily-populated map here
+ * would desync the moment a networked opponent researched a morph gate.
+ */
+export function baseIdFor(id: string): string {
+  const at = id.indexOf('@')
+  return at < 0 ? id : id.slice(0, at)
 }
 
 /** What the doctrine did to this unit, if it is a morph. */

@@ -958,7 +958,7 @@ export default class Battlefield {
   private handleUnitFire = (unit: Unit, target: Damageable): void => {
     const attack = unit.def.attack
     const army = this.armyFor(unit.faction)
-    const damage = unit.def.damage * army.modifiers.unitDamage * this.escalation
+    const damage = unit.def.damage * unit.damageMult * army.modifiers.unitDamage * this.escalation
     const sfx = WEAPON_SFX[unit.def.visual.weapon] ?? 'melee_light'
 
     if (attack.kind === 'melee') {
@@ -1073,8 +1073,11 @@ export default class Battlefield {
     unit.markHealPulse()
   }
 
-  private handleUnitDeath = (unit: Unit): void => {
+  private handleUnitDeath = (unit: Unit, killer?: Damageable): void => {
     const winner = OPPOSITE[unit.faction]
+    // Veterancy is credited to the soldier that actually landed the blow, not
+    // to the side — the point is that this one is now worth pulling back.
+    if (killer instanceof Unit && killer.alive && killer.faction === winner) killer.creditKill()
     const spoils = this.armyFor(winner).modifiers.bounty
     this.armyFor(winner).rewardKill(unit.def.bounty * spoils, unit.def.xp * spoils)
     this.statsFor(winner).kills += 1

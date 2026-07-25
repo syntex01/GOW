@@ -73,6 +73,9 @@ passively and from kills; experience arrives from kills alone.
   up a 2,600 HP thing that regenerates faster than most armies can chew.
 - **Ascension** — at the rim of the network sit five apocalyptic factions.
   You may take exactly one, and it replaces your roster outright.
+- **Veterancy** — soldiers that keep killing keep getting better and start
+  showing it. Three promotions, rank pips, and a real reason to pull a hurt
+  veteran out of a fight instead of feeding it.
 
 Win by destroying the enemy fortress.
 

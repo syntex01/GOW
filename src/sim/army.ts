@@ -3,7 +3,7 @@ import { AGES, MAX_AGE, ageDef } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
-import { morphDefById, morphedRoster } from '../data/morphs'
+import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
 import { TECHS_BY_ID, type TechId } from '../data/tech'
 
@@ -215,10 +215,14 @@ export default class Army {
   }
 
   enqueue(unitId: string): boolean {
-    // A morph id names a derived def rather than an authored one, and the
-    // command bar hands back whatever it is currently showing.
-    const def = ALL_UNITS_BY_ID[unitId] ?? morphDefById(unitId)
-    if (!def) return false
+    // The command bar hands back whatever it is currently showing, which may be
+    // a morph id. Strip it back to the authored unit and re-derive the morph
+    // from this army's own techs: in a networked match the two peers hold the
+    // same tech sets, so both arrive at the same def without either having to
+    // have rendered the other's roster.
+    const base = ALL_UNITS_BY_ID[baseIdFor(unitId)]
+    if (!base) return false
+    const def = morphedDef(base, this.techs)
     if (this.blockReason(def) !== null) return false
     this.gold -= def.cost
     this.queue.push({
