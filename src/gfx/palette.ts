@@ -59,7 +59,7 @@ export const AGE_THEMES: AgeTheme[] = [
   {
     name: 'Medieval Age',
     tagline: 'Steel, faith and siege.',
-    sky: [0x121d38, 0x2f4d73, 0x6d93ad],
+    sky: [0x0e1830, 0x27446a, 0x5c7e97],
     sun: 0xfff3d0,
     ridges: [0x243448, 0x2d4356, 0x35513f],
     ground: 0x3f5c2e,

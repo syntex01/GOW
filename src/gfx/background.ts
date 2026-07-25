@@ -44,7 +44,7 @@ export default class Background {
       .image(w * 0.72, h * 0.2, 'sky:sun')
       .setScrollFactor(0.02)
       .setDepth(-990)
-      .setScale(1.1)
+      .setScale(0.85)
       .setBlendMode(Phaser.BlendModes.ADD)
 
     // Deliberately faint: clouds add depth, but at high alpha they flatten the
@@ -116,7 +116,7 @@ export default class Background {
       this.sky.fillRect(0, (h * i) / bands - 1, w, h / bands + 2)
     }
 
-    this.sun.setTint(theme.sun)
+    this.sun.setTint(shade(theme.sun, -0.5))
     this.clouds.forEach(c => c.setTint(shade(theme.fog, -0.2)))
 
     this.ridges.forEach((ridge, i) => {
@@ -226,7 +226,7 @@ export default class Background {
     })
 
     // A gentle heat shimmer on the sun.
-    this.sun.setScale(1.1 + Math.sin(this.time / 900) * 0.03)
+    this.sun.setScale(0.85 + Math.sin(this.time / 900) * 0.025)
   }
 
   /** Briefly washes the sky when a special ability fires. */

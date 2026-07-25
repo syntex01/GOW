@@ -48,7 +48,9 @@ function start(): void {
   debug.__gowStart = (mode, difficulty, levelId) => {
     const level = levelId ? LEVELS_BY_ID[levelId] : undefined
     session.start(level ? { mode, difficulty, level } : { mode, difficulty })
-    game.scene.stop('HUDScene')
+    for (const scene of game.scene.scenes) {
+      if (scene.scene.isActive() && scene.scene.key !== 'BattleScene') scene.scene.stop()
+    }
     game.scene.stop('BattleScene')
     game.scene.start('BattleScene')
   }

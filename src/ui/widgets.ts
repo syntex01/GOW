@@ -174,7 +174,12 @@ export class Button {
       })
   }
 
+  private get live(): boolean {
+    return Boolean(this.bg.scene)
+  }
+
   setEnabled(value: boolean): this {
+    if (!this.live) return this
     if (this.enabled === value) return this
     this.enabled = value
     const alpha = value ? 1 : 0.42
@@ -195,6 +200,7 @@ export class Button {
   }
 
   setText(text: string): this {
+    if (!this.live) return this
     this.textObj?.setText(text)
     return this
   }
@@ -206,18 +212,21 @@ export class Button {
   }
 
   setSubtext(text: string, color?: number): this {
+    if (!this.live) return this
     this.subObj?.setText(text)
     if (color !== undefined) this.subObj?.setColor(hex(color))
     return this
   }
 
   setAccent(color: number): this {
+    if (!this.live) return this
     this.accentBar.setFillStyle(color, 1)
     return this
   }
 
   /** 0 = ready, 1 = fully masked. Used for build queues and ability charge. */
   setCooldown(ratio: number): this {
+    if (!this.live) return this
     const clamped = Phaser.Math.Clamp(ratio, 0, 1)
     this.cooldownMask.height = this.height * clamped
     return this
@@ -293,7 +302,12 @@ export class Bar {
     container?.add([this.bg, this.fill])
   }
 
+  private get live(): boolean {
+    return Boolean(this.fill.scene) && Boolean(this.bg.scene)
+  }
+
   setValue(ratio: number): this {
+    if (!this.live) return this
     const clamped = Phaser.Math.Clamp(ratio, 0, 1)
     this.fill.width = Math.max(6, this.width * clamped)
     this.fill.setVisible(clamped > 0.001)
@@ -301,17 +315,20 @@ export class Bar {
   }
 
   setColor(color: number): this {
+    if (!this.live) return this
     this.fill.setTint(color)
     return this
   }
 
   setDepth(depth: number): this {
+    if (!this.live) return this
     this.bg.setDepth(depth)
     this.fill.setDepth(depth + 1)
     return this
   }
 
   setVisible(visible: boolean): this {
+    if (!this.live) return this
     this.bg.setVisible(visible)
     this.fill.setVisible(visible && this.fill.width > 6)
     return this

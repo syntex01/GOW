@@ -5,6 +5,7 @@ import { ageDef } from '../data/ages'
 import { TURRET_SLOTS, turretsForAge } from '../data/turrets'
 import type { UnitDef } from '../data/types'
 import { AGE_THEMES, TIER_COLORS, UI } from '../gfx/palette'
+import Tutorial from '../ui/tutorial'
 import { Bar, Button, Modal, Tooltip, formatNumber, formatTime, hex, label, panel } from '../ui/widgets'
 import BattleScene from './battleScene'
 
@@ -45,6 +46,7 @@ export default class HUDScene extends Phaser.Scene {
   private toastTween?: Phaser.Tweens.Tween
   private pauseModal?: Modal
   private turretPopup?: Phaser.GameObjects.Container
+  private tutorial?: Tutorial
   private lastAge = -1
 
   constructor() {
@@ -77,9 +79,16 @@ export default class HUDScene extends Phaser.Scene {
       gameEvents.off('match:paused', this.handlePause, this)
       this.tooltip.destroy()
       this.pauseModal?.destroy()
+      this.tutorial?.destroy()
     })
 
     this.rebuildRoster()
+
+    // First-time players get a short, self-paced walkthrough.
+    const level = session.setup.level
+    if (session.setup.mode === 'campaign' && level && Tutorial.shouldRun(level.id)) {
+      this.tutorial = new Tutorial(this, this.battle.battlefield)
+    }
   }
 
   // ─────────────────────────────── Top bar ───────────────────────────────
@@ -411,9 +420,10 @@ export default class HUDScene extends Phaser.Scene {
 
   // ─────────────────────────────── Per-frame ───────────────────────────────
 
-  override update(): void {
+  override update(_time: number, delta: number): void {
     const bf = this.battle?.battlefield
     if (!bf) return
+    if (!this.battle.paused) this.tutorial?.update(delta)
     const player = bf.player
     const enemy = bf.enemy
 
