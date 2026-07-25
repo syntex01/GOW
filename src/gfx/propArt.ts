@@ -800,8 +800,10 @@ export function drawRidge(age: number, depth: 0 | 1 | 2, width: number, height: 
     // of it and stops the hills reading as flat cut-outs.
     for (let y = top; y < h; y += 1) {
       const t = (y - top) / Math.max(1, h - top)
+      // Both steps are dithered in. A hard cut here draws a straight line
+      // across the whole screen, which no landscape has.
       if (t > 0.5 && ditherAt(x, y, (t - 0.5) * 1.9)) p.set(x, y, r[1])
-      if (t > 0.82) p.set(x, y, r[0])
+      if (t > 0.74 && ditherAt(x + 2, y + 1, (t - 0.74) * 2.6)) p.set(x, y, r[0])
     }
   }
 

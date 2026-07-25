@@ -171,11 +171,13 @@ export default class Lighting {
       if (sy < -light.radius || sy > this.height + light.radius) continue
 
       const scale = (light.radius * 2) / this.stampSize
-      eraser.setScale(scale).setAlpha(Math.min(1, light.intensity * 1.25))
+      // Lights lift the gloom rather than blowing through it: at full erase a
+      // soldier standing near his own fortress washes out to white.
+      eraser.setScale(scale).setAlpha(Math.min(0.85, light.intensity))
       shade.erase(eraser, sx, sy)
 
       glow.stamp(GLOW_STAMP_KEY, '__BASE', sx, sy, {
-        alpha: Math.min(0.85, light.intensity * 0.6),
+        alpha: Math.min(0.6, light.intensity * 0.42),
         tint: light.color,
         scaleX: scale * 0.75,
         scaleY: scale * 0.75,

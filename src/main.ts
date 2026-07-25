@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import type { Difficulty } from './core/save'
 import { session } from './core/session'
 import { LEVELS_BY_ID, type GameMode } from './data/levels'
+import { UNITS_BY_ID } from './data/units'
 import BattleScene from './scenes/battleScene'
 import BootScene from './scenes/bootScene'
 import HUDScene from './scenes/hudScene'
@@ -54,8 +55,12 @@ function start(): void {
     __gowGame: Phaser.Game
     __gowStart: (mode: GameMode, difficulty: Difficulty, levelId?: string) => void
     __gowStartSeeded: (mode: GameMode, difficulty: Difficulty, seed: number) => void
+    __gowUnits: typeof UNITS_BY_ID
   }
   debug.__gowGame = game
+  // Exposed so a smoke test can put a unit on the field without waiting out a
+  // build queue in real time.
+  debug.__gowUnits = UNITS_BY_ID
   debug.__gowStartSeeded = (mode, difficulty, seed) => {
     session.start({ mode, difficulty, seed })
     for (const scene of game.scene.scenes) {
