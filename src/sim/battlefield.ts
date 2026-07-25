@@ -9,7 +9,9 @@ import { TURRETS_BY_ID } from '../data/turrets'
 import type Vfx from '../gfx/vfx'
 import Army, { type ArmyModifiers, defaultModifiers } from './army'
 import Base, { type TurretSlot } from './base'
+import { BASE_H, BASE_W } from '../gfx/propArt'
 import Projectile, { ballisticAngle } from './projectile'
+import PhysicsWorld, { type Body } from './physics'
 import Unit, { type UnitWorld } from './unit'
 import { ADVANCE_DIR, OPPOSITE, type Damageable, type DamageType, type Faction } from './types'
 
@@ -114,6 +116,23 @@ export default class Battlefield {
   units: Unit[] = []
   projectiles: Projectile[] = []
 
+  /**
+   * Every loose object on the field. Part of the simulation rather than the
+   * effects layer, because corpses block shots and shrapnel wounds.
+   */
+  readonly physics: PhysicsWorld
+
+  /**
+   * How soaked each slice of ground is, 0..1, in buckets across the world.
+   *
+   * The splatter a player sees is a texture, which cannot be hashed cheaply
+   * and must never drive the outcome of a networked match. This is the version
+   * the *simulation* keeps: coarse, deterministic, and the only thing gameplay
+   * is ever allowed to read.
+   */
+  readonly goreMap: Float32Array
+  private readonly goreBucketWidth: number
+
   speedScale = 1
   elapsedMs = 0
   /** Leftover real time not yet consumed by a fixed sub-step. */
@@ -162,7 +181,8 @@ export default class Battlefield {
     this.enemy = new Army('enemy', config.startingGold, enemyMods)
     this.enemy.age = Math.max(0, Math.min(4, config.enemyStartAge ?? 0))
 
-    this.world = { groundY: config.groundY, airY: config.airY, vfx, speedScale: 1 }
+    // The physics world is created below; the unit world holds the same one.
+    this.world = { groundY: config.groundY, airY: config.airY, vfx, speedScale: 1, physics: null as never, rng: this.rng }
 
     const margin = 150
     this.playerBase = new Base(
@@ -189,8 +209,73 @@ export default class Battlefield {
     this.playerBase.onDestroyed = () => this.endMatch(false)
     this.enemyBase.onDestroyed = () => this.endMatch(true)
 
+    // One bucket per 16 world pixels: fine enough that a unit can tell soaked
+    // ground from clean, coarse enough to stay cheap and to hash.
+    this.goreBucketWidth = 16
+    this.goreMap = new Float32Array(Math.ceil(config.worldWidth / this.goreBucketWidth) + 1)
+
+    this.physics = new PhysicsWorld(config.groundY, config.worldWidth, this.rng, {
+      onStain: (body, x, y, speed, onWall) => this.handleStain(body, x, y, speed, onWall),
+      onDrip: (x, y, vx, vy, color) => {
+        this.physics.spawn('blood', x, y, vx, vy, { color, size: 0.6 })
+      },
+      onShrapnel: body => this.handleShrapnel(body),
+      onSettle: body => this.handleSettle(body)
+    })
+    this.world.physics = this.physics
+    this.physics.setWalls([
+      { x0: this.playerBase.x - BASE_W * 0.5, x1: this.playerBase.x + BASE_W * 0.5, top: config.groundY - BASE_H * 0.8 },
+      { x0: this.enemyBase.x - BASE_W * 0.5, x1: this.enemyBase.x + BASE_W * 0.5, top: config.groundY - BASE_H * 0.8 }
+    ])
+
     this.baseHealthGfx = scene.add.graphics().setDepth(290)
   }
+
+  // ───────────────────────────── Physics glue ─────────────────────────────
+
+  /** Bucket index for a world x, clamped to the map. */
+  private goreBucket(x: number): number {
+    const i = Math.floor(x / this.goreBucketWidth)
+    return i < 0 ? 0 : i >= this.goreMap.length ? this.goreMap.length - 1 : i
+  }
+
+  /** How soaked the ground is under a point, 0..1. */
+  goreAt(x: number): number {
+    return this.goreMap[this.goreBucket(x)]
+  }
+
+  /**
+   * Something landed. The simulation records it in the gore map; the scene
+   * paints it. Only the first of those two can ever change the match.
+   */
+  private handleStain(body: Body, x: number, y: number, speed: number, onWall: boolean): void {
+    if (body.kind === 'blood' || body.kind === 'gib') {
+      const i = this.goreBucket(x)
+      this.goreMap[i] = Math.min(1, this.goreMap[i] + (body.kind === 'gib' ? 0.16 : 0.03))
+    }
+    this.onStain?.(body, x, y, speed, onWall)
+  }
+
+  private handleSettle(body: Body): void {
+    this.onSettle?.(body)
+  }
+
+  /** A fragment reached something it can hurt. */
+  private handleShrapnel(body: Body): void {
+    for (const t of this.units) {
+      if (!t.alive || t.faction === body.faction) continue
+      const dx = t.x - body.x
+      const dy = t.y + t.centerOffsetY - body.y
+      if (dx * dx + dy * dy > (t.radius + 6) * (t.radius + 6)) continue
+      this.applyDamage(null, t, { amount: body.damage, type: 'pierce', knockback: 40 })
+      body.dead = true
+      return
+    }
+  }
+
+  /** Set by the scene so it can paint what the simulation decided happened. */
+  onStain?: (body: Body, x: number, y: number, speed: number, onWall: boolean) => void
+  onSettle?: (body: Body) => void
 
   armyFor(faction: Faction): Army {
     return faction === 'player' ? this.player : this.enemy
@@ -283,6 +368,10 @@ export default class Battlefield {
       mix(u.hp * 10)
     }
     mix(this.projectiles.length)
+    // Debris and stains change outcomes, so they are part of the fingerprint.
+    mix(this.physics.hash())
+    for (let i = 0; i < this.goreMap.length; i += 1) mix(Math.round(this.goreMap[i] * 20))
+
     return h >>> 0
   }
 
@@ -299,6 +388,9 @@ export default class Battlefield {
     this.updateUnits(dtMs)
     this.updateProjectiles(dtMs)
     this.updateTurrets(dtMs)
+    // Debris advances on the same fixed sub-step as everything else, so a
+    // corpse lands in the same place on both machines.
+    this.physics.step(dtMs)
   }
 
   private tickArmy(army: Army, dtMs: number): void {
@@ -735,6 +827,26 @@ export default class Battlefield {
         amount: event.amount * falloff,
         knockback: event.knockback * falloff
       })
+    }
+
+    // The blast is not just damage in a circle: it throws every loose object
+    // in range, which is what makes a shell landing in a crowd read as an
+    // explosion rather than as a red number.
+    this.physics.blast(x, y, radius * 1.6, event.knockback * 1.5 + 220)
+
+    // Explosive hits chip the ground and throw up dirt.
+    if (event.type === 'explosive' && y > this.config.groundY - 60) {
+      const chunks = Math.min(9, 3 + Math.round(radius / 40))
+      for (let i = 0; i < chunks; i += 1) {
+        this.physics.spawn(
+          'rubble',
+          x + this.rng.spread(radius * 0.4),
+          this.config.groundY - 2,
+          this.rng.spread(220),
+          -this.rng.range(120, 380),
+          { size: this.rng.range(0.5, 1.1), spin: this.rng.spread(8), ttl: 9000 }
+        )
+      }
     }
   }
 

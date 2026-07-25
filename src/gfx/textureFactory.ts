@@ -15,6 +15,7 @@ import {
   drawRidge,
   drawLightFalloff,
   drawSky,
+  drawSplatBrushes,
   drawSunDisc,
   drawTurret,
   drawVignette
@@ -281,6 +282,8 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
       for (const id of PROJECTILE_IDS) addCanvas(scene, `proj:${id}`, drawProjectile(id))
       const particles = drawParticles()
       for (const [name, canvas] of Object.entries(particles)) addCanvas(scene, `fx:${name}`, canvas)
+      const splats = drawSplatBrushes()
+      for (const [name, canvas] of Object.entries(splats)) addCanvas(scene, name, canvas)
       addCanvas(scene, 'fx:shadow', buildShadowCanvas())
       addCanvas(scene, 'fx:light', drawLightFalloff())
     }

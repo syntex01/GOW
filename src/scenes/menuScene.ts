@@ -11,6 +11,7 @@ import Background from '../gfx/background'
 import Lighting from '../gfx/lighting'
 import { AGE_THEMES, TIER_COLORS, UI } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
+import PhysicsWorld from '../sim/physics'
 import Unit from '../sim/unit'
 import { Button, formatNumber, formatTime, label, panel } from '../ui/widgets'
 
@@ -61,6 +62,14 @@ export default class MenuScene extends Phaser.Scene {
 
   // ─────────────────────────── Decorative parade ───────────────────────────
 
+  /** An inert world, so paraded units satisfy the same contract as real ones. */
+  private paradePhysics = new PhysicsWorld(GROUND_Y, 1400, rng, {
+    onStain: () => {},
+    onDrip: () => {},
+    onShrapnel: () => {},
+    onSettle: () => {}
+  })
+
   private spawnParade(): void {
     const roster = UNITS.filter(u => u.age === this.paradeAge)
     const count = 7
@@ -70,7 +79,11 @@ export default class MenuScene extends Phaser.Scene {
         groundY: GROUND_Y,
         airY: GROUND_Y - 210,
         vfx: this.vfx,
-        speedScale: 1
+        speedScale: 1,
+        // The parade never fights, so it gets a physics world of its own that
+        // nothing ever steps.
+        physics: this.paradePhysics,
+        rng
       })
       this.parade.push(unit)
     }

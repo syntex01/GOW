@@ -6,6 +6,8 @@ import { session } from '../core/session'
 import { ageDef } from '../data/ages'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
 import Background from '../gfx/background'
+import DebrisLayer from '../gfx/debrisLayer'
+import Splatter from '../gfx/splatter'
 import Lighting from '../gfx/lighting'
 import { AGE_THEMES } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
@@ -34,6 +36,8 @@ export default class BattleScene extends Phaser.Scene {
   wave = 1
 
   private background!: Background
+  private debris!: DebrisLayer
+  private splatter!: Splatter
   private lighting!: Lighting
   private vfx!: Vfx
   /** Absent in peer-to-peer matches, where both sides are human. */
@@ -73,6 +77,9 @@ export default class BattleScene extends Phaser.Scene {
     this.lighting = new Lighting(this, 700)
     this.vfx = new Vfx(this, GROUND_Y, this.lighting)
     this.background = new Background(this, WORLD_WIDTH, GROUND_Y)
+    // The mess sits above the ground and below the fighting.
+    this.splatter = new Splatter(this, WORLD_WIDTH, GROUND_Y, 70)
+    this.debris = new DebrisLayer(this, 100)
 
     const setup = session.setup
     const level = setup.level
@@ -115,6 +122,26 @@ export default class BattleScene extends Phaser.Scene {
     }
     this.background.setAge(this.battlefield.player.age)
     this.lighting.setAge(this.battlefield.player.age)
+
+    // The simulation decides where everything lands; the scene paints it.
+    this.battlefield.onStain = (body, x, y, speed, onWall) => {
+      const kind =
+        body.kind === 'gib' || body.kind === 'blood'
+          ? 'blood'
+          : body.kind === 'scrap' || body.kind === 'shrapnel'
+            ? 'oil'
+            : 'dust'
+      const scale = body.kind === 'blood' ? 0.5 + body.size * 0.5 : 0.9 + body.size * 0.6
+      this.splatter.stamp(
+        x,
+        y,
+        kind,
+        onWall ? scale * 0.55 : scale,
+        speed,
+        onWall ? Math.PI / 2 : 0,
+        onWall ? 0.7 : 1
+      )
+    }
 
     this.battlefield.onMatchEnd = victory => this.finish(victory)
     this.battlefield.onAgeAdvanced = (faction, age) => this.handleAgeAdvanced(faction, age)
@@ -486,6 +513,8 @@ export default class BattleScene extends Phaser.Scene {
   override update(_time: number, delta: number): void {
     const cam = this.cameras.main
     this.background.update(delta, cam.scrollX)
+    this.splatter.beginFrame()
+    this.debris.render(this.battlefield.physics)
     // Composite lighting from whatever registered a light this frame.
     this.lighting.render(cam.worldView.x, cam.worldView.y)
     if (this.ended) return
@@ -659,6 +688,8 @@ export default class BattleScene extends Phaser.Scene {
     this.lockstep?.stop()
     this.battlefield.destroy()
     this.background.destroy()
+    this.debris.destroy()
+    this.splatter.destroy()
     this.lighting.destroy()
     this.vfx.destroy()
   }

@@ -621,6 +621,90 @@ export function drawParticles(): Record<string, Canvas2D> {
   }
 }
 
+// ─────────────────────────────── Splatter ───────────────────────────────
+
+/**
+ * The brushes stamped into the ground wherever something lands wetly.
+ *
+ * A splat has to read as a splat at a glance and never as a circle, so each
+ * one is a lumpy core with a few satellite droplets thrown off in one
+ * direction — the direction the thing was travelling. Several variants per
+ * kind, because a battlefield tiled with one repeated mark looks printed.
+ */
+export function drawSplatBrushes(): Record<string, Canvas2D> {
+  const out: Record<string, Canvas2D> = {}
+
+  /**
+   * Colour is baked into the brush rather than tinted on at stamp time. A flat
+   * silhouette in one colour reads as a sticker; a splat with a dark pooled
+   * centre, a mid body and a lighter rim reads as something wet.
+   */
+  const build = (seed: number, size: number, spatter: number, ragged: number, tones: Ramp): Canvas2D => {
+    const s = size
+    const p = new Pix(s, s)
+    const noise = pixelNoise(seed)
+    const cx = (s - 1) / 2
+    const cy = (s - 1) / 2
+    const coreR = s * 0.26
+
+    // Lumpy core: a radius that wobbles with angle rather than a clean disc.
+    for (let y = 0; y < s; y += 1) {
+      for (let x = 0; x < s; x += 1) {
+        const dx = x - cx
+        const dy = y - cy
+        const d = Math.hypot(dx, dy)
+        const a = Math.atan2(dy, dx)
+        const wobble = 1 + (noise(Math.round(Math.cos(a) * 8), Math.round(Math.sin(a) * 8)) - 0.5) * ragged
+        const edge = coreR * wobble
+        if (d > edge) continue
+        // Pooled in the middle, thinner toward the rim.
+        p.set(x, y, d < edge * 0.45 ? tones[0] : d < edge * 0.8 ? tones[1] : tones[2])
+      }
+    }
+
+    // Fingers reaching out of the core, then droplets past their tips.
+    const arms = 3 + Math.round(noise(seed, 3) * 4)
+    for (let i = 0; i < arms; i += 1) {
+      const a = noise(i, seed) * Math.PI * 2
+      const reach = coreR + noise(i, seed + 7) * s * 0.42 * spatter
+      let px = cx
+      let py = cy
+      const stepX = Math.cos(a)
+      const stepY = Math.sin(a)
+      for (let step = 0; step < reach; step += 1) {
+        px += stepX
+        py += stepY
+        const taper = 1 - step / reach
+        const width = Math.max(0, Math.round(taper * 2.2))
+        for (let w = -width; w <= width; w += 1) {
+          p.set(Math.round(px + stepY * w), Math.round(py - stepX * w), taper > 0.55 ? tones[1] : tones[2])
+        }
+      }
+      // A detached droplet where the finger ran out of momentum.
+      if (noise(i, seed + 11) > 0.35) {
+        const gap = 1 + noise(i, seed + 13) * 3
+        const dx = Math.round(px + stepX * gap)
+        const dy = Math.round(py + stepY * gap)
+        p.set(dx, dy, tones[2])
+        if (noise(i, seed + 17) > 0.6) p.set(dx + 1, dy, tones[3])
+      }
+    }
+    return p.toCanvasScaled(2) as Canvas2D
+  }
+
+  // Darkest first: pooled centre, body, thin rim, stray droplet.
+  const blood: Ramp = [0x3f070b, 0x6d1014, 0x8f181d, 0xa8262a, 0xa8262a]
+  const scorch: Ramp = [0x0b0a09, 0x191614, 0x2a2521, 0x3a332c, 0x3a332c]
+  const oil: Ramp = [0x07080c, 0x121419, 0x1e2129, 0x2b2f3a, 0x2b2f3a]
+  const dust: Ramp = [0x453d33, 0x5d5347, 0x746757, 0x8a7c68, 0x8a7c68]
+
+  for (let i = 0; i < 6; i += 1) out[`splat:blood:${i}`] = build(101 + i * 37, 14, 1, 0.55, blood)
+  for (let i = 0; i < 4; i += 1) out[`splat:scorch:${i}`] = build(701 + i * 53, 20, 0.35, 0.9, scorch)
+  for (let i = 0; i < 3; i += 1) out[`splat:oil:${i}`] = build(311 + i * 29, 12, 0.7, 0.4, oil)
+  for (let i = 0; i < 3; i += 1) out[`splat:dust:${i}`] = build(907 + i * 41, 16, 0.5, 0.8, dust)
+  return out
+}
+
 // ─────────────────────────────── Terrain ───────────────────────────────
 
 /**

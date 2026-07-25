@@ -6,6 +6,8 @@ import { getUnitArt, unitPartKey } from '../gfx/textureFactory'
 import { RES } from '../gfx/unitArt'
 import { FACTION_COLOR } from '../gfx/palette'
 import type Vfx from '../gfx/vfx'
+import type { Rng } from '../core/rng'
+import type PhysicsWorld from './physics'
 import { ADVANCE_DIR, damageMultiplier, type ArmorType, type Damageable, type DamageType, type Faction, type Layer } from './types'
 
 export type UnitState = 'advance' | 'engage' | 'dead'
@@ -16,6 +18,10 @@ export interface UnitWorld {
   vfx: Vfx
   /** Time scale applied by the "fast forward" toggle. */
   speedScale: number
+  /** Where a soldier's remains go. */
+  physics: PhysicsWorld
+  /** The deterministic stream, so debris lands identically on both peers. */
+  rng: Rng
 }
 
 /** Subtle warm grade applied to hostile units on top of their own palette. */
@@ -50,6 +56,15 @@ export default class Unit implements Damageable {
 
   state: UnitState = 'advance'
   target: Damageable | null = null
+
+  /**
+   * How the last hit landed. Death needs to know: a body that took one jab too
+   * many falls over, one that took a shell comes apart, and both are thrown in
+   * the direction the blow came from.
+   */
+  private overkill = 0
+  private lastHitType: DamageType = 'blunt'
+  private lastHitDir = 0
 
   /** Horizontal knockback velocity, decays with friction. */
   vx = 0
@@ -328,7 +343,13 @@ export default class Unit implements Damageable {
     if (!this.alive) return
     const mult = damageMultiplier(type, this.armor)
     const reduced = amount * mult * (1 - this.auraShield)
+    const before = this.hp
     this.hp -= reduced
+    this.lastHitType = type
+    if (source) this.lastHitDir = Math.sign(this.x - source.x) || -this.dir
+    // Overkill as a fraction of the unit's own health: how far past dead the
+    // blow carried it, which is a better measure of violence than raw damage.
+    if (this.hp <= 0) this.overkill = Math.min(2, (reduced - Math.max(0, before)) / Math.max(1, this.maxHp * 0.5))
     this.flashTimer = FLASH_MS
 
     const color = type === 'energy' ? 0x9fe8ff : type === 'explosive' ? 0xffa640 : 0xffe08a
@@ -371,16 +392,109 @@ export default class Unit implements Damageable {
     const kind = this.def.visual.kind
     const mechanical = kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
     if (mechanical) {
-      this.world.vfx.scrap(this.x, this.centerY, 1.2)
       this.world.vfx.explosion(this.x, this.centerY, this.def.height * 1.1, 0xffa640, this.def.height > 70)
       audio.play('death_mech', 0.6)
     } else {
-      this.world.vfx.gore(this.x, this.centerY, 1)
       audio.play('death', 0.5)
     }
 
     this.onDeath?.(this, killer)
-    this.playDeathAnimation(mechanical)
+
+    // How hard the killing blow landed decides whether this is a body that
+    // falls over or a body that comes apart. Overkill is the honest measure:
+    // a spearman finished by one more jab topples, one hit by a shell does not
+    // stay in one piece.
+    if (this.overkill >= 0.55 || this.lastHitType === 'explosive') {
+      this.dismember(mechanical)
+    } else {
+      this.bleedOut(mechanical)
+      this.playDeathAnimation(mechanical)
+    }
+  }
+
+  /**
+   * The unit comes apart. Each rigged part becomes a physics body carrying its
+   * own sprite, thrown outward from the point of impact — so what lands on the
+   * ground is recognisably the soldier who was standing there.
+   */
+  private dismember(mechanical: boolean): void {
+    const physics = this.world.physics
+    const rand = this.world.rng
+    const away = this.lastHitDir || -this.dir
+    const power = 120 + Math.min(340, this.overkill * 320)
+
+    for (const [name, part] of Object.entries(this.parts)) {
+      if (!part.visible) continue
+      const worldX = this.x + part.x * this.scaleFactor * this.dir
+      const worldY = this.y + part.y * this.scaleFactor
+      const heavy = name === 'torso' || name === 'body' || name === 'mount'
+      physics.spawn(
+        mechanical ? 'scrap' : 'gib',
+        worldX,
+        worldY,
+        away * rand.range(power * 0.35, power) + rand.spread(90),
+        -rand.range(power * 0.5, power * 1.25),
+        {
+          texture: part.texture.key,
+          originX: part.originX,
+          originY: part.originY,
+          flip: this.dir < 0,
+          rot: part.rotation,
+          spin: rand.spread(mechanical ? 5 : 11),
+          mass: heavy ? 2.2 : 0.9,
+          size: this.scaleFactor,
+          color: part.tintTopLeft ?? 0xffffff,
+          faction: this.faction,
+          // Only flesh bleeds, and the bigger pieces bleed for longer.
+          bleed: mechanical ? 0 : heavy ? 1400 : 700
+        }
+      )
+    }
+
+    // A burst of droplets thrown along the direction of the killing blow.
+    const spray = mechanical ? 0 : 10 + Math.round(this.overkill * 10)
+    for (let i = 0; i < spray; i += 1) {
+      physics.spawn(
+        'blood',
+        this.x,
+        this.centerY,
+        away * rand.range(40, 320) + rand.spread(140),
+        -rand.range(60, 300),
+        { size: rand.range(0.5, 1.1) }
+      )
+    }
+    if (mechanical) this.world.vfx.scrap(this.x, this.centerY, 1.2)
+
+    // The rig itself is gone — its pieces are physics now.
+    this.container.setVisible(false)
+    this.scene.tweens.add({
+      targets: [this.shadow, this.teamRing],
+      alpha: 0,
+      duration: 500,
+      onComplete: () => this.destroy()
+    })
+  }
+
+  /** A body that stays whole still empties itself onto the ground. */
+  private bleedOut(mechanical: boolean): void {
+    if (mechanical) {
+      this.world.vfx.scrap(this.x, this.centerY, 1.2)
+      return
+    }
+    const physics = this.world.physics
+    const rand = this.world.rng
+    const away = this.lastHitDir || -this.dir
+    for (let i = 0; i < 8; i += 1) {
+      physics.spawn(
+        'blood',
+        this.x + rand.spread(this.def.height * 0.12),
+        this.centerY,
+        away * rand.range(20, 150) + rand.spread(90),
+        -rand.range(40, 210),
+        { size: rand.range(0.5, 1) }
+      )
+    }
+    this.world.vfx.gore(this.x, this.centerY, 1)
   }
 
   /** Limbs splay, the body topples, and the corpse fades into the ground. */
