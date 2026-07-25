@@ -106,21 +106,35 @@ export default class MultiplayerScene extends Phaser.Scene {
     this.container.removeAll(true)
   }
 
-  /** A read-only field holding a code, with a one-click copy button. */
-  private codeField(x: number, y: number, width: number, labelText: string, value: string): void {
+  /**
+   * A read-only field holding a code, with a one-click copy button. Returns
+   * the y just below the field, since the field grows to fit its code and the
+   * rest of the screen has to be laid out under wherever it ends up.
+   */
+  private codeField(x: number, y: number, width: number, labelText: string, value: string): number {
     this.container.add(label(this, x, y, labelText, { size: 13, bold: true, color: UI.gold }))
 
     const area = document.createElement('textarea')
     area.value = value
     area.readOnly = true
     area.spellcheck = false
-    Object.assign(area.style, CODE_STYLE, { width: `${width - 130}px`, height: '78px' })
+    Object.assign(area.style, CODE_STYLE, {
+      width: `${width - 130}px`,
+      height: '78px',
+      overflow: 'hidden'
+    })
     const dom = this.add.dom(x, y + 22, area).setOrigin(0, 0)
     this.domNodes.push(dom)
+    // Grown to fit rather than left to scroll: a scrolling textarea gets its
+    // own paint layer, and that layer ignores the transform Phaser uses to sit
+    // the element over the canvas, so the code appears a second time — bare
+    // white — further down the screen.
+    area.style.height = `${area.scrollHeight}px`
+    const fieldHeight = area.offsetHeight
 
     const copy = this.addButton(x + width - 118, y + 22, {
       width: 118,
-      height: 78,
+      height: fieldHeight,
       text: 'COPY',
       subtext: 'to clipboard',
       fontSize: 18,
@@ -132,6 +146,8 @@ export default class MultiplayerScene extends Phaser.Scene {
         this.time.delayedCall(1200, () => copy.setText('COPY'))
       }
     })
+
+    return y + 22 + fieldHeight
   }
 
   /** An editable field the player pastes a code into. */
@@ -174,26 +190,27 @@ export default class MultiplayerScene extends Phaser.Scene {
       onClick: () => this.showJoining()
     })
 
+    const lanSubtext = (): string =>
+      this.lanOnly
+        ? 'Same network only — contacts nothing outside your machine'
+        : 'Uses public STUN to find your address. No game data leaves the peers.'
+
+    // Both labels have to be right at construction: a button built with empty
+    // text never makes a text object, so a later setText would go nowhere.
     const lanButton = this.addButton(cx - 330, 344, {
       width: 650,
       height: 62,
-      text: '',
-      subtext: 'Same network only — contacts nothing outside your machine',
+      text: `LAN MODE: ${this.lanOnly ? 'ON' : 'OFF'}`,
+      subtext: lanSubtext(),
       fontSize: 17,
       accent: this.lanOnly ? UI.good : UI.panelEdge,
       onClick: () => {
         this.lanOnly = !this.lanOnly
         lanButton.setAccent(this.lanOnly ? UI.good : UI.panelEdge)
         lanButton.setText(`LAN MODE: ${this.lanOnly ? 'ON' : 'OFF'}`)
-        lanButton.setSubtext(
-          this.lanOnly
-            ? 'Same network only — contacts nothing outside your machine'
-            : 'Uses public STUN to find your address. No game data leaves the peers.',
-          UI.textDim
-        )
+        lanButton.setSubtext(lanSubtext(), UI.textDim)
       }
     })
-    lanButton.setText(`LAN MODE: ${this.lanOnly ? 'ON' : 'OFF'}`)
 
     this.container.add(
       label(
@@ -235,10 +252,10 @@ export default class MultiplayerScene extends Phaser.Scene {
       const width = cam.width - 180
 
       this.setStatus('Send step 1 to your opponent, then paste their reply into step 2.')
-      this.codeField(x, 160, width, 'STEP 1 — SEND THIS CODE TO YOUR OPPONENT', code)
-      const readReply = this.pasteField(x, 300, width - 130, 'STEP 2 — PASTE THEIR REPLY CODE')
+      const step2 = this.codeField(x, 160, width, 'STEP 1 — SEND THIS CODE TO YOUR OPPONENT', code) + 28
+      const readReply = this.pasteField(x, step2, width - 130, 'STEP 2 — PASTE THEIR REPLY CODE')
 
-      this.addButton(x + width - 118, 322, {
+      this.addButton(x + width - 118, step2 + 22, {
         width: 118,
         height: 78,
         text: 'CONNECT',
@@ -402,7 +419,9 @@ const CODE_STYLE: Partial<CSSStyleDeclaration> = {
   fontSize: '11px',
   lineHeight: '1.35',
   resize: 'none',
-  outline: 'none'
+  outline: 'none',
+  /** Keeps each field's painting to its own box, over the canvas. */
+  contain: 'paint'
 }
 
 function describe(err: unknown): string {
