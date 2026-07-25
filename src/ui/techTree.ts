@@ -55,7 +55,6 @@ export default class TechTree {
   private onBuy: (id: TechId) => void
   private destroyed = false
   private views: NodeView[] = []
-  private viewById = new Map<TechId, NodeView>()
   private hovered: TechId | null = null
 
   private panX = 0
@@ -279,7 +278,6 @@ export default class TechTree {
       this.graph.add([box, name, tag])
       const view: NodeView = { node, x, y, box, name, tag, state: 'locked' }
       this.views.push(view)
-      this.viewById.set(node.id, view)
     }
   }
 
