@@ -8,7 +8,9 @@ import { AGE_THEMES } from '../gfx/palette'
 import { rosterForAge } from '../data/units'
 import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
 import { TECHS_BY_ID, TECH_ORDER, type TechId } from '../data/tech'
+import type { FactionId } from '../data/factions'
 import { TURRETS_BY_ID } from '../data/turrets'
+import { ensureUnitArt } from '../gfx/textureFactory'
 import type Vfx from '../gfx/vfx'
 import Army, { type ArmyModifiers, defaultModifiers } from './army'
 import Base, { type TurretSlot } from './base'
@@ -408,6 +410,33 @@ export default class Battlefield {
         }
       }
 
+      // Engineering — machines knit themselves back together, and the Cyborgs
+      // extend that to the whole army because they *are* machines.
+      if (army.hasTech('nanite_field') || army.ascendedTo === 'cyborgs') {
+        const all = army.ascendedTo === 'cyborgs'
+        for (const u of this.units) {
+          if (u.faction !== faction || !u.alive) continue
+          if (!all && !this.isMachine(u)) continue
+          u.heal(u.maxHp * 0.012 * (dtMs / 1000))
+        }
+      }
+
+      // Blight — a soldier that holds still digs in, and heals from ground it
+      // has already poisoned.
+      if (army.hasTech('rooted') || army.ascendedTo === 'hollow_bloom') {
+        for (const u of this.units) {
+          if (u.faction !== faction || !u.alive) continue
+          u.rooting = u.state === 'engage' ? Math.min(4000, u.rooting + dtMs) : 0
+        }
+      }
+      if (army.hasTech('verdant_tide') || army.ascendedTo === 'hollow_bloom') {
+        for (const u of this.units) {
+          if (u.faction !== faction || !u.alive) continue
+          if (!this.zones.some(z => z.faction === faction && z.kind === 'spore' && Math.abs(z.x - u.x) < z.radius)) continue
+          u.heal(u.maxHp * 0.02 * (dtMs / 1000))
+        }
+      }
+
       // Necropolis: enough of the dead lying on your own ground and some of
       // them get up again.
       if (army.hasTech('necropolis')) {
@@ -455,6 +484,62 @@ export default class Battlefield {
     this.vfx.impact(x, this.config.groundY - 20, 0x8fd694, 1.4, true)
   }
 
+  /**
+   * Ground effects: fire, contagion, spores.
+   *
+   * Three creeds all wanted "an area that keeps hurting whatever stands in
+   * it", so they share one system rather than each growing their own. A zone
+   * is deterministic, ticks on the fixed sub-step, and belongs to the side
+   * that made it.
+   */
+  readonly zones: {
+    x: number
+    radius: number
+    ttl: number
+    dps: number
+    faction: Faction
+    kind: 'fire' | 'plague' | 'spore'
+    spread: number
+  }[] = []
+
+  /** Lays down a patch of hostile ground. */
+  addZone(
+    x: number,
+    radius: number,
+    ttl: number,
+    dps: number,
+    faction: Faction,
+    kind: 'fire' | 'plague' | 'spore',
+    spread = 0
+  ): void {
+    if (this.zones.length > 60) this.zones.shift()
+    this.zones.push({ x, radius, ttl, dps, faction, kind, spread })
+  }
+
+  private updateZones(dtMs: number): void {
+    if (this.zones.length === 0) return
+    const dt = dtMs / 1000
+    let write = 0
+    for (const zone of this.zones) {
+      zone.ttl -= dtMs
+      if (zone.ttl <= 0) continue
+      // Ashfall and mycelium make their zones creep outward on their own.
+      if (zone.spread > 0) zone.radius = Math.min(260, zone.radius + zone.spread * dt)
+
+      for (const u of this.units) {
+        if (!u.alive || u.faction === zone.faction) continue
+        if (Math.abs(u.x - zone.x) > zone.radius) continue
+        if (u.layer === 'air') continue
+        this.applyDamage(null, u, { amount: zone.dps * dt, type: zone.kind === 'fire' ? 'explosive' : 'energy', knockback: 0 })
+        // Deep Roots turns blighted ground into a bog for anyone else.
+        if (zone.kind === 'spore' && this.armyFor(zone.faction).hasTech('deep_roots')) u.mire(220)
+      }
+      this.zones[write] = zone
+      write += 1
+    }
+    this.zones.length = write
+  }
+
   /** Set by the scene so it can paint what the simulation decided happened. */
   onStain?: (body: Body, x: number, y: number, speed: number, onWall: boolean) => void
   onSettle?: (body: Body) => void
@@ -468,13 +553,16 @@ export default class Battlefield {
     const army = this.armyFor(faction)
     const bought = army.buyTech(id as TechId)
     if (bought) {
-      this.statsFor(faction).goldSpent += TECHS_BY_ID[id as TechId].cost
-      this.onTechResearched?.(faction, id as TechId)
+      const node = TECHS_BY_ID[id]
+      this.statsFor(faction).goldSpent += node.cost
+      this.onTechResearched?.(faction, id)
+      if (node.becomes) this.onAscended?.(faction, node.becomes)
     }
     return bought
   }
 
   onTechResearched?: (faction: Faction, id: TechId) => void
+  onAscended?: (faction: Faction, becomes: FactionId) => void
 
   armyFor(faction: Faction): Army {
     return faction === 'player' ? this.player : this.enemy
@@ -598,13 +686,22 @@ export default class Battlefield {
     // corpse lands in the same place on both machines.
     this.physics.step(dtMs)
     this.runArmyBehaviours(dtMs)
+    this.updateZones(dtMs)
   }
 
   private tickArmy(army: Army, dtMs: number): void {
     const before = army.gold
     const { ready } = army.tick(dtMs)
     this.statsFor(army.faction).goldEarned += Math.max(0, army.gold - before)
-    for (const def of ready) this.spawnUnit(army.faction, def)
+    for (const def of ready) {
+      // Blood Pact bought the time with the fortress's own health. It is a
+      // real cost: rushing the whole match will kill you without a shot fired.
+      if (army.instantBuild) {
+        const base = this.baseFor(army.faction)
+        base.hp = Math.max(1, base.hp - def.buildMs * 0.045)
+      }
+      this.spawnUnit(army.faction, def)
+    }
   }
 
   private updateUnits(dtMs: number): void {
@@ -669,7 +766,7 @@ export default class Battlefield {
     for (const c of candidates) {
       if (!unit.canTarget(c)) continue
       const dist = unit.distanceTo(c)
-      if (dist > unit.def.range) continue
+      if (dist > unit.reach) continue
       if (dist < bestDist) {
         bestDist = dist
         best = c
@@ -818,6 +915,9 @@ export default class Battlefield {
   }
 
   spawnUnit(faction: Faction, def: UnitDef, atX?: number): Unit {
+    // Doctrine morphs derive defs at runtime, so the sprite for this one may
+    // not have been drawn yet. Cosmetic only — it cannot move the hash.
+    ensureUnitArt(this.scene, def)
     const base = this.baseFor(faction)
     const dir = ADVANCE_DIR[faction]
     const spawnX = atX ?? base.x + dir * (base.radius + 30)
@@ -826,6 +926,9 @@ export default class Battlefield {
     const army = this.armyFor(faction)
     unit.hp *= army.modifiers.unitHp
     unit.maxHp *= army.modifiers.unitHp
+    unit.speedMult = army.modifiers.unitSpeed
+    unit.rangeMult = army.modifiers.unitRange
+    unit.toughness = army.modifiers.toughness
 
     unit.techs = army.techs
     unit.onFire = this.handleUnitFire
@@ -885,7 +988,7 @@ export default class Battlefield {
         attack.gravity > 0
           ? ballisticAngle(dx, dy, attack.speed, attack.gravity)
           : Math.atan2(dy, dx)
-      const spread = this.rng.spread(attack.spread)
+      const spread = this.rng.spread(attack.spread * this.accuracyPenalty(unit.faction))
       const finalAngle = angle + spread
 
       audio.play(sfx, 0.45)
@@ -972,13 +1075,69 @@ export default class Battlefield {
 
   private handleUnitDeath = (unit: Unit): void => {
     const winner = OPPOSITE[unit.faction]
-    this.armyFor(winner).rewardKill(unit.def.bounty, unit.def.xp)
+    const spoils = this.armyFor(winner).modifiers.bounty
+    this.armyFor(winner).rewardKill(unit.def.bounty * spoils, unit.def.xp * spoils)
     this.statsFor(winner).kills += 1
     this.statsFor(winner).goldEarned += unit.def.bounty
     this.statsFor(unit.faction).unitsLost += 1
     this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.4, `+${unit.def.bounty}`, '#f2c14e')
     audio.play('coin', 0.25)
     this.onUnitKilled?.(winner)
+    this.applyDeathDoctrines(unit, winner)
+  }
+
+  /**
+   * Everything that happens *because* something died. Kept in one place: half
+   * the research tree hooks in here, and scattering it through the death path
+   * would make the interactions between creeds impossible to see.
+   */
+  private applyDeathDoctrines(unit: Unit, winner: Faction): void {
+    const killer = this.armyFor(winner)
+    const owner = this.armyFor(unit.faction)
+    const groundY = this.config.groundY
+
+    // Carnage — the killer poisons the ground where the body fell.
+    if (killer.hasTech('plague_wind')) {
+      this.addZone(unit.x, 70, 6000, 26, winner, 'plague')
+    }
+    // Cinder Host doctrine, and Incendiary before it: bodies burn where they land.
+    if (killer.ascendedTo === 'cinder_host' || (killer.hasTech('incendiary') && killer.hasTech('ashfall'))) {
+      this.addZone(unit.x, 60, 5200, 40, winner, 'fire', killer.hasTech('ashfall') ? 16 : 0)
+    }
+    // Blight — the dead burst, and their own side's ground spreads.
+    if (owner.hasTech('spore_cloud')) {
+      this.addZone(unit.x, 72, 8000, 20, unit.faction, 'spore', owner.hasTech('mycelium') ? 10 : 0)
+    }
+    // Occult — the ability feeds on death, and the enemy flinches at it.
+    if (killer.hasTech('soul_tithe') || killer.ascendedTo === 'dark_circle') {
+      killer.abilityCharge = Math.min(1, killer.abilityCharge + 0.05)
+    }
+    if (killer.hasTech('evil_eye')) {
+      for (const u of this.units) {
+        if (!u.alive || u.faction === winner) continue
+        if (Math.abs(u.x - unit.x) < 130) u.mire(700)
+      }
+    }
+    // Occult — the line closes up over its own dead.
+    if (owner.hasTech('sacrament')) {
+      for (const u of this.units) {
+        if (!u.alive || u.faction !== unit.faction) continue
+        if (Math.abs(u.x - unit.x) < 170) u.heal(u.maxHp * 0.09)
+      }
+    }
+    // Occult — some of what you kill gets back up on your side.
+    if (killer.hasTech('mind_thrall') && this.rng.chance(0.22)) {
+      const risen = this.spawnUnit(winner, unit.def, unit.x)
+      risen.hp = risen.maxHp * 0.4
+      this.vfx.impact(unit.x, groundY - 24, 0xb46bff, 1.3, false)
+    }
+    // Nekrotic doctrine — your own fallen get up once, on their own.
+    if (owner.ascendedTo === 'nekrotics' && !unit.risen) {
+      const risen = this.spawnUnit(unit.faction, unit.def, unit.x)
+      risen.hp = risen.maxHp * 0.45
+      risen.risen = true
+      this.vfx.impact(unit.x, groundY - 24, 0x7fd6a0, 1.3, true)
+    }
   }
 
   private handleTurretFire = (base: Base, slot: TurretSlot, target: Damageable): void => {
@@ -992,7 +1151,7 @@ export default class Battlefield {
     const dx = target.x - muzzle.x
     const dy = target.y + target.centerOffsetY - muzzle.y
     const angle = attack.gravity > 0 ? ballisticAngle(dx, dy, attack.speed, attack.gravity) : Math.atan2(dy, dx)
-    const finalAngle = angle + this.rng.spread(attack.spread)
+    const finalAngle = angle + this.rng.spread(attack.spread * this.accuracyPenalty(base.faction))
 
     audio.play(this.turretSfx(def), 0.4)
     this.vfx.muzzleFlash(muzzle.x, muzzle.y, finalAngle, def.age >= 4 ? 0x8ff0ff : 0xffd08a, 1.4)
@@ -1056,6 +1215,15 @@ export default class Battlefield {
     this.applyDamage(owner, target, event)
   }
 
+  /**
+   * Black Sun. The light goes wrong and the *enemy's* aim goes with it, which
+   * is a defence that costs the attacker rather than protecting the defender.
+   */
+  private accuracyPenalty(shooter: Faction): number {
+    const foe = this.armyFor(OPPOSITE[shooter])
+    return foe.hasTech('black_sun') || foe.ascendedTo === 'dark_circle' ? 3.2 : 1
+  }
+
   /** True for the things an EMP can actually shut down. */
   private isMachine(target: Damageable): boolean {
     const kind = (target as Unit).def?.visual?.kind
@@ -1085,7 +1253,8 @@ export default class Battlefield {
       this.isMachine(target)
     ) {
       const machine = target as Unit
-      if (machine.alive) {
+      // The Cyborgs are past being switched off.
+      if (machine.alive && this.armyFor(machine.faction).ascendedTo !== 'cyborgs') {
         machine.disable(2600)
         this.vfx.impact(machine.x, machine.y + machine.centerOffsetY, 0x8fe8ff, 1.2, false)
       }

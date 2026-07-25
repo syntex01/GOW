@@ -61,10 +61,18 @@ passively and from kills; experience arrives from kills alone.
   barrages, bomber runs, and a sweeping orbital beam.
 - **Economy upgrades** — five levels of compounding income. Buying early wins
   long games; buying late loses short ones.
-- **Research** — three tech branches whose nodes change what your army *does*.
-  Shots that skip off armour, explosions that throw fragments, soldiers who eat
-  the dead, corpses that stop bullets, sappers who tunnel past a stalled line.
-  Not one of them is a percentage.
+- **Research** — a network of about a hundred nodes growing out of one root.
+  Near the root it is broad and shared; the further out you go the fewer ways
+  there are onward, and the rim makes you choose. The behaviour nodes are never
+  percentages: shots that skip off armour, explosions that throw fragments,
+  soldiers who eat the dead, corpses that stop bullets, sappers who tunnel past
+  a stalled line.
+- **Morphs** — doctrines change the units you already build, three times over.
+  A Knight taken deep into Ordnance stops being a melee unit and starts
+  throwing bursting charges from range; the same Knight taken into Blight ends
+  up a 2,600 HP thing that regenerates faster than most armies can chew.
+- **Ascension** — at the rim of the network sit five apocalyptic factions.
+  You may take exactly one, and it replaces your roster outright.
 
 Win by destroying the enemy fortress.
 

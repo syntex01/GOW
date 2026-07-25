@@ -2,8 +2,19 @@ import { abilityForAge } from '../data/abilities'
 import { AGES, MAX_AGE, ageDef } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
+import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
+import { morphDefById, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
 import { TECHS_BY_ID, type TechId } from '../data/tech'
+
+/** How many cards the command bar can show. */
+const MAX_ROSTER = 9
+
+/** Base units and faction units together, since research can unlock either. */
+const ALL_UNITS_BY_ID: Record<string, UnitDef> = {
+  ...UNITS_BY_ID,
+  ...Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
+}
 
 export interface QueueEntry {
   def: UnitDef
@@ -26,10 +37,18 @@ export interface ArmyModifiers {
   baseHp: number
   /** Multiplies ability charge rate. */
   abilityRate: number
+  /** Multiplies how fast units march. */
+  unitSpeed: number
+  /** Multiplies weapon reach. */
+  unitRange: number
+  /** Divides incoming damage — the generic "armour" line of research. */
+  toughness: number
+  /** Multiplies gold and experience earned from kills. */
+  bounty: number
 }
 
 export function defaultModifiers(): ArmyModifiers {
-  return { income: 1, buildSpeed: 1, unitHp: 1, unitDamage: 1, baseHp: 1, abilityRate: 1 }
+  return { income: 1, buildSpeed: 1, unitHp: 1, unitDamage: 1, baseHp: 1, abilityRate: 1, unitSpeed: 1, unitRange: 1, toughness: 1, bounty: 1 }
 }
 
 /** Everything a side owns outside of the units already on the field. */
@@ -84,9 +103,35 @@ export default class Army {
     return this.ageDefinition.evolveCost
   }
 
+  /**
+   * What this army can build right now.
+   *
+   * Research is meant to be *visible*, so a roster is not a fixed list per age:
+   * unlock nodes add units to it as they are researched, and ascending replaces
+   * it outright with the faction's own five. That is the moment the tree pays
+   * off — the command bar you have been using all match becomes a different
+   * army's command bar.
+   */
   get roster(): UnitDef[] {
-    return rosterForAge(this.age)
+    // Morphs run last, over whatever the roster turned out to be, so an
+    // ascended faction's own units keep changing shape as you research past
+    // the ascension rather than freezing the moment you took it.
+    if (this.ascendedTo) return morphedRoster(factionRoster(this.ascendedTo), this.techs)
+    const base = rosterForAge(this.age)
+    const extra: UnitDef[] = []
+    for (const id of this.unlocked) {
+      const def = ALL_UNITS_BY_ID[id]
+      if (def) extra.push(def)
+    }
+    // Unlocks go on the end, so the keys a player already knows do not move
+    // under their fingers mid-match.
+    return morphedRoster([...base, ...extra].slice(0, MAX_ROSTER), this.techs)
   }
+
+  /** The apocalyptic faction this army ascended into, if it has. */
+  ascendedTo: FactionId | null = null
+  /** Units added to the roster by research. */
+  readonly unlocked = new Set<string>()
 
   get ability() {
     return abilityForAge(this.age)
@@ -106,6 +151,8 @@ export default class Army {
     const node = TECHS_BY_ID[id]
     if (!node) return 'locked'
     if (this.techs.has(id)) return 'owned'
+    // You get one ascension. Committing to a faction closes the other four.
+    if (node.kind === 'ascension' && this.ascendedTo) return 'locked'
     if (!node.requires.every(r => this.techs.has(r))) return 'locked'
     if (this.age < node.age) return 'age'
     if (this.gold < node.cost) return 'gold'
@@ -115,8 +162,21 @@ export default class Army {
   /** Buys a node. Returns false if it was not available, changing nothing. */
   buyTech(id: TechId): boolean {
     if (this.techAvailability(id) !== 'ready') return false
-    this.gold -= TECHS_BY_ID[id].cost
+    const node = TECHS_BY_ID[id]
+    this.gold -= node.cost
     this.techs.add(id)
+    // Stat research compounds into the army's modifiers. Units already on the
+    // field keep the numbers they were built with — research equips the next
+    // wave, it does not retrofit the one that is already dying.
+    if (node.stat) {
+      this.modifiers[node.stat.key] *= node.stat.mult
+    }
+    if (node.unlocks) this.unlocked.add(node.unlocks)
+    if (node.becomes) {
+      this.ascendedTo = node.becomes
+      // Whatever was half-built belonged to the old army.
+      this.queue.length = 0
+    }
     return true
   }
 
@@ -155,7 +215,9 @@ export default class Army {
   }
 
   enqueue(unitId: string): boolean {
-    const def = UNITS_BY_ID[unitId]
+    // A morph id names a derived def rather than an authored one, and the
+    // command bar hands back whatever it is currently showing.
+    const def = ALL_UNITS_BY_ID[unitId] ?? morphDefById(unitId)
     if (!def) return false
     if (this.blockReason(def) !== null) return false
     this.gold -= def.cost
@@ -179,6 +241,11 @@ export default class Army {
    * Advances timers. Returns the units that finished building this tick,
    * plus the gold earned from passive income.
    */
+  /** Blood Pact pays a build's time out of the fortress instead of the clock. */
+  get instantBuild(): boolean {
+    return this.techs.has('blood_pact')
+  }
+
   tick(dtMs: number): { ready: UnitDef[]; income: number } {
     const dt = dtMs / 1000
     const gained = this.incomePerSecond * dt + this.incomeCarry
@@ -192,7 +259,10 @@ export default class Army {
     const ready: UnitDef[] = []
     if (this.queue.length > 0) {
       const head = this.queue[0]
-      head.remainingMs -= dtMs
+      // Blood Pact: the whole queue finishes at once. The cost is taken from
+      // the fortress by the battlefield, which is the only thing that knows
+      // about fortresses.
+      head.remainingMs -= this.instantBuild ? head.remainingMs + 1 : dtMs
       while (this.queue.length > 0 && this.queue[0].remainingMs <= 0) {
         const done = this.queue.shift()
         if (done) ready.push(done.def)

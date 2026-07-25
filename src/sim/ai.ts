@@ -5,7 +5,7 @@ import type { UnitDef } from '../data/types'
 import { turretsForAge } from '../data/turrets'
 import type Battlefield from './battlefield'
 import type { ArmorType } from './types'
-import { TECH_BRANCHES, branchTechs, type TechBranch } from '../data/tech'
+import { TECHS, TECH_BRANCHES, ascensionFor, lineageFor, type TechBranch, type TechNode } from '../data/tech'
 
 export interface AiProfile {
   name: string
@@ -89,6 +89,8 @@ export default class AiController {
   private turretCooldown = 4000
   /** The branch this opponent has committed to for the match. */
   private readonly branch: TechBranch
+  /** Every node on the road to that branch's ascension, in buy order. */
+  private readonly path: TechNode[]
   /** Rises when the AI is losing, making it play more desperately. */
   private pressure = 0
   /**
@@ -103,6 +105,8 @@ export default class AiController {
     this.profile = profile
     this.rng = new Rng(seed)
     this.branch = this.rng.pick(TECH_BRANCHES).id
+    const goal = ascensionFor(this.branch)
+    this.path = goal ? lineageFor(goal.id) : []
   }
 
   update(dtMs: number): void {
@@ -150,14 +154,31 @@ export default class AiController {
     const army = this.bf.enemy
     const fielded = this.bf.units.filter(u => u.alive && u.faction === 'enemy').length
     if (fielded < 3) return false
-    for (const node of branchTechs(this.branch)) {
+
+    // The road to an ascension runs through shared `core` nodes that belong to
+    // no creed, so the AI follows the requirement graph rather than a branch
+    // filter — otherwise it stalls at the root and never researches anything.
+    for (const node of this.path) {
       if (army.techAvailability(node.id) !== 'ready') continue
       // Leave enough behind to keep building; a teched-up army of nobody loses.
       if (army.gold - node.cost < 400) return false
       this.bf.buyTech('enemy', node.id)
       return true
     }
-    return false
+
+    // Nothing on the critical path is affordable or unlocked yet. Surplus gold
+    // goes into whatever plain upgrade is cheapest, the same way a human tops
+    // up while waiting for an age.
+    if (army.gold < 2500) return false
+    let best: TechNode | null = null
+    for (const node of TECHS) {
+      if (node.kind !== 'stat') continue
+      if (army.techAvailability(node.id) !== 'ready') continue
+      if (!best || node.cost < best.cost) best = node
+    }
+    if (!best || army.gold - best.cost < 800) return false
+    this.bf.buyTech('enemy', best.id)
+    return true
   }
 
   private considerEvolve(): boolean {

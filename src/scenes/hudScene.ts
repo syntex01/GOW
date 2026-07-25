@@ -3,8 +3,10 @@ import { gameEvents } from '../core/events'
 import { session } from '../core/session'
 import { ageDef } from '../data/ages'
 import { TURRET_SLOTS, turretsForAge } from '../data/turrets'
+import { morphInfoFor } from '../data/morphs'
 import type { UnitDef } from '../data/types'
 import { AGE_THEMES, FACTION_COLOR, TIER_COLORS, UI } from '../gfx/palette'
+import { ensureUnitArt } from '../gfx/textureFactory'
 import Tutorial from '../ui/tutorial'
 import { audio } from '../core/audio'
 import TechTree from '../ui/techTree'
@@ -52,6 +54,8 @@ export default class HUDScene extends Phaser.Scene {
   private turretPopup?: Phaser.GameObjects.Container
   private tutorial?: Tutorial
   private lastAge = -1
+  /** Identity of the roster on screen, so unlocks and ascension refresh it. */
+  private lastRosterKey = ''
 
   constructor() {
     super({ key: 'HUDScene' })
@@ -112,6 +116,7 @@ export default class HUDScene extends Phaser.Scene {
     this.pauseModal = undefined
     this.tutorial = undefined
     this.lastAge = -1
+    this.lastRosterKey = ''
   }
 
   // ─────────────────────────────── Top bar ───────────────────────────────
@@ -262,6 +267,8 @@ export default class HUDScene extends Phaser.Scene {
 
     const army = this.battle.localArmy
     const roster = army.roster
+    // Morphed units are derived, so their sprite and icon may not exist yet.
+    roster.forEach(def => ensureUnitArt(this, def))
     roster.forEach((def, i) => {
       const button = new Button(this, 12 + i * (CARD_W + 6), CARD_Y, {
         width: CARD_W,
@@ -279,6 +286,7 @@ export default class HUDScene extends Phaser.Scene {
       this.unitCards.push({ button, def })
     })
     this.lastAge = army.age
+    this.lastRosterKey = roster.map(d => d.id).join(',')
   }
 
   private showUnitTooltip(def: UnitDef, x: number): void {
@@ -291,6 +299,10 @@ export default class HUDScene extends Phaser.Scene {
       '',
       def.description
     ]
+    const morph = morphInfoFor(def.id)
+    if (morph) {
+      lines.splice(4, 0, `${morph.title} doctrine, stage ${morph.stage} — was ${morph.baseName}`)
+    }
     this.tooltip.show(x, BAR_Y - 8, `${def.name} — ${def.cost} gold`, lines.join('\n'))
   }
 
@@ -301,8 +313,10 @@ export default class HUDScene extends Phaser.Scene {
     if (this.techTree) {
       this.techTree.destroy()
       this.techTree = undefined
+      this.battle.modalOpen = false
       return
     }
+    this.battle.modalOpen = true
     audio.play('ui_click', 0.5)
     this.techTree = new TechTree(
       this,
@@ -313,6 +327,7 @@ export default class HUDScene extends Phaser.Scene {
       () => {
         this.techTree?.destroy()
         this.techTree = undefined
+        this.battle.modalOpen = false
       }
     )
   }
@@ -491,7 +506,12 @@ export default class HUDScene extends Phaser.Scene {
     const myBase = this.battle.localBase
     const foeBase = this.battle.foeBase
 
-    if (player.age !== this.lastAge) this.rebuildRoster()
+    // Research changes the roster mid-age — an unlock adds a card, ascension
+    // replaces every one of them — so the bar tracks the roster's identity
+    // rather than just the age it belongs to.
+    if (player.age !== this.lastAge || this.battle.localArmy.roster.map(d => d.id).join(',') !== this.lastRosterKey) {
+      this.rebuildRoster()
+    }
 
     this.goldText.setText(formatNumber(player.gold))
     this.incomeText.setText(`+${player.incomePerSecond.toFixed(0)}/s`)

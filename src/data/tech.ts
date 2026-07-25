@@ -1,239 +1,893 @@
+import type { FactionId } from './factions'
+
 /**
- * The tech trees.
+ * The research network.
  *
- * The rule every node here obeys: it must change what the game *does*, not
- * what a number says. There is no "+10% damage" in this file. A tech either
- * gives your army a behaviour it did not have — shots that bounce, soldiers
- * that eat the dead, corpses that stop bullets — or it does not belong.
+ * Not five parallel ladders — a web. It starts at a single node and fans
+ * outward, and the further out you go the fewer ways there are to keep going.
+ * Near the root the nodes are broad and shared: two different creeds both want
+ * you to strip the field, both want tighter powder. Several early nodes have
+ * more than one parent, so the early game is genuinely mixable. By the outer
+ * rings each node has exactly one lineage behind it, and the five ascensions
+ * at the rim each demand most of a direction.
  *
- * That constraint is also what makes the branches feel different from each
- * other. Carnage is a build that wants a long, bloody, static front line.
- * Ordnance wants open ground and physics. Engineering wants to break the shape
- * of the lane entirely. They interact: shrapnel feeds corpse walls, sappers
- * make a mess behind the lines for bonepickers to eat.
+ * That shape is the design. Early research is cheap and non-committal; late
+ * research forces you to give something up, and the last node you buy decides
+ * what your army *is*.
+ *
+ * Nodes come in four kinds. Behaviour nodes change what the game *does* and
+ * carry the identity of a direction. Stat nodes are the connective tissue —
+ * cheap, always useful, and the thing you take while you are still deciding.
+ * Unit nodes put something new in your hand. Ascensions are the rim.
+ *
+ * The mix matters: a web of only behaviour nodes is a set of five decisions
+ * wearing a costume, and a web of only stat nodes is a shopping list. The stat
+ * nodes are what make the early game feel like a network rather than a menu,
+ * and what make committing to a direction late feel like giving something up.
  */
 
-export type TechId =
-  | 'butchery'
-  | 'bonepickers'
-  | 'bloodlust'
-  | 'corpse_wall'
-  | 'necropolis'
-  | 'ricochet'
-  | 'shrapnel'
-  | 'overpressure'
-  | 'cluster'
-  | 'penetrator'
-  | 'salvage'
-  | 'sappers'
-  | 'demolition'
-  | 'emp'
-  | 'aegis'
+export type TechBranch = 'core' | 'carnage' | 'ordnance' | 'engineering' | 'occult' | 'blight'
 
-export type TechBranch = 'carnage' | 'ordnance' | 'engineering'
+export type TechKind =
+  /** Changes how the simulation behaves. */
+  | 'behaviour'
+  /**
+   * A plain multiplier on one of the army's modifiers. These exist to give the
+   * network body: they are the cheap, safe, always-useful nodes you take while
+   * deciding which direction you actually want, and the connective tissue that
+   * makes the web dense rather than five bare lines.
+   */
+  | 'stat'
+  /** Puts a new unit into your roster, permanently. */
+  | 'unit'
+  /** The rim of the network: become a faction. */
+  | 'ascension'
+
+/** Node identifiers are plain strings — the network is data, and it grows. */
+export type TechId = string
 
 export interface TechNode {
   id: TechId
   name: string
+  /** Which direction this node leans. `core` nodes belong to everyone. */
   branch: TechBranch
+  kind: TechKind
+  /** Distance from the root. Drives layout and, loosely, cost. */
+  ring: number
+  /** Vertical slot within the ring, in creed order. Layout only. */
+  row: number
   /** Earliest age this can be researched. */
   age: number
   cost: number
-  /** Must all be owned first. */
+  /** Every parent must be owned. Early nodes deliberately have several. */
   requires: TechId[]
   /** What it does, stated as a behaviour. */
   effect: string
-  /** The colour used for this node in the tree. */
+  /** For `unit` nodes: which unit joins the roster. */
+  unlocks?: string
+  /** For `ascension` nodes: what the army becomes. */
+  becomes?: FactionId
+  /** For `stat` nodes: which army modifier it multiplies, and by how much. */
+  stat?: { key: StatKey; mult: number }
+}
+
+/** The army modifiers stat research can move. */
+export type StatKey =
+  | 'income'
+  | 'buildSpeed'
+  | 'unitHp'
+  | 'unitDamage'
+  | 'baseHp'
+  | 'abilityRate'
+  | 'unitSpeed'
+  | 'unitRange'
+  | 'toughness'
+  | 'bounty'
+
+export interface CreedDef {
+  id: TechBranch
+  name: string
+  blurb: string
+  faction: FactionId | null
   accent: number
 }
 
-export const TECH_BRANCHES: { id: TechBranch; name: string; blurb: string; accent: number }[] = [
+export const CREEDS: CreedDef[] = [
   {
     id: 'carnage',
     name: 'CARNAGE',
-    blurb: 'Turn the dead into a resource, and the ground they fell on into terrain.',
+    blurb: 'The dead are a resource. The ground they fell on is terrain.',
+    faction: 'nekrotics',
     accent: 0xc0392b
   },
   {
     id: 'ordnance',
     name: 'ORDNANCE',
-    blurb: 'Make every shot a physical object with somewhere else to be afterwards.',
+    blurb: 'Every shot is an object with somewhere else to be afterwards.',
+    faction: 'cinder_host',
     accent: 0xe08a2e
   },
   {
     id: 'engineering',
     name: 'ENGINEERING',
-    blurb: 'Refuse the shape of the lane. Go under it, salvage it, or blow it up.',
+    blurb: 'Refuse the shape of the lane. Go under it, salvage it, rebuild it.',
+    faction: 'cyborgs',
     accent: 0x3d8bff
+  },
+  {
+    id: 'occult',
+    name: 'THE OCCULT',
+    blurb: 'Pay in something other than gold and the price stops mattering.',
+    faction: 'dark_circle',
+    accent: 0xb46bff
+  },
+  {
+    id: 'blight',
+    name: 'BLIGHT',
+    blurb: 'Do not take the ground. Make the ground yours and wait.',
+    faction: 'hollow_bloom',
+    accent: 0x8fd694
   }
 ]
 
+export const CREEDS_BY_ID: Record<string, CreedDef> = Object.fromEntries(CREEDS.map(c => [c.id, c]))
+
+/** Colour for a node's own leaning; core nodes are neutral. */
+export const BRANCH_ACCENT: Record<TechBranch, number> = {
+  core: 0xa8b4cc,
+  carnage: 0xc0392b,
+  ordnance: 0xe08a2e,
+  engineering: 0x3d8bff,
+  occult: 0xb46bff,
+  blight: 0x8fd694
+}
+
+/** Kept as an alias so older call sites reading branches still compile. */
+export const TECH_BRANCHES = CREEDS
+
 export const TECHS: TechNode[] = [
-  // ── Carnage ──────────────────────────────────────────────────────────────
+  // ─────────────────────────── Ring 0 — the root ───────────────────────────
+  {
+    id: 'collapse',
+    name: 'The Collapse',
+    branch: 'core',
+    kind: 'behaviour',
+    ring: 0,
+    row: 4,
+    age: 0,
+    cost: 200,
+    requires: [],
+    effect: 'Admit what has happened. Everything downstream of this is a way of surviving it.'
+  },
+
+  // ─────────────────── Ring 1 — broad, shared, non-committal ───────────────
+  {
+    id: 'field_stripping',
+    name: 'Field Stripping',
+    branch: 'core',
+    kind: 'behaviour',
+    ring: 1,
+    row: 1,
+    age: 0,
+    cost: 400,
+    requires: ['collapse'],
+    effect: 'Your soldiers go through what they kill. Bodies and wreckage are worth something now.'
+  },
+  {
+    id: 'powder_discipline',
+    name: 'Powder Discipline',
+    branch: 'core',
+    kind: 'behaviour',
+    ring: 1,
+    row: 4,
+    age: 0,
+    cost: 400,
+    requires: ['collapse'],
+    effect: 'Charges packed tighter and seated properly. Your blasts throw everything loose much harder.'
+  },
+  {
+    id: 'old_rites',
+    name: 'Old Rites',
+    branch: 'core',
+    kind: 'behaviour',
+    ring: 1,
+    row: 7,
+    age: 0,
+    cost: 400,
+    requires: ['collapse'],
+    effect: 'Somebody remembered the words. Something on the other end is listening for them.'
+  },
+
+  // ──────────── Ring 2 — the directions appear, still cross-linked ─────────
   {
     id: 'butchery',
     name: 'Butchery',
     branch: 'carnage',
+    kind: 'behaviour',
+    ring: 2,
+    row: 0,
     age: 0,
-    cost: 450,
-    requires: [],
-    effect: 'Everything your soldiers kill comes apart, however it died. The field fills with bodies.',
-    accent: 0xc0392b
+    cost: 650,
+    requires: ['field_stripping'],
+    effect: 'Everything your soldiers kill comes apart, however it died. The field fills with bodies.'
   },
   {
     id: 'bonepickers',
     name: 'Bonepickers',
     branch: 'carnage',
+    kind: 'behaviour',
+    ring: 2,
+    row: 2,
     age: 1,
-    cost: 950,
+    cost: 900,
+    requires: ['field_stripping', 'old_rites'],
+    effect: 'Your wounded eat the remains they walk over, healing from each piece they consume.'
+  },
+  {
+    id: 'ricochet',
+    name: 'Ricochet Rounds',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 2,
+    row: 3,
+    age: 1,
+    cost: 800,
+    requires: ['powder_discipline'],
+    effect: 'Flat shots that strike armour at a shallow angle skip off it and keep going.'
+  },
+  {
+    id: 'salvage',
+    name: 'Salvage Crews',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 2,
+    row: 5,
+    age: 1,
+    cost: 750,
+    requires: ['field_stripping', 'powder_discipline'],
+    effect: 'Wreckage that comes to rest on the field is stripped for gold where it lies.'
+  },
+  {
+    id: 'blood_pact',
+    name: 'Blood Pact',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 2,
+    row: 6,
+    age: 1,
+    cost: 700,
+    requires: ['old_rites'],
+    effect: 'Units finish building instantly. The time is taken out of your fortress instead.'
+  },
+  {
+    id: 'spore_cloud',
+    name: 'Spore Cloud',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 2,
+    row: 8,
+    age: 1,
+    cost: 720,
+    requires: ['old_rites'],
+    effect: 'Your dead burst. What comes out of them settles on the ground and stays there, hostile.'
+  },
+
+  // ───────────────── Ring 3 — lineages, one or two parents ─────────────────
+  {
+    id: 'bone_harvest',
+    name: 'Bone Harvest',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 3,
+    row: 0,
+    age: 1,
+    cost: 1000,
     requires: ['butchery'],
-    effect: 'Your wounded eat the remains they walk over, healing from each piece they consume.',
-    accent: 0xc0392b
+    effect: 'Remains lying on your half are picked over for gold, steadily, for as long as they lie there.'
   },
   {
     id: 'bloodlust',
     name: 'Bloodlust',
     branch: 'carnage',
+    kind: 'behaviour',
+    ring: 3,
+    row: 1,
     age: 2,
-    cost: 1700,
-    requires: ['bonepickers'],
-    effect: 'Your soldiers fight faster the more soaked the ground beneath them is.',
-    accent: 0xc0392b
-  },
-  {
-    id: 'corpse_wall',
-    name: 'Corpse Wall',
-    branch: 'carnage',
-    age: 3,
-    cost: 2700,
-    requires: ['bloodlust'],
-    effect: 'Remains on the ground stop enemy shots. Pile up enough dead and they become cover.',
-    accent: 0xc0392b
-  },
-  {
-    id: 'necropolis',
-    name: 'Necropolis',
-    branch: 'carnage',
-    age: 4,
-    cost: 4400,
-    requires: ['corpse_wall'],
-    effect: 'Your half of the field raises what has fallen on it. Enough remains, and they get up again.',
-    accent: 0xc0392b
-  },
-
-  // ── Ordnance ─────────────────────────────────────────────────────────────
-  {
-    id: 'ricochet',
-    name: 'Ricochet Rounds',
-    branch: 'ordnance',
-    age: 1,
-    cost: 850,
-    requires: [],
-    effect: 'Flat shots that strike armour at a shallow angle skip off it and keep going.',
-    accent: 0xe08a2e
+    cost: 1600,
+    requires: ['bonepickers', 'butchery'],
+    effect: 'Your soldiers fight faster the more soaked the ground beneath them is.'
   },
   {
     id: 'shrapnel',
     name: 'Shrapnel',
     branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 3,
+    row: 3,
     age: 2,
-    cost: 1600,
+    cost: 1500,
     requires: ['ricochet'],
-    effect: 'Your explosions throw fragments. They fly, fall, and wound whatever they reach.',
-    accent: 0xe08a2e
+    effect: 'Your explosions throw fragments. They fly, fall, and wound whatever they reach.'
   },
   {
-    id: 'overpressure',
-    name: 'Overpressure',
+    id: 'incendiary',
+    name: 'Incendiary Loads',
     branch: 'ordnance',
-    age: 3,
-    cost: 2500,
-    requires: ['shrapnel'],
-    effect: 'Blasts stop nudging and start throwing. Soldiers leave the ground and land badly.',
-    accent: 0xe08a2e
-  },
-  {
-    id: 'cluster',
-    name: 'Cluster Shells',
-    branch: 'ordnance',
-    age: 3,
-    cost: 2500,
-    requires: ['shrapnel'],
-    effect: 'Anything you lob splits at the top of its arc into three smaller shells.',
-    accent: 0xe08a2e
-  },
-  {
-    id: 'penetrator',
-    name: 'Penetrators',
-    branch: 'ordnance',
-    age: 4,
-    cost: 4000,
-    requires: ['overpressure'],
-    effect: 'Your shots pass through the first body they hit and carry on into the next.',
-    accent: 0xe08a2e
-  },
-
-  // ── Engineering ──────────────────────────────────────────────────────────
-  {
-    id: 'salvage',
-    name: 'Salvage Crews',
-    branch: 'engineering',
-    age: 1,
-    cost: 750,
-    requires: [],
-    effect: 'Wreckage that comes to rest on the field is stripped for gold where it lies.',
-    accent: 0x3d8bff
+    kind: 'behaviour',
+    ring: 3,
+    row: 4,
+    age: 2,
+    cost: 1700,
+    requires: ['ricochet'],
+    effect: 'Your explosions leave the ground burning. Anything standing in it keeps taking damage.'
   },
   {
     id: 'sappers',
     name: 'Sappers',
     branch: 'engineering',
+    kind: 'behaviour',
+    ring: 3,
+    row: 5,
     age: 2,
-    cost: 1600,
+    cost: 1500,
     requires: ['salvage'],
-    effect: 'Your melee troops dig under a stalled front line and come up behind it.',
-    accent: 0x3d8bff
+    effect: 'Your melee troops dig under a stalled front line and come up behind it.'
+  },
+  {
+    id: 'nanite_field',
+    name: 'Nanite Field',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 3,
+    row: 6,
+    age: 2,
+    cost: 1700,
+    requires: ['salvage'],
+    effect: 'Your vehicles, walkers and aircraft repair themselves continuously while they fight.'
+  },
+  {
+    id: 'soul_tithe',
+    name: 'Soul Tithe',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 3,
+    row: 7,
+    age: 1,
+    cost: 1000,
+    requires: ['blood_pact'],
+    effect: 'Every enemy that dies anywhere on the field feeds your special ability.'
+  },
+  {
+    id: 'mycelium',
+    name: 'Mycelium',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 3,
+    row: 9,
+    age: 1,
+    cost: 1000,
+    requires: ['spore_cloud'],
+    effect: 'Blighted ground creeps outward on its own, a little further every second.'
+  },
+
+  // ──────────────── Ring 4 — the first units, one parent each ──────────────
+  {
+    id: 'flenser_rite',
+    name: 'Rite of the Flenser',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 4,
+    row: 0,
+    age: 2,
+    cost: 1400,
+    requires: ['bone_harvest'],
+    unlocks: 'nk_flenser',
+    effect: 'Fields the Flenser: a butcher who kills in a wide arc and is very hard to push off it.'
+  },
+  {
+    id: 'plague_wind',
+    name: 'Plague Wind',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 4,
+    row: 1,
+    age: 3,
+    cost: 2200,
+    requires: ['bloodlust'],
+    effect: 'Whatever you kill leaves a cloud of contagion behind it that eats at whoever walks in.'
+  },
+  {
+    id: 'overpressure',
+    name: 'Overpressure',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 4,
+    row: 2,
+    age: 3,
+    cost: 2400,
+    requires: ['shrapnel', 'powder_discipline'],
+    effect: 'Blasts stop nudging and start throwing. Soldiers leave the ground and land badly.'
+  },
+  {
+    id: 'cluster',
+    name: 'Cluster Shells',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 4,
+    row: 3,
+    age: 3,
+    cost: 2400,
+    requires: ['shrapnel'],
+    effect: 'Anything you lob splits at the top of its arc into three smaller shells.'
+  },
+  {
+    id: 'torchbearer_doctrine',
+    name: 'Torchbearer Doctrine',
+    branch: 'ordnance',
+    kind: 'unit',
+    ring: 4,
+    row: 4,
+    age: 3,
+    cost: 2100,
+    requires: ['incendiary'],
+    unlocks: 'ch_torchbearer',
+    effect: 'Fields the Torchbearer: twin launchers, no interest at all in what stands behind the target.'
   },
   {
     id: 'demolition',
     name: 'Demolition Charges',
     branch: 'engineering',
+    kind: 'behaviour',
+    ring: 4,
+    row: 5,
+    age: 3,
+    cost: 2200,
+    requires: ['sappers'],
+    effect: 'Your soldiers die armed. Whatever killed them is standing too close.'
+  },
+  {
+    id: 'drone_forge',
+    name: 'Drone Forge',
+    branch: 'engineering',
+    kind: 'unit',
+    ring: 4,
+    row: 6,
+    age: 3,
+    cost: 2000,
+    requires: ['nanite_field'],
+    unlocks: 'cy_swarmhost',
+    effect: 'Fields the Drone Host: walks behind the line reprinting whatever the line has lost.'
+  },
+  {
+    id: 'evil_eye',
+    name: 'The Evil Eye',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 4,
+    row: 7,
+    age: 2,
+    cost: 1600,
+    requires: ['soul_tithe'],
+    effect: 'Enemies who watch a comrade die stagger where they stand, briefly and visibly.'
+  },
+  {
+    id: 'sacrament',
+    name: 'Sacrament',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 4,
+    row: 8,
     age: 3,
     cost: 2300,
-    requires: ['sappers'],
-    effect: 'Your soldiers die armed. Whatever killed them is standing too close.',
-    accent: 0x3d8bff
+    requires: ['soul_tithe'],
+    effect: 'When one of yours falls, the rest of the line closes up and heals for it.'
+  },
+  {
+    id: 'rooted',
+    name: 'Rooted Stance',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 4,
+    row: 9,
+    age: 2,
+    cost: 1500,
+    requires: ['mycelium'],
+    effect: 'A soldier who holds position digs in. The longer it stands, the harder it is to move or hurt.'
+  },
+  {
+    id: 'sporeling_bloom',
+    name: 'Sporeling Bloom',
+    branch: 'blight',
+    kind: 'unit',
+    ring: 4,
+    row: 10,
+    age: 2,
+    cost: 1500,
+    requires: ['mycelium'],
+    unlocks: 'hb_sporeling',
+    effect: 'Fields the Sporeling: cheap, quick, regrows its own wounds, and there is always another.'
+  },
+
+  // ────────────────── Ring 5 — deep, committed, single-route ───────────────
+  {
+    id: 'corpse_wall',
+    name: 'Corpse Wall',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 5,
+    row: 0,
+    age: 3,
+    cost: 2700,
+    requires: ['plague_wind', 'flenser_rite'],
+    effect: 'Remains on the ground stop enemy shots. Pile up enough dead and they become cover.'
+  },
+  {
+    id: 'penetrator',
+    name: 'Penetrators',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 5,
+    row: 2,
+    age: 4,
+    cost: 3800,
+    requires: ['overpressure', 'cluster'],
+    effect: 'Your shots pass through the first body they hit and carry on into the next.'
+  },
+  {
+    id: 'ashfall',
+    name: 'Ashfall',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 5,
+    row: 4,
+    age: 4,
+    cost: 3300,
+    requires: ['torchbearer_doctrine'],
+    effect: 'Fire on the ground spreads outward on its own and takes far longer to burn out.'
   },
   {
     id: 'emp',
     name: 'EMP Warheads',
     branch: 'engineering',
+    kind: 'behaviour',
+    ring: 5,
+    row: 5,
     age: 4,
-    cost: 3800,
+    cost: 3600,
     requires: ['demolition'],
-    effect: 'Energy hits shut machines down. Tanks and walkers stop dead for a few seconds.',
-    accent: 0x3d8bff
+    effect: 'Energy hits shut machines down. Tanks and walkers stop dead for a few seconds.'
+  },
+  {
+    id: 'autoforge',
+    name: 'Autoforge',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 5,
+    row: 6,
+    age: 3,
+    cost: 2500,
+    requires: ['drone_forge'],
+    effect: 'Turrets destroyed on your fortress rebuild themselves after a pause. You stop paying twice.'
   },
   {
     id: 'aegis',
     name: 'Aegis Link',
     branch: 'engineering',
+    kind: 'behaviour',
+    ring: 5,
+    row: 7,
     age: 4,
-    cost: 3800,
-    requires: ['demolition'],
-    effect: 'Soldiers standing together share what they take. Break the formation and it stops.',
-    accent: 0x3d8bff
+    cost: 3600,
+    requires: ['demolition', 'nanite_field'],
+    effect: 'Soldiers standing together share what they take. Break the formation and it stops.'
+  },
+  {
+    id: 'hexer_pact',
+    name: 'Pact of the Hexer',
+    branch: 'occult',
+    kind: 'unit',
+    ring: 5,
+    row: 8,
+    age: 3,
+    cost: 2100,
+    requires: ['evil_eye'],
+    unlocks: 'dc_hexer',
+    effect: 'Fields the Hexer: points at something, and it stops being structurally certain.'
+  },
+  {
+    id: 'mind_thrall',
+    name: 'Mind Thrall',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 5,
+    row: 9,
+    age: 3,
+    cost: 2500,
+    requires: ['evil_eye', 'sacrament'],
+    effect: 'Some of what you kill gets back up on your side instead of theirs.'
+  },
+  {
+    id: 'verdant_tide',
+    name: 'Verdant Tide',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 5,
+    row: 10,
+    age: 3,
+    cost: 2300,
+    requires: ['rooted'],
+    effect: 'Your soldiers heal while they stand on ground the blight has taken.'
+  },
+  {
+    id: 'contagion',
+    name: 'Contagion',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 5,
+    row: 11,
+    age: 3,
+    cost: 2500,
+    requires: ['sporeling_bloom', 'mycelium'],
+    effect: 'Anything that dies in your blight bursts too, and passes it on.'
+  },
+
+  // ─────────────── Ring 6 — the last node before the rim ──────────────
+  {
+    id: 'necropolis',
+    name: 'Necropolis',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 6,
+    row: 0,
+    age: 4,
+    cost: 4200,
+    requires: ['corpse_wall', 'bone_harvest'],
+    effect: 'Your half of the field raises what has fallen on it. Enough remains, and they get up again.'
+  },
+  {
+    id: 'black_sun',
+    name: 'Black Sun',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 6,
+    row: 8,
+    age: 4,
+    cost: 3500,
+    requires: ['mind_thrall'],
+    effect: 'The light goes wrong. Enemy fire scatters badly and their artillery stops landing where it was aimed.'
+  },
+  {
+    id: 'ninth_seal',
+    name: 'The Ninth Seal',
+    branch: 'occult',
+    kind: 'unit',
+    ring: 6,
+    row: 9,
+    age: 4,
+    cost: 4000,
+    requires: ['black_sun', 'hexer_pact'],
+    unlocks: 'dc_ninthsign',
+    effect: 'Fields the Ninth Sign: the last of them that still needs a body to walk around in.'
+  },
+  {
+    id: 'deep_roots',
+    name: 'Deep Roots',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 6,
+    row: 10,
+    age: 4,
+    cost: 3300,
+    requires: ['verdant_tide', 'contagion'],
+    effect: 'Blighted ground answers to you: enemies crossing it are dragged to a crawl.'
+  },
+  {
+    id: 'titan_seed',
+    name: 'Titan Seed',
+    branch: 'blight',
+    kind: 'unit',
+    ring: 6,
+    row: 11,
+    age: 4,
+    cost: 4000,
+    requires: ['deep_roots'],
+    unlocks: 'hb_titanbloom',
+    effect: 'Fields the Titan Bloom: throws its own fruiting bodies, which burst on the way down.'
+  },
+
+  // ───────────────────────── Ring 7 — the rim ─────────────────────────
+  {
+    id: 'ascend_nekrotics',
+    name: 'ASCEND · Nekrotics',
+    branch: 'carnage',
+    kind: 'ascension',
+    ring: 7,
+    row: 0,
+    age: 4,
+    cost: 6000,
+    requires: ['necropolis', 'flenser_rite'],
+    becomes: 'nekrotics',
+    effect: 'Stop burying your dead. Your roster becomes the Nekrotics, and every soldier you lose gets up once, on its own.'
+  },
+  {
+    id: 'ascend_cinder',
+    name: 'ASCEND · Cinder Host',
+    branch: 'ordnance',
+    kind: 'ascension',
+    ring: 7,
+    row: 3,
+    age: 4,
+    cost: 6000,
+    requires: ['penetrator', 'ashfall'],
+    becomes: 'cinder_host',
+    effect: 'Burn it all to keep warm. Your roster becomes the Cinder Host, and everything you kill sets fire to where it fell.'
+  },
+  {
+    id: 'ascend_cyborgs',
+    name: 'ASCEND · Cyborgs',
+    branch: 'engineering',
+    kind: 'ascension',
+    ring: 7,
+    row: 6,
+    age: 4,
+    cost: 6000,
+    requires: ['emp', 'autoforge', 'aegis'],
+    becomes: 'cyborgs',
+    effect: 'Finish the edit. Your roster becomes the Cyborgs: everything repairs itself, and nothing you field can be shut down.'
+  },
+  {
+    id: 'ascend_circle',
+    name: 'ASCEND · Dark Circle',
+    branch: 'occult',
+    kind: 'ascension',
+    ring: 7,
+    row: 9,
+    age: 4,
+    cost: 6000,
+    requires: ['ninth_seal'],
+    becomes: 'dark_circle',
+    effect: 'Take your seat. Your roster becomes the Dark Circle: every death feeds you, and the sky stays dark.'
+  },
+  {
+    id: 'ascend_bloom',
+    name: 'ASCEND · Hollow Bloom',
+    branch: 'blight',
+    kind: 'ascension',
+    ring: 7,
+    row: 11,
+    age: 4,
+    cost: 6000,
+    requires: ['titan_seed'],
+    becomes: 'hollow_bloom',
+    effect: 'Let it through. Your roster becomes the Hollow Bloom: your soldiers root where they stand and feed on the ground they have poisoned.'
   }
 ]
 
-export const TECHS_BY_ID: Record<TechId, TechNode> = Object.fromEntries(
-  TECHS.map(t => [t.id, t])
-) as Record<TechId, TechNode>
 
-/** Nodes belonging to one branch, in research order. */
-export function branchTechs(branch: TechBranch): TechNode[] {
-  return TECHS.filter(t => t.branch === branch).sort((a, b) => a.age - b.age || a.cost - b.cost)
+// ─────────────────────────── Stat research ───────────────────────────
+
+/**
+ * Compact constructor for the plain multiplier nodes. There are a lot of them
+ * and they are all the same shape, so spelling each one out in full would bury
+ * the interesting nodes above in boilerplate.
+ */
+function stat(
+  id: string,
+  name: string,
+  branch: TechBranch,
+  ring: number,
+  row: number,
+  age: number,
+  cost: number,
+  requires: string[],
+  key: StatKey,
+  mult: number,
+  effect: string
+): TechNode {
+  return { id, name, branch, kind: 'stat', ring, row, age, cost, requires, stat: { key, mult }, effect }
 }
 
-/** Stable index, used to pack an army's owned techs into the state hash. */
-export const TECH_ORDER: TechId[] = TECHS.map(t => t.id)
+/**
+ * The body of the network. Deliberately spread across every ring and given
+ * parents in more than one direction, so the web is dense near the root and
+ * there is always something worth buying while you decide where to commit.
+ */
+export const STAT_TECHS: TechNode[] = [
+  // Ring 1 — the basics, straight off the root.
+  stat('drill_yard', 'Drill Yard', 'core', 1, 0, 0, 320, ['collapse'], 'unitDamage', 1.12, 'Soldiers drilled properly hit harder. Applies to everything you build from now on.'),
+  stat('rations', 'Rations', 'core', 1, 2, 0, 320, ['collapse'], 'unitHp', 1.12, 'Fed troops last longer. New arrivals come out of the gate tougher.'),
+  stat('foraging', 'Foraging', 'core', 1, 6, 0, 340, ['collapse'], 'income', 1.15, 'Parties sent out between engagements. Gold arrives faster.'),
+  stat('quartermaster', 'Quartermaster', 'core', 1, 8, 0, 360, ['collapse'], 'buildSpeed', 1.2, 'Somebody competent is running the queue. Everything is built sooner.'),
+
+  // Ring 2 — still generic, but now reachable through two different parents.
+  stat('forge_work', 'Forge Work', 'core', 2, 1, 1, 620, ['drill_yard', 'field_stripping'], 'unitDamage', 1.14, 'Better steel, better edges. Another flat gain to every weapon you field.'),
+  stat('shieldwall', 'Shieldwall', 'core', 2, 4, 1, 640, ['rations', 'powder_discipline'], 'toughness', 1.14, 'Trained to stand together. Everything you own takes less from every hit.'),
+  stat('spoils', 'Spoils', 'core', 2, 7, 1, 600, ['foraging', 'old_rites'], 'bounty', 1.25, 'What you kill is worth more. Gold and experience both.'),
+  stat('long_arms', 'Long Arms', 'core', 2, 9, 1, 660, ['quartermaster', 'powder_discipline'], 'unitRange', 1.12, 'Longer barrels, longer hafts. Your soldiers reach further before they are reached.'),
+
+  // Ring 3 — leanings start to colour them.
+  stat('forced_march', 'Forced March', 'core', 3, 2, 1, 900, ['rations', 'quartermaster'], 'unitSpeed', 1.16, 'Nobody stops. Your line arrives before theirs is ready.'),
+  stat('deep_stores', 'Deep Stores', 'core', 3, 4, 2, 1100, ['foraging', 'shieldwall'], 'income', 1.2, 'Reserves nobody has found yet. Income again, and it compounds with the last one.'),
+  stat('masonry', 'Masonry', 'engineering', 3, 5, 2, 1150, ['salvage', 'shieldwall'], 'baseHp', 1.25, 'The fortress is rebuilt properly. It holds a great deal more punishment.'),
+  stat('war_drums', 'War Drums', 'occult', 3, 7, 2, 1050, ['spoils', 'blood_pact'], 'abilityRate', 1.25, 'Something keeps time. Your special ability comes back faster.'),
+  stat('honed_edges', 'Honed Edges', 'carnage', 3, 8, 2, 1200, ['forge_work', 'butchery'], 'unitDamage', 1.16, 'Maintained between engagements rather than after them.'),
+
+  // Ring 4 — the expensive middle, where you are already leaning somewhere.
+  stat('tempering', 'Tempering', 'core', 4, 8, 2, 1500, ['forge_work'], 'unitHp', 1.16, 'Worked and quenched again. Everything you build survives more.'),
+  stat('marksmanship', 'Marksmanship', 'ordnance', 4, 9, 3, 1700, ['long_arms', 'ricochet'], 'unitRange', 1.15, 'Trained to the sight rather than the volume of fire.'),
+  stat('levy', 'Levy', 'core', 4, 10, 2, 1450, ['quartermaster', 'deep_stores'], 'buildSpeed', 1.22, 'Conscription. The queue moves whether or not anyone wants it to.'),
+  stat('tribute', 'Tribute', 'occult', 4, 11, 3, 1800, ['spoils', 'war_drums'], 'bounty', 1.3, 'Taken from the dead and counted in front of the living.'),
+  stat('outriders', 'Outriders', 'core', 4, 12, 3, 1600, ['forced_march'], 'unitSpeed', 1.15, 'Screening elements ahead of the line. Everything moves up faster.'),
+
+  // Ring 5 — heavy, late, and priced like it.
+  stat('plate_lines', 'Plate Lines', 'engineering', 5, 3, 3, 2300, ['tempering', 'masonry'], 'toughness', 1.16, 'Standardised plate, produced in quantity for once.'),
+  stat('heavy_powder', 'Heavy Powder', 'ordnance', 5, 4, 4, 2600, ['marksmanship', 'shrapnel'], 'unitDamage', 1.2, 'A coarser, angrier mix. Everything you fire hits appreciably harder.'),
+  stat('citadel', 'Citadel', 'engineering', 5, 12, 4, 2700, ['masonry'], 'baseHp', 1.3, 'The fortress is now the strongest thing on the field by a distance.'),
+  stat('logistics', 'War Logistics', 'core', 5, 13, 4, 2600, ['deep_stores', 'levy'], 'income', 1.25, 'The whole apparatus behind the line finally works.'),
+  stat('zeal', 'Zeal', 'occult', 5, 14, 4, 2500, ['war_drums', 'tribute'], 'abilityRate', 1.3, 'They want to use it. Your ability charges faster again.'),
+
+  // Ring 6 — the last stat nodes, alongside the deep behaviours.
+  stat('grand_forge', 'Grand Forge', 'core', 6, 3, 4, 3400, ['heavy_powder', 'honed_edges'], 'unitDamage', 1.22, 'Everything your army carries is made in one place now, and made well.'),
+  stat('grand_armoury', 'Grand Armoury', 'core', 6, 4, 4, 3400, ['plate_lines', 'tempering'], 'unitHp', 1.22, 'Full kit, issued to everyone, replaced when it fails.'),
+  stat('war_economy', 'War Economy', 'core', 6, 12, 4, 3600, ['logistics', 'citadel'], 'income', 1.3, 'Nothing is produced that is not for this. Income one last time.'),
+  stat('total_mobilisation', 'Total Mobilisation', 'core', 6, 13, 4, 3600, ['logistics', 'outriders'], 'buildSpeed', 1.28, 'Everyone who can hold something is holding something.')
+]
+
+
+TECHS.push(...STAT_TECHS)
+
+export const TECHS_BY_ID: Record<string, TechNode> = Object.fromEntries(TECHS.map(t => [t.id, t]))
+
+/** Nodes at one distance from the root. */
+export function ringTechs(ring: number): TechNode[] {
+  return TECHS.filter(t => t.ring === ring).sort((a, b) => a.row - b.row)
+}
+
+/** How many rings deep the network runs. */
+export const MAX_RING = TECHS.reduce((n, t) => Math.max(n, t.ring), 0)
+
+/** How many rows tall it is, for layout. */
+export const MAX_ROW = TECHS.reduce((n, t) => Math.max(n, t.row), 0)
+
+/** Nodes leaning a given way, in research order. */
+export function branchTechs(branch: TechBranch): TechNode[] {
+  return TECHS.filter(t => t.branch === branch).sort((a, b) => a.ring - b.ring || a.row - b.row)
+}
+
+/**
+ * Everything that must be owned to reach a node, the node included, in the
+ * order it has to be bought.
+ *
+ * The network has multi-parent nodes and shared `core` ancestors, so "the
+ * carnage branch" is not a list you can filter by branch — the road to the
+ * nekrotic ascension runs through nodes that belong to nobody. This walks the
+ * requirement graph backwards instead, which is what both the AI and any
+ * "research path" hint actually need.
+ */
+export function lineageFor(id: TechId): TechNode[] {
+  const seen = new Set<TechId>()
+  const out: TechNode[] = []
+  const visit = (nodeId: TechId): void => {
+    if (seen.has(nodeId)) return
+    seen.add(nodeId)
+    const node = TECHS_BY_ID[nodeId]
+    if (!node) return
+    for (const parent of node.requires) visit(parent)
+    out.push(node)
+  }
+  visit(id)
+  // Post-order already respects prerequisites; the ring sort only makes the
+  // result read in the order a player would actually buy it.
+  return out.sort((a, b) => a.ring - b.ring)
+}
+
+/** The ascension node a creed ends at, if it has one. */
+export function ascensionFor(branch: TechBranch): TechNode | undefined {
+  return TECHS.find(t => t.kind === 'ascension' && t.branch === branch)
+}
+
+/** Stable order, used to pack an army's owned techs into the state hash. */
+export const TECH_ORDER: string[] = TECHS.map(t => t.id)
+
+/** Every unit id any research node can put into a roster. */
+export const UNLOCKABLE_UNIT_IDS: string[] = TECHS.filter(t => t.unlocks).map(t => t.unlocks as string)

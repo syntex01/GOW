@@ -1,7 +1,8 @@
 import Phaser from 'phaser'
 import { TURRETS } from '../data/turrets'
-import type { ProjectileId } from '../data/types'
+import type { ProjectileId, UnitDef } from '../data/types'
 import { UNITS } from '../data/units'
+import { FACTION_UNITS } from '../data/factions'
 import { AGE_THEMES, UI } from './palette'
 import { Canvas2D, makeCanvas } from './painter'
 import Pix, { ramp } from './pixel'
@@ -231,7 +232,9 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
     run: () => buildUiTextures(scene)
   })
 
-  for (const unit of UNITS) {
+  // Faction rosters are generated too: ascension mid-match must not stall
+  // the game building thirty sprites.
+  for (const unit of [...UNITS, ...FACTION_UNITS]) {
     steps.push({
       label: `Training ${unit.name}`,
       run: () => {
@@ -251,7 +254,7 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
   steps.push({
     label: 'Drawing insignia',
     run: () => {
-      for (const unit of UNITS) buildUnitIcon(scene, unit.id)
+      for (const unit of [...UNITS, ...FACTION_UNITS]) buildUnitIcon(scene, unit.id)
     }
   })
 
@@ -338,4 +341,25 @@ export function generateAllTextures(
 
 export function texturesReady(): boolean {
   return generated
+}
+
+/**
+ * Builds art for a unit that was not in the authored roster.
+ *
+ * Doctrine morphs derive new defs at runtime — a Clubman five doctrines deep
+ * is a different sprite with a different silhouette — and there are far too
+ * many possible combinations to pre-render all of them at load. So a morph's
+ * art is drawn the first time that morph is actually built, which costs a few
+ * milliseconds once and nothing afterwards. This is purely cosmetic work, so
+ * it cannot affect the lockstep hash even though it happens at different
+ * moments on different machines.
+ */
+export function ensureUnitArt(scene: Phaser.Scene, def: UnitDef): void {
+  if (unitArtInfo.has(def.id)) return
+  const art = buildUnitArt(def.visual, def.height)
+  for (const [part, canvas] of Object.entries(art.parts)) {
+    addCanvas(scene, unitPartKey(def.id, part), canvas)
+  }
+  unitArtInfo.set(def.id, { metrics: art.metrics, origins: art.origins, parts: Object.keys(art.parts) })
+  buildUnitIcon(scene, def.id)
 }

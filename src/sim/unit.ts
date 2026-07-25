@@ -107,6 +107,22 @@ export default class Unit implements Damageable {
   burrowTimer = 0
   /** EMP: milliseconds this machine is dead in the water. */
   private disabledFor = 0
+  private miredFor = 0
+  /** True for a soldier that has already been brought back once. */
+  risen = false
+  /** Blight: how long this soldier has held its ground, in milliseconds. */
+  rooting = 0
+  /**
+   * Army-wide research multipliers, stamped on at spawn.
+   *
+   * They live on the soldier rather than on the def because a def is shared by
+   * every copy ever built, and research is meant to equip the next wave without
+   * retrofitting the one already dying in the lane.
+   */
+  speedMult = 1
+  rangeMult = 1
+  toughness = 1
+
   /** Aegis: how many friendly soldiers are shoulder to shoulder with this one. */
   linked = 0
 
@@ -364,13 +380,20 @@ export default class Unit implements Damageable {
     return true
   }
 
+  /** Weapon reach after research. Everything that asks "can I hit it" uses this. */
+  get reach(): number {
+    return this.def.range * this.rangeMult
+  }
+
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {
     if (!this.alive) return
     const mult = damageMultiplier(type, this.armor)
     // Aegis: a soldier in formation takes a share, not the whole blow. Break
     // the formation and the protection goes with it.
     const shared = this.linked > 0 ? 1 - Math.min(0.4, this.linked * 0.14) : 1
-    const reduced = amount * mult * (1 - this.auraShield) * shared
+    // Rooted: a soldier that has not moved is dug in, and it shows.
+    const dugIn = 1 - Math.min(0.35, (this.rooting / 4000) * 0.35)
+    const reduced = (amount * mult * (1 - this.auraShield) * shared * dugIn) / this.toughness
     const before = this.hp
     this.hp -= reduced
     this.lastHitType = type
@@ -396,6 +419,11 @@ export default class Unit implements Damageable {
     }
 
     if (this.hp <= 0) this.kill(source)
+  }
+
+  /** Bogs this unit down — it can still fight, it just cannot get anywhere. */
+  mire(ms: number): void {
+    this.miredFor = Math.max(this.miredFor, ms)
   }
 
   /** Shuts this unit down for a while. It cannot move, turn or shoot. */
@@ -608,6 +636,7 @@ export default class Unit implements Damageable {
     if (this.healPulseTimer > 0) this.healPulseTimer -= dtMs
     if (this.stagger > 0) this.stagger -= dtMs
     if (this.attackCooldown > 0) this.attackCooldown -= dtMs
+    if (this.miredFor > 0) this.miredFor -= dtMs
     if (this.disabledFor > 0) {
       this.disabledFor -= dtMs
       // A disabled machine still falls, still gets shot, and still slides —
@@ -655,7 +684,7 @@ export default class Unit implements Damageable {
     this.target = nearest
     const staggered = this.stagger > 0
 
-    if (nearest && this.distanceTo(nearest) <= this.def.range) {
+    if (nearest && this.distanceTo(nearest) <= this.reach) {
       this.state = 'engage'
       if (!staggered) this.tryAttack(nearest, dtMs)
     } else {
@@ -668,7 +697,7 @@ export default class Unit implements Damageable {
   }
 
   private advance(dt: number, blockerX: number | null): void {
-    const step = this.def.speed * this.frenzy * dt * this.dir
+    const step = this.def.speed * this.speedMult * this.frenzy * (this.miredFor > 0 ? 0.35 : 1) * dt * this.dir
     const nextX = this.x + step
     if (blockerX !== null) {
       const limit = blockerX - this.dir * (this.radius + QUEUE_GAP)

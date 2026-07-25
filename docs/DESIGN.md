@@ -273,21 +273,90 @@ of ground, deterministic, and the only thing gameplay is ever allowed to read.
 Bloodlust asks it how soaked the ground under a soldier is. If a tech ever needs
 to know about the mess, it asks the map, not the picture.
 
-## Tech trees
+## The research network
 
-Fifteen nodes across three branches, with one rule: **a node must change what
-the game does, not what a number says.** There is no "+10% damage" in
-`data/tech.ts`. A tech either gives an army a behaviour it did not have or it
-does not belong.
+Roughly a hundred nodes in `data/tech.ts`, and the important thing about them is
+the *shape*. It is not five parallel ladders — it is a web with a single root.
 
-That constraint is also what makes the branches feel different. Carnage wants a
-long, static, bloody front line — it turns the dead into a resource and the
-ground into terrain. Ordnance wants open space and physics. Engineering refuses
-the shape of the lane: it goes under it, salvages it, or blows it up.
+`The Collapse` is ring 0. Ring 1 is broad and shared: field stripping, powder
+discipline, old rites, and a handful of plain upgrades anyone would want. Ring 2
+is where the creeds first appear, and several of its nodes have **more than one
+parent** — `bonepickers` needs both field stripping and the old rites, `salvage`
+needs field stripping and powder discipline — so the early game genuinely mixes.
+By ring 5 each node has one lineage behind it, and at ring 7 sit five ascension
+nodes, one per creed, of which you may ever take one.
+
+That is the whole design in one sentence: **early research is cheap and
+non-committal, late research makes you give something up, and the last node you
+buy decides what your army is.**
+
+Nodes come in four kinds:
+
+- **behaviour** — changes what the simulation *does*. No percentages. These
+  carry the identity of a creed.
+- **stat** — a plain multiplier on one army modifier. There are twenty-six of
+  them and they exist on purpose: a web of only behaviour nodes is five
+  decisions wearing a costume. Stat nodes are the connective tissue, the thing
+  you buy while you are still deciding, and the reason committing late costs
+  something.
+- **unit** — puts a new unit in the roster permanently.
+- **ascension** — the rim. Replaces the roster with a faction's own.
+
+The creeds still read as characters. Carnage wants a long, static, bloody front
+line. Ordnance wants open space and physics. Engineering refuses the shape of
+the lane. The Occult pays in something other than gold. Blight does not take
+ground, it makes ground.
 
 They interact, which is where builds come from rather than shopping lists:
 shrapnel feeds corpse walls, sappers make a mess behind the enemy line for
 bonepickers to eat, salvage turns a losing engagement into income.
+
+### The research screen is the graph
+
+`ui/techTree.ts` draws the network as a network: ring on the x axis, one box per
+node, and an elbowed line from every node to each of its prerequisites. Owned
+edges are green, reachable ones take the creed's colour, unreachable ones fade
+out, and hovering lights the whole local neighbourhood. Because a hundred nodes
+cannot each carry a sentence, the sentence lives in a detail strip at the foot
+that follows the pointer. The view opens focused on the outermost ring that
+still has something buyable in it.
+
+Vertical placement is resolved by the view, not the data: each node asks for a
+`row`, ties inside a ring get pushed down a slot. Adding a node can therefore
+never silently bury another one.
+
+## Unit morphs
+
+Research is not allowed to sit in a menu, so every doctrine reaches back into
+the roster and changes the units you already build. `data/morphs.ts` defines
+three morph gates per creed, spread across the rings, so an army visibly changes
+three times on the way to an ascension rather than once at the end.
+
+Whichever creed you own the most gates in claims your units; ties fall to a
+fixed order. Morphs stack, and the derived def is cached by
+`baseId@creed+stageCount`, so the same techs always produce the same unit by
+identity — sprite keys and lockstep hashes both stay stable.
+
+They are not reskins. A Knight, by creed:
+
+| Creed | Stage 3 | What it became |
+|---|---|---|
+| Carnage | Charnel Knight | 196 damage, 0.24 crit, cleaves a 60px arc |
+| Ordnance | Ashen Knight | **stopped being melee** — throws bursting charges at 205 range |
+| Engineering | Automated Knight | 2099 HP, regen 8/s, shoulder mount hits air |
+| Occult | Eclipsed Knight | fastest of the five, 0.28 crit, halo and robe |
+| Blight | Overgrown Knight | 2664 HP, regen 16/s, barely moves |
+
+The silhouette changes with them — helmet, torso, shield, cape, palette — and
+because the combinations are far too many to pre-render, a morph's sprite is
+drawn the first time that morph is actually built (`ensureUnitArt`). That is
+cosmetic work only, so it cannot affect the lockstep hash even though it happens
+at different moments on different machines.
+
+The four generic modifiers stat research moves — `unitSpeed`, `unitRange`,
+`toughness`, `bounty` — are stamped onto a soldier at spawn rather than onto its
+def, because a def is shared by every copy ever built. Research equips the next
+wave; it does not retrofit the one already dying in the lane.
 
 A few are worth calling out for how they are implemented:
 
@@ -306,7 +375,10 @@ Research is a lockstep command, and owned techs are packed into the state
 fingerprint as a bitmask, so a networked match applies a purchase on the same
 tick on both machines. The AI commits to one branch per match chosen from its
 seed, and will not spend on research until it has troops on the field — a
-teched-up army of nobody loses.
+teched-up army of nobody loses. Because the road to an ascension runs through
+shared `core` nodes that belong to no creed, the AI walks the requirement graph
+backwards from its goal (`lineageFor`) rather than filtering by branch, and
+spends surplus gold on the cheapest available stat node while it waits.
 
 ## Lockstep multiplayer
 

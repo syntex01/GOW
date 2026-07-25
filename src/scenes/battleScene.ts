@@ -33,6 +33,8 @@ const CAMERA_SCROLL_Y = 0
 export default class BattleScene extends Phaser.Scene {
   battlefield!: Battlefield
   paused = false
+  /** True while a full-screen panel owns the keyboard. */
+  modalOpen = false
   speedIndex = 0
   wave = 1
 
@@ -354,7 +356,12 @@ export default class BattleScene extends Phaser.Scene {
     const keyboard = this.input.keyboard
     if (!keyboard) return
 
-    keyboard.on('keydown-ESC', () => this.togglePause())
+    keyboard.on('keydown-ESC', () => {
+      // A full-screen panel owns Escape while it is up, or closing research
+      // would also pause the battle behind it.
+      if (this.modalOpen) return
+      this.togglePause()
+    })
     keyboard.on('keydown-P', () => this.togglePause())
     keyboard.on('keydown-F', () => this.cycleSpeed())
     keyboard.on('keydown-E', () => this.tryEvolve())
@@ -368,7 +375,7 @@ export default class BattleScene extends Phaser.Scene {
       audio.play('coin', 0.4)
     })
 
-    for (let i = 1; i <= 7; i += 1) {
+    for (let i = 1; i <= DIGIT_KEYS.length; i += 1) {
       keyboard.on(`keydown-${DIGIT_KEYS[i - 1]}`, () => this.queueByIndex(i - 1))
     }
 
@@ -727,7 +734,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 }
 
-const DIGIT_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN']
+const DIGIT_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
 
 function indexOfLevel(id: string): number {
   return LEVELS.findIndex(l => l.id === id)
