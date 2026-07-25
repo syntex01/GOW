@@ -3,7 +3,8 @@ import { TURRETS } from '../data/turrets'
 import type { ProjectileId } from '../data/types'
 import { UNITS } from '../data/units'
 import { AGE_THEMES, UI } from './palette'
-import { Canvas2D, css, makeCanvas, roundRect, shade } from './painter'
+import { Canvas2D, makeCanvas } from './painter'
+import Pix, { ramp } from './pixel'
 import {
   drawBase,
   drawCloud,
@@ -61,69 +62,99 @@ function addCanvas(scene: Phaser.Scene, key: string, c: Canvas2D): void {
   scene.textures.addCanvas(key, c.canvas)
 }
 
-/** UI chrome: rounded panels, buttons, meters. Drawn once, stretched via 9-slice. */
+/**
+ * UI chrome, drawn once and stretched via 9-slice.
+ *
+ * These are pixel art too. A smoothly rounded, antialiased panel floating over
+ * a hard-edged pixel battlefield reads as two different games stitched
+ * together, so the frames are chamfered rather than rounded and every edge is
+ * a hard one-pixel line. They are authored at half size and emitted at double,
+ * which keeps their borders the same weight as the world's.
+ */
 function buildUiTextures(scene: Phaser.Scene): void {
-  const panel = makeCanvas(64, 64)
-  roundRect(panel.ctx, 2, 2, 60, 60, 14)
-  const pg = panel.ctx.createLinearGradient(0, 0, 0, 64)
-  pg.addColorStop(0, css(UI.panelLight, 0.96))
-  pg.addColorStop(1, css(UI.panel, 0.96))
-  panel.ctx.fillStyle = pg
-  panel.ctx.fill()
-  panel.ctx.strokeStyle = css(UI.panelEdge, 0.95)
-  panel.ctx.lineWidth = 2
-  panel.ctx.stroke()
-  addCanvas(scene, 'ui:panel', panel)
+  const CORNER = 4
 
-  const glass = makeCanvas(64, 64)
-  roundRect(glass.ctx, 2, 2, 60, 60, 14)
-  glass.ctx.fillStyle = 'rgba(8,12,22,0.72)'
-  glass.ctx.fill()
-  glass.ctx.strokeStyle = css(UI.panelEdge, 0.7)
-  glass.ctx.lineWidth = 2
-  glass.ctx.stroke()
-  addCanvas(scene, 'ui:glass', glass)
-
-  const button = makeCanvas(64, 64)
-  roundRect(button.ctx, 2, 2, 60, 60, 12)
-  const bg = button.ctx.createLinearGradient(0, 0, 0, 64)
-  bg.addColorStop(0, css(shade(UI.panelLight, 0.24)))
-  bg.addColorStop(1, css(shade(UI.panel, -0.1)))
-  button.ctx.fillStyle = bg
-  button.ctx.fill()
-  button.ctx.strokeStyle = css(UI.panelEdge)
-  button.ctx.lineWidth = 2
-  button.ctx.stroke()
-  addCanvas(scene, 'ui:button', button)
-
-  const solid = makeCanvas(8, 8)
-  solid.ctx.fillStyle = '#ffffff'
-  solid.ctx.fillRect(0, 0, 8, 8)
-  addCanvas(scene, 'ui:pixel', solid)
-
-  // Soft rounded bar used for every meter in the HUD.
-  const bar = makeCanvas(32, 32)
-  roundRect(bar.ctx, 0, 0, 32, 32, 15)
-  bar.ctx.fillStyle = '#ffffff'
-  bar.ctx.fill()
-  addCanvas(scene, 'ui:bar', bar)
-
-  // Star used for campaign ratings.
-  const star = makeCanvas(48, 48)
-  const sctx = star.ctx
-  sctx.beginPath()
-  for (let i = 0; i < 10; i += 1) {
-    const r = i % 2 === 0 ? 22 : 9
-    const a = (i / 10) * Math.PI * 2 - Math.PI / 2
-    const x = 24 + Math.cos(a) * r
-    const y = 24 + Math.sin(a) * r
-    if (i === 0) sctx.moveTo(x, y)
-    else sctx.lineTo(x, y)
+  /**
+   * A chamfered frame: square corners knocked back a few pixels, a lit top
+   * edge and a shadowed bottom one, so panels have the same implied light
+   * direction as everything else on screen.
+   */
+  const frame = (fillColor: number, edge: number, opts: { alpha?: number; raised?: boolean } = {}) => {
+    const s = 32
+    const p = new Pix(s, s)
+    const alpha = Math.round((opts.alpha ?? 1) * 255)
+    const body = ramp(fillColor, { contrast: 0.6 })
+    for (let y = 0; y < s; y += 1) {
+      for (let x = 0; x < s; x += 1) {
+        // Knock the corners back so the frame reads as chamfered, not rounded.
+        const cornerX = Math.min(x, s - 1 - x)
+        const cornerY = Math.min(y, s - 1 - y)
+        if (cornerX + cornerY < CORNER) continue
+        // The bevel has to live inside the fixed border bands: 9-slice
+        // stretches the middle, so any tone change there smears into one hard
+        // line across the centre of every button.
+        const bevel = opts.raised ? (y < 6 ? body[3] : y > s - 7 ? body[1] : body[2]) : body[2]
+        p.set(x, y, bevel, alpha)
+      }
+    }
+    // One-pixel border, following the chamfer.
+    const edgeRamp = ramp(edge, { contrast: 0.5 })
+    for (let i = 0; i < s; i += 1) {
+      for (const [x, y] of [
+        [i, 0],
+        [i, s - 1],
+        [0, i],
+        [s - 1, i]
+      ] as [number, number][]) {
+        const cornerX = Math.min(x, s - 1 - x)
+        const cornerY = Math.min(y, s - 1 - y)
+        if (cornerX + cornerY < CORNER) continue
+        p.set(x, y, y < 2 ? edgeRamp[4] : y > s - 3 ? edgeRamp[1] : edgeRamp[2], 255)
+      }
+    }
+    // The chamfer itself.
+    for (let i = 0; i < CORNER; i += 1) {
+      const j = CORNER - 1 - i
+      p.set(i, j, edgeRamp[4], 255)
+      p.set(s - 1 - i, j, edgeRamp[4], 255)
+      p.set(i, s - 1 - j, edgeRamp[1], 255)
+      p.set(s - 1 - i, s - 1 - j, edgeRamp[1], 255)
+    }
+    return p.toCanvasScaled(2) as Canvas2D
   }
-  sctx.closePath()
-  sctx.fillStyle = '#ffffff'
-  sctx.fill()
-  addCanvas(scene, 'ui:star', star)
+
+  addCanvas(scene, 'ui:panel', frame(UI.panel, UI.panelEdge, { alpha: 0.96 }))
+  addCanvas(scene, 'ui:glass', frame(0x080e16, UI.panelEdge, { alpha: 0.74 }))
+  addCanvas(scene, 'ui:button', frame(UI.panelLight, UI.panelEdge, { raised: true }))
+
+  const solid = new Pix(4, 4)
+  solid.fill(0, 0, 4, 4, 0xffffff)
+  addCanvas(scene, 'ui:pixel', solid.toCanvas() as Canvas2D)
+
+  // Meter bar: a hard capsule with the corner pixels cut, so a filling bar has
+  // a crisp leading edge instead of a soft one.
+  const bar = new Pix(16, 16)
+  bar.fill(0, 0, 16, 16, 0xffffff)
+  for (const [x, y] of [
+    [0, 0],
+    [15, 0],
+    [0, 15],
+    [15, 15]
+  ] as [number, number][]) {
+    bar.set(x, y, 0, 0)
+  }
+  addCanvas(scene, 'ui:bar', bar.toCanvasScaled(2) as Canvas2D)
+
+  // Campaign rating star, plotted on the grid rather than stroked.
+  const star = new Pix(24, 24)
+  const pts: [number, number][] = []
+  for (let i = 0; i < 10; i += 1) {
+    const r = i % 2 === 0 ? 11 : 4.6
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2
+    pts.push([12 + Math.cos(a) * r, 12 + Math.sin(a) * r])
+  }
+  star.poly(pts, 0xffffff)
+  addCanvas(scene, 'ui:star', star.toCanvasScaled(2) as Canvas2D)
 }
 
 /** Small emblem shown on a unit card so each roster entry is recognisable. */
