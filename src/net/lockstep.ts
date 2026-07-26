@@ -1,6 +1,5 @@
 import type Battlefield from '../sim/battlefield'
 import type { Faction } from '../sim/types'
-import { OPPOSITE } from '../sim/types'
 import {
   HASH_INTERVAL_TICKS,
   INPUT_DELAY_TICKS,
@@ -203,10 +202,16 @@ export default class LockstepDriver {
 
   /** Runs exactly one tick with an explicit command pair. Used by tests. */
   executeTick(localCommands: Command[], remoteCommands: Command[]): void {
-    // Command order is fixed — local side first, then remote — so both peers
-    // apply them in precisely the same sequence.
-    for (const c of localCommands) this.apply(this.localFaction, c)
-    for (const c of remoteCommands) this.apply(OPPOSITE[this.localFaction], c)
+    // Command order must be THE SAME SEQUENCE ON BOTH PEERS. "Local first"
+    // reads as a fixed order but is the opposite order on the other machine,
+    // and two commands landing on one tick — routine when ticks are slow or
+    // both players are active — then executed in different orders and split
+    // the simulations. Ordering by faction is machine-independent: everyone
+    // applies the left army's commands first.
+    const playerCommands = this.localFaction === 'player' ? localCommands : remoteCommands
+    const enemyCommands = this.localFaction === 'player' ? remoteCommands : localCommands
+    for (const c of playerCommands) this.apply('player', c)
+    for (const c of enemyCommands) this.apply('enemy', c)
 
     this.bf.stepFixed(TICK_SUBSTEPS)
 

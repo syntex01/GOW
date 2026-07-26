@@ -1,4 +1,4 @@
-import type { NetMessage } from './protocol'
+import { PROTOCOL_VERSION, type NetMessage } from './protocol'
 
 /**
  * A serverless peer link.
@@ -41,6 +41,31 @@ const PUBLIC_STUN = [
   'stun:stun.cloudflare.com:3478'
 ]
 
+/**
+ * A free public TURN relay (the Open Relay Project, run by metered.ca).
+ *
+ * STUN alone fails for the pair of players most likely to try this game
+ * together: both behind symmetric NATs — common on mobile hotspots and
+ * corporate networks — where the reflexive address STUN discovers is useless
+ * because the NAT mints a new port per destination. A relay is the only route
+ * that always exists. ICE tries every candidate in parallel and prefers the
+ * direct ones, so the relay costs nothing when it is not needed, and if the
+ * service is down the connection simply proceeds without relay candidates.
+ * Port 443 with TCP is deliberate: it is the pair most firewalls cannot tell
+ * from ordinary HTTPS.
+ */
+const PUBLIC_TURN: RTCIceServer[] = [
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp'
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
+]
+
 export default class Peer {
   /**
    * True when the last code produced carried no public address.
@@ -80,7 +105,7 @@ export default class Peer {
 
   private createConnection(): RTCPeerConnection {
     const pc = new RTCPeerConnection({
-      iceServers: this.options.lanOnly ? [] : [{ urls: PUBLIC_STUN }],
+      iceServers: this.options.lanOnly ? [] : [{ urls: PUBLIC_STUN }, ...PUBLIC_TURN],
       iceCandidatePoolSize: 2
     })
     pc.onconnectionstatechange = () => {
@@ -276,19 +301,27 @@ async function waitForIceGathering(pc: RTCPeerConnection): Promise<{ public: boo
 /**
  * SDP is verbose, so codes are stripped of everything the other side can infer
  * and then base64'd. A short prefix identifies the direction so a player who
- * pastes the wrong code gets told so instead of hitting a cryptic failure.
+ * pastes the wrong code gets told so instead of hitting a cryptic failure, and
+ * the wire protocol version rides in front of the payload so two different
+ * builds refuse each other *at paste time*, in words — not three minutes into
+ * a match, as a desync alarm.
  */
 function encodeCode(sdp: string, kind: 'O' | 'A'): string {
   const compact = sdp
     .split('\r\n')
     .filter(line => line.length > 0)
     .join('\n')
-  return `GOW${kind}1:` + base64Encode(compact)
+  return `GOW${kind}2:${PROTOCOL_VERSION}:` + base64Encode(compact)
 }
 
 function decodeCode(code: string, expected: 'O' | 'A'): string {
   const trimmed = code.trim().replace(/\s+/g, '')
-  const match = /^GOW([OA])1:(.+)$/.exec(trimmed)
+  // The generation-1 format carried no version. Anyone still producing it is
+  // by definition on an older build, which is exactly what to tell the player.
+  if (/^GOW[OA]1:/.test(trimmed)) {
+    throw new Error('That code is from an older version of the game. Both players need the same build.')
+  }
+  const match = /^GOW([OA])2:(\d+):(.+)$/.exec(trimmed)
   if (!match) throw new Error('That does not look like a GOW connection code.')
   if (match[1] !== expected) {
     throw new Error(
@@ -297,7 +330,14 @@ function decodeCode(code: string, expected: 'O' | 'A'): string {
         : 'That is a host code. Paste the reply code here instead.'
     )
   }
-  return base64Decode(match[2]).split('\n').join('\r\n') + '\r\n'
+  const version = Number(match[2])
+  if (version !== PROTOCOL_VERSION) {
+    throw new Error(
+      `Your game versions differ (yours: v${PROTOCOL_VERSION}, theirs: v${version}). ` +
+        'Both players need the same build to play together.'
+    )
+  }
+  return base64Decode(match[3]).split('\n').join('\r\n') + '\r\n'
 }
 
 function base64Encode(text: string): string {

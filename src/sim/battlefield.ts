@@ -18,7 +18,7 @@ import { BASE_H, BASE_W } from '../gfx/propArt'
 import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
 import Terrain, { RELIEF_BUCKET } from './terrain'
-import Unit, { type UnitWorld } from './unit'
+import Unit, { resetUnitIds, type UnitWorld } from './unit'
 import { ADVANCE_DIR, LANE_COUNT, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type TechBranchLean } from './types'
 
 export interface BattlefieldConfig {
@@ -252,6 +252,10 @@ export default class Battlefield {
     this.scene = scene
     this.config = config
     this.vfx = vfx
+    // Ids restart at one for every match. The counter is shared with menu
+    // decorations, and unit ids are part of the lockstep fingerprint — two
+    // peers must not inherit two different menu histories.
+    resetUnitIds()
     this.rng = new Rng(config.seed ?? Date.now())
 
     const playerMods = mergeModifiers(config.playerModifiers)

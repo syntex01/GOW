@@ -10,14 +10,13 @@ import {
   type TechId,
   type TechNode
 } from '../data/tech'
-import { MORPH_TECHS } from '../data/morphs'
+import { MORPH_LINES, MORPH_TECHS } from '../data/morphs'
+import { UNITS_BY_ID } from '../data/units'
+import { FACTION_UNITS } from '../data/factions'
 import { UI } from '../gfx/palette'
 import type Army from '../sim/army'
 import {
-  CONNECTOR_H,
   NODE_SIZE_PX,
-  drawConnector,
-  drawLinkBoss,
   drawNodeFrame,
   drawNodeIcon,
   drawTreeBackdrop,
@@ -53,12 +52,79 @@ function artState(state: ReturnType<Army['techAvailability']>): NodeState {
   return state === 'ready' ? 'available' : 'locked'
 }
 
+/**
+ * Shape and colour, one per kind, worn by every node and echoed in the header
+ * legend. The frames already say *how important* a node is; the badge says
+ * *what sort of thing it does* before you have read a word.
+ */
+const KIND_BADGE: Record<TechNode['kind'], { color: number; label: string }> = {
+  behaviour: { color: 0x76c7ff, label: 'DOCTRINE — changes the rules' },
+  stat: { color: 0xffd66e, label: 'UPGRADE — a number goes up' },
+  unit: { color: 0x8ef29a, label: 'NEW UNIT' },
+  ascension: { color: 0xff9df0, label: 'ASCENSION' }
+}
+
+const ANY_UNIT_BY_ID: Record<string, { name: string; age: number }> = {
+  ...UNITS_BY_ID,
+  ...Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
+}
+
+/**
+ * Who a node actually touches, stated as units where that is knowable.
+ *
+ * The four kinds answer differently: a unit node names its unit, a morph gate
+ * names the roster units it will reshape (resolved against the army the player
+ * has *right now*, roles and all), a stat node names its scope, and everything
+ * else is an army-wide rule.
+ */
+function affectedUnits(node: TechNode, army: Army): string {
+  if (node.kind === 'unit' && node.unlocks) {
+    const def = ANY_UNIT_BY_ID[node.unlocks]
+    return def ? `adds ${def.name} to your roster` : 'adds a new unit to your roster'
+  }
+  if (node.kind === 'ascension') {
+    return 'your whole army — ascending rebuilds the roster around this creed'
+  }
+  for (const line of MORPH_LINES) {
+    const idx = line.stages.findIndex(s => s.tech === node.id)
+    if (idx < 0) continue
+    const stage = line.stages[idx]
+    const hit = army.roster.filter(d => !stage.roles || stage.roles.includes(d.role))
+    const names = hit.map(d => d.name)
+    const listed = names.slice(0, 5).join(', ') + (names.length > 5 ? ` +${names.length - 5} more` : '')
+    const scope = stage.roles ? `${stage.roles.join(' & ')} units` : 'every unit you build'
+    return names.length > 0
+      ? `morphs ${scope} (${line.title} ${idx + 1}/3): ${listed}`
+      : `morphs ${scope} — none in your roster yet`
+  }
+  if (node.kind === 'stat' && node.stat) {
+    const pct = Math.round((node.stat.mult - 1) * 100)
+    const amount = `${pct >= 0 ? '+' : ''}${pct}%`
+    switch (node.stat.key) {
+      case 'income': return `your economy — income ${amount}. No unit is touched.`
+      case 'bounty': return `your economy — kill bounties ${amount}. No unit is touched.`
+      case 'buildSpeed': return `every unit — trains ${amount} faster`
+      case 'baseHp': return `your fortress — hull ${amount}`
+      case 'abilityRate': return `your commander abilities — recharge ${amount}`
+      case 'unitHp': return `every unit you field — hp ${amount}`
+      case 'unitDamage': return `every unit you field — damage ${amount}`
+      case 'unitSpeed': return `every unit you field — speed ${amount}`
+      case 'unitRange': return `every ranged unit — reach ${amount}`
+      case 'toughness': return `every unit you field — damage taken ${amount}`
+    }
+  }
+  return node.branch === 'core'
+    ? 'army-wide rule change — every unit lives under it'
+    : `army-wide rule change, and it deepens your ${node.branch} lean (ground rules, morphs and the rim all count it)`
+}
+
 interface NodeView {
   node: TechNode
   x: number
   y: number
   frame: Phaser.GameObjects.Image
   icon: Phaser.GameObjects.Image
+  badge: Phaser.GameObjects.Image
   name: Phaser.GameObjects.Text
   tag: Phaser.GameObjects.Text
   state: ReturnType<Army['techAvailability']>
@@ -77,6 +143,11 @@ export default class TechTree {
   private destroyed = false
   private views: NodeView[] = []
   private hovered: TechId | null = null
+  /** The node the detail strip and the research button are talking about. */
+  private focused: TechId | null = null
+  /** Gold ring around the focused node, so eye and strip agree. */
+  private marker!: Phaser.GameObjects.Graphics
+  private buyBtn!: Button
 
   private panX = 0
   private panY = 0
@@ -94,6 +165,7 @@ export default class TechTree {
   private detailName: Phaser.GameObjects.Text
   private detailMeta: Phaser.GameObjects.Text
   private detailBody: Phaser.GameObjects.Text
+  private detailAffects: Phaser.GameObjects.Text
   private detailReq: Phaser.GameObjects.Text
 
   constructor(scene: Phaser.Scene, army: Army, onBuy: (id: TechId) => void, onClose: () => void) {
@@ -144,6 +216,21 @@ export default class TechTree {
       lx -= Math.max(72, text.width + 30)
     }
 
+    // Kind legend: the badge shapes, spelled out once. After this, every node
+    // on the board answers "what sort of thing is this" without being read.
+    let kx = px + 26
+    for (const kind of ['behaviour', 'stat', 'unit', 'ascension'] as const) {
+      const spec = KIND_BADGE[kind]
+      const img = scene.add.image(kx, py + 67, this.badgeKey(scene, kind)).setOrigin(0, 0.5).setDisplaySize(12, 12)
+      const short = spec.label.split(' — ')[0]
+      const text = label(scene, kx + 16, py + 61, short, { size: 10, color: spec.color })
+      this.container.add([img, text])
+      kx += 16 + text.width + 22
+    }
+    this.container.add(
+      label(scene, kx + 6, py + 61, '· colour = creed · line = prerequisite', { size: 10, color: UI.textDim })
+    )
+
     const close = new Button(scene, px + panelW - 122, py + 12, {
       width: 106,
       height: 36,
@@ -159,7 +246,7 @@ export default class TechTree {
     this.buttons.push(close)
 
     // ── the graph viewport ───────────────────────────────────────────────
-    const detailH = 84
+    const detailH = 104
     this.viewX = px + 16
     this.viewY = py + 78
     this.viewW = panelW - 32
@@ -201,6 +288,9 @@ export default class TechTree {
 
     this.buildNodes(scene)
     this.layoutRingHeaders(scene)
+    // The focus ring sits above every medallion, so it can never be buried.
+    this.marker = scene.add.graphics()
+    this.graph.add(this.marker)
 
     // ── detail strip ─────────────────────────────────────────────────────
     const dy = this.viewY + this.viewH + 8
@@ -209,20 +299,33 @@ export default class TechTree {
       .setOrigin(0, 0)
       .setStrokeStyle(1, UI.panelEdge)
     this.container.add(strip)
-    this.detailName = label(scene, this.viewX + 12, dy + 6, 'Point at a node', { size: 16, bold: true })
-    this.detailMeta = label(scene, this.viewX + 12, dy + 27, '', { size: 11, color: UI.gold })
-    this.detailBody = label(scene, this.viewX + 12, dy + 44, 'Drag to pan. Click a lit node to research it.', {
+    // Left column: what it is and what it does.
+    this.detailName = label(scene, this.viewX + 12, dy + 8, 'Select a node', { size: 16, bold: true })
+    this.detailMeta = label(scene, this.viewX + 12, dy + 30, '', { size: 11, color: UI.gold })
+    this.detailBody = label(scene, this.viewX + 12, dy + 48, 'Drag to pan. Click any node to inspect it; research with the button on the right.', {
       size: 12,
       color: UI.textDim,
-      wrap: this.viewW - 320
+      wrap: this.viewW - 640
     })
-    this.detailReq = label(scene, this.viewX + this.viewW - 12, dy + 6, '', {
-      size: 11,
-      color: UI.textDim,
-      align: 'right',
-      wrap: 290
+    // Middle column: who it touches, and what stands in the way.
+    const midX = this.viewX + this.viewW - 610
+    this.detailAffects = label(scene, midX, dy + 8, '', { size: 11, color: KIND_BADGE.unit.color, wrap: 380 })
+    this.detailReq = label(scene, midX, dy + 56, '', { size: 11, color: UI.textDim, wrap: 380 })
+    this.container.add([this.detailName, this.detailMeta, this.detailBody, this.detailAffects, this.detailReq])
+
+    // Right column: the one action. Buying moved off the nodes and onto a
+    // button, so inspecting a node can never accidentally spend 900 gold.
+    this.buyBtn = new Button(scene, this.viewX + this.viewW - 212, dy + 24, {
+      width: 200,
+      height: 48,
+      text: 'RESEARCH',
+      accent: UI.gold,
+      fontSize: 16,
+      onClick: () => this.tryBuyFocused()
     })
-    this.container.add([this.detailName, this.detailMeta, this.detailBody, this.detailReq])
+    this.buyBtn.setDepth(3002)
+    this.buyBtn.container.setVisible(false)
+    this.buttons.push(this.buyBtn)
 
     // ── input ────────────────────────────────────────────────────────────
     scene.input.on('wheel', this.onWheel, this)
@@ -295,6 +398,51 @@ export default class TechTree {
     return this.tex(scene, `tt:i:${node.id}:${state}`, () => drawNodeIcon(node, state, accent))
   }
 
+  /**
+   * One tiny stamped shape per kind: circle for doctrine, diamond for upgrade,
+   * square for unit, four-point star for ascension. Drawn with Phaser's own
+   * geometry because at twelve pixels a shape needs edges, not shading.
+   */
+  private badgeKey(scene: Phaser.Scene, kind: TechNode['kind']): string {
+    const key = `tt:kind:${kind}`
+    if (scene.textures.exists(key)) return key
+    const g = scene.make.graphics({ x: 0, y: 0 }, false)
+    const c = KIND_BADGE[kind].color
+    const s = 16
+    const m = s / 2
+    g.fillStyle(0x060a12, 1)
+    g.fillCircle(m, m, m - 1)
+    g.lineStyle(1.5, c, 1)
+    g.fillStyle(c, 1)
+    if (kind === 'behaviour') {
+      g.strokeCircle(m, m, 4.5)
+    } else if (kind === 'stat') {
+      g.fillPoints(
+        [new Phaser.Geom.Point(m, m - 5), new Phaser.Geom.Point(m + 5, m), new Phaser.Geom.Point(m, m + 5), new Phaser.Geom.Point(m - 5, m)],
+        true
+      )
+    } else if (kind === 'unit') {
+      g.fillRect(m - 4, m - 4, 8, 8)
+    } else {
+      g.fillPoints(
+        [
+          new Phaser.Geom.Point(m, m - 6),
+          new Phaser.Geom.Point(m + 1.8, m - 1.8),
+          new Phaser.Geom.Point(m + 6, m),
+          new Phaser.Geom.Point(m + 1.8, m + 1.8),
+          new Phaser.Geom.Point(m, m + 6),
+          new Phaser.Geom.Point(m - 1.8, m + 1.8),
+          new Phaser.Geom.Point(m - 6, m),
+          new Phaser.Geom.Point(m - 1.8, m - 1.8)
+        ],
+        true
+      )
+    }
+    g.generateTexture(key, s, s)
+    g.destroy()
+    return key
+  }
+
   private buildNodes(scene: Phaser.Scene): void {
     for (const node of TECHS) {
       const x = this.nodeX(node)
@@ -307,6 +455,13 @@ export default class TechTree {
         .setDisplaySize(px, px)
         .setInteractive({ useHandCursor: true })
       const icon = scene.add.image(x, y, this.iconKey(scene, node, 'locked')).setDisplaySize(px, px)
+      // Kind badge, pinned to the frame's shoulder. Minor nodes are small
+      // enough that the badge rides slightly further out so it never covers
+      // the emblem itself.
+      const bs = size === 'minor' ? 13 : 16
+      const badge = scene.add
+        .image(x + px / 2 - bs * 0.3, y - px / 2 + bs * 0.3, this.badgeKey(scene, node.kind))
+        .setDisplaySize(bs, bs)
 
       // A hundred names at once is a wall of text. The medallions carry the
       // shape of the network; only the nodes that change what your army *is*
@@ -327,16 +482,12 @@ export default class TechTree {
       frame.on('pointerup', () => {
         // A pan that ends over a node is a pan, not a click.
         if (this.dragging) return
-        if (this.army.techAvailability(node.id) !== 'ready') {
-          audio.play('ui_denied', 0.4)
-          return
-        }
-        audio.play('ui_click', 0.6)
-        this.onBuy(node.id)
+        audio.play('ui_click', 0.4)
+        this.focus(node.id)
       })
 
-      this.graph.add([frame, icon, name, tag])
-      this.views.push({ node, x, y, frame, icon, name, tag, state: 'locked', art: null })
+      this.graph.add([frame, icon, badge, name, tag])
+      this.views.push({ node, x, y, frame, icon, badge, name, tag, state: 'locked', art: null })
     }
   }
 
@@ -352,38 +503,41 @@ export default class TechTree {
 
   // ─────────────────────────────── drawing ────────────────────────────────
 
-  /** Node centres — the links run between the medallions themselves. */
-  private edgePoints(parent: TechNode, child: TechNode): [number, number, number, number] {
-    return [this.nodeX(parent), this.nodeY(parent), this.nodeX(child), this.nodeY(child)]
+  /** Half the drawn width of a node's frame, for attaching links to its rim. */
+  private halfOf(node: TechNode): number {
+    return (NODE_SIZE_PX[nodeSizeFor(node)] * ART) / 2
   }
 
   /**
-   * Links, as forged runs rather than hairlines.
+   * Links, redrawn from scratch.
    *
-   * Every run is an elbow of axis-aligned pieces, which is both what keeps a
-   * hundred parallel edges legible where a fan of diagonals turns into
-   * hatching, and what lets the connector art be stamped rather than rotated.
-   * A rosette covers each corner so the mitre never shows. The images are
-   * pooled: the network's shape never changes, only which state each run is in.
+   * The old connectors were stamped images laid as axis-aligned elbows, and
+   * every edge between the same two columns shared one vertical run — so the
+   * runs stacked, crossed rows of unrelated nodes, and read as damage rather
+   * than structure. Now each link is its own curve on one Graphics object:
+   * out of the parent's right rim, into the child's left rim, horizontal at
+   * both ends so the flow direction is never ambiguous. Where several links
+   * leave one node or arrive at one node, their endpoints fan out along the
+   * rim instead of piling onto the centre, which is what makes forty edges in
+   * one column legible.
+   *
+   * Colour is the child's creed. Weight and brightness are the state: owned
+   * links are solid, buyable links glow, locked links are ghosts.
    */
-  private linkPool: Phaser.GameObjects.Image[] = []
-  private linkUsed = 0
-
-  private link(scene: Phaser.Scene, key: string, x: number, y: number, w: number, h: number): void {
-    let img = this.linkPool[this.linkUsed]
-    if (!img) {
-      img = scene.add.image(0, 0, key).setOrigin(0.5, 0.5)
-      this.linkPool.push(img)
-      this.graph.addAt(img, 0)
-    }
-    img.setTexture(key).setPosition(x, y).setDisplaySize(w, h).setVisible(true)
-    this.linkUsed += 1
-  }
-
   private drawEdges(): void {
-    const scene = this.graph.scene
-    this.linkUsed = 0
-    const thick = CONNECTOR_H * ART
+    interface EdgeRun {
+      x1: number
+      y1: number
+      x2: number
+      y2: number
+      color: number
+      state: NodeState
+    }
+    const g = this.edges
+    g.clear()
+
+    // First pass: collect, so departures and arrivals can be fanned.
+    const raw: { parent: TechNode; child: TechNode; state: NodeState; color: number }[] = []
     for (const view of this.views) {
       const child = view.node
       for (const parentId of child.requires) {
@@ -394,33 +548,76 @@ export default class TechTree {
           : this.army.techs.has(parentId) && view.state !== 'locked'
             ? 'available'
             : 'locked'
-        const branch = child.branch
-        const [x1, y1, x2, y2] = this.edgePoints(parent, child)
-        const mid = x1 + (x2 - x1) * 0.5
-
-        const runH = (a: number, b: number, y: number) => {
-          const len = Math.abs(b - a)
-          if (len < 12) return
-          const key = this.tex(scene, `tt:h:${Math.round(len / ART)}:${state}:${branch}`, () =>
-            drawConnector(len / ART, state, branch)
-          )
-          this.link(scene, key, (a + b) / 2, y, len, thick)
-        }
-        runH(x1, mid, y1)
-        runH(mid, x2, y2)
-        const vlen = Math.abs(y2 - y1)
-        if (vlen >= 12) {
-          const key = this.tex(scene, `tt:v:${Math.round(vlen / ART)}:${state}:${branch}`, () =>
-            drawConnector(vlen / ART, state, branch, true)
-          )
-          this.link(scene, key, mid, (y1 + y2) / 2, thick, vlen)
-          const boss = this.tex(scene, `tt:b:${state}:${branch}`, () => drawLinkBoss(state, branch))
-          this.link(scene, boss, mid, y1, 13 * ART, 13 * ART)
-          this.link(scene, boss, mid, y2, 13 * ART, 13 * ART)
-        }
+        const color =
+          child.kind === 'ascension' && child.becomes
+            ? FACTIONS_BY_ID[child.becomes].accent
+            : BRANCH_ACCENT[child.branch]
+        raw.push({ parent, child, state, color })
       }
     }
-    for (let i = this.linkUsed; i < this.linkPool.length; i += 1) this.linkPool[i].setVisible(false)
+    const leaving = new Map<TechId, typeof raw>()
+    const arriving = new Map<TechId, typeof raw>()
+    for (const e of raw) {
+      ;(leaving.get(e.parent.id) ?? leaving.set(e.parent.id, []).get(e.parent.id)!).push(e)
+      ;(arriving.get(e.child.id) ?? arriving.set(e.child.id, []).get(e.child.id)!).push(e)
+    }
+    const fan = (
+      list: typeof raw,
+      e: (typeof raw)[number],
+      half: number,
+      keyOf: (edge: (typeof raw)[number]) => number
+    ): number => {
+      const n = list.length
+      if (n <= 1) return 0
+      const sorted = [...list].sort((a, b) => keyOf(a) - keyOf(b))
+      const i = sorted.indexOf(e)
+      const spread = Math.min(14, (half * 1.4) / (n - 1))
+      return (i - (n - 1) / 2) * spread
+    }
+
+    const runs: EdgeRun[] = raw.map(e => {
+      const hp = this.halfOf(e.parent)
+      const hc = this.halfOf(e.child)
+      return {
+        x1: this.nodeX(e.parent) + hp - 5,
+        y1: this.nodeY(e.parent) + fan(leaving.get(e.parent.id)!, e, hp, a => this.nodeY(a.child)),
+        x2: this.nodeX(e.child) - hc + 5,
+        y2: this.nodeY(e.child) + fan(arriving.get(e.child.id)!, e, hc, a => this.nodeY(a.parent)),
+        color: e.color,
+        state: e.state
+      }
+    })
+
+    const stroke = (e: EdgeRun, width: number, alpha: number) => {
+      g.lineStyle(width, e.color, alpha)
+      g.beginPath()
+      // Cubic with horizontal tangents; the pull grows with the horizontal
+      // gap so long hops swing wide instead of kinking.
+      const c = Math.max(46, Math.abs(e.x2 - e.x1) * 0.45)
+      g.moveTo(e.x1, e.y1)
+      const steps = 24
+      for (let i = 1; i <= steps; i += 1) {
+        const t = i / steps
+        const mt = 1 - t
+        const x = mt * mt * mt * e.x1 + 3 * mt * mt * t * (e.x1 + c) + 3 * mt * t * t * (e.x2 - c) + t * t * t * e.x2
+        const y = (mt * mt * mt + 3 * mt * mt * t) * e.y1 + (3 * mt * t * t + t * t * t) * e.y2
+        g.lineTo(x, y)
+      }
+      g.strokePath()
+    }
+
+    // Ghosts under glows under solids, so what you own is always on top.
+    for (const e of runs) if (e.state === 'locked') stroke(e, 2, 0.16)
+    for (const e of runs)
+      if (e.state === 'available') {
+        stroke(e, 7, 0.12)
+        stroke(e, 3, 0.8)
+      }
+    for (const e of runs)
+      if (e.state === 'owned') {
+        stroke(e, 8, 0.16)
+        stroke(e, 3.5, 1)
+      }
   }
 
   // ──────────────────────────────── input ────────────────────────────────
@@ -487,6 +684,63 @@ export default class TechTree {
 
   // ─────────────────────────────── detail ────────────────────────────────
 
+  /** Click and hover land here: one node, described in full, ready to buy. */
+  private focus(id: TechId): void {
+    this.showDetail(id)
+  }
+
+  private drawMarker(): void {
+    this.marker.clear()
+    if (!this.focused) return
+    const view = this.views.find(v => v.node.id === this.focused)
+    if (!view) return
+    this.marker.lineStyle(2, 0xffd66e, 0.9)
+    this.marker.strokeCircle(view.x, view.y, this.halfOf(view.node) + 7)
+  }
+
+  private tryBuyFocused(): void {
+    if (!this.focused) return
+    if (this.army.techAvailability(this.focused) !== 'ready') {
+      audio.play('ui_denied', 0.4)
+      return
+    }
+    audio.play('ui_click', 0.6)
+    this.onBuy(this.focused)
+    this.showDetail(this.focused)
+  }
+
+  /** The research button always describes the focused node, or hides. */
+  private updateBuyButton(): void {
+    const node = this.focused ? TECHS_BY_ID[this.focused] : null
+    if (!node) {
+      this.buyBtn.container.setVisible(false)
+      return
+    }
+    this.buyBtn.container.setVisible(true)
+    switch (this.army.techAvailability(node.id)) {
+      case 'owned':
+        this.buyBtn.setText('RESEARCHED').setEnabled(false)
+        break
+      case 'ready':
+        this.buyBtn
+          .setText(node.kind === 'ascension' ? 'ASCEND' : `RESEARCH · ${formatNumber(node.cost)}g`)
+          .setEnabled(true)
+        break
+      case 'gold':
+        this.buyBtn.setText(`NEEDS ${formatNumber(node.cost)}g`).setEnabled(false)
+        break
+      case 'age':
+        this.buyBtn.setText(`AGE ${node.age + 1} FIRST`).setEnabled(false)
+        break
+      case 'demand':
+        this.buyBtn.setText('EARN IT FIRST').setEnabled(false)
+        break
+      default:
+        this.buyBtn.setText('LOCKED').setEnabled(false)
+        break
+    }
+  }
+
   private showDetail(id: TechId): void {
     if (this.destroyed) return
     if (this.hovered !== id) {
@@ -500,6 +754,9 @@ export default class TechTree {
     this.hovered = id
     const node = TECHS_BY_ID[id]
     if (!node) return
+    this.focused = id
+    this.drawMarker()
+    this.updateBuyButton()
     const state = this.army.techAvailability(id)
     const kind =
       node.kind === 'ascension'
@@ -529,11 +786,10 @@ export default class TechTree {
       `${kind}  ·  ring ${node.ring}  ·  ${formatNumber(node.cost)}g  ·  age ${node.age + 1}  ·  ${status}`
     )
     this.detailMeta.setColor(hex(state === 'owned' ? UI.good : state === 'ready' ? UI.gold : UI.textDim))
-    this.detailBody.setText(
-      MORPH_TECHS.has(node.id)
-        ? `${node.effect}  ⟶  Your existing units change shape when this lands.`
-        : node.effect
-    )
+    this.detailBody.setText(node.effect)
+    this.detailAffects
+      .setText(`AFFECTS: ${affectedUnits(node, this.army)}`)
+      .setColor(hex(KIND_BADGE[node.kind].color))
 
     const missing = node.requires.filter(r => !this.army.techs.has(r))
     this.detailReq.setText(
@@ -566,6 +822,7 @@ export default class TechTree {
       }
       view.frame.setAlpha(state === 'locked' ? 0.5 : 1)
       view.icon.setAlpha(state === 'locked' ? 0.5 : 1)
+      view.badge.setAlpha(state === 'locked' ? 0.55 : 1)
 
       switch (state) {
         case 'owned':
@@ -609,6 +866,9 @@ export default class TechTree {
       }
     }
     this.drawEdges()
+    this.updateBuyButton()
+    // Gold or age may have moved under the strip; keep its words honest.
+    if (this.focused) this.showDetail(this.focused)
   }
 
   destroy(): void {

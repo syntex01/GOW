@@ -101,6 +101,17 @@ const KNOCK_RECOVERY = 1.6
 
 let nextId = 1
 
+/**
+ * Unit ids are hashed into the lockstep fingerprint, and this counter is
+ * module-global — the menu parade also builds Units, and two players never
+ * spend the same number of frames on the menu. Every battlefield therefore
+ * resets the counter at construction, so both peers number their armies from
+ * one and the fingerprint reflects the simulation instead of the menus.
+ */
+export function resetUnitIds(): void {
+  nextId = 1
+}
+
 export default class Unit implements Damageable {
   readonly id = nextId++
   readonly def: UnitDef
