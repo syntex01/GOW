@@ -283,6 +283,13 @@ export default class Unit implements Damageable {
    */
   dread = 0
 
+  /** Acolyte's dying curse: while this runs, the soldier swings 20% softer. */
+  cursedFor = 0
+  /** The Hexer's mark: while this runs, everything hits this soldier 25% harder. */
+  hexedFor = 0
+  /** Cooldown for pulsing specials — the Thrallmaster's chant, the Mycelic's roots. */
+  pulseTimer = 0
+
   private world: UnitWorld
   private scene: Phaser.Scene
   private container: Phaser.GameObjects.Container
@@ -610,7 +617,9 @@ export default class Unit implements Damageable {
 
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {
     if (!this.alive) return
-    const mult = damageMultiplier(type, this.armor)
+    let mult = damageMultiplier(type, this.armor)
+    // Plating: purpose-built against small arms — pierce and slash glance off.
+    if (this.def.special === 'plating' && (type === 'pierce' || type === 'slash')) mult *= 0.75
     // Aegis: a soldier in formation takes a share, not the whole blow. Break
     // the formation and the protection goes with it.
     const shared = this.linked > 0 ? 1 - Math.min(0.4, this.linked * 0.14) : 1
@@ -887,6 +896,8 @@ export default class Unit implements Damageable {
     if (this.knockStacks > 0) this.knockStacks = Math.max(0, this.knockStacks - (dtMs / 1000) * KNOCK_RECOVERY)
     if (this.attackCooldown > 0) this.attackCooldown -= dtMs
     if (this.miredFor > 0) this.miredFor -= dtMs
+    if (this.cursedFor > 0) this.cursedFor -= dtMs
+    if (this.hexedFor > 0) this.hexedFor -= dtMs
     if (this.disabledFor > 0) {
       this.disabledFor -= dtMs
       // A disabled machine still falls, still gets shot, and still slides —
@@ -1026,13 +1037,15 @@ export default class Unit implements Damageable {
     if (this.attackCooldown > 0) return
     const attack = this.def.attack
 
+    const frenzied =
+      this.def.special === 'frenzy' ? 1 + Math.min(0.64, this.kills * 0.08) : 1
     if (attack.kind === 'heal' || attack.kind === 'aura') {
-      this.attackCooldown = this.def.attackMs / this.frenzy
+      this.attackCooldown = this.def.attackMs / (this.frenzy * frenzied)
       this.onHealPulse?.(this)
       return
     }
 
-    this.attackCooldown = this.def.attackMs / this.frenzy
+    this.attackCooldown = this.def.attackMs / (this.frenzy * frenzied)
     this.swing = 1
 
     if (attack.kind === 'projectile' && attack.burst) {

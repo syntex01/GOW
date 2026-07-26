@@ -158,6 +158,17 @@ export interface UnitDef {
    * damage and bounty are per soldier.
    */
   squad?: number
+  /**
+   * The unit's signature rule — the mechanic that makes it *this* soldier and
+   * not a palette swap. Implemented case by case in the simulation:
+   * gravebound, frenzy, plague_shot, bone_rampart, raise_tide, death_burst,
+   * scorch_touch, incendiary_shot, cluster_shot, plating, penetrator_shot,
+   * fabricate, barrier, emp_shot, death_curse, enthrall, hex_shot, reflect,
+   * dread_wave, spore_shot, spore_burst, entangle, evergreen, seed_shot.
+   */
+  special?: string
+  /** Never shown on a command bar — summoned by another unit's special. */
+  hidden?: boolean
   /** Can this unit shoot air targets? Ground melee cannot. */
   hitsAir?: boolean
   /** Chance of a 2x hit. */

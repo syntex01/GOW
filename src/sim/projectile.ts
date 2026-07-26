@@ -176,6 +176,8 @@ export default class Projectile {
     for (const c of candidates) {
       if (!c.alive) continue
       if (c.faction === this.faction) continue
+      // A body already ricocheted off or penetrated through is behind us.
+      if (this.deflected.has(c)) continue
       if (c.layer === 'air' && !this.config.hitsAir) continue
       const cy = c.y + c.centerOffsetY
       const t = segmentHit(prevX, prevY, this.x, this.y, c.x, cy, c.radius + 6)

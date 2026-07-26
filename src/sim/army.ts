@@ -190,6 +190,7 @@ export default class Army {
     const pathDefs = (branch: string): UnitDef[] =>
       FACTION_UNITS.filter(
         u =>
+          !u.hidden &&
           unitBranch(u.id) === branch &&
           u.age <= this.age &&
           (!NODE_GATED.has(u.id) || this.unlocked.has(u.id))

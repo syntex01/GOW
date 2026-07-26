@@ -120,15 +120,16 @@ export const FACTION_UNITS: UnitDef[] = [
     attackMs: 850,
     range: 38,
     speed: 54,
-    mass: 1,
+    mass: 1.6,
     bounty: 28,
     xp: 24,
     pop: 1,
     squad: 2,
     conduct: 'swarm',
     height: 66,
+    special: 'gravebound',
     attack: { kind: 'melee', knockback: 50 },
-    description: 'It was someone. It is cheap, it is fast, and there are more behind it.',
+    description: 'It was someone. A quarter of them refuse to stay down the first time.',
     visual: look('nekrotics', { torso: 'bare', weapon: 'axe', helmet: 'none' })
   },
   {
@@ -151,9 +152,10 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 211,
     pop: 2,
     height: 84,
+    special: 'frenzy',
     attack: { kind: 'melee', knockback: 190, splash: 60 },
     bonusVs: { unarmored: 1.6, light: 1.4 },
-    description: 'Carries the tools of its old trade. It has found new material.',
+    description: 'Kills in a wide arc, and every kill quickens the next swing. Feed it and regret it.',
     visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.25 })
   },
   {
@@ -177,9 +179,10 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 3,
     conduct: 'screen',
     height: 118,
+    special: 'bone_rampart',
     attack: { kind: 'melee', knockback: 300, splash: 90 },
     regen: 22,
-    description: 'A cathedral of the dead, walking. It knits itself back together as it comes.',
+    description: 'A walking reliquary. When it finally falls, it falls as a rampart of bone.',
     visual: look('nekrotics', { kind: 'mech', torso: 'plate', weapon: 'club', helmet: 'great', chassis: 'legs', bulk: 1.5 })
   },
   {
@@ -203,6 +206,7 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 2,
     height: 74,
     hitsAir: true,
+    special: 'plague_shot',
     attack: {
       kind: 'projectile',
       projectile: 'plasmaball',
@@ -212,7 +216,7 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 70,
       splash: 70
     },
-    description: 'It sings, and something in the listener gives up.',
+    description: 'Lobs bile that keeps killing where it lands. The ground remembers its work.',
     visual: look('nekrotics', { torso: 'robe', weapon: 'staff', helmet: 'hood', cape: true })
   },
   {
@@ -235,6 +239,7 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 793,
     pop: 3,
     height: 96,
+    special: 'raise_tide',
     attack: {
       kind: 'projectile',
       projectile: 'mortar',
@@ -244,11 +249,37 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 280,
       splash: 150
     },
-    description: 'Lobs the dead over the wall. They are still moving when they land.',
+    description: 'Siege that recruits: a quarter of what its shells kill stands back up a Husk.',
     visual: look('nekrotics', { kind: 'vehicle', chassis: 'wheels', machine: 'catapult', bulk: 1.2 })
   },
 
   // ───────────────────────────── Cyborgs ─────────────────────────────
+  {
+    id: 'cy_gnat',
+    name: 'Gnat Drone',
+    age: 3,
+    role: 'ranged',
+    layer: 'air',
+    cost: 0,
+    buildMs: 1,
+    hp: 300,
+    armor: 'air',
+    damage: 60,
+    damageType: 'energy',
+    attackMs: 1100,
+    range: 260,
+    speed: 110,
+    mass: 0.5,
+    bounty: 20,
+    xp: 10,
+    pop: 0,
+    height: 30,
+    hidden: true,
+    hitsAir: true,
+    attack: { kind: 'projectile', projectile: 'laserbolt', speed: 1300, gravity: 0, spread: 0.05, knockback: 20 },
+    description: 'Printed mid-battle by a Drone Host. Not built to last; built to be replaced.',
+    visual: look('cyborgs', { kind: 'aircraft', chassis: 'hover', torso: 'exo' })
+  },
   {
     id: 'cy_revenant',
     name: 'Revenant',
@@ -270,8 +301,9 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 2,
     height: 72,
     regen: 34,
+    special: 'plating',
     attack: { kind: 'melee', knockback: 120 },
-    description: 'Eighty per cent replaced. The remaining twenty is the part that hates you.',
+    description: 'A soldier finished in metal. Small arms glance off; it repairs as it fights.',
     visual: look('cyborgs', { torso: 'exo', weapon: 'saber', helmet: 'visor' })
   },
   {
@@ -296,6 +328,7 @@ export const FACTION_UNITS: UnitDef[] = [
     height: 76,
     hitsAir: true,
     crit: 0.2,
+    special: 'penetrator_shot',
     attack: {
       kind: 'projectile',
       projectile: 'railslug',
@@ -305,7 +338,7 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 130
     },
     bonusVs: { heavy: 1.5, structure: 1.3 },
-    description: 'One shot, one line, everything on it.',
+    description: 'A rail rifle on legs. The slug does not stop at the first body.',
     visual: look('cyborgs', { torso: 'exo', weapon: 'railgun', helmet: 'visor' })
   },
   {
@@ -331,6 +364,7 @@ export const FACTION_UNITS: UnitDef[] = [
     height: 128,
     regen: 90,
     hitsAir: true,
+    special: 'barrier',
     attack: {
       kind: 'projectile',
       projectile: 'laserbolt',
@@ -340,7 +374,7 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 90,
       splash: 50
     },
-    description: 'It repairs faster than most things can hurt it. Bring something excessive.',
+    description: 'A walking wall that projects one: everything near it takes less.',
     visual: look('cyborgs', { kind: 'mech', torso: 'exo', weapon: 'plasma', helmet: 'halo', chassis: 'legs', bulk: 1.6 })
   },
   {
@@ -363,8 +397,9 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 364,
     pop: 2,
     height: 70,
+    special: 'fabricate',
     attack: { kind: 'heal', amount: 260, radius: 180 },
-    description: 'Walks behind the line reprinting whatever the line has lost.',
+    description: 'Walks behind the line printing gnat drones, and mends whatever stands near.',
     visual: look('cyborgs', { torso: 'exo', weapon: 'laser', helmet: 'halo' })
   },
   {
@@ -390,6 +425,7 @@ export const FACTION_UNITS: UnitDef[] = [
     height: 82,
     hitsAir: true,
     regen: 40,
+    special: 'emp_shot',
     attack: {
       kind: 'projectile',
       projectile: 'laserbolt',
@@ -398,7 +434,7 @@ export const FACTION_UNITS: UnitDef[] = [
       spread: 0.04,
       knockback: 60
     },
-    description: 'It does not land. It has no reason to.',
+    description: 'A hunting frame whose light switches machines off where they stand.',
     visual: look('cyborgs', { kind: 'aircraft', chassis: 'hover', torso: 'exo', weapon: 'laser' })
   },
 
@@ -418,15 +454,16 @@ export const FACTION_UNITS: UnitDef[] = [
     attackMs: 880,
     range: 40,
     speed: 58,
-    mass: 1,
+    mass: 1.6,
     bounty: 28,
     xp: 24,
     pop: 1,
     squad: 2,
     conduct: 'swarm',
     height: 68,
+    special: 'death_curse',
     attack: { kind: 'melee', knockback: 60 },
-    description: 'Volunteered. That is the part people find hard to accept.',
+    description: 'Cheap, willing, and vindictive: whatever cuts one down swings softer after.',
     visual: look('dark_circle', { torso: 'robe', weapon: 'sword', helmet: 'hood' })
   },
   {
@@ -450,6 +487,7 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 2,
     height: 74,
     hitsAir: true,
+    special: 'hex_shot',
     attack: {
       kind: 'projectile',
       projectile: 'plasmaball',
@@ -459,7 +497,7 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 110,
       splash: 90
     },
-    description: 'Points. The thing pointed at stops being structurally certain.',
+    description: 'Points at something and it stops being structurally certain: everything hits it harder.',
     visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'hood', cape: true })
   },
   {
@@ -483,9 +521,10 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 3,
     conduct: 'screen',
     height: 112,
+    special: 'reflect',
     attack: { kind: 'melee', knockback: 340, splash: 100 },
     bonusVs: { heavy: 1.4 },
-    description: 'Wears the verdict as armour. Delivers it with a mace.',
+    description: 'A tower of judged iron. A fifth of every blow against it is returned in kind.',
     visual: look('dark_circle', { torso: 'plate', weapon: 'club', helmet: 'great', shield: 'tower', bulk: 1.4 })
   },
   {
@@ -508,9 +547,10 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 158,
     pop: 1,
     height: 78,
+    special: 'enthrall',
     attack: { kind: 'melee', knockback: 160, splash: 88 },
     aura: { damageReduction: 0.3, radius: 210 },
-    description: 'Nobody in its shadow is entirely their own idea any more.',
+    description: 'Chants on a slow clock. When the verse lands, everything nearby forgets how to walk.',
     visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true })
   },
   {
@@ -534,6 +574,7 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 4,
     height: 116,
     hitsAir: true,
+    special: 'dread_wave',
     attack: {
       kind: 'projectile',
       projectile: 'plasmaball',
@@ -543,7 +584,7 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 420,
       splash: 200
     },
-    description: 'The last of the nine, and the only one that still needs a body.',
+    description: 'Its shellfall carries dread — everything caught in the blast wades as if drowning.',
     visual: look('dark_circle', { kind: 'mech', torso: 'robe', weapon: 'plasma', helmet: 'halo', chassis: 'legs', cape: true, bulk: 1.4 })
   },
 
@@ -563,15 +604,16 @@ export const FACTION_UNITS: UnitDef[] = [
     attackMs: 900,
     range: 38,
     speed: 66,
-    mass: 0.9,
+    mass: 1.6,
     bounty: 30,
     xp: 26,
     pop: 1,
     squad: 2,
     conduct: 'swarm',
     height: 62,
+    special: 'death_burst',
     attack: { kind: 'melee', knockback: 70, splash: 40 },
-    description: 'Runs at things. Is not especially concerned about arriving intact.',
+    description: 'A charge with legs. Killing one up close is a mistake you make exactly once.',
     visual: look('cinder_host', { torso: 'vest', weapon: 'grenade', helmet: 'combat' })
   },
   {
@@ -594,6 +636,7 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 298,
     pop: 2,
     height: 76,
+    special: 'incendiary_shot',
     attack: {
       kind: 'projectile',
       projectile: 'rocket',
@@ -604,7 +647,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 110,
       count: 2
     },
-    description: 'Two barrels, no interest in what is behind the target.',
+    description: 'Twin launchers, and everything they touch keeps burning after.',
     visual: look('cinder_host', { torso: 'plate', weapon: 'rpg', helmet: 'great' })
   },
   {
@@ -628,8 +671,9 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 2,
     conduct: 'screen',
     height: 120,
+    special: 'scorch_touch',
     attack: { kind: 'melee', knockback: 380, splash: 130 },
-    description: 'Burns from the inside. The armour is mostly to keep it in.',
+    description: 'Every blow of the great axe leaves the ground itself on fire.',
     visual: look('cinder_host', { kind: 'mech', torso: 'plate', weapon: 'axe', helmet: 'great', chassis: 'legs', bulk: 1.5 })
   },
   {
@@ -652,6 +696,7 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 760,
     pop: 3,
     height: 104,
+    special: 'cluster_shot',
     attack: {
       kind: 'projectile',
       projectile: 'shell',
@@ -662,7 +707,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 190
     },
     bonusVs: { structure: 1.5 },
-    description: 'Does not aim at soldiers. Aims at the ground they will need later.',
+    description: 'Its shells come apart at the top of the arc. One gun, three impacts.',
     visual: look('cinder_host', { kind: 'vehicle', chassis: 'tracks', bulk: 1.5 })
   },
   {
@@ -686,6 +731,7 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 3,
     conduct: 'hunt',
     height: 80,
+    special: 'incendiary_shot',
     attack: {
       kind: 'projectile',
       projectile: 'bomb',
@@ -695,7 +741,7 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 220,
       splash: 170
     },
-    description: 'Flies low, empties itself, comes back for more.',
+    description: 'A firebomber on the hunt: its bombs leave the lane alight beneath it.',
     visual: look('cinder_host', { kind: 'aircraft', chassis: 'rotor', torso: 'plate' })
   },
 
@@ -715,7 +761,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attackMs: 800,
     range: 36,
     speed: 60,
-    mass: 0.8,
+    mass: 1.6,
     bounty: 42,
     xp: 37,
     pop: 1,
@@ -723,8 +769,9 @@ export const FACTION_UNITS: UnitDef[] = [
     conduct: 'swarm',
     height: 58,
     regen: 18,
+    special: 'spore_burst',
     attack: { kind: 'melee', knockback: 40 },
-    description: 'Grew overnight where somebody fell. Has their gait, roughly.',
+    description: 'There is always another. Each one bursts into spore ground when it dies.',
     visual: look('hollow_bloom', { torso: 'fur', weapon: 'spear', helmet: 'none' })
   },
   {
@@ -748,6 +795,7 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 1,
     height: 78,
     hitsAir: true,
+    special: 'spore_shot',
     attack: {
       kind: 'projectile',
       projectile: 'bolt',
@@ -758,7 +806,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 60,
       count: 3
     },
-    description: 'Fires a handful at a time. Some of them take root.',
+    description: 'Flings seed-darts that sprout hostile ground wherever they strike.',
     visual: look('hollow_bloom', { torso: 'robe', weapon: 'bow', helmet: 'band' })
   },
   {
@@ -783,8 +831,9 @@ export const FACTION_UNITS: UnitDef[] = [
     conduct: 'screen',
     height: 126,
     regen: 70,
+    special: 'evergreen',
     attack: { kind: 'melee', knockback: 320, splash: 110 },
-    description: 'Would rather not move. Gets considerably harder to kill when it does not.',
+    description: 'It stands, and standing is the weapon: the longer it holds, the harder it is to hurt.',
     visual: look('hollow_bloom', { kind: 'mech', torso: 'fur', weapon: 'club', helmet: 'none', chassis: 'legs', bulk: 1.7 })
   },
   {
@@ -807,8 +856,9 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 281,
     pop: 2,
     height: 74,
+    special: 'entangle',
     attack: { kind: 'heal', amount: 300, radius: 200 },
-    description: 'Everything within reach is connected to everything else. Wounds are shared out.',
+    description: 'Tends the line, and on a slow pulse the roots take everyone else by the ankles.',
     visual: look('hollow_bloom', { torso: 'robe', weapon: 'staff', helmet: 'hood' })
   },
   {
@@ -832,6 +882,7 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 4,
     height: 132,
     regen: 60,
+    special: 'seed_shot',
     attack: {
       kind: 'projectile',
       projectile: 'boulder',
@@ -841,7 +892,7 @@ export const FACTION_UNITS: UnitDef[] = [
       knockback: 380,
       splash: 180
     },
-    description: 'Throws its own fruiting bodies. They burst on the way down.',
+    description: 'Throws its own fruiting bodies. Some of them take root and get up.',
     visual: look('hollow_bloom', { kind: 'mech', torso: 'fur', weapon: 'none', helmet: 'none', chassis: 'legs', bulk: 1.9 })
   }
 ]
@@ -855,5 +906,5 @@ export function factionRoster(id: FactionId): UnitDef[] {
     cinder_host: 'ch_',
     hollow_bloom: 'hb_'
   }
-  return FACTION_UNITS.filter(u => u.id.startsWith(prefix[id]))
+  return FACTION_UNITS.filter(u => u.id.startsWith(prefix[id]) && !u.hidden)
 }

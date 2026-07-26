@@ -8,7 +8,7 @@ import { AGE_THEMES } from '../gfx/palette'
 import { rosterForAge } from '../data/units'
 import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
 import { TECHS_BY_ID, TECH_ORDER, type TechId } from '../data/tech'
-import type { FactionId } from '../data/factions'
+import { FACTION_UNITS, type FactionId } from '../data/factions'
 import { TURRETS_BY_ID } from '../data/turrets'
 import { ensureUnitArt } from '../gfx/textureFactory'
 import type Vfx from '../gfx/vfx'
@@ -86,9 +86,13 @@ const MAX_PRESS = 4
 
 /** The protective field a unit projects, from either place it can be declared. */
 function auraOf(def: UnitDef): { damageReduction: number; radius: number } | null {
+  if (def.special === 'barrier') return { damageReduction: 0.15, radius: 110 }
   if (def.aura) return def.aura
   return def.attack.kind === 'aura' ? def.attack : null
 }
+
+/** Path unit defs by id, for the specials that summon their own kind. */
+const FACTION_UNITS_BY_ID: Record<string, UnitDef> = Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
 
 function emptyStats(): MatchStats {
   return {
@@ -855,6 +859,7 @@ export default class Battlefield {
     this.updateProjectiles(dtMs)
     this.updateGround(dtMs)
     this.updateCreedGround(dtMs)
+    this.updateUnitSpecials(dtMs)
     this.updateTurrets(dtMs)
     // Debris advances on the same fixed sub-step as everything else, so a
     // corpse lands in the same place on both machines.
@@ -1063,6 +1068,65 @@ export default class Battlefield {
         if (covered) continue
         this.addZone(x, 30 + 18 * power, 16000, 3 + 4 * power, faction, 'spore', spread, lane)
         planted += 1
+      }
+    }
+  }
+
+  /**
+   * The pulsing unit specials: the Thrallmaster's chant, the Mycelic's roots,
+   * the Drone Host's fabricator, the Standing Bastion's evergreen stance.
+   * Each is the signature of exactly one soldier, which is what makes a path
+   * army read as a different game rather than a different palette.
+   */
+  private updateUnitSpecials(dtMs: number): void {
+    for (const u of this.units) {
+      if (!u.alive) continue
+      const sp = u.def.special
+      if (!sp) continue
+      if (sp === 'evergreen') {
+        const army = this.armyFor(u.faction)
+        // Rooted research already grows the whole army's stance; the Bastion
+        // only needs its own rule when nothing else provides it.
+        if (!army.hasTech('rooted') && army.ascendedTo !== 'hollow_bloom') {
+          u.rooting = u.state === 'engage' ? Math.min(4000, u.rooting + dtMs) : 0
+        }
+        continue
+      }
+      if (sp !== 'enthrall' && sp !== 'entangle' && sp !== 'fabricate') continue
+      u.pulseTimer -= dtMs
+      if (u.pulseTimer > 0) continue
+      if (sp === 'enthrall') {
+        u.pulseTimer = 10000
+        let caught = 0
+        for (const e of this.units) {
+          if (!e.alive || e.faction === u.faction || e.layer === 'air') continue
+          if (Math.abs(e.x - u.x) <= 200) {
+            e.mire(1300)
+            caught += 1
+          }
+        }
+        if (caught > 0) this.vfx.impact(u.x, u.centerY, 0xb46bff, 1.3, false)
+      } else if (sp === 'entangle') {
+        u.pulseTimer = 8000
+        let caught = 0
+        for (const e of this.units) {
+          if (!e.alive || e.faction === u.faction || e.layer === 'air') continue
+          if (Math.abs(e.x - u.x) <= 180) {
+            e.mire(1100)
+            caught += 1
+          }
+        }
+        if (caught > 0) this.vfx.impact(u.x, u.centerY, 0x8fd694, 1.2, false)
+      } else {
+        // Fabricate: the Drone Host prints escorts while it has room to.
+        u.pulseTimer = 7000
+        const def = FACTION_UNITS_BY_ID['cy_gnat']
+        if (!def) continue
+        const gnats = this.units.filter(g => g.alive && g.faction === u.faction && g.def.id === 'cy_gnat').length
+        if (gnats >= 3) continue
+        const printed = this.spawnUnit(u.faction, def, u.x + ADVANCE_DIR[u.faction] * 30, u.lane)
+        printed.risen = true
+        this.vfx.impact(printed.x, printed.y, 0x8fe8ff, 1, false)
       }
     }
   }
@@ -1470,6 +1534,8 @@ export default class Battlefield {
       const result = p.update(dtMs, candidates)
       if (result.hit) {
         this.resolveProjectileHit(p, result.hit)
+        // A penetrator reports its hit and keeps flying into the next body.
+        if (!result.done) remaining.push(p)
       } else if (!result.done) {
         remaining.push(p)
       } else if (p.config.splash && p.config.splash > 0) {
@@ -1479,10 +1545,40 @@ export default class Battlefield {
           type: p.config.damageType,
           knockback: p.config.knockback,
           bonusVs: p.config.bonusVs
-        })
+        }, p.config.owner ?? null)
+        this.dropImpactSpecial(p)
       }
     }
     this.projectiles = remaining
+  }
+
+  /** What a path unit's shot leaves on the ground where it lands. */
+  private dropImpactSpecial(p: Projectile): void {
+    const owner = p.config.owner
+    if (!(owner instanceof Unit)) return
+    const lane = p.config.lane ?? this.laneAtY(p.y)
+    switch (owner.def.special) {
+      case 'incendiary_shot':
+        this.addZone(p.x, 42, 3000, 22, p.faction, 'fire', 0, lane)
+        break
+      case 'plague_shot':
+        this.addZone(p.x, 46, 3500, 18, p.faction, 'plague', 0, lane)
+        break
+      case 'spore_shot':
+        this.addZone(p.x, 44, 5000, 10, p.faction, 'spore', 0, lane)
+        break
+      case 'seed_shot':
+        // The Titan Bloom's fruit sometimes takes root where it bursts.
+        if (this.rng.chance(0.3)) {
+          const def = FACTION_UNITS_BY_ID['hb_sporeling']
+          if (def) {
+            const grown = this.spawnUnit(p.faction, def, p.x, lane)
+            grown.hp = grown.maxHp * 0.7
+            this.vfx.impact(p.x, this.config.groundY + LANE_Y[lane] - 12, 0x8fd694, 1.1, false)
+          }
+        }
+        break
+    }
   }
 
   private resolveProjectileHit(p: Projectile, target: Damageable): void {
@@ -1494,12 +1590,13 @@ export default class Battlefield {
       crit: p.config.crit
     }
     if (p.config.splash && p.config.splash > 0) {
-      this.applySplash(p.x, p.y, p.config.splash, p.faction, event)
+      this.applySplash(p.x, p.y, p.config.splash, p.faction, event, p.config.owner ?? null)
     } else {
       this.applyDamage(p.config.owner ?? null, target, event)
       const sfx: SfxName = p.config.damageType === 'energy' ? 'plasma' : 'arrow_hit'
       audio.play(sfx, 0.35)
     }
+    this.dropImpactSpecial(p)
   }
 
   private updateTurrets(dtMs: number): void {
@@ -1541,8 +1638,9 @@ export default class Battlefield {
     const army = this.armyFor(p.faction)
     p.wind = this.physics.wind
     if (army.hasTech('ricochet')) p.ricochets = 2
-    if (army.hasTech('penetrator')) p.penetration = 1
-    if (army.hasTech('cluster') && p.config.gravity > 0) {
+    const shooterSpecial = p.config.owner instanceof Unit ? p.config.owner.def.special : undefined
+    if (army.hasTech('penetrator') || shooterSpecial === 'penetrator_shot') p.penetration = 1
+    if ((army.hasTech('cluster') || shooterSpecial === 'cluster_shot') && p.config.gravity > 0) {
       p.cluster = true
       p.onSplit = parent => this.splitCluster(parent)
     }
@@ -1653,7 +1751,9 @@ export default class Battlefield {
       // The ground rules: a carnage soldier hits harder from its mound, and
       // anyone hits softer from the occult's haunted ground.
       (1 + 0.18 * unit.groundFury) *
-      (1 - 0.15 * unit.dread)
+      (1 - 0.15 * unit.dread) *
+      // An Acolyte's dying curse hangs on whoever struck it down.
+      (unit.cursedFor > 0 ? 0.8 : 1)
     const sfx = WEAPON_SFX[unit.def.visual.weapon] ?? 'melee_light'
 
     if (attack.kind === 'melee') {
@@ -1696,6 +1796,10 @@ export default class Battlefield {
         this.applySplash(target.x, target.y + target.centerOffsetY, attack.splash, unit.faction, event, unit, unit.lane)
       } else {
         this.applyDamage(unit, target, event)
+      }
+      // The Pyre Knight's blows set the ground itself alight.
+      if (unit.def.special === 'scorch_touch') {
+        this.addZone(target.x, 38, 2000, 14, unit.faction, 'fire', 0, target instanceof Unit ? target.lane : unit.lane)
       }
       // Heavy melee gets a beat of hit-stop so the blow lands with weight.
       if (attack.knockback > 140) this.vfx.hitStop(45)
@@ -1841,7 +1945,7 @@ export default class Battlefield {
       }
       this.decomposing.push({ x: unit.x, lane: unit.lane, mass, dueMs: this.elapsedMs + delay })
     }
-    this.applyDeathDoctrines(unit, winner)
+    this.applyDeathDoctrines(unit, winner, killer)
   }
 
   /**
@@ -1849,7 +1953,7 @@ export default class Battlefield {
    * the research tree hooks in here, and scattering it through the death path
    * would make the interactions between creeds impossible to see.
    */
-  private applyDeathDoctrines(unit: Unit, winner: Faction): void {
+  private applyDeathDoctrines(unit: Unit, winner: Faction, slayer?: Damageable): void {
     const killer = this.armyFor(winner)
     const owner = this.armyFor(unit.faction)
     const groundY = this.config.groundY
@@ -1895,6 +1999,50 @@ export default class Battlefield {
       risen.hp = risen.maxHp * 0.45
       risen.risen = true
       this.vfx.impact(unit.x, groundY - 24, 0x7fd6a0, 1.3, true)
+    }
+
+    // ── The units' own signature deaths ──
+    switch (unit.def.special) {
+      case 'gravebound':
+        // A Husk is only mostly dead, once.
+        if (!unit.risen && this.rng.chance(0.25)) {
+          const back = this.spawnUnit(unit.faction, unit.def, unit.x, unit.lane)
+          back.hp = back.maxHp * 0.45
+          back.risen = true
+          this.vfx.impact(unit.x, groundY + LANE_Y[unit.lane] - 14, 0x9fd6a0, 0.9, true)
+        }
+        break
+      case 'death_burst':
+        // An Emberling is a delivery mechanism.
+        this.applySplash(unit.x, unit.centerY, 60, unit.faction, { amount: 70, type: 'explosive', knockback: 90 })
+        break
+      case 'spore_burst':
+        this.addZone(unit.x, 44, 6000, 12, unit.faction, 'spore', 0, unit.lane)
+        break
+      case 'bone_rampart':
+        // The Ossuary Walker dies into architecture.
+        this.terrain.addMass(unit.x, unit.lane, 12, this.elapsedMs)
+        for (let i = 0; i < 6; i += 1) {
+          this.physics.spawn('gib', unit.x + this.rng.spread(20), unit.centerY, this.rng.spread(160), -this.rng.range(60, 220), {
+            size: this.rng.range(0.6, 1.1),
+            floor: groundY + LANE_Y[unit.lane]
+          })
+        }
+        break
+      case 'death_curse':
+        // Striking down an Acolyte costs the striker their nerve.
+        if (slayer instanceof Unit && slayer.alive) slayer.cursedFor = 5000
+        break
+    }
+    // The Gravetide's kills feed the tide: some of what it slays gets up a Husk.
+    if (slayer instanceof Unit && slayer.def.special === 'raise_tide' && unit.layer === 'ground' && this.rng.chance(0.25)) {
+      const def = FACTION_UNITS_BY_ID['nk_husk']
+      if (def) {
+        const husk = this.spawnUnit(slayer.faction, def, unit.x, unit.lane)
+        husk.hp = husk.maxHp * 0.6
+        husk.risen = true
+        this.vfx.impact(unit.x, groundY + LANE_Y[unit.lane] - 14, 0x7fd6a0, 1.1, true)
+      }
     }
   }
 
@@ -1998,6 +2146,13 @@ export default class Battlefield {
     const crit = event.crit ? this.rng.chance(event.crit) : false
     if (crit) amount *= 2
 
+    // The Hexer's mark: a marked soldier is structurally uncertain, and
+    // everything that reaches it finds the flaw.
+    if (target instanceof Unit && target.hexedFor > 0) amount *= 1.25
+    if (attacker instanceof Unit && attacker.def.special === 'hex_shot' && target instanceof Unit) {
+      target.hexedFor = 4000
+    }
+
     // Ordnance ground rule: a soldier caught down in a crater bowl has no
     // cover and nowhere to go, and the creed that dug the bowl knows it.
     if (
@@ -2016,12 +2171,26 @@ export default class Battlefield {
 
     target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback)
 
+    // The Iron Inquisitor answers every blow in kind: a fifth of any melee
+    // strike arcs back into the striker. The reflection carries no source,
+    // so two mirrors cannot trap each other.
+    if (
+      target instanceof Unit &&
+      target.def.special === 'reflect' &&
+      attacker instanceof Unit &&
+      attacker.alive &&
+      attacker.def.attack.kind === 'melee'
+    ) {
+      attacker.takeDamage(amount * 0.2, 'energy')
+    }
+
     // EMP: an energy hit shuts a machine down outright for a few seconds,
     // which is a hard counter to armour rather than a discount on it.
     if (
       event.type === 'energy' &&
       attacker &&
-      this.armyFor(attacker.faction).hasTech('emp') &&
+      (this.armyFor(attacker.faction).hasTech('emp') ||
+        (attacker instanceof Unit && attacker.def.special === 'emp_shot')) &&
       this.isMachine(target)
     ) {
       const machine = target as Unit
@@ -2058,6 +2227,13 @@ export default class Battlefield {
         amount: event.amount * falloff,
         knockback: event.knockback * falloff
       })
+    }
+
+    if (attacker instanceof Unit && attacker.def.special === 'dread_wave') {
+      for (const u of this.units) {
+        if (!u.alive || u.faction === faction || u.layer === 'air') continue
+        if (Math.abs(u.x - x) <= radius) u.mire(900)
+      }
     }
 
     // Heavy explosive ordnance rearranges the ground itself: mass in the bowl
