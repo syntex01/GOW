@@ -1,0 +1,1588 @@
+import type { UnitVisual } from '../../data/types'
+import {
+  PAD,
+  cloth as clothMat,
+  foot as drawBoot,
+  hand as drawHand,
+  leather,
+  limbSegment,
+  metal as metalMat,
+  orb,
+  partCanvas,
+  sealPart,
+  skin as skinMat,
+  type Material
+} from '../anatomy'
+import { RES, mix, ramp, tone } from '../pixel'
+import { bone, validateSkeleton, type Clip, type Pose, type Skeleton } from '../rig'
+import { drawCape, drawHead, drawShield, drawTorso, drawWeapon, type RigMetrics } from '../unitArt'
+import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
+
+/**
+ * The quadrupeds: a mount with a rider on it, and a beast with nothing on it.
+ *
+ * Both are the same body plan — a barrel, a neck, a head, a tail and four legs
+ * that each have a thigh, a shin and a foot — parameterised into two animals.
+ * The mount is tall, short-backed and carries a footman-style upper body on its
+ * spine. The beast is lower, longer and moves with its head down.
+ *
+ * ## What changed from the old rig
+ *
+ * The old cavalry rig was one static body canvas with four identical sticks
+ * swinging from fixed points on it, all four on the same sine wave with a phase
+ * offset. That is not a gait, it is a metronome: no knee, no hock, no push-off,
+ * and a body that never left the ground. A horse at a gallop is almost entirely
+ * *body* motion — it rises and falls through the stride, arches on the gather
+ * and stretches on the extension, and its neck pumps in time with the forehand.
+ * The legs are the last thing the eye reads, not the first.
+ *
+ * So here: four articulated legs, a barrel that pitches, a neck and head on
+ * their own chain, and a real four-beat gallop with two moments of suspension.
+ * The rider is hung on a `seat` pivot rather than welded to the spine, which is
+ * what lets him post — absorbing the mount's bob a beat late instead of riding
+ * it exactly, which is the difference between a rider and a hood ornament.
+ *
+ * ## Authoring convention
+ *
+ * Identical to `footman.ts`, and for the same reason. Every pivot — the four
+ * hips, the withers, the poll, the tail dock, the rider's shoulders and hips —
+ * carries the rest rotation, so that **the bone below it at local angle zero is
+ * in its resting direction**. A leg at zero hangs straight down, so every leg
+ * angle in the clips reads as "how far from hanging"; positive swings the limb
+ * *backward*, because positive is clockwise and forward is screen-right. The
+ * neck at zero points along its resting reach, so a positive neck angle lowers
+ * it and a negative one tucks it up.
+ */
+
+// ─────────────────────────── Proportions ───────────────────────────
+
+/**
+ * A quadruped's measurements, all as fractions of the unit's height.
+ *
+ * Authored once per animal so that the same code draws a destrier and a
+ * prowling beast without either of them being hand-tuned into a third species.
+ * y is negative upward and the animal faces screen-right, so `foreHipX` is
+ * positive and `tailX` is not.
+ */
+interface Quad {
+  /** The barrel's centre. Everything on the animal hangs off this point. */
+  coreY: number
+  /** Croup to point-of-shoulder, and the girth. */
+  bodyLen: number
+  bodyDepth: number
+  /** Where the legs leave the barrel, below its centre. */
+  hipY: number
+  hindHipX: number
+  foreHipX: number
+  /**
+   * Thigh and shin. The foot has no bone length of its own — it is drawn
+   * hanging off the shin's tip — so a leg reaches `thigh + shin + hoofH`, and
+   * that has to equal the drop from the hip to the ground *in the standing
+   * pose*, not with the leg straight. A hock at rest is bent, which shortens
+   * the chain by a little under one percent, and a leg authored as though it
+   * were straight leaves the animal hovering a couple of pixels off the floor.
+   */
+  hindThigh: number
+  hindShin: number
+  foreThigh: number
+  foreShin: number
+  /** The neck's root on the barrel, and the direction it rests in. */
+  witherX: number
+  witherY: number
+  neckRest: number
+  neckLen: number
+  /** The poll: how far the head breaks from the line of the neck. */
+  pollRest: number
+  headLen: number
+  tailX: number
+  tailY: number
+  tailRest: number
+  tailLen: number
+  // Drawn thicknesses. A horse's leg goes from a hand's breadth of haunch to a
+  // cannon bone two pixels wide, and that violent taper is most of what makes
+  // it read as a horse rather than a table.
+  hindTopW: number
+  hindMidW: number
+  foreTopW: number
+  foreMidW: number
+  legBotW: number
+  hoofLen: number
+  hoofH: number
+  neckBaseW: number
+  neckTipW: number
+  headW: number
+  tailW: number
+}
+
+/** The mount: tall, short-coupled, with the withers high enough to sit behind. */
+const MOUNT: Quad = {
+  coreY: -0.52,
+  bodyLen: 0.66,
+  bodyDepth: 0.24,
+  hipY: 0.1,
+  hindHipX: -0.24,
+  foreHipX: 0.22,
+  // The hip sits 0.42 above the ground. The forelegs stand almost straight, so
+  // 0.20 + 0.17 + 0.05 lands them on it exactly; the hind pair carries its
+  // resting zigzag and is lengthened to 0.20 + 0.175 to pay for it.
+  hindThigh: 0.2,
+  hindShin: 0.175,
+  foreThigh: 0.2,
+  foreShin: 0.17,
+  witherX: 0.26,
+  witherY: -0.08,
+  neckRest: -0.95,
+  neckLen: 0.19,
+  pollRest: 1.05,
+  headLen: 0.155,
+  tailX: -0.31,
+  tailY: -0.06,
+  tailRest: 0.4,
+  tailLen: 0.2,
+  hindTopW: 0.15,
+  hindMidW: 0.08,
+  foreTopW: 0.125,
+  foreMidW: 0.066,
+  legBotW: 0.04,
+  hoofLen: 0.06,
+  hoofH: 0.05,
+  neckBaseW: 0.12,
+  neckTipW: 0.07,
+  headW: 0.085,
+  tailW: 0.06
+}
+
+/** The beast: lower, longer, shoulders above the croup, and it carries nothing. */
+const BEAST: Quad = {
+  coreY: -0.6,
+  bodyLen: 0.76,
+  bodyDepth: 0.26,
+  hipY: 0.09,
+  hindHipX: -0.28,
+  foreHipX: 0.28,
+  // The hip sits 0.51 above the ground and the leg only has to *reach* 0.45 of
+  // that, so both pairs are deliberately a fifth longer than they need to be.
+  // A leg that exactly spans its own hip height can only stand: the moment it
+  // swings forward it lifts off, which caps the stride at nothing. The surplus
+  // is spent on a folded, crouched stance — which is also the pose a stalking
+  // animal actually holds, so the geometry and the character want the same thing.
+  hindThigh: 0.3,
+  hindShin: 0.27,
+  foreThigh: 0.29,
+  foreShin: 0.26,
+  witherX: 0.33,
+  witherY: -0.09,
+  // Down and forward, not up: the head belongs below the shoulder line on a
+  // stalking animal, and that single angle does more for the read than any
+  // amount of drawing on the head itself.
+  neckRest: 0.22,
+  neckLen: 0.21,
+  pollRest: -0.08,
+  headLen: 0.18,
+  tailX: -0.36,
+  tailY: -0.05,
+  tailRest: 0.85,
+  tailLen: 0.22,
+  hindTopW: 0.17,
+  hindMidW: 0.095,
+  foreTopW: 0.15,
+  foreMidW: 0.085,
+  legBotW: 0.055,
+  hoofLen: 0.075,
+  hoofH: 0.06,
+  neckBaseW: 0.15,
+  neckTipW: 0.1,
+  headW: 0.1,
+  tailW: 0.05
+}
+
+/** The rider's upper body. Smaller than a footman's — he is sitting down. */
+const R = {
+  /** The seat, relative to the barrel's centre. */
+  seatX: -0.02,
+  seatY: -0.1,
+  torsoLen: 0.2,
+  neckLen: 0.03,
+  headR: 0.078,
+  shoulderDrop: 0.032,
+  shoulderSpread: 0.044,
+  upperArm: 0.115,
+  foreArm: 0.108,
+  handSize: 0.046,
+  hipSpread: 0.03,
+  thigh: 0.145,
+  shin: 0.135,
+  footLen: 0.078,
+  footH: 0.038,
+  limbThick: 0.05,
+  // Seated rest: the thigh forward across the saddle flap, the knee bent back,
+  // the heel down. Put on the skeleton rather than repeated in every clip,
+  // because unlike the mount's legs these barely move.
+  thighRest: -0.62,
+  shinRest: 0.92,
+  bootRest: -0.24
+}
+
+/** Weapons that are aimed rather than swung, same set the footman uses. */
+const RANGED_WEAPONS = new Set<UnitVisual['weapon']>([
+  'sling', 'bow', 'musket', 'rifle', 'lmg', 'rpg', 'laser', 'railgun', 'plasma', 'grenade'
+])
+
+/** Weapons a rider couches level along the line of the charge. */
+const COUCHED_WEAPONS = new Set<UnitVisual['weapon']>(['lance', 'spear'])
+
+/** The muzzle of the animal itself, solved from the rig rather than guessed. */
+function jawTip(P: Quad): [number, number] {
+  const nx = P.witherX + Math.cos(P.neckRest) * P.neckLen
+  const ny = P.coreY + P.witherY + Math.sin(P.neckRest) * P.neckLen
+  const a = P.neckRest + P.pollRest
+  return [nx + Math.cos(a) * P.headLen, ny + Math.sin(a) * P.headLen]
+}
+
+// ──────────────────────────── Skeletons ────────────────────────────
+
+/**
+ * The four-legged half, shared by both archetypes.
+ *
+ * Everything hangs off `barrel`, including the legs — unlike the footman, where
+ * the hips deliberately sit on a world-aligned root so the legs never inherit
+ * the torso's lean. On a quadruped the opposite is true: the shoulders and hips
+ * *are* the body, and it is the barrel pitching that throws the legs through
+ * the stride. Hanging them anywhere else gives you a horse whose body rocks
+ * while its legs stay bolted to the horizon.
+ *
+ * Depths interleave the two sides around the body: far legs behind it, near
+ * legs in front, with room left between for a rider's own limbs to slot in.
+ */
+function quadBones(P: Quad): Skeleton {
+  return [
+    // World-aligned. Carries the whole animal's rise and fall through a stride.
+    bone('root', null, { y: P.coreY, depth: 20 }),
+    // The barrel is drawn pointing right and has no length, so its children
+    // attach at its own pivot — the core — and rotate about it when it pitches.
+    bone('barrel', 'root', {
+      part: 'barrel',
+      orient: 'right',
+      depth: 20,
+      weights: { breathe: 0.5, lean: 0.5, flinch: 0.3 }
+    }),
+
+    // ── tail ─────────────────────────────────────────────────────────────
+    bone('tailBase', 'barrel', { x: P.tailX, y: P.tailY, angle: Math.PI / 2 + P.tailRest, depth: 4 }),
+    bone('tail', 'tailBase', { length: P.tailLen, part: 'tail', depth: 4, weights: { breathe: 0.8 } }),
+
+    // ── neck and head ────────────────────────────────────────────────────
+    // The withers pivot holds the neck's resting reach, so a clip angle here
+    // means "how far the neck has dropped from where it lives".
+    bone('withers', 'barrel', { x: P.witherX, y: P.witherY, angle: P.neckRest, depth: 24 }),
+    bone('neck', 'withers', {
+      length: P.neckLen,
+      part: 'neck',
+      depth: 24,
+      weights: { breathe: 0.6, aim: 0.25, flinch: 0.5 }
+    }),
+    bone('poll', 'neck', { angle: P.pollRest, depth: 26 }),
+    bone('beastHead', 'poll', {
+      length: P.headLen,
+      part: 'beastHead',
+      depth: 26,
+      weights: { aim: 0.4, breathe: 0.3, flinch: 1 }
+    }),
+
+    // ── far-side legs ────────────────────────────────────────────────────
+    // Each hip carries PI/2 against a barrel pointing right, so the leg below
+    // it hangs straight down at local zero.
+    bone('hindHipB', 'barrel', { x: P.hindHipX, y: P.hipY, angle: Math.PI / 2, depth: 6 }),
+    bone('hindThighB', 'hindHipB', { length: P.hindThigh, part: 'hindThighB', depth: 6 }),
+    bone('hindShinB', 'hindThighB', { length: P.hindShin, part: 'hindShinB', depth: 7 }),
+    bone('hindHoofB', 'hindShinB', { part: 'hindHoofB', depth: 8 }),
+
+    bone('foreHipB', 'barrel', { x: P.foreHipX, y: P.hipY, angle: Math.PI / 2, depth: 9 }),
+    bone('foreThighB', 'foreHipB', { length: P.foreThigh, part: 'foreThighB', depth: 9 }),
+    bone('foreShinB', 'foreThighB', { length: P.foreShin, part: 'foreShinB', depth: 10 }),
+    bone('foreHoofB', 'foreShinB', { part: 'foreHoofB', depth: 11 }),
+
+    // ── near-side legs ───────────────────────────────────────────────────
+    bone('hindHipF', 'barrel', { x: P.hindHipX, y: P.hipY, angle: Math.PI / 2, depth: 44 }),
+    bone('hindThighF', 'hindHipF', { length: P.hindThigh, part: 'hindThighF', depth: 44 }),
+    bone('hindShinF', 'hindThighF', { length: P.hindShin, part: 'hindShinF', depth: 45 }),
+    bone('hindHoofF', 'hindShinF', { part: 'hindHoofF', depth: 46 }),
+
+    bone('foreHipF', 'barrel', { x: P.foreHipX, y: P.hipY, angle: Math.PI / 2, depth: 47 }),
+    bone('foreThighF', 'foreHipF', { length: P.foreThigh, part: 'foreThighF', depth: 47 }),
+    bone('foreShinF', 'foreThighF', { length: P.foreShin, part: 'foreShinF', depth: 48 }),
+    bone('foreHoofF', 'foreShinF', { part: 'foreHoofF', depth: 49 })
+  ]
+}
+
+/**
+ * The rider, seated on the mount's spine.
+ *
+ * The `seat` pivot is the whole point: it is a pure pivot on the barrel that
+ * the clips drive independently, so the rider can rise as the mount falls and
+ * lean forward a beat after the mount stretches. Hanging the torso straight off
+ * the barrel instead makes a rider that is part of the horse.
+ *
+ * The far leg is deliberately deeper than the barrel — a rider straddles, so
+ * the off-side leg belongs *behind* the animal, and drawing it in front is the
+ * single most obvious way to make cavalry look wrong.
+ *
+ * @param weaponRest  local angle of the weapon against a downward-pointing hand
+ * @param ranged      raises the weapon arm to firing height, so the aim layer
+ *                    tilts around level rather than around hanging down
+ */
+function riderBones(weaponRest: number, ranged: boolean): Skeleton {
+  const armRest = ranged ? -1.28 : 0
+  const foreRest = ranged ? 0.42 : 0
+  return [
+    bone('seat', 'barrel', { x: R.seatX, y: R.seatY, depth: 34 }),
+
+    // Points up out of the saddle. Everything worn on the upper body rides it.
+    bone('rTorso', 'seat', {
+      angle: -Math.PI / 2,
+      length: R.torsoLen,
+      part: 'chest',
+      orient: 'up',
+      depth: 34,
+      weights: { breathe: 1, lean: 1, flinch: 0.6 }
+    }),
+    bone('rNeck', 'rTorso', { length: R.neckLen, depth: 35 }),
+    bone('rHead', 'rNeck', {
+      length: R.headR,
+      part: 'head',
+      orient: 'up',
+      depth: 36,
+      weights: { breathe: 0.4, aim: 0.12, flinch: 1 }
+    }),
+
+    // Arms. The shoulder pivots carry PI so a limb at local zero hangs down
+    // against a torso that points up.
+    bone('rShoulderB', 'rTorso', { x: -R.shoulderDrop, y: -R.shoulderSpread, angle: Math.PI, depth: 28 }),
+    bone('rUpperArmB', 'rShoulderB', {
+      angle: ranged ? -0.95 : 0,
+      length: R.upperArm,
+      part: 'rUpperArmB',
+      depth: 28,
+      weights: { aim: 0.42, recoil: 0.4 }
+    }),
+    bone('rForeArmB', 'rUpperArmB', {
+      angle: ranged ? 0.72 : 0,
+      length: R.foreArm,
+      part: 'rForeArmB',
+      depth: 29,
+      weights: { aim: 0.34, recoil: 0.6 }
+    }),
+    bone('rHandB', 'rForeArmB', { part: 'rHandB', depth: 30 }),
+
+    bone('rShoulderF', 'rTorso', { x: -R.shoulderDrop, y: R.shoulderSpread, angle: Math.PI, depth: 54 }),
+    bone('rUpperArmF', 'rShoulderF', {
+      angle: armRest,
+      length: R.upperArm,
+      part: 'rUpperArmF',
+      depth: 54,
+      weights: { aim: 0.6, recoil: 0.7 }
+    }),
+    bone('rForeArmF', 'rUpperArmF', {
+      angle: foreRest,
+      length: R.foreArm,
+      part: 'rForeArmF',
+      depth: 55,
+      weights: { aim: 0.4, recoil: 1 }
+    }),
+    bone('rHandF', 'rForeArmF', { part: 'rHandF', depth: 56 }),
+    bone('weapon', 'rHandF', { angle: weaponRest, part: 'weapon', orient: 'right', depth: 58, weights: { aim: 0.1 } }),
+
+    // Legs. Seated, so the rest angles live on the bones and the clips only
+    // nudge them — a rider's knee angle is set by the saddle, not by the gait.
+    bone('rHipB', 'seat', { x: -R.hipSpread * 0.5, angle: Math.PI / 2, depth: 14 }),
+    bone('rThighB', 'rHipB', { angle: R.thighRest, length: R.thigh, part: 'rThighB', depth: 14 }),
+    bone('rShinB', 'rThighB', { angle: R.shinRest, length: R.shin, part: 'rShinB', depth: 15 }),
+    bone('rBootB', 'rShinB', { angle: R.bootRest, part: 'rBootB', depth: 16 }),
+
+    bone('rHipF', 'seat', { x: R.hipSpread * 0.5, angle: Math.PI / 2, depth: 50 }),
+    bone('rThighF', 'rHipF', { angle: R.thighRest, length: R.thigh, part: 'rThighF', depth: 50 }),
+    bone('rShinF', 'rThighF', { angle: R.shinRest, length: R.shin, part: 'rShinF', depth: 51 }),
+    bone('rBootF', 'rShinF', { angle: R.bootRest, part: 'rBootF', depth: 52 }),
+
+    // Worn kit. Both sit just above the barrel so they fall across the animal's
+    // rump and flank rather than disappearing inside it.
+    bone('cape', 'rTorso', { y: -0.02, part: 'cape', orient: 'up', depth: 22 }),
+    bone('shield', 'rTorso', {
+      x: -R.torsoLen * 0.4,
+      y: -R.shoulderSpread * 1.5,
+      part: 'shield',
+      orient: 'up',
+      depth: 38,
+      weights: { lean: 0.4 }
+    })
+  ]
+}
+
+function buildRiderSkeleton(weaponRest: number, ranged: boolean): Skeleton {
+  const s = [...quadBones(MOUNT), ...riderBones(weaponRest, ranged)]
+  validateSkeleton(s, 'rider')
+  return s
+}
+
+function buildBeastSkeleton(): Skeleton {
+  const s = quadBones(BEAST)
+  validateSkeleton(s, 'beast')
+  return s
+}
+
+// ────────────────────────────── Clips ──────────────────────────────
+
+/** thigh, shin, hoof — one leg, in the order the chain runs. */
+type Leg = readonly [number, number, number]
+
+/**
+ * All four legs in one line, in footfall order for a transverse gallop:
+ * far hind, near hind, far fore, near fore.
+ *
+ * Written this way because a gait is a *relationship* between the four legs,
+ * and a pose spelled out as twelve separate bone entries hides that completely.
+ */
+function legs(hindB: Leg, hindF: Leg, foreB: Leg, foreF: Leg): Pose {
+  return {
+    hindThighB: { angle: hindB[0] },
+    hindShinB: { angle: hindB[1] },
+    hindHoofB: { angle: hindB[2] },
+    hindThighF: { angle: hindF[0] },
+    hindShinF: { angle: hindF[1] },
+    hindHoofF: { angle: hindF[2] },
+    foreThighB: { angle: foreB[0] },
+    foreShinB: { angle: foreB[1] },
+    foreHoofB: { angle: foreB[2] },
+    foreThighF: { angle: foreF[0] },
+    foreShinF: { angle: foreF[1] },
+    foreHoofF: { angle: foreF[2] }
+  }
+}
+
+/**
+ * The standing pose, used as the base for both idles and as the rest the attack
+ * clips return to. The hind legs keep their zigzag — femur back, cannon forward
+ * — because a horse standing with straight hind legs is a sawhorse.
+ */
+const STAND = legs([0.2, -0.3, 0.12], [0.16, -0.26, 0.1], [-0.03, 0.04, 0.0], [0.02, 0.03, -0.02])
+
+/**
+ * The gallop.
+ *
+ * Five keys and two suspensions, which is what separates a gallop from a fast
+ * walk. The cycle reads: **gather** — all four feet off the ground with the
+ * legs folded under a body that has arched and shortened, neck tucked; then the
+ * hind pair strikes one after the other and drives; then the fore pair catches
+ * the fall, the near fore last as the lead leg; then **extension**, the second
+ * suspension, with the body stretched flat out and the hinds swinging through
+ * underneath it.
+ *
+ * The two things doing the real work are not in the legs at all. `root.y` lifts
+ * the whole animal off the ground through both suspensions and slams it down
+ * over the loaded diagonal, and `barrel` pitches nose-up on the gather and
+ * nose-down as the forehand takes the weight. The neck pumps against that: it
+ * tucks when the body gathers and reaches out over the lead foreleg, which is
+ * the motion everyone recognises even if nobody can name it.
+ *
+ * The rider is on the opposite phase. `seat.y` rises while the mount drops, so
+ * he floats over the worst of it, and `seat.angle` folds him forward through
+ * the extension and lets him come up on the gather — a beat behind the mount
+ * each time, because a rider who moves exactly with the horse is welded to it.
+ */
+const RIDE_WALK: Clip = {
+  name: 'walk',
+  duration: 620,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    {
+      // Gather. Airborne, coiled, everything folded in under the body.
+      t: 0,
+      pose: {
+        ...legs([-0.72, -0.62, 0.34], [-0.52, -0.78, 0.4], [-0.1, 1.05, 0.45], [-0.32, 1.25, 0.55]),
+        root: { y: -0.028 },
+        barrel: { angle: -0.07 },
+        neck: { angle: -0.18 },
+        beastHead: { angle: 0.22 },
+        tail: { angle: -0.24 },
+        seat: { y: 0.016, angle: 0.06 },
+        rTorso: { angle: -0.04 },
+        rUpperArmF: { angle: -0.12 },
+        rForeArmF: { angle: 0.24 },
+        rUpperArmB: { angle: -0.16 },
+        rForeArmB: { angle: 0.3 },
+        rThighF: { angle: 0.05 },
+        rThighB: { angle: 0.05 }
+      }
+    },
+    {
+      // First beat: the off hind strikes and starts to take the weight.
+      t: 0.2,
+      pose: {
+        ...legs([-0.34, -0.14, 0.1], [-0.6, -0.4, 0.26], [-0.55, 0.55, 0.3], [-0.62, 0.85, 0.42]),
+        root: { y: 0.006 },
+        barrel: { angle: -0.02 },
+        neck: { angle: -0.04 },
+        beastHead: { angle: 0.06 },
+        tail: { angle: -0.1 },
+        seat: { y: -0.004, angle: 0.12 },
+        rTorso: { angle: 0.02 },
+        rUpperArmF: { angle: -0.06 },
+        rForeArmF: { angle: 0.3 },
+        rUpperArmB: { angle: -0.1 },
+        rForeArmB: { angle: 0.34 },
+        rThighF: { angle: 0.0 },
+        rThighB: { angle: 0.0 }
+      }
+    },
+    {
+      // Second and third beats overlap: near hind planted, off hind driving
+      // back, off fore reaching for the ground. This is the lowest the body
+      // gets — the whole animal is hanging off one loaded diagonal.
+      t: 0.4,
+      pose: {
+        ...legs([0.42, 0.1, -0.12], [-0.18, -0.16, 0.06], [-0.46, 0.14, 0.06], [-0.6, 0.42, 0.26]),
+        root: { y: 0.016 },
+        barrel: { angle: 0.04 },
+        neck: { angle: 0.1 },
+        beastHead: { angle: -0.06 },
+        tail: { angle: 0.08 },
+        seat: { y: -0.01, angle: 0.18 },
+        rTorso: { angle: 0.06 },
+        rUpperArmF: { angle: 0.02 },
+        rForeArmF: { angle: 0.34 },
+        rUpperArmB: { angle: -0.02 },
+        rForeArmB: { angle: 0.38 },
+        rThighF: { angle: -0.04 },
+        rThighB: { angle: -0.04 }
+      }
+    },
+    {
+      // Fourth beat: the lead fore plants and the body rolls over it. The hind
+      // pair has already left the ground and is swinging forward underneath.
+      t: 0.6,
+      pose: {
+        ...legs([0.66, -0.24, -0.2], [0.5, 0.04, -0.14], [0.02, 0.06, -0.04], [-0.3, 0.1, 0.06]),
+        root: { y: 0.01 },
+        barrel: { angle: 0.08 },
+        neck: { angle: 0.2 },
+        beastHead: { angle: -0.14 },
+        tail: { angle: 0.16 },
+        seat: { y: -0.006, angle: 0.2 },
+        rTorso: { angle: 0.05 },
+        rUpperArmF: { angle: -0.02 },
+        rForeArmF: { angle: 0.3 },
+        rUpperArmB: { angle: -0.06 },
+        rForeArmB: { angle: 0.34 },
+        rThighF: { angle: -0.02 },
+        rThighB: { angle: -0.02 }
+      }
+    },
+    {
+      // Extension. The forehand pushes off, the animal stretches out flat and
+      // leaves the ground for the second time in the cycle.
+      t: 0.8,
+      pose: {
+        ...legs([0.1, -0.72, 0.24], [0.24, -0.56, 0.2], [0.52, 0.22, -0.1], [0.34, 0.4, 0.05]),
+        root: { y: -0.022 },
+        barrel: { angle: -0.01 },
+        neck: { angle: 0.06 },
+        beastHead: { angle: -0.04 },
+        tail: { angle: -0.14 },
+        seat: { y: 0.012, angle: 0.14 },
+        rTorso: { angle: -0.01 },
+        rUpperArmF: { angle: -0.1 },
+        rForeArmF: { angle: 0.26 },
+        rUpperArmB: { angle: -0.14 },
+        rForeArmB: { angle: 0.3 },
+        rThighF: { angle: 0.03 },
+        rThighB: { angle: 0.03 }
+      }
+    }
+  ]
+}
+
+/**
+ * The idle.
+ *
+ * A standing horse is never quite still — it shifts its weight, its head
+ * swings, its tail moves — but it is also not performing, so all of this is
+ * small. The one liberty taken is the off hind resting: a horse at ease cocks
+ * one hind leg and stands on three, and it is the most recognisable thing a
+ * stationary horse does.
+ */
+const RIDE_IDLE: Clip = {
+  name: 'idle',
+  duration: 3100,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    {
+      t: 0,
+      pose: {
+        ...STAND,
+        hindThighB: { angle: 0.3 },
+        hindShinB: { angle: -0.46 },
+        hindHoofB: { angle: 0.3 },
+        root: { y: 0 },
+        neck: { angle: 0.02 },
+        beastHead: { angle: 0.0 },
+        tail: { angle: -0.06 },
+        seat: { y: 0, angle: 0.02 },
+        rUpperArmF: { angle: -0.08 },
+        rForeArmF: { angle: 0.3 },
+        rUpperArmB: { angle: -0.12 },
+        rForeArmB: { angle: 0.34 }
+      }
+    },
+    {
+      t: 0.5,
+      pose: {
+        ...STAND,
+        hindThighB: { angle: 0.32 },
+        hindShinB: { angle: -0.5 },
+        hindHoofB: { angle: 0.34 },
+        root: { y: -0.004 },
+        neck: { angle: -0.05 },
+        beastHead: { angle: 0.05 },
+        tail: { angle: 0.1 },
+        seat: { y: -0.003, angle: 0.0 },
+        rUpperArmF: { angle: -0.04 },
+        rForeArmF: { angle: 0.34 },
+        rUpperArmB: { angle: -0.08 },
+        rForeArmB: { angle: 0.38 }
+      }
+    }
+  ]
+}
+
+/**
+ * The attack.
+ *
+ * Anticipation, strike, recovery — the same shape as the footman's, but the
+ * anticipation is done by the *mount*. The horse gathers and lifts its forehand
+ * off the ground, which throws the rider's weight back and cocks the weapon
+ * arm; then the front feet come down and the whole animal drives forward
+ * underneath the blow. A cavalryman does not hit with his shoulder, he hits
+ * with half a ton of horse, and the clip has to say so.
+ */
+const RIDE_ATTACK: Clip = {
+  name: 'attack',
+  duration: 540,
+  loop: false,
+  ease: 'quad',
+  keys: [
+    { t: 0, pose: { ...STAND } },
+    {
+      // Gather and rear: forehand up, hocks under, rider coiled away.
+      t: 0.34,
+      pose: {
+        ...legs([0.02, -0.5, 0.28], [0.1, -0.44, 0.24], [-0.4, 0.8, 0.34], [-0.55, 0.95, 0.4]),
+        root: { y: -0.018 },
+        barrel: { angle: -0.2 },
+        neck: { angle: -0.24 },
+        beastHead: { angle: 0.2 },
+        tail: { angle: -0.2 },
+        seat: { y: 0.006, angle: -0.14 },
+        rTorso: { angle: -0.2 },
+        rHead: { angle: 0.08 },
+        rUpperArmF: { angle: -1.1 },
+        rForeArmF: { angle: -0.66 },
+        rUpperArmB: { angle: 0.24 },
+        rForeArmB: { angle: 0.5 }
+      },
+      ease: 'cubic'
+    },
+    {
+      // Contact. `back` overshoots this and settles into it, which is the
+      // difference between a blow landing and an arm waving.
+      t: 0.46,
+      pose: {
+        ...legs([0.5, -0.06, -0.14], [0.42, -0.02, -0.1], [-0.2, 0.12, 0.04], [-0.28, 0.16, 0.06]),
+        root: { y: 0.012 },
+        barrel: { angle: 0.1 },
+        neck: { angle: 0.2 },
+        beastHead: { angle: -0.16 },
+        tail: { angle: 0.18 },
+        seat: { y: -0.008, angle: 0.26 },
+        rTorso: { angle: 0.3 },
+        rHead: { angle: -0.06 },
+        rUpperArmF: { angle: 0.82 },
+        rForeArmF: { angle: 0.12 },
+        rUpperArmB: { angle: -0.3 },
+        rForeArmB: { angle: 0.2 }
+      },
+      ease: 'back'
+    },
+    {
+      // Follow through, still committed forward.
+      t: 0.64,
+      pose: {
+        ...legs([0.34, -0.16, -0.06], [0.28, -0.14, -0.04], [-0.1, 0.08, 0.02], [-0.14, 0.1, 0.02]),
+        root: { y: 0.006 },
+        barrel: { angle: 0.05 },
+        neck: { angle: 0.1 },
+        beastHead: { angle: -0.06 },
+        tail: { angle: 0.08 },
+        seat: { y: -0.003, angle: 0.16 },
+        rTorso: { angle: 0.16 },
+        rUpperArmF: { angle: 0.5 },
+        rForeArmF: { angle: 0.4 },
+        rUpperArmB: { angle: -0.14 }
+      },
+      ease: 'sine'
+    },
+    { t: 1, pose: { ...STAND }, ease: 'sine' }
+  ]
+}
+
+/**
+ * The beast stands folded rather than propped: hock high and well behind, wrist
+ * ahead of the shoulder, the whole animal a hand's breadth lower than its legs
+ * could hold it. Solved so the pads sit exactly on the ground.
+ */
+const PROWL_STAND = legs([0.66, -1.32, 0.66], [0.66, -1.32, 0.66], [-0.58, 1.23, -0.65], [-0.58, 1.23, -0.65])
+
+/**
+ * One foot's stride, sampled eight times.
+ *
+ * These are not eyeballed. Each entry is a foot *position* — so far forward of
+ * the hip, so far below it — pushed back through `solveTwoBoneIk`, because the
+ * thing that has to be true of a walk is that the planted foot does not slide
+ * and does not sink, and that is a statement about where the foot is, not about
+ * what angle the thigh is at. Six of the eight samples hold the foot on the
+ * ground and walk it steadily backward from full reach to full extension; the
+ * remaining two lift it, fold it and swing it forward again. That 3:1 duty
+ * ratio is what separates a walk from a trot.
+ *
+ * The two legs fold opposite ways, which is the single strongest signal that
+ * something is an animal: the forelimb's wrist breaks *forward* of the line
+ * from shoulder to foot, the hind limb's hock breaks *backward*.
+ */
+type Cycle = readonly Leg[]
+
+const PROWL_FORE: Cycle = [
+  [-0.83, 0.61, 0.22], // full reach, pad landing
+  [-0.83, 1.04, -0.21],
+  [-0.68, 1.21, -0.53], // under the shoulder, carrying
+  [-0.43, 1.2, -0.77],
+  [-0.12, 1.01, -0.9],
+  [0.25, 0.61, -0.86], // full extension behind, about to lift
+  [-0.47, 1.76, -1.29], // folded and swinging through
+  [-1.08, 1.54, -0.46] // thrown forward, reaching for the next plant
+]
+
+const PROWL_HIND: Cycle = [
+  [-0.12, -0.85, 0.97], // reaching under the belly
+  [0.23, -1.18, 0.95],
+  [0.5, -1.31, 0.8], // under the hip, driving
+  [0.72, -1.31, 0.58],
+  [0.88, -1.18, 0.3],
+  [0.92, -0.85, -0.08], // driven out behind
+  [1.22, -1.86, 0.64], // hock snapped shut, foot clear of the ground
+  [0.53, -1.72, 1.19]
+]
+
+// Lateral sequence — near hind, near fore, far hind, far fore — expressed as
+// how many of the eight samples each leg lags the near hind by. Writing the
+// gait as offsets rather than as four hand-copied pose lists is the only way to
+// be sure all four legs are genuinely walking the same stride.
+const PROWL_BODY = [
+  // root.y, barrel, neck, head, tail. The body dips onto each of the four
+  // footfalls and the head nods with the working shoulder, while the tail
+  // sways once per stride so the whole thing does not read as a four-frame loop.
+  [0.006, -0.01, 0.04, 0.0, -0.18],
+  [-0.003, 0.01, 0.1, -0.05, -0.1],
+  [0.005, 0.04, 0.15, -0.11, 0.02],
+  [-0.004, 0.02, 0.12, -0.07, 0.14],
+  [0.006, -0.01, 0.07, -0.02, 0.2],
+  [-0.003, 0.01, 0.11, -0.06, 0.12],
+  [0.005, 0.04, 0.16, -0.12, 0.0],
+  [-0.004, 0.02, 0.1, -0.05, -0.12]
+]
+
+/**
+ * The prowl.
+ *
+ * Head low the whole way through — below the line of the shoulders, which is
+ * the entire difference between a beast stalking and a horse ambling — a long
+ * stride off the folded legs, and shoulders that visibly work as each forefoot
+ * takes the load.
+ */
+const BEAST_WALK: Clip = {
+  name: 'walk',
+  duration: 980,
+  loop: true,
+  ease: 'sine',
+  keys: Array.from({ length: 8 }, (_, k) => {
+    const [y, barrel, neck, head, tail] = PROWL_BODY[k]
+    return {
+      t: k / 8,
+      pose: {
+        ...legs(
+          PROWL_HIND[(k + 4) % 8],
+          PROWL_HIND[k % 8],
+          PROWL_FORE[(k + 2) % 8],
+          PROWL_FORE[(k + 6) % 8]
+        ),
+        root: { y },
+        barrel: { angle: barrel },
+        neck: { angle: neck },
+        beastHead: { angle: head },
+        tail: { angle: tail }
+      }
+    }
+  })
+}
+
+/** Breathing, a slow tail sway, and the head quartering the ground. */
+const BEAST_IDLE: Clip = {
+  name: 'idle',
+  duration: 2900,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    {
+      t: 0,
+      pose: {
+        ...PROWL_STAND,
+        root: { y: 0 },
+        barrel: { angle: 0.01 },
+        neck: { angle: 0.06 },
+        beastHead: { angle: -0.04 },
+        tail: { angle: -0.16 }
+      }
+    },
+    {
+      t: 0.5,
+      pose: {
+        ...PROWL_STAND,
+        root: { y: -0.005 },
+        barrel: { angle: -0.01 },
+        neck: { angle: -0.02 },
+        beastHead: { angle: 0.06 },
+        tail: { angle: 0.18 }
+      }
+    }
+  ]
+}
+
+/**
+ * The lunge.
+ *
+ * The beast has no arms and no weapon, so the whole body is the strike. It
+ * crouches — hocks folded, chest dropped, head drawn back over the shoulders —
+ * and then throws itself forward, forelegs raking and the head driving out past
+ * the line of the chest. The recovery pulls back on the haunches rather than
+ * settling in place, so it ends where it can go again.
+ */
+const BEAST_ATTACK: Clip = {
+  name: 'attack',
+  duration: 500,
+  loop: false,
+  ease: 'quad',
+  keys: [
+    { t: 0, pose: { ...PROWL_STAND } },
+    {
+      // Crouch. Everything gathers back and down over the hind legs.
+      t: 0.32,
+      pose: {
+        ...legs([0.93, -1.66, 0.73], [0.93, -1.66, 0.73], [-0.95, 1.69, -0.74], [-0.95, 1.69, -0.74]),
+        root: { y: 0.018, x: -0.02 },
+        barrel: { angle: 0.06 },
+        neck: { angle: -0.3 },
+        beastHead: { angle: 0.24 },
+        tail: { angle: -0.3 }
+      },
+      ease: 'cubic'
+    },
+    {
+      // The lunge itself: hinds straight behind, forelegs thrown out, jaws
+      // past the chest. Overshoot and settle.
+      t: 0.46,
+      pose: {
+        ...legs([1.12, -1.09, -0.04], [1.06, -1.02, -0.06], [-1.43, 1.53, -0.1], [-1.5, 1.46, -0.06]),
+        root: { y: -0.014, x: 0.026 },
+        barrel: { angle: -0.1 },
+        neck: { angle: 0.3 },
+        beastHead: { angle: -0.26 },
+        tail: { angle: 0.24 }
+      },
+      ease: 'back'
+    },
+    {
+      t: 0.64,
+      pose: {
+        ...legs([0.9, -1.3, 0.4], [0.86, -1.26, 0.4], [-0.9, 1.44, -0.54], [-0.86, 1.4, -0.54]),
+        root: { y: 0.004, x: 0.01 },
+        barrel: { angle: -0.02 },
+        neck: { angle: 0.14 },
+        beastHead: { angle: -0.1 },
+        tail: { angle: 0.1 }
+      },
+      ease: 'sine'
+    },
+    { t: 1, pose: { ...PROWL_STAND }, ease: 'sine' }
+  ]
+}
+
+// ────────────────────────────── Drawing ──────────────────────────────
+
+/**
+ * Smooth interpolation through a short table of control points.
+ *
+ * An animal's outline is a handful of landmarks — croup, loin, withers, girth,
+ * flank — and everything between them is a curve. Authoring the landmarks and
+ * letting this fill in the rest is far easier to tune than a trigonometric
+ * expression that happens to look like a horse.
+ */
+type Profile = readonly (readonly [number, number])[]
+
+function curve(t: number, points: Profile): number {
+  if (t <= points[0][0]) return points[0][1]
+  const last = points[points.length - 1]
+  if (t >= last[0]) return last[1]
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const [ta, va] = points[i]
+    const [tb, vb] = points[i + 1]
+    if (t <= tb) {
+      const u = (t - ta) / (tb - ta)
+      return va + (vb - va) * (0.5 - Math.cos(Math.PI * u) / 2)
+    }
+  }
+  return last[1]
+}
+
+// Landmarks as fractions of half the girth, measured from the spine. t runs
+// from the croup (0) to the point of the shoulder (1).
+const HORSE_BACK: Profile = [[0, 0.28], [0.1, 0.46], [0.32, 0.38], [0.58, 0.37], [0.86, 0.5], [0.96, 0.42], [1, 0.3]]
+const HORSE_BELLY: Profile = [[0, 0.42], [0.16, 0.36], [0.36, 0.28], [0.66, 0.5], [0.86, 0.5], [1, 0.36]]
+// The beast carries its shoulders above its croup and tucks harder at the
+// flank, which is most of why it reads as a predator and not as livestock.
+const BEAST_BACK: Profile = [[0, 0.26], [0.12, 0.44], [0.36, 0.34], [0.6, 0.38], [0.82, 0.52], [0.94, 0.42], [1, 0.28]]
+const BEAST_BELLY: Profile = [[0, 0.4], [0.2, 0.34], [0.44, 0.22], [0.72, 0.42], [0.9, 0.44], [1, 0.32]]
+
+/** Tack drawn onto the mount's body, in the rider's own colours. */
+interface Tack {
+  blanket: Material
+  saddle: Material
+  accent: number
+}
+
+/**
+ * The barrel: rump, loin, girth and chest as one part.
+ *
+ * Silhouette first, then the two muscle masses that actually describe an
+ * animal at this size — the round of the haunch and the slab of the shoulder —
+ * then tack. Detail is drawn freely and trimmed back to the outline afterwards,
+ * so a haunch can be shaped as a full blob without bulging the profile.
+ *
+ * Authored pointing right, with its origin at the core, so the bone can pitch
+ * the whole body about the animal's centre of mass.
+ */
+function drawBarrel(
+  lengthPx: number,
+  depthPx: number,
+  hide: Material,
+  mane: Material,
+  opts: { back: Profile; belly: Profile; tack?: Tack; hackles?: boolean }
+): PartArt {
+  const L = Math.max(12, Math.round(lengthPx * RES))
+  const D = Math.max(6, Math.round(depthPx * RES))
+  const p = partCanvas(L, D * 2.6)
+  const x0 = PAD
+  const cy = Math.round(p.h / 2)
+  const r = hide.ramp
+
+  const tops: number[] = []
+  const bots: number[] = []
+
+  // ── silhouette ──────────────────────────────────────────────────────────
+  for (let i = 0; i < L; i += 1) {
+    const t = L > 1 ? i / (L - 1) : 0
+    const x = x0 + i
+    const top = Math.round(cy - D * curve(t, opts.back))
+    const bot = Math.round(cy + D * curve(t, opts.belly))
+    tops.push(top)
+    bots.push(bot)
+    const h = Math.max(1, bot - top + 1)
+    p.fill(x, top, 1, h, r[2])
+    // The barrel is a cylinder: the underside falls away from the key light and
+    // the last row of it is in full shadow.
+    const shade = Math.max(1, Math.round(h * 0.24))
+    p.fill(x, bot - shade + 1, 1, shade, r[1])
+    p.set(x, bot, r[0])
+    // The topline catches the light, hardest over the forehand where it faces
+    // up and to the right.
+    p.set(x, top, t > 0.44 ? r[4] : r[3])
+    if (h > 5) p.set(x, top + 1, r[3])
+  }
+
+  // ── muscle ──────────────────────────────────────────────────────────────
+  // The haunch and the shoulder, as rounded masses with their own shading. Two
+  // shapes is the whole anatomy budget at this scale; a third turns to noise.
+  orb(p, x0 + L * 0.15, cy + D * 0.04, L * 0.15, D * 0.34, r)
+  orb(p, x0 + L * 0.79, cy + D * 0.08, L * 0.12, D * 0.32, r)
+  // The crease behind the shoulder blade, and one rib stroke on the flank.
+  p.line(x0 + L * 0.69, cy - D * 0.26, x0 + L * 0.64, cy + D * 0.3, r[1])
+  p.line(x0 + L * 0.46, cy + D * 0.06, x0 + L * 0.45, cy + D * 0.3, r[1])
+  // The stifle groove in front of the haunch.
+  p.line(x0 + L * 0.28, cy - D * 0.2, x0 + L * 0.25, cy + D * 0.28, r[1])
+
+  // ── trim detail back to the outline ─────────────────────────────────────
+  for (let x = 0; x < p.w; x += 1) {
+    const i = x - x0
+    const inside = i >= 0 && i < L
+    for (let y = 0; y < p.h; y += 1) {
+      if (!inside || y < tops[i] || y > bots[i]) p.set(x, y, 0, 0)
+    }
+  }
+
+  // ── things that stand proud of the body ─────────────────────────────────
+  if (opts.hackles) {
+    // A raised ridge along the spine. Drawn after the trim precisely because it
+    // is meant to break the silhouette.
+    const m = mane.ramp
+    for (let i = Math.round(L * 0.2); i < Math.round(L * 0.92); i += 1) {
+      const t = i / (L - 1)
+      const rise = Math.max(1, Math.round(D * 0.18 * curve(t, [[0.2, 0.3], [0.55, 0.7], [0.82, 1], [0.92, 0.2]])))
+      const x = x0 + i
+      p.fill(x, tops[i] - rise, 1, rise, i % 2 ? m[1] : m[2])
+      p.set(x, tops[i] - rise, m[0])
+    }
+  }
+
+  if (opts.tack) {
+    const bl = opts.tack.blanket.ramp
+    const sd = opts.tack.saddle.ramp
+    const ac = ramp(opts.tack.accent)
+    const seatFrom = Math.round(L * 0.33)
+    const seatTo = Math.round(L * 0.64)
+    // Blanket: two rows following the topline, with an accent edge at the rear
+    // where it hangs past the saddle.
+    for (let i = seatFrom - 3; i < seatTo + 2 && i < L; i += 1) {
+      if (i < 0) continue
+      const x = x0 + i
+      const drop = i < seatFrom ? Math.round(D * 0.5) : 2
+      p.fill(x, tops[i], 1, drop, bl[2])
+      p.set(x, tops[i], bl[3])
+      if (i < seatFrom) p.set(x, tops[i] + drop - 1, ac[3])
+    }
+    // Saddle: a seat that dips in the middle, a cantle behind and a pommel in
+    // front, so the rider is sitting in something rather than on a plank.
+    for (let i = seatFrom; i < seatTo && i < L; i += 1) {
+      const t = (i - seatFrom) / Math.max(1, seatTo - seatFrom - 1)
+      const rise = Math.round(D * 0.1 * curve(t, [[0, 1], [0.42, 0], [0.6, 0], [1, 0.7]]))
+      const x = x0 + i
+      p.fill(x, tops[i] - rise - 1, 1, rise + 2, sd[2])
+      p.set(x, tops[i] - rise - 1, sd[3])
+    }
+    // Girth round the barrel, and a stirrup leather with an iron on the end.
+    const girth = x0 + Math.round(L * 0.62)
+    p.fill(girth, tops[Math.round(L * 0.62)], 1, bots[Math.round(L * 0.62)] - tops[Math.round(L * 0.62)] + 1, sd[1])
+    const stir = x0 + Math.round(L * 0.5)
+    const stirTop = tops[Math.round(L * 0.5)]
+    const stirLen = Math.round(D * 1.05)
+    p.fill(stir, stirTop, 1, stirLen, sd[1])
+    p.frame(stir - 1, stirTop + stirLen, 3, 3, ramp(0x9aa2ae, { contrast: 1.2 })[3])
+  }
+
+  return { canvas: sealPart(p, hide.base), origin: [(x0 + L / 2) / p.w, cy / p.h] }
+}
+
+/**
+ * The neck.
+ *
+ * Authored pointing **down** with its origin at the withers, like any other
+ * limb. Once the bone rotates it up and forward, the part's local +x edge ends
+ * up along the top of the neck — which is both the crest, where the mane goes,
+ * and the edge the light lands on. That is not a coincidence; the limb
+ * convention was chosen so the two agree.
+ */
+function drawNeck(
+  lengthPx: number,
+  baseWPx: number,
+  tipWPx: number,
+  hide: Material,
+  mane: Material,
+  opts: { crest?: boolean; ruff?: boolean }
+): PartArt {
+  const L = Math.max(4, Math.round(lengthPx * RES))
+  const W0 = Math.max(2, Math.round(baseWPx * RES))
+  const W1 = Math.max(2, Math.round(tipWPx * RES))
+  const fringe = Math.max(1, Math.round(W0 * 0.55))
+  const p = partCanvas(W0 + fringe * 2 + 2, L)
+  const cx = PAD + fringe + Math.round(W0 / 2)
+  const top = PAD
+  const r = hide.ramp
+  const m = mane.ramp
+
+  const widths: number[] = []
+  const lefts: number[] = []
+  for (let i = 0; i < L; i += 1) {
+    const t = L > 1 ? i / (L - 1) : 0
+    const w = Math.max(2, Math.round(W0 + (W1 - W0) * curve(t, [[0, 0], [0.55, 0.5], [1, 1]])))
+    // A neck is not a cone: the throat hollows out under the jaw, so the
+    // centreline bows toward the crest as it rises.
+    const bow = Math.round(W0 * 0.16 * Math.sin(t * Math.PI))
+    const left = cx - (w >> 1) + bow
+    widths.push(w)
+    lefts.push(left)
+    p.fill(left, top + i, w, 1, r[2])
+    p.set(left, top + i, r[1])
+    if (w > 2) p.set(left + w - 1, top + i, r[3])
+    if (w > 4) p.set(left + w - 2, top + i, r[3])
+  }
+
+  if (opts.crest) {
+    // The mane: ragged strands off the crest edge, alternating tones so it
+    // reads as hair rather than as a second silhouette.
+    for (let i = 0; i < L; i += 1) {
+      const t = L > 1 ? i / (L - 1) : 0
+      const edge = lefts[i] + widths[i] - 1
+      const len = Math.max(1, Math.round(fringe * (0.45 + 0.55 * Math.sin(t * Math.PI)) - (i % 3 === 0 ? 1 : 0)))
+      p.fill(edge, top + i, len, 1, i % 2 ? m[1] : m[2])
+      p.set(edge + len - 1, top + i, m[0])
+    }
+  }
+  if (opts.ruff) {
+    // Shorter, on both sides, and heaviest at the shoulder — a mantle rather
+    // than a mane.
+    for (let i = 0; i < L; i += 1) {
+      const t = L > 1 ? i / (L - 1) : 0
+      const len = Math.max(1, Math.round(fringe * (0.85 - 0.6 * t)))
+      p.fill(lefts[i] + widths[i] - 1, top + i, len, 1, i % 2 ? m[1] : m[2])
+      p.fill(lefts[i] - len + 1, top + i, len, 1, i % 2 ? m[0] : m[1])
+    }
+  }
+
+  return { canvas: sealPart(p, hide.base), origin: [cx / p.w, top / p.h] }
+}
+
+/**
+ * The head, authored pointing down from the poll toward the muzzle.
+ *
+ * After the bone rotation the part's local +x is *up* — the forehead and the
+ * line of the nose — and local -x is the jaw and the throat. So the ears rise
+ * off the +x side of the poll, the eye sits high on the +x half, and the muzzle
+ * and the chin are drawn toward -x. Getting that mapping backwards produces a
+ * horse wearing its own jaw as a hat, which is exactly as bad as it sounds.
+ */
+function drawQuadHead(
+  lengthPx: number,
+  widthPx: number,
+  hide: Material,
+  mane: Material,
+  opts: { jaw: 'equine' | 'fanged'; eye: number; bridle?: Material }
+): PartArt {
+  const L = Math.max(5, Math.round(lengthPx * RES))
+  const W = Math.max(3, Math.round(widthPx * RES))
+  const earLen = Math.max(2, Math.round(W * 0.8))
+  const p = partCanvas(W * 2 + earLen, L + 2)
+  const cx = PAD + W + 1
+  const top = PAD + 1
+  const r = hide.ramp
+  const m = mane.ramp
+  const fanged = opts.jaw === 'fanged'
+
+  // The two edges of the face, as fractions of W from the bone line. The crown
+  // side is nearly straight; the jaw side carries the cheek and the chin.
+  const crown: Profile = fanged
+    ? [[0, 0.56], [0.24, 0.5], [0.66, 0.4], [1, 0.36]]
+    : [[0, 0.5], [0.2, 0.46], [0.6, 0.34], [0.86, 0.3], [1, 0.36]]
+  const jaw: Profile = fanged
+    ? [[0, 0.62], [0.3, 0.66], [0.62, 0.5], [0.86, 0.44], [1, 0.5]]
+    : [[0, 0.58], [0.22, 0.62], [0.55, 0.34], [0.82, 0.26], [1, 0.34]]
+
+  for (let i = 0; i < L; i += 1) {
+    const t = L > 1 ? i / (L - 1) : 0
+    const up = Math.max(1, Math.round(W * curve(t, crown)))
+    const down = Math.max(1, Math.round(W * curve(t, jaw)))
+    const left = cx - down
+    p.fill(left, top + i, down + up + 1, 1, r[2])
+    p.set(left, top + i, r[1])
+    p.set(cx + up, top + i, r[3])
+  }
+
+  // Ears off the poll, on the crown side, one slightly behind the other.
+  const earBase = cx + Math.round(W * curve(0.03, crown))
+  p.line(earBase, top, earBase + earLen, top - 1, r[2])
+  p.line(earBase, top + 1, earBase + earLen, top, r[3])
+  p.line(earBase - 1, top + 2, earBase + earLen - 1, top + 3, r[1])
+  p.set(earBase + earLen, top - 1, m[0])
+
+  // Eye: a dark pixel with a lit one over the brow, which is the only way an
+  // eye reads at this size without becoming a blob.
+  const eyeX = cx + Math.round(W * 0.2)
+  const eyeY = top + Math.round(L * 0.24)
+  p.set(eyeX, eyeY, ramp(opts.eye, { contrast: 1.4 })[fanged ? 4 : 1])
+  p.set(eyeX + 1, eyeY - 1, r[3])
+  p.set(eyeX - 1, eyeY + 1, r[0])
+
+  // Muzzle: nostril and mouth line on the jaw side, near the tip.
+  p.set(cx - Math.round(W * 0.1), top + L - 2, r[0])
+  p.line(cx - Math.round(W * curve(0.9, jaw)), top + L - 2, cx - Math.round(W * 0.06), top + L - 1, r[0])
+
+  if (fanged) {
+    // Two fangs breaking the lower edge, and a brow ridge over the eye.
+    const bright = ramp(0xe8e2d2)[4]
+    p.set(cx - Math.round(W * curve(0.78, jaw)) - 1, top + Math.round(L * 0.78), bright)
+    p.set(cx - Math.round(W * curve(0.9, jaw)) - 1, top + Math.round(L * 0.9), bright)
+    p.line(cx + Math.round(W * 0.34), top + Math.round(L * 0.14), cx + Math.round(W * 0.22), top + Math.round(L * 0.34), r[3])
+  } else {
+    // Forelock over the poll, and a blaze down the nose.
+    for (let i = 0; i < 3; i += 1) {
+      p.line(earBase - 1 - i, top + 1 + i, earBase - 3 - i, top + 4 + i, i % 2 ? m[1] : m[2])
+    }
+    p.line(cx + Math.round(W * 0.28), top + Math.round(L * 0.4), cx + Math.round(W * 0.22), top + L - 3, r[4])
+  }
+
+  if (opts.bridle) {
+    const b = opts.bridle.ramp
+    // Cheekpiece down from the poll, noseband across the muzzle, and a rein
+    // stub running back — the reins themselves cannot be drawn as a rigid part.
+    p.line(cx + Math.round(W * 0.3), top + 2, cx - Math.round(W * 0.3), top + Math.round(L * 0.52), b[1])
+    const nb = top + Math.round(L * 0.62)
+    p.fill(cx - Math.round(W * curve(0.62, jaw)), nb, Math.round(W * (curve(0.62, jaw) + curve(0.62, crown))) + 1, 1, b[1])
+    p.set(cx - Math.round(W * 0.2), top + Math.round(L * 0.5), b[3])
+  }
+
+  return { canvas: sealPart(p, hide.base), origin: [cx / p.w, top / p.h] }
+}
+
+/**
+ * One leg segment. Authored pointing down, origin at the joint at its top.
+ *
+ * `limbSegment` from the shared vocabulary tapers by a fraction; a horse's leg
+ * needs a taper of five to one from the haunch to the cannon bone, which that
+ * one cannot express without going to nothing. So this takes both widths and
+ * shapes the fall between them, heaviest near the top where the muscle is.
+ */
+function drawLegBone(
+  lengthPx: number,
+  topWPx: number,
+  botWPx: number,
+  mat: Material,
+  opts: { cap?: boolean; muscle?: boolean } = {}
+): PartArt {
+  const L = Math.max(3, Math.round(lengthPx * RES))
+  const T = Math.max(2, Math.round(topWPx * RES))
+  const B = Math.max(1, Math.round(botWPx * RES))
+  const p = partCanvas(T + 2, L + 2)
+  const cx = PAD + Math.round(T / 2)
+  const top = PAD
+  const r = mat.ramp
+
+  for (let i = 0; i < L; i += 1) {
+    const t = L > 1 ? i / (L - 1) : 0
+    // The mass stays high and then falls away fast, which is where the
+    // gaskin-to-cannon shape of a real leg comes from.
+    const shape = opts.muscle ? curve(t, [[0, 0], [0.3, 0.16], [0.62, 0.72], [1, 1]]) : curve(t, [[0, 0], [1, 1]])
+    const w = Math.max(1, Math.round(T + (B - T) * shape))
+    const x = cx - (w >> 1)
+    p.fill(x, top + i, w, 1, r[2])
+    p.set(x, top + i, r[1])
+    if (w > 2) p.set(x + w - 1, top + i, r[3])
+  }
+
+  if (opts.cap) orb(p, cx, top + 1, T * 0.5, T * 0.4, r)
+  // The joint at the bottom — knee, hock or fetlock — reads as a small knob.
+  if (B >= 2) orb(p, cx, top + L - 1, Math.max(1, B * 0.7), Math.max(1, B * 0.6), r)
+
+  return { canvas: sealPart(p, mat.base), origin: [cx / p.w, top / p.h] }
+}
+
+/**
+ * A hoof or a paw, with its pastern. Origin at the fetlock, toe pointing right,
+ * because the rig mirrors the whole container for facing.
+ */
+function drawHoof(
+  lengthPx: number,
+  heightPx: number,
+  leg: Material,
+  horn: Material,
+  opts: { paw?: boolean } = {}
+): PartArt {
+  const Lh = Math.max(3, Math.round(lengthPx * RES))
+  const H = Math.max(2, Math.round(heightPx * RES))
+  const p = partCanvas(Lh + 2, H + 2)
+  const ankleX = PAD + Math.round(Lh * 0.32)
+  const top = PAD
+  const lr = leg.ramp
+  const hr = horn.ramp
+
+  // Pastern: a short slope forward off the fetlock, so the foot is not welded
+  // straight onto the cannon bone.
+  const pastern = Math.max(1, Math.round(H * 0.34))
+  p.fill(ankleX - 1, top, 3, pastern, lr[2])
+  p.set(ankleX + 1, top, lr[3])
+
+  if (opts.paw) {
+    // A splayed pad with toes and claws — wider than it is deep.
+    p.fill(PAD, top + pastern, Lh, H - pastern, hr[2])
+    p.fill(PAD, top + H - 1, Lh, 1, hr[0])
+    p.fill(PAD, top + pastern, Lh, 1, hr[3])
+    for (let i = 1; i < Lh; i += 2) p.set(PAD + i, top + H - 2, hr[1])
+    p.set(PAD + Lh - 1, top + pastern, ramp(0xe8e2d2)[4])
+  } else {
+    // A hoof: a wedge that is wider at the ground than at the coronet.
+    for (let i = 0; i < H - pastern; i += 1) {
+      const t = (i + 1) / Math.max(1, H - pastern)
+      const w = Math.max(2, Math.round(Lh * (0.6 + 0.4 * t)))
+      const x = PAD + Math.round((Lh - w) * 0.4)
+      p.fill(x, top + pastern + i, w, 1, hr[2])
+      p.set(x, top + pastern + i, hr[1])
+      p.set(x + w - 1, top + pastern + i, hr[3])
+    }
+    p.fill(PAD, top + H - 1, Lh, 1, hr[0])
+  }
+
+  return { canvas: sealPart(p, horn.base), origin: [ankleX / p.w, top / p.h] }
+}
+
+/**
+ * The tail. Authored pointing down from the dock, so the bone's rest angle
+ * carries it back and the clips swing it.
+ */
+function drawTail(lengthPx: number, widthPx: number, mane: Material, opts: { whip?: boolean } = {}): PartArt {
+  const L = Math.max(4, Math.round(lengthPx * RES))
+  const W = Math.max(2, Math.round(widthPx * RES))
+  const p = partCanvas(W * 2, L + 2)
+  const cx = PAD + Math.round(W * 0.7)
+  const top = PAD
+  const r = mane.ramp
+
+  if (opts.whip) {
+    // One tapering rope, with a tuft on the end.
+    for (let i = 0; i < L; i += 1) {
+      const t = L > 1 ? i / (L - 1) : 0
+      const w = Math.max(1, Math.round(W * (1 - 0.65 * t)))
+      const drift = Math.round(W * 0.35 * Math.sin(t * Math.PI * 0.8))
+      const x = cx - (w >> 1) - drift
+      p.fill(x, top + i, w, 1, r[2])
+      p.set(x, top + i, r[1])
+      if (w > 2) p.set(x + w - 1, top + i, r[3])
+    }
+    for (let i = 0; i < 3; i += 1) {
+      p.line(cx - 1, top + L - 2, cx - 2 - i, top + L + 1 + i, i % 2 ? r[1] : r[2])
+    }
+  } else {
+    // A dock with hair falling off it: several strands that spread as they go,
+    // alternating tone so the mass has some depth to it.
+    p.fill(cx - (W >> 1), top, W, Math.max(2, Math.round(L * 0.22)), r[2])
+    p.fill(cx + (W >> 1) - 1, top, 1, Math.max(2, Math.round(L * 0.22)), r[3])
+    for (let s = 0; s < 5; s += 1) {
+      const spread = (s - 2) * Math.max(1, Math.round(W * 0.3))
+      p.line(cx, top + Math.round(L * 0.18), cx + spread, top + L - 1 - Math.abs(s - 2), s % 2 ? r[1] : r[2])
+    }
+    p.line(cx + Math.round(W * 0.4), top + Math.round(L * 0.2), cx + Math.round(W * 0.5), top + L - 3, r[3])
+  }
+
+  return { canvas: sealPart(p, mane.base), origin: [cx / p.w, top / p.h] }
+}
+
+// ─────────────────────────── Part assembly ───────────────────────────
+
+/**
+ * The animal's colours.
+ *
+ * A warhorse pulled straight from the rider's livery comes out blue or crimson,
+ * which is not a horse. So the hide is a real hide colour with only a little of
+ * the owner's palette bled into it — enough that two factions' cavalry are
+ * distinguishable at a glance, not enough that either stops being an animal.
+ * The beast, which *is* the unit rather than the unit's transport, takes its
+ * hide from the visual's own skin colour instead.
+ */
+function hideFor(v: UnitVisual, wild: boolean): { hide: Material; mane: Material; horn: Material } {
+  const base = wild ? v.skin : mix(0x6a4a32, v.cloth2, 0.22)
+  return {
+    hide: leather(base),
+    mane: leather(tone(base, wild ? -0.3 : -0.44)),
+    horn: leather(tone(base, wild ? 0.1 : -0.52))
+  }
+}
+
+/** Builds the sixteen parts every quadruped needs, near side and far side. */
+function quadParts(
+  P: Quad,
+  v: UnitVisual,
+  height: number,
+  opts: { wild: boolean; tack?: Tack }
+): Record<string, PartArt> {
+  const px = (f: number) => f * height
+  const bulk = v.bulk ?? 1
+  const { hide, mane, horn } = hideFor(v, opts.wild)
+  // The far side is simply darker. It is the cheapest depth cue there is, it
+  // needs no second silhouette, and the old rig already got this one right.
+  const farHide = leather(tone(hide.base, -0.3))
+  const farHorn = leather(tone(horn.base, -0.3))
+
+  const parts: Record<string, PartArt> = {}
+
+  parts.barrel = drawBarrel(px(P.bodyLen), px(P.bodyDepth) * Math.sqrt(bulk), hide, mane, {
+    back: opts.wild ? BEAST_BACK : HORSE_BACK,
+    belly: opts.wild ? BEAST_BELLY : HORSE_BELLY,
+    tack: opts.tack,
+    hackles: opts.wild
+  })
+  parts.neck = drawNeck(px(P.neckLen), px(P.neckBaseW) * bulk, px(P.neckTipW) * bulk, hide, mane, {
+    crest: !opts.wild,
+    ruff: opts.wild
+  })
+  parts.beastHead = drawQuadHead(px(P.headLen), px(P.headW) * bulk, hide, mane, {
+    jaw: opts.wild ? 'fanged' : 'equine',
+    eye: opts.wild ? v.accent : 0x241a12,
+    bridle: opts.tack ? opts.tack.saddle : undefined
+  })
+  parts.tail = drawTail(px(P.tailLen), px(P.tailW) * bulk, mane, { whip: opts.wild })
+
+  for (const side of ['F', 'B'] as const) {
+    const mat = side === 'F' ? hide : farHide
+    const hoofMat = side === 'F' ? horn : farHorn
+    parts[`hindThigh${side}`] = drawLegBone(px(P.hindThigh), px(P.hindTopW) * bulk, px(P.hindMidW) * bulk, mat, {
+      cap: true,
+      muscle: true
+    })
+    parts[`hindShin${side}`] = drawLegBone(px(P.hindShin), px(P.hindMidW) * bulk, px(P.legBotW) * bulk, mat, {
+      muscle: true
+    })
+    parts[`hindHoof${side}`] = drawHoof(px(P.hoofLen) * bulk, px(P.hoofH), mat, hoofMat, { paw: opts.wild })
+    parts[`foreThigh${side}`] = drawLegBone(px(P.foreThigh), px(P.foreTopW) * bulk, px(P.foreMidW) * bulk, mat, {
+      cap: true,
+      muscle: true
+    })
+    parts[`foreShin${side}`] = drawLegBone(px(P.foreShin), px(P.foreMidW) * bulk, px(P.legBotW) * bulk, mat)
+    parts[`foreHoof${side}`] = drawHoof(px(P.hoofLen) * bulk, px(P.hoofH), mat, hoofMat, { paw: opts.wild })
+  }
+
+  return parts
+}
+
+/**
+ * The rider's upper body.
+ *
+ * Composed from the shared library rather than reimplemented: a mounted
+ * lancer's chest, helmet and weapon are the same objects a footman's are, and
+ * drawing a second set of them is how an army stops looking like one army. Only
+ * the proportions change — he is smaller than a man on foot, because he is
+ * sitting down and because the horse has to be the bigger shape.
+ */
+function riderParts(v: UnitVisual, height: number): { parts: Record<string, PartArt>; metrics: RigMetrics } {
+  const px = (f: number) => f * height
+  const bulk = v.bulk ?? 1
+  const armoured = v.torso === 'plate' || v.torso === 'exo' || v.torso === 'mail'
+  const sleeve = v.torso === 'bare' ? skinMat(v.skin) : armoured ? metalMat(v.metal) : clothMat(v.cloth)
+  const glove = armoured ? metalMat(v.metal) : skinMat(v.skin)
+  const trouser =
+    v.torso === 'bare' || v.torso === 'fur'
+      ? skinMat(v.skin)
+      : armoured
+        ? metalMat(tone(v.metal, -0.12))
+        : clothMat(v.cloth2)
+  const boot = armoured ? metalMat(v.metal) : leather(tone(v.cloth2, -0.34))
+  const backSleeve = clothMat(tone(sleeve.base, -0.3))
+  const backTrouser = clothMat(tone(trouser.base, -0.3))
+  const backBoot = leather(tone(boot.base, -0.3))
+  const backGlove = clothMat(tone(glove.base, -0.3))
+  const thick = px(R.limbThick) * bulk
+
+  const parts: Record<string, PartArt> = {}
+  parts.rUpperArmF = limbSegment(px(R.upperArm), thick, sleeve, { capTop: true, capBottom: true, taper: 0.86 })
+  parts.rForeArmF = limbSegment(px(R.foreArm), thick * 0.86, sleeve, { capBottom: true, taper: 0.8 })
+  parts.rHandF = drawHand(px(R.handSize) * bulk, glove, { armoured })
+  parts.rUpperArmB = limbSegment(px(R.upperArm), thick, backSleeve, { capTop: true, capBottom: true, taper: 0.86 })
+  parts.rForeArmB = limbSegment(px(R.foreArm), thick * 0.86, backSleeve, { capBottom: true, taper: 0.8 })
+  parts.rHandB = drawHand(px(R.handSize) * bulk, backGlove, { armoured })
+
+  parts.rThighF = limbSegment(px(R.thigh), thick * 1.16, trouser, { capTop: true, capBottom: true, taper: 0.84 })
+  parts.rShinF = limbSegment(px(R.shin), thick * 0.94, trouser, { capBottom: true, taper: 0.8 })
+  parts.rBootF = drawBoot(px(R.footLen) * bulk, px(R.footH), boot)
+  parts.rThighB = limbSegment(px(R.thigh), thick * 1.16, backTrouser, { capTop: true, capBottom: true, taper: 0.84 })
+  parts.rShinB = limbSegment(px(R.shin), thick * 0.94, backTrouser, { capBottom: true, taper: 0.8 })
+  parts.rBootB = drawBoot(px(R.footLen) * bulk, px(R.footH), backBoot)
+
+  const seatY = MOUNT.coreY + R.seatY
+  const metrics: RigMetrics = {
+    height,
+    legLen: px(R.thigh + R.shin),
+    torsoH: px(R.torsoLen),
+    bodyW: px(0.2) * bulk,
+    armLen: px(R.upperArm + R.foreArm),
+    headR: px(R.headR),
+    hipY: px(seatY),
+    shoulderY: px(seatY - R.torsoLen * 0.8),
+    neckY: px(seatY - R.torsoLen)
+  }
+
+  // The torso canvas carries PAD rows of empty space below the drawn body, so
+  // an origin of exactly 1 floats the whole upper body a few pixels above the
+  // saddle. Anchor on the drawn edge instead.
+  const chest = drawTorso(v, metrics)
+  parts.chest = { canvas: chest, origin: [0.5, (chest.h - PAD) / chest.h] }
+  parts.head = { canvas: drawHead(v, metrics), origin: [0.5, 0.82] }
+
+  const weapon = drawWeapon(v.weapon, v, metrics)
+  if (weapon) {
+    parts.weapon = {
+      canvas: weapon.canvas,
+      origin: [weapon.grip[0] / weapon.canvas.w, weapon.grip[1] / weapon.canvas.h]
+    }
+  }
+  if (v.shield && v.shield !== 'none') {
+    const shield = drawShield(v.shield, v, metrics)
+    if (shield) parts.shield = { canvas: shield, origin: [0.5, 0.5] }
+  }
+  if (v.cape) parts.cape = { canvas: drawCape(v, metrics), origin: [0.5, 0.06] }
+
+  return { parts, metrics }
+}
+
+// ───────────────────────────── Archetypes ─────────────────────────────
+
+export const riderArchetype: Archetype = {
+  id: 'rider',
+  claims: v => v.kind === 'rider',
+  build(v: UnitVisual, height: number): ArchetypeBuild {
+    const ranged = RANGED_WEAPONS.has(v.weapon)
+    const tack: Tack = {
+      blanket: clothMat(v.cloth2),
+      saddle: leather(tone(0x6a4a32, -0.3)),
+      accent: v.accent
+    }
+    const parts = { ...quadParts(MOUNT, v, height, { wild: false, tack }), ...riderParts(v, height).parts }
+    const clips: Record<ClipName, Clip> = { idle: RIDE_IDLE, walk: RIDE_WALK, attack: RIDE_ATTACK }
+    return {
+      skeleton: buildRiderSkeleton(
+        // A lance or a spear is couched along the line of the charge; anything
+        // else rides up and back where it can come down. A hanging weapon on a
+        // horseman points at his own boot and looks like he has dropped it.
+        ranged ? -Math.PI / 2 : COUCHED_WEAPONS.has(v.weapon) ? -Math.PI / 2 + 0.08 : -Math.PI * 0.86,
+        ranged
+      ),
+      parts,
+      clips,
+      height,
+      // The leading hand at rest: shoulder height, arm's length forward, plus
+      // the reach the weapon adds beyond it.
+      muzzle: [R.upperArm + R.foreArm + 0.06, MOUNT.coreY + R.seatY - R.torsoLen * 0.82]
+    }
+  }
+}
+
+export const beastArchetype: Archetype = {
+  id: 'beast',
+  claims: v => v.kind === 'humanoid' && v.chassis === 'beast',
+  build(v: UnitVisual, height: number): ArchetypeBuild {
+    const clips: Record<ClipName, Clip> = { idle: BEAST_IDLE, walk: BEAST_WALK, attack: BEAST_ATTACK }
+    return {
+      skeleton: buildBeastSkeleton(),
+      parts: quadParts(BEAST, v, height, { wild: true }),
+      clips,
+      height,
+      // A beast has no weapon, so anything that wants a spawn point wants the
+      // jaws. Solved from the rig rather than eyeballed, so it stays right when
+      // the proportions are tuned.
+      muzzle: jawTip(BEAST)
+    }
+  }
+}
