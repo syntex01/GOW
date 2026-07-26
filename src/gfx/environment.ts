@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { save } from '../core/save'
 import { AGE_THEMES, type AgeTheme } from './palette'
-import Pix, { RES, ditherAt, mix, pixelNoise, ramp, tone, type PixelCanvas, type Ramp } from './pixel'
+import Pix, { ditherAt, mix, pixelNoise, ramp, tone, type PixelCanvas, type Ramp } from './pixel'
 
 /**
  * The world behind the battle.
@@ -22,7 +22,7 @@ import Pix, { RES, ditherAt, mix, pixelNoise, ramp, tone, type PixelCanvas, type
  *    declared once, at the top, and both the art and the sprites read them.
  * 2. **`tilePositionX` counts texture pixels, and every layer draws at a tile
  *    scale of two.** A raw camera offset therefore slides a layer at twice the
- *    camera's speed. Everything is scaled by `RES`.
+ *    camera's speed. Everything is scaled by `ENV_RES`.
  * 3. **Aerial perspective is enforced, not hoped for.** All four ranges derive
  *    from one near-rock colour hazed toward the horizon, and then their
  *    luminance is *driven* to a guaranteed separation. A theme cannot repaint
@@ -36,7 +36,7 @@ import Pix, { RES, ditherAt, mix, pixelNoise, ramp, tone, type PixelCanvas, type
 
 // ──────────────────────────── Geometry ────────────────────────────
 //
-// World pixels. Art is generated at `RES` times this and drawn back at a tile
+// World pixels. Art is generated at `ENV_RES` times this and drawn back at a tile
 // scale of two, which keeps the backdrop on the same pixel grid as the sprites.
 
 /**
@@ -103,9 +103,19 @@ export const ENV_SUN_POS: readonly (readonly [number, number])[] = [
   [0.22, 0.09]
 ]
 
+/**
+ * The environment authors at full resolution, unlike the units.
+ *
+ * Chunky pixels are a style on a sixty-pixel soldier and a defect on a
+ * mountain: a soldier at half resolution reads as deliberate, while a hillside
+ * or a floor at half resolution just reads as a low-resolution hillside. The
+ * two are decoupled here so each can be right on its own terms.
+ */
+const ENV_RES = 1
+
 /** World pixels to art pixels. */
 function A(world: number): number {
-  return Math.round(world * RES)
+  return Math.round(world * ENV_RES)
 }
 
 function theme(age: number): AgeTheme {
@@ -2023,7 +2033,7 @@ export default class Environment {
       .image(ENV_SUN_POS[0][0] * w, ENV_SUN_POS[0][1] * h, 'env:blank')
       .setScrollFactor(0)
       .setDepth(-997)
-      .setScale(1 / RES)
+      .setScale(1 / ENV_RES)
 
     // Both cloud banks are TileSprites authored at exactly their own height and
     // wider than the viewport, so they can drift forever without a seam.
@@ -2032,14 +2042,14 @@ export default class Environment {
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-995)
-    this.cirrus.setTileScale(1 / RES, 1 / RES)
+    this.cirrus.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
     this.cumulus = this.scene.add
       .tileSprite(0, ENV_CUMULUS_Y, w, ENV_CUMULUS_HEIGHT, 'env:blank')
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-993)
-    this.cumulus.setTileScale(1 / RES, 1 / RES)
+    this.cumulus.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
     // Every range reaches down to the ground line. Staggering their feet leaves
     // a horizontal seam wherever one ends and the next has not started.
@@ -2049,7 +2059,7 @@ export default class Environment {
         .setOrigin(0, 1)
         .setScrollFactor(0)
         .setDepth(-980 + d * 4)
-      band.setTileScale(1 / RES, 1 / RES)
+      band.setTileScale(1 / ENV_RES, 1 / ENV_RES)
       this.bands.push(band)
     }
 
@@ -2058,21 +2068,21 @@ export default class Environment {
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-900)
-    this.ground.setTileScale(1 / RES, 1 / RES)
+    this.ground.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
     this.fog = this.scene.add
       .tileSprite(0, this.groundY, w, ENV_FOG_HEIGHT, 'env:blank')
       .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(-899)
-    this.fog.setTileScale(1 / RES, 1 / RES)
+    this.fog.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
     this.bank = this.scene.add
       .tileSprite(0, this.groundY + ENV_BANK_DROP, w, ENV_BANK_HEIGHT, 'env:blank')
       .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(760)
-    this.bank.setTileScale(1 / RES, 1 / RES)
+    this.bank.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
     if (save.settings.particleQuality === 'high') {
       this.motes = this.scene.add
@@ -2155,7 +2165,7 @@ export default class Environment {
       const bandTop = this.groundY + ENV_BAND_FOOT - ENV_BAND_HEIGHTS[d]
       const depth = -980 + d * 4 + 1
       for (const anchor of anchors) {
-        const worldY = bandTop + anchor.y / RES
+        const worldY = bandTop + anchor.y / ENV_RES
         if (anchor.kind === 'smoke' && smokeCount < MAX_SMOKE) {
           smokeCount += 1
           const image = this.scene.add
@@ -2163,7 +2173,7 @@ export default class Environment {
             .setOrigin(0.34, 1)
             .setScrollFactor(0)
             .setDepth(depth)
-            .setScale((anchor.scale * (0.55 + d * 0.14)) / RES)
+            .setScale((anchor.scale * (0.55 + d * 0.14)) / ENV_RES)
             .setAlpha(0.3 + d * 0.05)
             // Sat close to the sky it hangs in, so a plume reads as smoke and
             // not as a searchlight standing on a chimney.
@@ -2175,7 +2185,7 @@ export default class Environment {
             .image(0, worldY, 'env:dot')
             .setScrollFactor(0)
             .setDepth(depth)
-            .setScale((anchor.scale * (0.5 + d * 0.22)) / RES)
+            .setScale((anchor.scale * (0.5 + d * 0.22)) / ENV_RES)
             .setTint(glow)
             .setBlendMode(Phaser.BlendModes.ADD)
           this.beacons.push({
@@ -2196,7 +2206,7 @@ export default class Environment {
             .setOrigin(0.5, 1)
             .setScrollFactor(0)
             .setDepth(depth)
-            .setScale(1 / RES)
+            .setScale(1 / ENV_RES)
             .setAlpha(0.3)
             .setTint(mix(glow, 0xffffff, 0.4))
             .setBlendMode(Phaser.BlendModes.ADD)
@@ -2397,21 +2407,26 @@ export default class Environment {
 
     // tilePositionX counts *texture* pixels and every layer draws at a tile
     // scale of two, so a raw camera offset would slide the art at twice the
-    // camera's speed. Scaling by RES is what makes the ground sit still under
+    // camera's speed. Scaling by ENV_RES is what makes the ground sit still under
     // the feet of the units standing on it.
-    this.cirrus.tilePositionX = scrollX * ENV_SCROLL.cirrus * RES + this.time * 0.0016
-    this.cumulus.tilePositionX = scrollX * ENV_SCROLL.cumulus * RES + this.time * 0.0042
+    // Every offset lands on a whole texture pixel. A fractional tilePositionX
+    // is resolved by the sampler, so each layer would otherwise jump a pixel at
+    // its own threshold — and a layer jumping while its neighbour has not is
+    // exactly what reads as stutter.
+    const at = (rate: number) => Math.round(scrollX * rate * ENV_RES)
+    this.cirrus.tilePositionX = at(ENV_SCROLL.cirrus) + Math.round(this.time * 0.0016)
+    this.cumulus.tilePositionX = at(ENV_SCROLL.cumulus) + Math.round(this.time * 0.0042)
     for (let d = 0; d < this.bands.length; d += 1) {
-      this.bands[d].tilePositionX = scrollX * ENV_SCROLL.bands[d] * RES
+      this.bands[d].tilePositionX = at(ENV_SCROLL.bands[d])
     }
-    this.fog.tilePositionX = scrollX * ENV_SCROLL.fog * RES + Math.sin(this.time / 9000) * 3
-    this.ground.tilePositionX = scrollX * ENV_SCROLL.ground * RES
-    this.bank.tilePositionX = scrollX * ENV_SCROLL.bank * RES
+    this.fog.tilePositionX = at(ENV_SCROLL.fog) + Math.round(Math.sin(this.time / 9000) * 3)
+    this.ground.tilePositionX = at(ENV_SCROLL.ground)
+    this.bank.tilePositionX = at(ENV_SCROLL.bank)
 
     // Anything hung off a layer has to travel with it, in screen space.
     const place = (band: number, artX: number): number => {
       const period = ENV_LAYER_WIDTH
-      let x = artX / RES - scrollX * ENV_SCROLL.bands[band]
+      let x = Math.round(artX / ENV_RES - scrollX * ENV_SCROLL.bands[band])
       while (x < -period * 0.5) x += period
       while (x > period * 1.5) x -= period
       return x
@@ -2442,7 +2457,7 @@ export default class Environment {
     }
 
     // The sun breathes, very slightly. Enough to be alive, not enough to notice.
-    this.celestial.setScale((1 + Math.sin(this.time / 2600) * 0.018) / RES)
+    this.celestial.setScale((1 + Math.sin(this.time / 2600) * 0.018) / ENV_RES)
   }
 
   /** Briefly washes the sky when a special ability fires. */

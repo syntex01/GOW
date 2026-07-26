@@ -413,7 +413,7 @@ export default class BattleScene extends Phaser.Scene {
       if (!this.dragging || !pointer.isDown) return
       const dx = (this.dragStartX - pointer.x) / CAMERA_ZOOM
       if (Math.abs(dx) > 4) {
-        this.cameras.main.setScroll(this.dragCameraX + dx, CAMERA_SCROLL_Y)
+        this.cameras.main.setScroll(Math.round(this.dragCameraX + dx), CAMERA_SCROLL_Y)
         this.manualCameraUntil = this.time.now + 2600
       }
     })
@@ -622,7 +622,7 @@ export default class BattleScene extends Phaser.Scene {
     const halfView = cam.width / (2 * CAMERA_ZOOM)
     const target = Phaser.Math.Clamp(contact - 30, halfView, WORLD_WIDTH - halfView)
     this.cameraFocus = Phaser.Math.Linear(this.cameraFocus || target, target, Math.min(1, delta / 420))
-    cam.setScroll(this.cameraFocus - cam.width / 2, CAMERA_SCROLL_Y)
+    cam.setScroll(Math.round(this.cameraFocus - cam.width / 2), CAMERA_SCROLL_Y)
   }
 
   private updateMusicIntensity(): void {
