@@ -4,6 +4,7 @@ import { gameEvents } from '../core/events'
 import { ACHIEVEMENTS, save } from '../core/save'
 import { session } from '../core/session'
 import { ageDef } from '../data/ages'
+import { FACTIONS_BY_ID } from '../data/factions'
 import { TECHS_BY_ID, type TechId } from '../data/tech'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
 import Environment from '../gfx/environment'
@@ -148,13 +149,19 @@ export default class BattleScene extends Phaser.Scene {
 
     this.battlefield.onCorpse = unit => {
       const machine = unit.def.visual.kind !== 'humanoid' && unit.def.visual.kind !== 'rider'
+      // A heap of Nekrotic dead should not look like a heap of Cinder Host
+      // dead. Once a side has committed to a creed, the ground it loses men on
+      // takes that creed's colour, so a long match leaves a record of which
+      // direction each commander went.
+      const creed = this.battlefield.armyFor(unit.faction).ascendedTo
+      const dye = creed ? FACTIONS_BY_ID[creed].accent : null
       this.debris.addCorpse(
         unit.x,
         GROUND_Y,
         unit.faction === 'player' ? 1 : -1,
         unit.def.height,
         machine,
-        machine ? unit.def.visual.metal : unit.def.visual.cloth,
+        dye ?? (machine ? unit.def.visual.metal : unit.def.visual.cloth),
         unit.id
       )
     }
