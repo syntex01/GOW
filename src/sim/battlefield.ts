@@ -1000,6 +1000,9 @@ export default class Battlefield {
     // then diverge across the wire.
     unit.seq = this.spawnSeq
     this.spawnSeq += 1
+    // Stand the soldier somewhere on the width of the battle path.
+    // Deterministic from spawn order, so both peers stage every man alike.
+    unit.setStage(unit.layer === 'ground' ? ((unit.seq * 2654435761) >>> 0) % 29 : 0)
     const stats = this.statsFor(faction)
     stats.unitsBuilt += 1
     stats.goldSpent += def.cost

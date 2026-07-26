@@ -22,14 +22,14 @@ export interface AmbientSpec {
 /** Per-age mood. Night-time ages get a much stronger ambient. */
 const AMBIENT: AmbientSpec[] = [
   { color: 0x2a1030, strength: 0.5 }, // Stone — dusk, warm shadows
-  { color: 0x05101f, strength: 0.66 }, // Medieval — night blue
+  { color: 0x05101f, strength: 0.5 }, // Medieval — night blue
   { color: 0x141728, strength: 0.54 }, // Renaissance — overcast rain
   { color: 0x0d1219, strength: 0.5 }, // Modern — grey haze
-  { color: 0x04050f, strength: 0.76 } // Future — deep night, neon reads
+  { color: 0x04050f, strength: 0.64 } // Future — deep night, neon reads
 ]
 
 /** Number of bands used to ramp the shadow in from the horizon. */
-const GRADIENT_BANDS = 14
+const GRADIENT_BANDS = 40
 
 interface Light {
   x: number

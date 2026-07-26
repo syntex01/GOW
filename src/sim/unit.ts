@@ -95,6 +95,12 @@ export default class Unit implements Damageable {
   vy = 0
   private airborne = false
   private stagger = 0
+  /** Stage this soldier on the path and sort it among its neighbours. */
+  setStage(offset: number): void {
+    this.stageY = offset
+    if (this.layer === 'ground') this.container.setDepth(120 + offset * 0.05)
+  }
+
   /** Grace left on the licence to shoot from formation. See formedUp(). */
   private holdMs = 0
   /** Recent shoves, each one making the next one count for less. */
@@ -103,6 +109,14 @@ export default class Unit implements Damageable {
   press = 1
   /** Position in this match's spawn order. Set by the battlefield. */
   seq = 0
+  /**
+   * How far up the battle path this soldier stands, in pixels below the feet
+   * line. Purely visual: the simulation stays one-dimensional, but the army
+   * is drawn on a ground plane now, and a rank staged a few pixels deeper
+   * sorts behind the rank in front — which is what makes twenty soldiers read
+   * as a formation on a field instead of a queue on a wire.
+   */
+  stageY = 0
 
   private attackCooldown = 0
   private swing = 0
@@ -236,6 +250,7 @@ export default class Unit implements Damageable {
     this.scaleFactor = 1 / RES
     this.container = scene.add.container(this.x, this.y)
     this.container.setDepth(def.layer === 'air' ? 260 : 120)
+
 
     this.shadow = scene.add
       .image(this.x, world.groundY + 2, 'fx:shadow')
@@ -686,7 +701,7 @@ export default class Unit implements Damageable {
   /** Limbs splay, the body topples, and the corpse fades into the ground. */
   private playDeathAnimation(mechanical: boolean): void {
     const tumbleDir = this.vx !== 0 ? Math.sign(this.vx) : -this.dir
-    this.container.setDepth(80)
+    this.container.setDepth(80 + this.stageY * 0.05)
 
     Object.entries(this.parts).forEach(([name, part]) => {
       if (name === 'weapon' || name === 'shield') {
@@ -751,7 +766,7 @@ export default class Unit implements Damageable {
       // A disabled machine still falls, still gets shot, and still slides —
       // it just stops deciding things.
       this.x += this.vx * dt
-      this.container.setPosition(this.x, this.y)
+      this.container.setPosition(this.x, this.y + this.stageY)
       return
     }
     if (this.def.regen) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
@@ -937,10 +952,10 @@ export default class Unit implements Damageable {
 
     // Facing: flip the whole container.
     this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
-    this.container.setPosition(this.x, this.y)
-    this.shadow.setPosition(this.x, this.world.groundY + 2)
+    this.container.setPosition(this.x, this.y + this.stageY)
+    this.shadow.setPosition(this.x, this.world.groundY + this.stageY + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
-    this.teamRing.setPosition(this.x, this.world.groundY + 1)
+    this.teamRing.setPosition(this.x, this.world.groundY + this.stageY + 1)
 
     if (this.swing > 0) this.swing = Math.max(0, this.swing - dtMs / (this.def.attackMs * 0.42))
 
@@ -1193,10 +1208,10 @@ export default class Unit implements Damageable {
     const height = this.def.height
 
     this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
-    this.container.setPosition(this.x, this.y)
-    this.shadow.setPosition(this.x, this.world.groundY + 2)
+    this.container.setPosition(this.x, this.y + this.stageY)
+    this.shadow.setPosition(this.x, this.world.groundY + this.stageY + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
-    this.teamRing.setPosition(this.x, this.world.groundY + 1)
+    this.teamRing.setPosition(this.x, this.world.groundY + this.stageY + 1)
 
     // How far the unit actually got since the last frame. Everything about
     // which clip plays, and how fast, comes from this rather than from what the
@@ -1296,8 +1311,8 @@ export default class Unit implements Damageable {
     if (!damaged) return
     const barW = Math.max(24, this.def.height * 0.62)
     const y = this.container.y - this.def.height - 12
-    this.hpBarBg.setPosition(this.x, y)
-    this.hpBar.setPosition(this.x - barW / 2, y)
+    this.hpBarBg.setPosition(this.x, y + this.stageY)
+    this.hpBar.setPosition(this.x - barW / 2, y + this.stageY)
     const ratio = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1)
     this.hpBar.width = barW * ratio
     this.hpBar.fillColor = ratio > 0.5 ? FACTION_COLOR[this.faction] : ratio > 0.25 ? 0xfbbf24 : 0xf87171

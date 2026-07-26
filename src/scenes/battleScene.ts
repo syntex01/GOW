@@ -78,7 +78,7 @@ export default class BattleScene extends Phaser.Scene {
     cam.setBounds(0, 0, WORLD_WIDTH, cam.height)
     cam.setZoom(CAMERA_ZOOM)
 
-    this.lighting = new Lighting(this, 700)
+    this.lighting = new Lighting(this, 700, GROUND_Y - 138)
     this.vfx = new Vfx(this, GROUND_Y, this.lighting)
     this.background = new Environment(this, WORLD_WIDTH, GROUND_Y)
     // The mess sits above the ground and below the fighting.
@@ -157,7 +157,7 @@ export default class BattleScene extends Phaser.Scene {
       const dye = creed ? FACTIONS_BY_ID[creed].accent : null
       this.debris.addCorpse(
         unit.x,
-        GROUND_Y,
+        GROUND_Y + unit.stageY,
         unit.faction === 'player' ? 1 : -1,
         unit.def.height,
         machine,

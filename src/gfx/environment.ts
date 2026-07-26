@@ -64,8 +64,21 @@ export const ENV_BAND_HEIGHTS = [544, 440, 330, 244] as const
 /** How far below the ground line the foot of every range sits. */
 export const ENV_BAND_FOOT = 8
 
+/**
+ * How far above the feet line the ground plane begins — its horizon.
+ *
+ * The old layout had no ground plane at all above the line the units stand on:
+ * the ranges came all the way down to their feet, so the floor behind a soldier
+ * was the vertical face of a mountain and the only actual ground was a strip
+ * below him. The ranges now stop here and stand *on* the plane.
+ */
+export const ENV_FLOOR_HORIZON = 138
+
+/** How far the plane continues below the feet line, toward the camera. */
+export const ENV_FLOOR_BELOW = 178
+
 /** The haze band that seats the battlefield against the hills. */
-export const ENV_FOG_HEIGHT = 100
+export const ENV_FOG_HEIGHT = 52
 
 /** The battlefield floor. Taller than any viewport shows, so it cannot repeat. */
 export const ENV_GROUND_HEIGHT = 200
@@ -1530,6 +1543,182 @@ export function envFogPix(age: number, worldW: number, worldH: number): Pix {
  * puddles and the grit are all placed on a perspective curve rather than spread
  * evenly, and the bottom third gets its own coarser treatment as the near band.
  */
+/**
+ * The battlefield floor, drawn the way Age of Empires draws its ground.
+ *
+ * One world-locked plane, not a stack of screen-space layers. It pans 1:1 with
+ * the camera like everything standing on it, so nothing on the floor can ever
+ * slide against the soldiers' feet; all the perspective is baked into the art
+ * as recession — detail that is fine and dense at the horizon and opens out
+ * toward the camera. A worn battle path runs along the line the armies
+ * actually fight on, and the open field shows behind and in front of it.
+ *
+ * `above` is the height between the horizon and the feet line, `below` the
+ * apron between the feet line and the bottom of the screen.
+ */
+export function envFloorPix(age: number, worldW: number, above: number, below: number): Pix {
+  const t = theme(age)
+  const w = A(worldW)
+  const hA = A(above)
+  const h = hA + A(below)
+  const p = new Pix(w, h)
+  const base = envGroundBase(age)
+  const soil = ramp(base, { contrast: 0.72 })
+  const deep = ramp(tone(base, -0.3), { contrast: 0.7 })
+  const grass = ramp(t.groundAccent, { contrast: 0.75 })
+  const dirt = ramp(tone(mix(base, t.groundAccent, 0.45), 0.14), { contrast: 0.62 })
+  const noise = pixelNoise(age * 131 + 7)
+  const wet = t.weather === 'rain' || t.weather === 'snow'
+
+  // Deterministic scatter. Baked art, but the house rule holds everywhere.
+  let seed = (age * 7919 + 13) >>> 0
+  const rnd = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+
+  /** How large a mark drawn on this row should be, by foreshortening. */
+  const rowScale = (y: number): number => 0.4 + 1.5 * Math.pow(y / h, 1.15)
+
+  // The path straddles the feet line. Everything asks this before drawing.
+  const PATH_TOP = hA - 10
+  const PATH_BOT = hA + 48
+  const pathAt = (x: number, y: number): number => {
+    const edge = 5 + noise(x >> 2, 991) * 4
+    if (y < PATH_TOP - edge || y > PATH_BOT + edge) return 0
+    if (y >= PATH_TOP && y <= PATH_BOT) return 1
+    const d = y < PATH_TOP ? PATH_TOP - y : y - PATH_BOT
+    return Math.max(0, 1 - d / edge)
+  }
+
+  // Base field. Recession lives in the mottle frequency: far rows sample the
+  // noise coarsely-in-x so the texture compresses toward the horizon exactly
+  // as a receding plane's does. The dither budget is deliberately small — the
+  // haze complaint was earned, and solid tone with sparse mottle reads
+  // cleaner than an even film of checkerboard.
+  for (let y = 0; y < h; y += 1) {
+    const rs = rowScale(y)
+    const seat = Math.max(0, 1 - y / (hA * 0.35))
+    for (let x = 0; x < w; x += 1) {
+      const m = noise(Math.floor(x / (0.8 + rs * 1.6)), y)
+      let c = m < 0.24 ? soil[1] : m > 0.76 ? soil[3] : soil[2]
+      if (seat > 0 && ditherAt(x, y, seat * 0.85)) c = deep[2]
+      const path = pathAt(x, y)
+      if (path > 0 && (path >= 1 || ditherAt(x, y, path))) {
+        c = m < 0.22 ? dirt[1] : m > 0.86 ? dirt[3] : dirt[2]
+      }
+      p.set(x, y, c)
+    }
+  }
+
+  // Growth, out in the field but not on the road everyone marches down.
+  const PATCHES = Math.round(w * 0.45)
+  for (let i = 0; i < PATCHES; i += 1) {
+    const y = Math.round(Math.pow(rnd(), 0.8) * (h - 3)) + 1
+    const x = Math.round(rnd() * w)
+    if (pathAt(x, y) > 0.4) continue
+    const rs = rowScale(y)
+    const rx = Math.max(1, Math.round((2 + rnd() * 6) * rs))
+    const ry = Math.max(1, Math.round(rx * 0.38))
+    const dark = rnd() < 0.4
+    for (let yy = y - ry; yy <= y + ry; yy += 1) {
+      for (let xx = x - rx; xx <= x + rx; xx += 1) {
+        const dx = (xx - x) / rx
+        const dy = (yy - y) / ry
+        if (dx * dx + dy * dy > 1) continue
+        if (ditherAt(xx, yy, 0.75 - (dx * dx + dy * dy) * 0.4)) {
+          p.set(xx, yy, dark ? grass[1] : grass[2])
+        }
+      }
+    }
+    // A few blades standing off the top edge, taller as the patch comes near.
+    const blades = 1 + Math.round(rs)
+    for (let b = 0; b < blades; b += 1) {
+      const bx = x + Math.round((rnd() - 0.5) * rx * 1.4)
+      const tall = Math.max(1, Math.round(rs * (1 + rnd())))
+      for (let k = 1; k <= tall; k += 1) p.set(bx, y - ry - k, grass[3])
+    }
+  }
+
+  // Stones, and by the later ages wreckage, sharing the same scatter.
+  const STONES = Math.round(w * 0.05)
+  for (let i = 0; i < STONES; i += 1) {
+    const y = Math.round(Math.pow(rnd(), 0.75) * (h - 4)) + 2
+    const x = Math.round(rnd() * w)
+    const rs = rowScale(y)
+    const r = Math.max(1, Math.round((1 + rnd() * 2) * rs))
+    const c = age >= 3 && rnd() < 0.3 ? ramp(t.metal, { contrast: 0.6 }) : deep
+    const ry = Math.max(1, Math.round(r * 0.6))
+    p.ellipse(x, y, r, ry, c[2])
+    p.set(x, y - ry, c[3])
+    for (let k = -r; k <= r; k += 1) if (ditherAt(x + k, y + 1, 0.5)) p.set(x + k, y + ry, deep[0])
+  }
+
+  // The road itself: ruts worn along it, and the litter of use.
+  for (let line = 0; line < 3; line += 1) {
+    const cy = hA + 4 + line * 15
+    for (let x = 0; x < w; x += 1) {
+      const y = cy + Math.round(Math.sin(x / (40 + line * 13) + line * 2.1) * 2 + noise(x >> 3, line + 300) * 2)
+      if (noise(x >> 1, line + 310) < 0.3) continue
+      p.set(x, y, dirt[0])
+      if (noise(x, line + 320) > 0.8) p.set(x, y - 1, dirt[4])
+    }
+  }
+  const LITTER = Math.round(w * 0.03)
+  for (let i = 0; i < LITTER; i += 1) {
+    const x = Math.round(rnd() * w)
+    const y = PATH_TOP + 4 + Math.round(rnd() * (PATH_BOT - PATH_TOP - 8))
+    p.set(x, y, rnd() < 0.5 ? deep[0] : soil[4])
+  }
+
+  // Water where the weather makes it, cracks where it does not — field only.
+  if (wet) {
+    const skyC = mix(t.sky[2], t.sky[1], 0.4)
+    for (let i = 0; i < 14; i += 1) {
+      const y = Math.round(Math.pow(rnd(), 0.7) * (h - 8)) + 4
+      const x = Math.round(rnd() * w)
+      if (pathAt(x, y) > 0.3) continue
+      const rs = rowScale(y)
+      const rx = Math.max(2, Math.round((3 + rnd() * 9) * rs))
+      const ry = Math.max(1, Math.round(rx * 0.3))
+      p.ellipse(x, y, rx, ry, deep[0])
+      for (let yy = y - ry; yy <= y + ry; yy += 1) {
+        for (let xx = x - rx; xx <= x + rx; xx += 1) {
+          const dx = (xx - x) / rx
+          const dy = (yy - y) / ry
+          if (dx * dx + dy * dy > 0.86) continue
+          if (ditherAt(xx, yy, 0.35 + ((y - yy) / ry) * 0.8)) p.set(xx, yy, mix(skyC, deep[0], 0.25))
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < 10; i += 1) {
+      let x = Math.round(rnd() * w)
+      let y = Math.round(Math.pow(rnd(), 0.7) * (h - 10)) + 5
+      if (pathAt(x, y) > 0.3) continue
+      const steps = 8 + Math.round(rnd() * 14)
+      for (let k = 0; k < steps; k += 1) {
+        const rs = rowScale(y)
+        p.set(x, y, deep[0])
+        if (rs > 1.1) p.set(x + 1, y, deep[1])
+        x += Math.round((rnd() - 0.5) * 4)
+        y += rnd() < 0.6 ? 1 : 0
+        if (y >= h - 2) break
+      }
+    }
+  }
+
+  // Seat the ranges: a two-pixel contact line at the horizon, and a little
+  // weight at the bottom edge so the plane does not just stop.
+  for (let x = 0; x < w; x += 1) {
+    p.set(x, 0, deep[1])
+    p.set(x, 1, deep[1])
+    for (let k = 0; k < 5; k += 1) if (ditherAt(x, h - 1 - k, 0.6 - k * 0.12)) p.set(x, h - 1 - k, deep[1])
+  }
+
+  return p
+}
+
 export function envGroundPix(age: number, worldW: number, worldH: number): Pix {
   const t = theme(age)
   const w = A(worldW)
@@ -1936,8 +2125,7 @@ export default class Environment {
   private cumulus!: Phaser.GameObjects.TileSprite
   private bands: Phaser.GameObjects.TileSprite[] = []
   private fog!: Phaser.GameObjects.TileSprite
-  private ground!: Phaser.GameObjects.TileSprite
-  private bank!: Phaser.GameObjects.TileSprite
+  private floorImg!: Phaser.GameObjects.Image
   private vignette!: Phaser.GameObjects.Image
 
   private smoke: SmokeColumn[] = []
@@ -2010,8 +2198,7 @@ export default class Environment {
       }
     }
     this.add(`env:fog:${age}`, () => envFogPix(age, ENV_LAYER_WIDTH, ENV_FOG_HEIGHT))
-    this.add(`env:ground:${age}`, () => envGroundPix(age, ENV_LAYER_WIDTH, ENV_GROUND_HEIGHT))
-    this.add(`env:bank:${age}`, () => envBankPix(age, ENV_LAYER_WIDTH, ENV_BANK_HEIGHT))
+    this.add(`env:floor:${age}`, () => envFloorPix(age, this.worldWidth, ENV_FLOOR_HORIZON, ENV_FLOOR_BELOW))
   }
 
   // ── construction ──
@@ -2055,7 +2242,7 @@ export default class Environment {
     // a horizontal seam wherever one ends and the next has not started.
     for (let d = 0; d < ENV_BAND_HEIGHTS.length; d += 1) {
       const band = this.scene.add
-        .tileSprite(0, this.groundY + ENV_BAND_FOOT, w, ENV_BAND_HEIGHTS[d], 'env:blank')
+        .tileSprite(0, this.groundY - ENV_FLOOR_HORIZON + ENV_BAND_FOOT, w, ENV_BAND_HEIGHTS[d], 'env:blank')
         .setOrigin(0, 1)
         .setScrollFactor(0)
         .setDepth(-980 + d * 4)
@@ -2063,26 +2250,24 @@ export default class Environment {
       this.bands.push(band)
     }
 
-    this.ground = this.scene.add
-      .tileSprite(0, this.groundY, w, ENV_GROUND_HEIGHT, 'env:blank')
+    // The floor is world geometry, not a screen-space layer. It pans 1:1 with
+    // the camera — the Age of Empires camera — so nothing on it can ever slide
+    // against the feet of the soldiers standing on it, and the drag stutter
+    // that differential ground scroll produced is impossible by construction.
+    // Parallax still exists, but only beyond the horizon.
+    this.floorImg = this.scene.add
+      .image(0, this.groundY - ENV_FLOOR_HORIZON, 'env:blank')
       .setOrigin(0, 0)
-      .setScrollFactor(0)
       .setDepth(-900)
-    this.ground.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
     this.fog = this.scene.add
-      .tileSprite(0, this.groundY, w, ENV_FOG_HEIGHT, 'env:blank')
+      .tileSprite(0, this.groundY - ENV_FLOOR_HORIZON + 4, w, ENV_FOG_HEIGHT, 'env:blank')
       .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(-899)
+      .setAlpha(0.6)
     this.fog.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
-    this.bank = this.scene.add
-      .tileSprite(0, this.groundY + ENV_BANK_DROP, w, ENV_BANK_HEIGHT, 'env:blank')
-      .setOrigin(0, 1)
-      .setScrollFactor(0)
-      .setDepth(760)
-    this.bank.setTileScale(1 / ENV_RES, 1 / ENV_RES)
 
     if (save.settings.particleQuality === 'high') {
       this.motes = this.scene.add
@@ -2131,9 +2316,8 @@ export default class Environment {
     this.cirrus.setTexture(`env:cirrus:${clamped}`)
     this.cumulus.setTexture(`env:cumulus:${clamped}`)
     this.bands.forEach((band, d) => band.setTexture(`env:band:${clamped}:${d}`))
-    this.ground.setTexture(`env:ground:${clamped}`)
+    this.floorImg.setTexture(`env:floor:${clamped}`)
     this.fog.setTexture(`env:fog:${clamped}`)
-    this.bank.setTexture(`env:bank:${clamped}`)
     this.motes?.setParticleTint(mix(t.fog, 0xffffff, 0.25))
 
     this.buildDetails(clamped)
@@ -2162,7 +2346,7 @@ export default class Environment {
       const anchors = anchorCache.get(`${age}:${d}`) ?? []
       // The foot of the band is at groundY + FOOT and the art is drawn upward
       // from there at twice its authored size.
-      const bandTop = this.groundY + ENV_BAND_FOOT - ENV_BAND_HEIGHTS[d]
+      const bandTop = this.groundY - ENV_FLOOR_HORIZON + ENV_BAND_FOOT - ENV_BAND_HEIGHTS[d]
       const depth = -980 + d * 4 + 1
       for (const anchor of anchors) {
         const worldY = bandTop + anchor.y / ENV_RES
@@ -2420,8 +2604,7 @@ export default class Environment {
       this.bands[d].tilePositionX = at(ENV_SCROLL.bands[d])
     }
     this.fog.tilePositionX = at(ENV_SCROLL.fog) + Math.round(Math.sin(this.time / 9000) * 3)
-    this.ground.tilePositionX = at(ENV_SCROLL.ground)
-    this.bank.tilePositionX = at(ENV_SCROLL.bank)
+
 
     // Anything hung off a layer has to travel with it, in screen space.
     const place = (band: number, artX: number): number => {
@@ -2491,8 +2674,7 @@ export default class Environment {
     this.cumulus.destroy()
     this.bands.forEach(b => b.destroy())
     this.fog.destroy()
-    this.ground.destroy()
-    this.bank.destroy()
+    this.floorImg.destroy()
     this.vignette.destroy()
   }
 
