@@ -825,7 +825,7 @@ export const UNITS: UnitDef[] = [
     range: 370,
     minRange: 100,
     speed: 44,
-    mass: 1.4,
+    mass: 2.6,
     bounty: 312,
     xp: 274,
     pop: 1,
@@ -842,7 +842,7 @@ export const UNITS: UnitDef[] = [
       homing: 1.6,
       muzzle: [24, -28]
     },
-    bonusVs: { heavy: 1.4 },
+    bonusVs: { heavy: 2.3 },
     description: 'Guided rockets that open tanks like tin cans.',
     visual: {
       kind: 'humanoid',

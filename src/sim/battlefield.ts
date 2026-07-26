@@ -1668,8 +1668,14 @@ export default class Battlefield {
       // is cleave, splash and bombardment, never a bigger single blade.
       const mob =
         unit.def.conduct === 'swarm' && target instanceof Unit && target.def.cost >= unit.def.cost * 3 ? 1.3 : 1
+      // Backstab: a flanker reaching a soldier whose attention is already
+      // spent on someone else hits a quarter harder. This is the payoff the
+      // knight's move is riding for — and why a screen that *turns* to face
+      // the charge, or a phalanx that reads it, takes that payoff away.
+      const backstab =
+        unit.def.flanker && target instanceof Unit && target.target !== null && target.target !== unit ? 1.25 : 1
       const event: DamageEvent = {
-        amount: damage * unit.press * intercept * mob,
+        amount: damage * unit.press * intercept * mob * backstab,
         type: unit.def.damageType,
         // You cannot shove a man further than you can follow him. Without this
         // a melee line knocks its own target out of its own reach on every

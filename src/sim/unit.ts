@@ -42,6 +42,40 @@ export interface UnitWorld {
 /** Subtle warm grade applied to hostile units on top of their own palette. */
 const ENEMY_GRADE = 0xffb0a4
 
+/**
+ * Tiny conduct glyphs, drawn once and floated over the soldiers that carry a
+ * fixed rule: chevron for the phalanx, block for the screen, diamond for the
+ * hunt, dots for the swarm, arrows for the flanker. The chess-piece read at
+ * a glance — which rule is this piece playing by — without opening a card.
+ */
+function ensureConductGlyphs(scene: Phaser.Scene): void {
+  if (scene.textures.exists('glyph:phalanx')) return
+  const make = (key: string, rows: string[]): void => {
+    const canvas = document.createElement('canvas')
+    canvas.width = rows[0].length
+    canvas.height = rows.length
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.fillStyle = '#ffffff'
+    rows.forEach((row, y) => {
+      for (let x = 0; x < row.length; x += 1) if (row[x] === '#') ctx.fillRect(x, y, 1, 1)
+    })
+    scene.textures.addCanvas(key, canvas)
+  }
+  make('glyph:phalanx', ['...#...', '..###..', '.##.##.', '##...##'])
+  make('glyph:screen', ['#####', '#####', '#####', '.###.'])
+  make('glyph:hunt', ['..#..', '.###.', '#####', '.###.', '..#..'])
+  make('glyph:swarm', ['#.#.#', '.....', '#.#.#'])
+  make('glyph:flank', ['#..#..', '.#..#.', '..#..#', '.#..#.', '#..#..'])
+}
+
+/** The glyph a def wears, if any. Flanking trumps — it is the rarer read. */
+function glyphKeyFor(def: UnitDef): string | null {
+  if (def.flanker) return 'glyph:flank'
+  if (def.conduct) return `glyph:${def.conduct}`
+  return null
+}
+
 /** Duration of the white hit flash, in milliseconds. */
 const FLASH_MS = 70
 
@@ -255,6 +289,8 @@ export default class Unit implements Damageable {
   private parts: Record<string, Phaser.GameObjects.Image> = {}
   private shadow: Phaser.GameObjects.Image
   private teamRing: Phaser.GameObjects.Image
+  /** The conduct glyph floated over rule-carrying soldiers, if any. */
+  private conductMark?: Phaser.GameObjects.Image
   private hpBarBg: Phaser.GameObjects.Rectangle
   private hpBar: Phaser.GameObjects.Rectangle
   private scaleFactor: number
@@ -314,6 +350,19 @@ export default class Unit implements Damageable {
       .setTint(FACTION_COLOR[faction])
       .setAlpha(0.62)
       .setDisplaySize(def.height * 0.78, def.height * 0.26)
+
+    // The conduct glyph: which fixed rule this piece plays by, at a glance.
+    ensureConductGlyphs(scene)
+    const glyphKey = glyphKeyFor(def)
+    if (glyphKey) {
+      // Beside the team ring, like the stand of a chess piece — clear of the
+      // head, the rank pips and the health bar.
+      this.conductMark = scene.add
+        .image(this.x + this.dir * (this.radius + 7), this.groundLine + 1, glyphKey)
+        .setDepth(62)
+        .setTint(FACTION_COLOR[faction])
+        .setAlpha(0.9)
+    }
 
     // Seed the pacing reference, or the first frame reads the whole spawn
     // offset as distance travelled and snaps the walk cycle.
@@ -521,6 +570,20 @@ export default class Unit implements Damageable {
   }
 
   /**
+   * High-ground volleys: a shooter standing on a mound of the settled dead
+   * sees further and throws further — 12% more reach on ground six pixels or
+   * higher. Positioning rule, open to both sides, and its counter is built
+   * into the world: shell the mound away, quarry it, or fight on the flat.
+   */
+  get highGround(): number {
+    if (this.layer !== 'ground') return 1
+    const attack = this.def.attack
+    if (attack.kind !== 'projectile' && attack.kind !== 'beam') return 1
+    const h = this.world.reliefAt?.(this.x, this.lane) ?? 0
+    return h >= 6 ? 1.12 : 1
+  }
+
+  /**
    * Weapon reach after research. Everything that asks "can I hit it" uses this.
    *
    * Clamped to what the weapon can physically throw. A lobbed shot aimed past
@@ -530,7 +593,7 @@ export default class Unit implements Damageable {
    * Keeping the clamp here means a future data edit cannot bring that back.
    */
   get reach(): number {
-    const wanted = this.def.range * this.rangeMult
+    const wanted = this.def.range * this.rangeMult * this.highGround
     const attack = this.def.attack
     if (attack.kind !== 'projectile' || attack.gravity <= 0) return wanted
     return Math.min(wanted, ballisticReach(attack.speed, attack.gravity))
@@ -634,6 +697,8 @@ export default class Unit implements Damageable {
     this.hpBarBg.destroy()
     this.rankMark?.destroy()
     this.rankMark = undefined
+    this.conductMark?.destroy()
+    this.conductMark = undefined
     this.teamRing.setAlpha(0.25)
 
     const kind = this.def.visual.kind
@@ -1035,6 +1100,7 @@ export default class Unit implements Damageable {
     this.shadow.setPosition(this.x, this.groundLine + this.stageY + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
     this.teamRing.setPosition(this.x, this.groundLine + this.stageY + 1)
+    this.conductMark?.setPosition(this.x + this.dir * (this.radius + 7), this.groundLine + this.stageY + 1)
 
     if (this.swing > 0) this.swing = Math.max(0, this.swing - dtMs / (this.def.attackMs * 0.42))
 
@@ -1295,6 +1361,7 @@ export default class Unit implements Damageable {
     this.shadow.setPosition(this.x, this.groundLine + this.stageY - relief + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
     this.teamRing.setPosition(this.x, this.groundLine + this.stageY - relief + 1)
+    this.conductMark?.setPosition(this.x + this.dir * (this.radius + 7), this.groundLine + this.stageY - relief + 1)
 
     // How far the unit actually got since the last frame. Everything about
     // which clip plays, and how fast, comes from this rather than from what the
@@ -1402,6 +1469,14 @@ export default class Unit implements Damageable {
   }
 
   private applyTints(): void {
+    // The enemy's colour grade multiplies into every status tint, so a
+    // dreaded enemy still reads as an enemy.
+    const graded = (c: number): number =>
+      this.faction === 'enemy'
+        ? ((((c >> 16) * (ENEMY_GRADE >> 16)) / 255) << 16) |
+          (((((c >> 8) & 0xff) * ((ENEMY_GRADE >> 8) & 0xff)) / 255) << 8) |
+          (((c & 0xff) * (ENEMY_GRADE & 0xff)) / 255)
+        : c
     if (this.flashTimer > FLASH_MS * 0.45) {
       // A very short solid-white pop reads as a hit without erasing the unit's
       // artwork — in a heavy melee everything is being hit constantly.
@@ -1410,6 +1485,13 @@ export default class Unit implements Damageable {
       Object.values(this.parts).forEach(part => part.setTint(0xffb0b0))
     } else if (this.healPulseTimer > 0) {
       Object.values(this.parts).forEach(part => part.setTint(0x9ff0c8))
+    } else if (this.groundFury > 0.15) {
+      // Fighting from the mound: an ember shimmer, pulsing with the work.
+      const hot = Math.sin(this.animTime / 130) > 0
+      Object.values(this.parts).forEach(part => part.setTint(graded(hot ? 0xffb890 : 0xffd6b6)))
+    } else if (this.dread > 0.15) {
+      // Standing on the hungry ground: the colour drains toward the violet.
+      Object.values(this.parts).forEach(part => part.setTint(graded(0xb2a6d6)))
     } else if (this.faction === 'enemy') {
       Object.values(this.parts).forEach(part => part.setTint(ENEMY_GRADE))
     } else {
@@ -1445,6 +1527,7 @@ export default class Unit implements Damageable {
     this.teamRing.destroy()
     this.auraSprite?.destroy()
     this.rankMark?.destroy()
+    this.conductMark?.destroy()
     if (this.hpBar.active) this.hpBar.destroy()
     if (this.hpBarBg.active) this.hpBarBg.destroy()
   }

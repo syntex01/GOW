@@ -21,7 +21,8 @@ import AiController, { AI_PROFILES } from '../sim/ai'
 import type Army from '../sim/army'
 import type Base from '../sim/base'
 import Battlefield from '../sim/battlefield'
-import { OPPOSITE, type Faction } from '../sim/types'
+import { LANE_Y, OPPOSITE, type Faction } from '../sim/types'
+import { rng as cosmeticRng } from '../core/rng'
 
 export const WORLD_WIDTH = 1920
 export const GROUND_Y = 520
@@ -49,6 +50,8 @@ export default class BattleScene extends Phaser.Scene {
   /** Accumulator for the peace-time stain sweep. */
   private erosionClock = 0
   private erosionX = 0
+  /** Ambient creed motes — flies, embers, wisps, spores over a leaned half. */
+  private ambientClock = 0
   private lighting!: Lighting
   private vfx!: Vfx
   /** Absent in peer-to-peer matches, where both sides are human. */
@@ -607,6 +610,52 @@ export default class BattleScene extends Phaser.Scene {
 
   // ─────────────────────────────── Loop ───────────────────────────────
 
+  /**
+   * The air over a leaned half carries its creed: black flies over the
+   * carnage mounds, embers over the broken ground, wisps over the haunts,
+   * spores over the bloom. Engineering gets nothing — a clean half is its
+   * whole point. Pure cosmetics from the cosmetic stream, and only over
+   * ground the war has actually marked, so it reads as weather, not noise.
+   */
+  private spawnCreedMotes(): void {
+    const bf = this.battlefield
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      const lean = bf.leanOf(faction)
+      if (!lean || lean === 'engineering') continue
+      const half = faction === 'player' ? 0 : WORLD_WIDTH / 2
+      const x = half + WORLD_WIDTH * 0.1 + cosmeticRng.next() * WORLD_WIDTH * 0.36
+      const lane = cosmeticRng.int(0, LANE_Y.length - 1)
+      const y = GROUND_Y + LANE_Y[lane] - 4 - cosmeticRng.next() * 12
+      const marked =
+        Math.abs(bf.terrain.heightAt(x, lane)) > 3 ||
+        bf.terrain.hauntAt(x, lane) > 0.25 ||
+        bf.goreAt(x) > 0.25
+      if (!marked) continue
+      const style = {
+        carnage: { color: 0x241418, size: 2.6, rise: 24, drift: 34, alpha: 0.85, add: false, ms: 1400 },
+        ordnance: { color: 0xff8a30, size: 2.2, rise: 48, drift: 12, alpha: 0.9, add: true, ms: 1100 },
+        occult: { color: 0xb46bff, size: 2.8, rise: 34, drift: 8, alpha: 0.7, add: true, ms: 1800 },
+        blight: { color: 0xa8e890, size: 2.2, rise: 18, drift: 26, alpha: 0.7, add: true, ms: 2300 }
+      }[lean as 'carnage' | 'ordnance' | 'occult' | 'blight']
+      if (!style) continue
+      const mote = this.add
+        .image(x, y, 'fx:soft')
+        .setDepth(200)
+        .setTint(style.color)
+        .setAlpha(style.alpha)
+        .setDisplaySize(style.size, style.size)
+      if (style.add) mote.setBlendMode(Phaser.BlendModes.ADD)
+      this.tweens.add({
+        targets: mote,
+        y: y - style.rise,
+        x: x + cosmeticRng.spread(style.drift),
+        alpha: 0,
+        duration: style.ms,
+        onComplete: () => mote.destroy()
+      })
+    }
+  }
+
   override update(_time: number, delta: number): void {
     const cam = this.cameras.main
     this.background.update(delta, cam.scrollX)
@@ -623,6 +672,11 @@ export default class BattleScene extends Phaser.Scene {
         this.erosionX = (this.erosionX + 173) % WORLD_WIDTH
         this.splatter.erode(this.erosionX, 130, strength)
       }
+    }
+    this.ambientClock += delta
+    if (this.ambientClock > 520) {
+      this.ambientClock = 0
+      this.spawnCreedMotes()
     }
     this.debris.render(this.battlefield.physics)
     // Composite lighting from whatever registered a light this frame.
