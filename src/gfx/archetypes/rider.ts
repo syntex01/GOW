@@ -15,7 +15,10 @@ import {
 } from '../anatomy'
 import { RES, mix, ramp, tone } from '../pixel'
 import { bone, validateSkeleton, type Clip, type Pose, type Skeleton } from '../rig'
-import { drawCape, drawHead, drawShield, drawTorso, drawWeapon, type RigMetrics } from '../unitArt'
+import { drawCape, drawShield, type RigMetrics } from '../unitArt'
+import { drawHeadHi } from '../heads'
+import { drawTorsoHi } from '../torsos'
+import { drawWeaponHi } from '../weapons'
 import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
 
 /**
@@ -332,8 +335,14 @@ function quadBones(P: Quad): Skeleton {
  *                    tilts around level rather than around hanging down
  */
 function riderBones(weaponRest: number, ranged: boolean): Skeleton {
-  const armRest = ranged ? -1.28 : 0
-  const foreRest = ranged ? 0.42 : 0
+  const armRest = ranged ? -1.28 : -0.5
+  const foreRest = ranged ? 0.42 : -0.22
+  // The weapon library gives its rest angle in world terms — 0 is level,
+  // negative lifts the tip. The bone hangs off the hand, so it has to be
+  // converted out of the hand's frame or the weapon sits a quarter turn off
+  // and a lance ends up driven through the mount's own neck.
+  const handRest = Math.PI / 2 + armRest + foreRest
+  const weaponLocal = weaponRest - handRest
   return [
     bone('seat', 'barrel', { x: R.seatX, y: R.seatY, depth: 34 }),
 
@@ -396,7 +405,7 @@ function riderBones(weaponRest: number, ranged: boolean): Skeleton {
     // straight through to the sprite's rotation, so a world angle of PI/2 lays
     // it flat along the line of the charge and anything less than that tips it
     // back over the shoulder.
-    bone('weapon', 'rHandF', { angle: weaponRest, part: 'weapon', orient: 'right', depth: 58, weights: { aim: 0.1 } }),
+    bone('weapon', 'rHandF', { angle: weaponLocal, part: 'weapon', orient: 'right', depth: 58, weights: { aim: 0.1 } }),
 
     // Legs. Seated, so the rest angles live on the bones and the clips only
     // nudge them — a rider's knee angle is set by the saddle, not by the gait.
@@ -513,10 +522,10 @@ const RIDE_WALK: Clip = {
         tail: { angle: -0.24 },
         seat: { y: 0.016, angle: 0.06 },
         rTorso: { angle: -0.04 },
-        rUpperArmF: { angle: -0.12 },
-        rForeArmF: { angle: 0.24 },
+        rUpperArmF: { angle: -0.1 },
+        rForeArmF: { angle: 0.1 },
         rUpperArmB: { angle: -0.16 },
-        rForeArmB: { angle: 0.3 },
+        rForeArmB: { angle: 0.22 },
         rThighF: { angle: 0.05 },
         rThighB: { angle: 0.05 }
       }
@@ -533,10 +542,10 @@ const RIDE_WALK: Clip = {
         tail: { angle: -0.1 },
         seat: { y: -0.004, angle: 0.12 },
         rTorso: { angle: 0.02 },
-        rUpperArmF: { angle: -0.06 },
-        rForeArmF: { angle: 0.3 },
+        rUpperArmF: { angle: -0.04 },
+        rForeArmF: { angle: 0.14 },
         rUpperArmB: { angle: -0.1 },
-        rForeArmB: { angle: 0.34 },
+        rForeArmB: { angle: 0.26 },
         rThighF: { angle: 0.0 },
         rThighB: { angle: 0.0 }
       }
@@ -555,10 +564,10 @@ const RIDE_WALK: Clip = {
         tail: { angle: 0.08 },
         seat: { y: -0.01, angle: 0.18 },
         rTorso: { angle: 0.06 },
-        rUpperArmF: { angle: 0.02 },
-        rForeArmF: { angle: 0.34 },
+        rUpperArmF: { angle: 0.04 },
+        rForeArmF: { angle: 0.18 },
         rUpperArmB: { angle: -0.02 },
-        rForeArmB: { angle: 0.38 },
+        rForeArmB: { angle: 0.3 },
         rThighF: { angle: -0.04 },
         rThighB: { angle: -0.04 }
       }
@@ -576,10 +585,10 @@ const RIDE_WALK: Clip = {
         tail: { angle: 0.16 },
         seat: { y: -0.006, angle: 0.2 },
         rTorso: { angle: 0.05 },
-        rUpperArmF: { angle: -0.02 },
-        rForeArmF: { angle: 0.3 },
+        rUpperArmF: { angle: 0.0 },
+        rForeArmF: { angle: 0.14 },
         rUpperArmB: { angle: -0.06 },
-        rForeArmB: { angle: 0.34 },
+        rForeArmB: { angle: 0.26 },
         rThighF: { angle: -0.02 },
         rThighB: { angle: -0.02 }
       }
@@ -597,10 +606,10 @@ const RIDE_WALK: Clip = {
         tail: { angle: -0.14 },
         seat: { y: 0.012, angle: 0.14 },
         rTorso: { angle: -0.01 },
-        rUpperArmF: { angle: -0.1 },
-        rForeArmF: { angle: 0.26 },
+        rUpperArmF: { angle: -0.08 },
+        rForeArmF: { angle: 0.12 },
         rUpperArmB: { angle: -0.14 },
-        rForeArmB: { angle: 0.3 },
+        rForeArmB: { angle: 0.24 },
         rThighF: { angle: 0.03 },
         rThighB: { angle: 0.03 }
       }
@@ -635,10 +644,10 @@ const RIDE_IDLE: Clip = {
         beastHead: { angle: 0.0 },
         tail: { angle: -0.06 },
         seat: { y: 0, angle: 0.02 },
-        rUpperArmF: { angle: -0.08 },
-        rForeArmF: { angle: 0.3 },
+        rUpperArmF: { angle: -0.06 },
+        rForeArmF: { angle: 0.12 },
         rUpperArmB: { angle: -0.12 },
-        rForeArmB: { angle: 0.34 }
+        rForeArmB: { angle: 0.24 }
       }
     },
     {
@@ -653,10 +662,10 @@ const RIDE_IDLE: Clip = {
         beastHead: { angle: 0.05 },
         tail: { angle: 0.1 },
         seat: { y: -0.003, angle: 0.0 },
-        rUpperArmF: { angle: -0.04 },
-        rForeArmF: { angle: 0.34 },
+        rUpperArmF: { angle: -0.02 },
+        rForeArmF: { angle: 0.16 },
         rUpperArmB: { angle: -0.08 },
-        rForeArmB: { angle: 0.38 }
+        rForeArmB: { angle: 0.28 }
       }
     }
   ]
@@ -1362,9 +1371,10 @@ function drawHoof(
     p.fill(PAD, top + H - 1, Lh, 1, hr[0])
     p.set(PAD + Lh - 1, top + pastern, hr[3])
     for (let i = 1; i < Lh; i += 2) p.set(PAD + i, top + H - 2, hr[1])
-    // One claw, at the toe, and only one. A lit row across the whole pad turned
-    // every beast in the roster into something wearing four white socks.
-    p.set(PAD + Lh - 1, top + H - 2, ramp(0xd8d2c2)[3])
+    // One claw, at the toe, and only one, in the pad's own top tone rather than
+    // an off-palette white. A lit row across the whole pad turned every beast
+    // in the roster into something wearing four white socks.
+    p.set(PAD + Lh - 1, top + H - 2, hr[4])
   } else {
     // A hoof: a wedge that is wider at the ground than at the coronet.
     for (let i = 0; i < H - pastern; i += 1) {
@@ -1515,7 +1525,10 @@ function quadParts(
  * the proportions change — he is smaller than a man on foot, because he is
  * sitting down and because the horse has to be the bigger shape.
  */
-function riderParts(v: UnitVisual, height: number): { parts: Record<string, PartArt>; metrics: RigMetrics } {
+function riderParts(
+  v: UnitVisual,
+  height: number
+): { parts: Record<string, PartArt>; metrics: RigMetrics; weaponRest: number } {
   const px = (f: number) => f * height
   const bulk = v.bulk ?? 1
   const armoured = v.torso === 'plate' || v.torso === 'exo' || v.torso === 'mail'
@@ -1562,14 +1575,13 @@ function riderParts(v: UnitVisual, height: number): { parts: Record<string, Part
     neckY: px(seatY - R.torsoLen)
   }
 
-  // The torso canvas carries PAD rows of empty space below the drawn body, so
-  // an origin of exactly 1 floats the whole upper body a few pixels above the
-  // saddle. Anchor on the drawn edge instead.
-  const chest = drawTorso(v, metrics)
-  parts.chest = { canvas: chest, origin: [0.5, (chest.h - PAD) / chest.h] }
-  parts.head = { canvas: drawHead(v, metrics), origin: [0.5, 0.82] }
+  // A mounted soldier is the same soldier as the one on foot — same torso
+  // library, same head library, same weapon library. Drawing them from a
+  // different set is exactly how a roster stops looking like one army.
+  parts.chest = drawTorsoHi(v, { widthPx: px(0.2), heightPx: px(R.torsoLen), bulk })
+  parts.head = drawHeadHi(v, px(R.headR))
 
-  const weapon = drawWeapon(v.weapon, v, metrics)
+  const weapon = drawWeaponHi(v.weapon, v, height * (RIDER_WEAPON_LENGTH[v.weapon] ?? 0.55))
   if (weapon) {
     parts.weapon = {
       canvas: weapon.canvas,
@@ -1582,7 +1594,26 @@ function riderParts(v: UnitVisual, height: number): { parts: Record<string, Part
   }
   if (v.cape) parts.cape = { canvas: drawCape(v, metrics), origin: [0.5, 0.06] }
 
-  return { parts, metrics }
+  return { parts, metrics, weaponRest: weapon?.restAngle ?? 0 }
+}
+
+/**
+ * Weapon length for a mounted soldier, as a fraction of unit height.
+ *
+ * Longer than the footman's across the board: reach from the saddle is the
+ * entire reason to be up there, and a lance that does not out-reach the mount's
+ * own head reads as a stick being carried rather than a weapon being couched.
+ */
+const RIDER_WEAPON_LENGTH: Partial<Record<UnitVisual['weapon'], number>> = {
+  lance: 1.35,
+  spear: 1.1,
+  sword: 0.6,
+  saber: 0.62,
+  axe: 0.52,
+  club: 0.46,
+  bow: 0.6,
+  musket: 0.7,
+  staff: 0.9
 }
 
 // ───────────────────────────── Archetypes ─────────────────────────────
@@ -1598,27 +1629,17 @@ export const riderArchetype: Archetype = {
       accent: v.accent
     }
     const couched = ranged || COUCHED_WEAPONS.has(v.weapon)
-    const parts = { ...quadParts(MOUNT, v, height, { wild: false, tack }), ...riderParts(v, height).parts }
+    const rig = riderParts(v, height)
+    const parts = { ...quadParts(MOUNT, v, height, { wild: false, tack }), ...rig.parts }
     const clips: Record<ClipName, Clip> = {
       idle: RIDE_IDLE,
       walk: RIDE_WALK,
       attack: couched ? RIDE_THRUST : RIDE_SWING
     }
     return {
-      skeleton: buildRiderSkeleton(
-        // Every weapon in the library is drawn pointing *up* out of its grip,
-        // and `orient: 'right'` feeds the bone's world angle straight into the
-        // sprite's rotation — so a weapon reads level and forward when its bone
-        // reaches PI/2, and these rest angles are simply what each hand pose
-        // needs to add up to that.
-        //
-        // A lance or a spear is couched flat along the line of the charge and a
-        // firearm is levelled the same way, so both settle at PI/2 against
-        // their own arm. A sabre instead rests carried up and forward and comes
-        // *through* PI/2 on the swing, landing forward and down at contact.
-        ranged ? 0.86 : COUCHED_WEAPONS.has(v.weapon) ? 0.1 : -0.5,
-        ranged
-      ),
+      // A couched lance rides flat along the line of the charge; everything
+      // else takes the rest angle the weapon itself declares.
+      skeleton: buildRiderSkeleton(couched ? 0 : rig.weaponRest, ranged || couched),
       parts,
       clips,
       height,
