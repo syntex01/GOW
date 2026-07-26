@@ -135,8 +135,8 @@ const MOUNT: Quad = {
   neckLen: 0.22,
   pollRest: 1.05,
   headLen: 0.2,
-  tailX: -0.31,
-  tailY: -0.06,
+  tailX: -0.32,
+  tailY: -0.085,
   tailRest: 0.4,
   tailLen: 0.22,
   hindTopW: 0.13,
@@ -146,10 +146,10 @@ const MOUNT: Quad = {
   legBotW: 0.038,
   hoofLen: 0.062,
   hoofH: 0.05,
-  neckBaseW: 0.16,
-  neckTipW: 0.095,
-  headW: 0.115,
-  tailW: 0.07
+  neckBaseW: 0.115,
+  neckTipW: 0.072,
+  headW: 0.098,
+  tailW: 0.078
 }
 
 /** The beast: lower, longer, shoulders above the croup, and it carries nothing. */
@@ -190,10 +190,10 @@ const BEAST: Quad = {
   legBotW: 0.052,
   hoofLen: 0.075,
   hoofH: 0.06,
-  neckBaseW: 0.18,
-  neckTipW: 0.12,
-  headW: 0.13,
-  tailW: 0.055
+  neckBaseW: 0.165,
+  neckTipW: 0.11,
+  headW: 0.115,
+  tailW: 0.065
 }
 
 /** The rider's upper body. Smaller than a footman's — he is sitting down. */
@@ -390,6 +390,12 @@ function riderBones(weaponRest: number, ranged: boolean): Skeleton {
       weights: { aim: 0.4, recoil: 1 }
     }),
     bone('rHandF', 'rForeArmF', { part: 'rHandF', depth: 56 }),
+    // The weapon hangs off the hand, so it inherits every bit of arm motion for
+    // free — including recoil, which is the whole point. Weapon art is authored
+    // pointing *up* from the grip, and `orient: 'right'` maps a bone angle
+    // straight through to the sprite's rotation, so a world angle of PI/2 lays
+    // it flat along the line of the charge and anything less than that tips it
+    // back over the shoulder.
     bone('weapon', 'rHandF', { angle: weaponRest, part: 'weapon', orient: 'right', depth: 58, weights: { aim: 0.1 } }),
 
     // Legs. Seated, so the rest angles live on the bones and the clips only
@@ -1018,9 +1024,10 @@ function drawBarrel(
     const shade = Math.max(1, Math.round(h * 0.24))
     p.fill(x, bot - shade + 1, 1, shade, r[1])
     p.set(x, bot, r[0])
-    // The topline catches the light, hardest over the forehand where it faces
-    // up and to the right.
-    p.set(x, top, t > 0.44 ? r[4] : r[3])
+    // The topline catches the light, hardest over the withers where it faces
+    // up and to the right. Running the brightest tone across the whole forehand
+    // read as a white slab; it belongs on one landmark, not on half the animal.
+    p.set(x, top, t > 0.74 && t < 0.94 ? r[4] : r[3])
     if (h > 5) p.set(x, top + 1, r[3])
   }
 
@@ -1070,35 +1077,35 @@ function drawBarrel(
     const bl = opts.tack.blanket.ramp
     const sd = opts.tack.saddle.ramp
     const ac = ramp(opts.tack.accent)
-    const seatFrom = Math.round(L * 0.33)
-    const seatTo = Math.round(L * 0.64)
-    // Blanket: two rows following the topline, with an accent edge at the rear
-    // where it hangs past the saddle.
-    for (let i = seatFrom - 3; i < seatTo + 2 && i < L; i += 1) {
-      if (i < 0) continue
+    const seatFrom = Math.round(L * 0.34)
+    const seatTo = Math.round(L * 0.66)
+    // Blanket: one row on the back plus a corner hanging past the cantle, in
+    // the rider's own cloth with an accent edge. Two rows was enough to bury
+    // the loin entirely, which is the only part of the topline the eye can see
+    // once the rider is sitting on the rest of it.
+    for (let i = Math.max(0, seatFrom - 4); i < seatTo + 1 && i < L; i += 1) {
       const x = x0 + i
-      const drop = i < seatFrom ? Math.round(D * 0.5) : 2
+      const drop = i < seatFrom ? Math.max(2, Math.round(D * 0.34)) : 1
       p.fill(x, tops[i], 1, drop, bl[2])
-      p.set(x, tops[i], bl[3])
       if (i < seatFrom) p.set(x, tops[i] + drop - 1, ac[3])
     }
-    // Saddle: a seat that dips in the middle, a cantle behind and a pommel in
-    // front, so the rider is sitting in something rather than on a plank.
+    // Saddle: one row of seat with a pommel in front and a cantle behind, each
+    // exactly one pixel proud of it. At this size that single pixel either side
+    // is the whole difference between a saddle and a stripe.
     for (let i = seatFrom; i < seatTo && i < L; i += 1) {
       const t = (i - seatFrom) / Math.max(1, seatTo - seatFrom - 1)
-      const rise = Math.round(D * 0.1 * curve(t, [[0, 1], [0.42, 0], [0.6, 0], [1, 0.7]]))
+      const rise = t < 0.16 || t > 0.86 ? 1 : 0
       const x = x0 + i
       p.fill(x, tops[i] - rise - 1, 1, rise + 2, sd[2])
       p.set(x, tops[i] - rise - 1, sd[3])
     }
-    // Girth round the barrel, and a stirrup leather with an iron on the end.
-    const girth = x0 + Math.round(L * 0.62)
-    p.fill(girth, tops[Math.round(L * 0.62)], 1, bots[Math.round(L * 0.62)] - tops[Math.round(L * 0.62)] + 1, sd[1])
-    const stir = x0 + Math.round(L * 0.5)
-    const stirTop = tops[Math.round(L * 0.5)]
-    const stirLen = Math.round(D * 1.05)
-    p.fill(stir, stirTop, 1, stirLen, sd[1])
-    p.frame(stir - 1, stirTop + stirLen, 3, 3, ramp(0x9aa2ae, { contrast: 1.2 })[3])
+    // Girth round the barrel, and a short stirrup leather with an iron on it.
+    const gi = Math.round(L * 0.64)
+    p.fill(x0 + gi, tops[gi] + 1, 1, bots[gi] - tops[gi], sd[1])
+    const si = Math.round(L * 0.5)
+    const stirLen = Math.max(3, Math.round(D * 0.7))
+    p.fill(x0 + si, tops[si], 1, stirLen, sd[1])
+    p.frame(x0 + si - 1, tops[si] + stirLen, 3, 3, ramp(0x9aa2ae, { contrast: 1.2 })[3])
   }
 
   return { canvas: sealPart(p, hide.base), origin: [(x0 + L / 2) / p.w, cy / p.h] }
@@ -1124,24 +1131,28 @@ function drawNeck(
   const L = Math.max(4, Math.round(lengthPx * RES))
   const W0 = Math.max(2, Math.round(baseWPx * RES))
   const W1 = Math.max(2, Math.round(tipWPx * RES))
-  const fringe = Math.max(1, Math.round(W0 * 0.55))
+  const fringe = Math.max(1, Math.round(W0 * 0.45))
   const p = partCanvas(W0 + fringe * 2 + 2, L)
   const cx = PAD + fringe + Math.round(W0 / 2)
   const top = PAD
   const r = hide.ramp
   const m = mane.ramp
 
+  // Two rows drawn *above* the origin, which plug into the body. Without them
+  // the neck's outline and the barrel's outline meet edge to edge and leave a
+  // two-pixel black seam across the withers, which reads as a decapitation.
+  const over = 2
   const widths: number[] = []
   const lefts: number[] = []
-  for (let i = 0; i < L; i += 1) {
-    const t = L > 1 ? i / (L - 1) : 0
+  for (let i = -over; i < L; i += 1) {
+    const t = L > 1 ? Math.max(0, i) / (L - 1) : 0
     const w = Math.max(2, Math.round(W0 + (W1 - W0) * curve(t, [[0, 0], [0.55, 0.5], [1, 1]])))
     // A neck is not a cone: the throat hollows out under the jaw, so the
     // centreline bows toward the crest as it rises.
     const bow = Math.round(W0 * 0.16 * Math.sin(t * Math.PI))
     const left = cx - (w >> 1) + bow
-    widths.push(w)
-    lefts.push(left)
+    widths[i + over] = w
+    lefts[i + over] = left
     p.fill(left, top + i, w, 1, r[2])
     p.set(left, top + i, r[1])
     if (w > 2) p.set(left + w - 1, top + i, r[3])
@@ -1149,14 +1160,14 @@ function drawNeck(
   }
 
   if (opts.crest) {
-    // The mane: ragged strands off the crest edge, alternating tones so it
-    // reads as hair rather than as a second silhouette.
+    // The mane: strands off the crest edge, alternating tones and lengths so it
+    // reads as hair rather than as a second silhouette. Two pixels is the whole
+    // budget — a fringe as wide as the neck is a second neck.
     for (let i = 0; i < L; i += 1) {
       const t = L > 1 ? i / (L - 1) : 0
-      const edge = lefts[i] + widths[i] - 1
-      const len = Math.max(1, Math.round(fringe * (0.45 + 0.55 * Math.sin(t * Math.PI)) - (i % 3 === 0 ? 1 : 0)))
-      p.fill(edge, top + i, len, 1, i % 2 ? m[1] : m[2])
-      p.set(edge + len - 1, top + i, m[0])
+      const edge = lefts[i + over] + widths[i + over] - 1
+      const len = Math.max(1, Math.round(fringe * (0.4 + 0.6 * Math.sin(t * Math.PI))) - (i % 3 === 0 ? 1 : 0))
+      p.fill(edge, top + i, Math.max(1, len), 1, i % 2 ? m[1] : m[2])
     }
   }
   if (opts.ruff) {
@@ -1164,9 +1175,9 @@ function drawNeck(
     // than a mane.
     for (let i = 0; i < L; i += 1) {
       const t = L > 1 ? i / (L - 1) : 0
-      const len = Math.max(1, Math.round(fringe * (0.85 - 0.6 * t)))
-      p.fill(lefts[i] + widths[i] - 1, top + i, len, 1, i % 2 ? m[1] : m[2])
-      p.fill(lefts[i] - len + 1, top + i, len, 1, i % 2 ? m[0] : m[1])
+      const len = Math.max(1, Math.round(fringe * (0.8 - 0.6 * t)))
+      p.fill(lefts[i + over] + widths[i + over] - 1, top + i, len, 1, i % 2 ? m[1] : m[2])
+      p.fill(lefts[i + over] - len + 1, top + i, len, 1, i % 2 ? m[0] : m[1])
     }
   }
 
@@ -1191,9 +1202,9 @@ function drawQuadHead(
 ): PartArt {
   const L = Math.max(5, Math.round(lengthPx * RES))
   const W = Math.max(3, Math.round(widthPx * RES))
-  const earLen = Math.max(2, Math.round(W * 0.8))
+  const earLen = Math.max(2, Math.round(W * 0.55))
   const p = partCanvas(W * 2 + earLen, L + 2)
-  const cx = PAD + W + 1
+  const cx = PAD + W
   const top = PAD + 1
   const r = hide.ramp
   const m = mane.ramp
@@ -1201,64 +1212,51 @@ function drawQuadHead(
 
   // The two edges of the face, as fractions of W from the bone line. The crown
   // side is nearly straight; the jaw side carries the cheek and the chin.
+  //
+  // This head is around eight pixels long. Everything drawn on it competes with
+  // everything else, so it gets a shape, an eye and a nostril — the blaze,
+  // forelock, brow ridge and bridle cheekpiece that were here first all landed
+  // on top of one another and turned the face into a smear.
   const crown: Profile = fanged
-    ? [[0, 0.56], [0.24, 0.5], [0.66, 0.4], [1, 0.36]]
-    : [[0, 0.5], [0.2, 0.46], [0.6, 0.34], [0.86, 0.3], [1, 0.36]]
+    ? [[0, 0.58], [0.3, 0.5], [0.7, 0.38], [1, 0.34]]
+    : [[0, 0.52], [0.25, 0.44], [0.7, 0.32], [1, 0.34]]
   const jaw: Profile = fanged
-    ? [[0, 0.62], [0.3, 0.66], [0.62, 0.5], [0.86, 0.44], [1, 0.5]]
-    : [[0, 0.58], [0.22, 0.62], [0.55, 0.34], [0.82, 0.26], [1, 0.34]]
+    ? [[0, 0.66], [0.32, 0.7], [0.68, 0.5], [1, 0.48]]
+    : [[0, 0.6], [0.24, 0.64], [0.62, 0.34], [1, 0.32]]
 
-  for (let i = 0; i < L; i += 1) {
-    const t = L > 1 ? i / (L - 1) : 0
+  // Two rows above the poll, same trick as the neck: they vanish inside the
+  // crest and stop the two outlines meeting in a black join.
+  for (let i = -2; i < L; i += 1) {
+    const t = L > 1 ? Math.max(0, i) / (L - 1) : 0
     const up = Math.max(1, Math.round(W * curve(t, crown)))
     const down = Math.max(1, Math.round(W * curve(t, jaw)))
-    const left = cx - down
-    p.fill(left, top + i, down + up + 1, 1, r[2])
-    p.set(left, top + i, r[1])
+    p.fill(cx - down, top + i, down + up + 1, 1, r[2])
+    p.set(cx - down, top + i, r[1])
     p.set(cx + up, top + i, r[3])
   }
 
-  // Ears off the poll, on the crown side, one slightly behind the other.
-  const earBase = cx + Math.round(W * curve(0.03, crown))
-  p.line(earBase, top, earBase + earLen, top - 1, r[2])
-  p.line(earBase, top + 1, earBase + earLen, top, r[3])
-  p.line(earBase - 1, top + 2, earBase + earLen - 1, top + 3, r[1])
-  p.set(earBase + earLen, top - 1, m[0])
+  // One ear, off the poll on the crown side. Two overlap into a smudge.
+  const earBase = cx + Math.round(W * curve(0, crown))
+  for (let i = 0; i < earLen; i += 1) p.fill(earBase + i, top - (i < earLen - 1 ? 1 : 0), 1, 2, i ? r[3] : r[2])
 
-  // Eye: a dark pixel with a lit one over the brow, which is the only way an
-  // eye reads at this size without becoming a blob.
-  const eyeX = cx + Math.round(W * 0.2)
-  const eyeY = top + Math.round(L * 0.24)
-  p.set(eyeX, eyeY, ramp(opts.eye, { contrast: 1.4 })[fanged ? 4 : 1])
-  p.set(eyeX + 1, eyeY - 1, r[3])
-  p.set(eyeX - 1, eyeY + 1, r[0])
+  // Eye: one dark pixel, one lit pixel above it for the brow. There is no
+  // third pixel available and it does not need one.
+  const eyeX = cx + Math.round(W * 0.12)
+  const eyeY = top + Math.round(L * 0.28)
+  p.set(eyeX, eyeY, ramp(opts.eye, { contrast: 1.45 })[fanged ? 4 : 0])
+  p.set(eyeX, eyeY - 1, r[3])
 
-  // Muzzle: nostril and mouth line on the jaw side, near the tip.
-  p.set(cx - Math.round(W * 0.1), top + L - 2, r[0])
-  p.line(cx - Math.round(W * curve(0.9, jaw)), top + L - 2, cx - Math.round(W * 0.06), top + L - 1, r[0])
-
+  // Muzzle: a nostril, and the mouth as a single shadow pixel under the chin.
+  p.set(cx - Math.max(1, Math.round(W * 0.14)), top + L - 2, r[0])
   if (fanged) {
-    // Two fangs breaking the lower edge, and a brow ridge over the eye.
-    const bright = ramp(0xe8e2d2)[4]
-    p.set(cx - Math.round(W * curve(0.78, jaw)) - 1, top + Math.round(L * 0.78), bright)
-    p.set(cx - Math.round(W * curve(0.9, jaw)) - 1, top + Math.round(L * 0.9), bright)
-    p.line(cx + Math.round(W * 0.34), top + Math.round(L * 0.14), cx + Math.round(W * 0.22), top + Math.round(L * 0.34), r[3])
-  } else {
-    // Forelock over the poll, and a blaze down the nose.
-    for (let i = 0; i < 3; i += 1) {
-      p.line(earBase - 1 - i, top + 1 + i, earBase - 3 - i, top + 4 + i, i % 2 ? m[1] : m[2])
-    }
-    p.line(cx + Math.round(W * 0.28), top + Math.round(L * 0.4), cx + Math.round(W * 0.22), top + L - 3, r[4])
-  }
-
-  if (opts.bridle) {
-    const b = opts.bridle.ramp
-    // Cheekpiece down from the poll, noseband across the muzzle, and a rein
-    // stub running back — the reins themselves cannot be drawn as a rigid part.
-    p.line(cx + Math.round(W * 0.3), top + 2, cx - Math.round(W * 0.3), top + Math.round(L * 0.52), b[1])
-    const nb = top + Math.round(L * 0.62)
-    p.fill(cx - Math.round(W * curve(0.62, jaw)), nb, Math.round(W * (curve(0.62, jaw) + curve(0.62, crown))) + 1, 1, b[1])
-    p.set(cx - Math.round(W * 0.2), top + Math.round(L * 0.5), b[3])
+    // A fang breaking the jawline, which is the whole read on a predator head.
+    p.set(cx - Math.round(W * curve(0.85, jaw)) - 1, top + L - 2, ramp(0xe8e2d2)[4])
+    p.set(cx - Math.round(W * curve(0.6, jaw)), top + L - 4, m[0])
+  } else if (opts.bridle) {
+    // A noseband, one pixel, and nothing else. Reins cannot be drawn as a rigid
+    // part, so the bridle is implied rather than tracked.
+    const nb = top + Math.round(L * 0.66)
+    p.fill(cx - Math.round(W * curve(0.66, jaw)), nb, Math.round(W * (curve(0.66, jaw) + curve(0.66, crown))) + 1, 1, opts.bridle.ramp[1])
   }
 
   return { canvas: sealPart(p, hide.base), origin: [cx / p.w, top / p.h] }
@@ -1290,8 +1288,9 @@ function drawLegBone(
   for (let i = 0; i < L; i += 1) {
     const t = L > 1 ? i / (L - 1) : 0
     // The mass stays high and then falls away fast, which is where the
-    // gaskin-to-cannon shape of a real leg comes from.
-    const shape = opts.muscle ? curve(t, [[0, 0], [0.3, 0.16], [0.62, 0.72], [1, 1]]) : curve(t, [[0, 0], [1, 1]])
+    // gaskin-to-cannon shape of a real leg comes from. Holding the width past
+    // halfway turns the leg into a slab, so the fall starts early and is steep.
+    const shape = opts.muscle ? curve(t, [[0, 0], [0.22, 0.24], [0.5, 0.78], [1, 1]]) : curve(t, [[0, 0], [1, 1]])
     const w = Math.max(1, Math.round(T + (B - T) * shape))
     const x = cx - (w >> 1)
     p.fill(x, top + i, w, 1, r[2])
@@ -1335,9 +1334,11 @@ function drawHoof(
     // A splayed pad with toes and claws — wider than it is deep.
     p.fill(PAD, top + pastern, Lh, H - pastern, hr[2])
     p.fill(PAD, top + H - 1, Lh, 1, hr[0])
-    p.fill(PAD, top + pastern, Lh, 1, hr[3])
+    p.set(PAD + Lh - 1, top + pastern, hr[3])
     for (let i = 1; i < Lh; i += 2) p.set(PAD + i, top + H - 2, hr[1])
-    p.set(PAD + Lh - 1, top + pastern, ramp(0xe8e2d2)[4])
+    // One claw, at the toe, and only one. A lit row across the whole pad turned
+    // every beast in the roster into something wearing four white socks.
+    p.set(PAD + Lh - 1, top + H - 2, ramp(0xd8d2c2)[3])
   } else {
     // A hoof: a wedge that is wider at the ground than at the coronet.
     for (let i = 0; i < H - pastern; i += 1) {
@@ -1412,7 +1413,9 @@ function hideFor(v: UnitVisual, wild: boolean): { hide: Material; mane: Material
   return {
     hide: leather(base),
     mane: leather(tone(base, wild ? -0.3 : -0.44)),
-    horn: leather(tone(base, wild ? 0.1 : -0.52))
+    // Horn is pale on a hoofed animal and dark on a padded one — a paw drawn in
+    // the same tone as a hoof reads as four white socks.
+    horn: leather(tone(base, wild ? -0.38 : -0.52))
   }
 }
 
@@ -1424,16 +1427,21 @@ function quadParts(
   opts: { wild: boolean; tack?: Tack }
 ): Record<string, PartArt> {
   const px = (f: number) => f * height
-  const bulk = v.bulk ?? 1
+  // `bulk` is a statement about the *rider's* build, so the animal only takes
+  // the square root of it. A heavier lancer should not come with a fatter
+  // horse's head; he should come with a slightly stronger horse.
+  const bulk = Math.sqrt(v.bulk ?? 1)
   const { hide, mane, horn } = hideFor(v, opts.wild)
   // The far side is simply darker. It is the cheapest depth cue there is, it
   // needs no second silhouette, and the old rig already got this one right.
-  const farHide = leather(tone(hide.base, -0.3))
-  const farHorn = leather(tone(horn.base, -0.3))
+  // A third of a step down was enough to turn an already dark leather into a
+  // silhouette; a fifth reads as "behind the body" without going to black.
+  const farHide = leather(tone(hide.base, -0.2))
+  const farHorn = leather(tone(horn.base, -0.2))
 
   const parts: Record<string, PartArt> = {}
 
-  parts.barrel = drawBarrel(px(P.bodyLen), px(P.bodyDepth) * Math.sqrt(bulk), hide, mane, {
+  parts.barrel = drawBarrel(px(P.bodyLen), px(P.bodyDepth) * bulk, hide, mane, {
     back: opts.wild ? BEAST_BACK : HORSE_BACK,
     belly: opts.wild ? BEAST_BELLY : HORSE_BELLY,
     tack: opts.tack,
@@ -1567,10 +1575,12 @@ export const riderArchetype: Archetype = {
     const clips: Record<ClipName, Clip> = { idle: RIDE_IDLE, walk: RIDE_WALK, attack: RIDE_ATTACK }
     return {
       skeleton: buildRiderSkeleton(
-        // A lance or a spear is couched along the line of the charge; anything
-        // else rides up and back where it can come down. A hanging weapon on a
-        // horseman points at his own boot and looks like he has dropped it.
-        ranged ? -Math.PI / 2 : COUCHED_WEAPONS.has(v.weapon) ? -Math.PI / 2 + 0.08 : -Math.PI * 0.86,
+        // A lance or a spear is couched flat along the line of the charge, a
+        // firearm is levelled the same way, and anything meant to be swung
+        // rides up and back where it can come down. Measured against the hand,
+        // which points straight down at rest: 0.1 leaves the weapon horizontal
+        // and forward, and the ranged case has to pay back the raised arm.
+        ranged ? Math.PI / 2 - (-1.28 + 0.42) : COUCHED_WEAPONS.has(v.weapon) ? 0.1 : -Math.PI * 0.82,
         ranged
       ),
       parts,

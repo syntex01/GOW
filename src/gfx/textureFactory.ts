@@ -31,6 +31,7 @@ import {
 } from './propArt'
 import { buildShadowCanvas, buildUnitArt, RES, RigMetrics } from './unitArt'
 import { buildArchetype, type ArchetypeBuild } from './archetypes'
+import { evaluate, partRotation, samplePose } from './rig'
 
 const PROJECTILE_IDS: ProjectileId[] = [
   'stone',
@@ -207,6 +208,58 @@ function buildUnitIcon(scene: Phaser.Scene, id: string): void {
 
   const m = art.metrics
   const R = RES
+
+  // An archetype-driven unit is composed from its own skeleton at rest, which
+  // is the only thing that can be right for every body plan. The old code
+  // reached for part names — 'mount', 'body', 'leg', 'torso' — that the new
+  // rigs simply do not have, so every card in the command bar had decayed into
+  // whichever two parts happened to still match.
+  if (art.rig) {
+    const rig = art.rig
+    const transforms = evaluate(rig.skeleton, samplePose(rig.clips.idle, 0))
+    const drawn = rig.skeleton
+      .filter(b => b.part && art.parts.includes(b.part))
+      .sort((a, b) => a.depth - b.depth)
+
+    // Fit the assembled rig rather than guessing from metrics: a tank is three
+    // times wider than it is tall and a titan is the other way round.
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const b of drawn) {
+      const t = transforms[b.name]
+      if (!t) continue
+      const src = scene.textures.get(unitPartKey(id, b.part as string)).getSourceImage() as HTMLCanvasElement
+      const px = t.x * rig.height * R
+      const py = t.y * rig.height * R
+      // A generous box, since the part may be rotated any which way.
+      const reach = Math.max(src.width, src.height) * 0.75
+      minX = Math.min(minX, px - reach)
+      maxX = Math.max(maxX, px + reach)
+      minY = Math.min(minY, py - reach)
+      maxY = Math.max(maxY, py + reach)
+    }
+    const fit = Math.min((size * 0.92) / Math.max(1, maxX - minX), (size * 0.92) / Math.max(1, maxY - minY))
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+
+    for (const b of drawn) {
+      const t = transforms[b.name]
+      if (!t) continue
+      const src = scene.textures.get(unitPartKey(id, b.part as string)).getSourceImage() as HTMLCanvasElement
+      const [ox, oy] = art.origins[b.part as string] ?? [0.5, 0.5]
+      ctx.save()
+      ctx.translate(size / 2 + (t.x * rig.height * R - cx) * fit, size / 2 + (t.y * rig.height * R - cy) * fit)
+      ctx.rotate(partRotation(t.angle, t.orient))
+      ctx.scale(fit, fit)
+      ctx.drawImage(src, -src.width * ox, -src.height * oy)
+      ctx.restore()
+    }
+    scene.textures.addCanvas(key, c.canvas)
+    return
+  }
+
   if (art.parts.includes('mount')) {
     compose('mount', 0, -m.height * 0.34 * R)
     compose('mountLeg', -m.height * 0.28 * R, -m.height * 0.28 * R)

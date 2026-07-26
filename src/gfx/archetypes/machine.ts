@@ -1675,8 +1675,12 @@ function drawCannonBarrel(v: UnitVisual, kit: Kit, lengthPx: number, thickPx: nu
     const th = Math.max(2, Math.round(T * (1.8 - t * 0.7)))
     const y = cy - (th >> 1)
     p.fill(x0 + i, y, 1, th, bronze[2])
-    p.set(x0 + i, y, bronze[4])
-    p.set(x0 + i, y + th - 1, bronze[1])
+    // The lit edge stays one step down except over the chase, where the
+    // curvature actually catches the sun. A highlight run the whole length
+    // reads as bare white metal rather than as cast bronze.
+    p.set(x0 + i, y, t > 0.3 && t < 0.62 ? bronze[4] : bronze[3])
+    p.set(x0 + i, y + th - 1, bronze[0])
+    if (th > 3) p.set(x0 + i, y + th - 2, bronze[1])
   }
   // Reinforcing rings at breech, chase and muzzle.
   for (const at of [0.08, 0.46, 0.94]) {
@@ -1763,16 +1767,18 @@ export const vehicleArchetype: Archetype = {
  * the battlefield places flyers at altitude — so these numbers straddle zero.
  */
 const F = {
-  bodyLen: 0.62,
+  /** Total fuselage length, nose to tail, before `bulk`. */
+  bodyLen: 0.77,
   bodyH: 0.3,
-  rotorSpan: 0.72,
-  rotorUp: -0.38,
+  /** Rotor **half** span. A main rotor is a little longer than the airframe. */
+  rotorSpan: 0.42,
+  rotorUp: -0.45,
   rotorFwd: 0.03,
-  tailFwd: -0.55,
-  tailUp: -0.08,
-  gunFwd: 0.3,
+  tailFwd: -0.6,
+  tailUp: -0.14,
+  gunFwd: 0.34,
   gunDown: 0.1,
-  gunLen: 0.22
+  gunLen: 0.2
 }
 
 /**
@@ -1804,12 +1810,12 @@ function buildFlyerSkeleton(chassis: UnitVisual['chassis']): Skeleton {
     // The tail rotor, though, is seen face-on — so that one really does spin.
     s.push(bone('tailRotor', 'body', { x: F.tailFwd, y: F.tailUp, part: 'tailRotor', orient: 'right', depth: 12 }))
   } else if (quad) {
-    s.push(bone('rotorF', 'body', { x: 0.32, y: -0.24, part: 'rotorF', orient: 'right', depth: 60 }))
-    s.push(bone('rotorB', 'body', { x: -0.34, y: -0.24, part: 'rotorB', orient: 'right', depth: 12 }))
+    s.push(bone('rotorF', 'body', { x: 0.4, y: -0.26, part: 'rotorF', orient: 'right', depth: 60 }))
+    s.push(bone('rotorB', 'body', { x: -0.42, y: -0.26, part: 'rotorB', orient: 'right', depth: 12 }))
   } else {
     // Hover: lift comes out of two gimballed thrusters, which tilt to translate.
-    s.push(bone('thrusterF', 'body', { x: 0.26, y: 0.12, part: 'thrusterF', orient: 'right', depth: 34 }))
-    s.push(bone('thrusterB', 'body', { x: -0.3, y: 0.12, part: 'thrusterB', orient: 'right', depth: 14 }))
+    s.push(bone('thrusterF', 'body', { x: 0.3, y: 0.1, part: 'thrusterF', orient: 'right', depth: 34 }))
+    s.push(bone('thrusterB', 'body', { x: -0.34, y: 0.1, part: 'thrusterB', orient: 'right', depth: 14 }))
   }
 
   s.push(bone('gunMount', 'body', { x: F.gunFwd, y: F.gunDown, weights: { aim: 1 }, depth: 55 }))
@@ -1909,9 +1915,8 @@ const FLYER_ATTACK: Clip = {
  */
 function drawFuselage(v: UnitVisual, kit: Kit, height: number): PartArt {
   const bulk = v.bulk ?? 1
-  const LEN = Math.max(16, Math.round(F.bodyLen * bulk * height * RES * 2))
+  const LEN = Math.max(16, Math.round(F.bodyLen * bulk * height * RES))
   const H = Math.max(5, Math.round(F.bodyH * height * RES))
-  const rotary = v.chassis === 'rotor'
   const p = partCanvas(LEN + 8, H * 3.6)
   const cx = Math.round(p.w / 2)
   const cy = Math.round(p.h * 0.54)
@@ -1942,7 +1947,8 @@ function drawFuselage(v: UnitVisual, kit: Kit, height: number): PartArt {
   )
   p.line(tail + LEN * 0.01, cy - H * 1.05, tail + LEN * 0.13, cy - H * 0.95, r[4])
   p.fill(tail, Math.round(cy - H * 0.62), Math.max(3, Math.round(LEN * 0.16)), Math.max(1, Math.round(H * 0.12)), d[2])
-  trim(p, tail + LEN * 0.03, Math.round(cy - H * 0.82), LEN * 0.09, a)
+
+  trim(p, tail + LEN * 0.2, boomTop + 1, LEN * 0.1, a)
 
   // ── cabin ──
   p.poly(
@@ -1979,13 +1985,13 @@ function drawFuselage(v: UnitVisual, kit: Kit, height: number): PartArt {
   p.line(cx + LEN * 0.17, roof + H * 0.15, cx + LEN * 0.19, cy + H * 0.02, kit.glass[1])
   p.set(Math.round(cx + LEN * 0.24), Math.round(roof + H * 0.34), kit.glass[4])
 
-  if (rotary) {
+  {
     // Engine deck and gearbox fairing, then the mast the disc sits on.
     box(p, cx - LEN * 0.14, roof - Math.round(H * 0.22), Math.max(4, Math.round(LEN * 0.2)), Math.max(3, Math.round(H * 0.3)), d)
     louvres(p, cx - Math.round(LEN * 0.12), roof - Math.round(H * 0.16), LEN * 0.08, H * 0.2, d)
     const mastX = cx + Math.round(LEN * 0.02)
-    p.fill(mastX, roof - Math.round(H * 1.0), Math.max(2, Math.round(LEN * 0.04)), Math.round(H * 0.9), r[2])
-    p.fill(mastX, roof - Math.round(H * 1.0), 1, Math.round(H * 0.9), r[3])
+    p.fill(mastX, roof - Math.round(H * 0.62), Math.max(2, Math.round(LEN * 0.05)), Math.round(H * 0.66), r[2])
+    p.fill(mastX, roof - Math.round(H * 0.62), 1, Math.round(H * 0.66), r[3])
     orb(p, mastX + 1, roof - H * 0.2, LEN * 0.05, H * 0.18, r)
 
     // Stub wing and a rocket pod under it.
@@ -2009,21 +2015,6 @@ function drawFuselage(v: UnitVisual, kit: Kit, height: number): PartArt {
     p.fill(cx - Math.round(LEN * 0.16), belly, 1, skidY - belly, d[1])
     p.fill(cx + Math.round(LEN * 0.2), belly, 1, skidY - belly, d[1])
     p.set(Math.round(cx + LEN * 0.32), skidY, d[1])
-  } else {
-    // Lifter or drone: a swept wing seen edge-on and a sensor turret beneath.
-    p.poly(
-      [
-        [cx - LEN * 0.24, cy + H * 0.26],
-        [cx + LEN * 0.14, cy + H * 0.3],
-        [cx + LEN * 0.02, belly + H * 0.12],
-        [cx - LEN * 0.34, belly + H * 0.08]
-      ],
-      d[2]
-    )
-    p.line(cx - LEN * 0.24, cy + H * 0.26, cx + LEN * 0.14, cy + H * 0.3, r[3])
-    orb(p, cx + LEN * 0.06, belly + H * 0.12, LEN * 0.07, H * 0.2, d)
-    // Booms out to the lift units, so the rotors are not floating.
-    p.fill(cx - Math.round(LEN * 0.34), roof + Math.round(H * 0.1), Math.round(LEN * 0.7), Math.max(1, Math.round(H * 0.12)), d[1])
   }
 
   // Exhaust glow aft of the cabin, and a nav light on the nose.
@@ -2034,51 +2025,116 @@ function drawFuselage(v: UnitVisual, kit: Kit, height: number): PartArt {
 }
 
 /**
+ * A rotor drone or a hover platform: no cabin, no fin, no crew.
+ *
+ * Given the same fuselage as the gunship it came out looking like a small
+ * whale, because everything that makes a helicopter read — the deep cabin, the
+ * canopy, the tail — is exactly what an unmanned machine does not have. So it
+ * gets its own silhouette: a flat armoured lozenge slung under a boom, with a
+ * motor pod at each end and one sensor eye where a face would be.
+ */
+function drawDroneBody(v: UnitVisual, kit: Kit, height: number): PartArt {
+  const bulk = v.bulk ?? 1
+  const LEN = Math.max(12, Math.round(F.bodyLen * bulk * height * RES))
+  const H = Math.max(4, Math.round(F.bodyH * 0.68 * height * RES))
+  const quad = v.chassis === 'quad'
+  const p = partCanvas(LEN * 1.1 + 6, H * 3.4)
+  const cx = Math.round(p.w / 2)
+  const cy = Math.round(p.h * 0.56)
+  const r = kit.hull.ramp
+  const d = kit.shade.ramp
+  const a = kit.accent
+
+  // Hull: a chined lozenge, deeper at the back where the powerplant is.
+  p.poly(
+    [
+      [cx - LEN * 0.44, cy - H * 0.1],
+      [cx - LEN * 0.3, cy - H * 0.5],
+      [cx + LEN * 0.16, cy - H * 0.5],
+      [cx + LEN * 0.46, cy + H * 0.06],
+      [cx + LEN * 0.16, cy + H * 0.5],
+      [cx - LEN * 0.32, cy + H * 0.5]
+    ],
+    r[2]
+  )
+  p.line(cx - LEN * 0.3, cy - H * 0.5, cx + LEN * 0.16, cy - H * 0.5, r[4])
+  p.line(cx + LEN * 0.16, cy - H * 0.5, cx + LEN * 0.46, cy + H * 0.06, r[3])
+  p.line(cx - LEN * 0.32, cy + H * 0.5, cx + LEN * 0.16, cy + H * 0.5, r[0])
+  seamV(p, cx - Math.round(LEN * 0.08), Math.round(cy - H * 0.4), H * 0.8, r)
+  rivetRow(p, cx - LEN * 0.24, Math.round(cy - H * 0.34), LEN * 0.34, 4, r)
+  louvres(p, cx - Math.round(LEN * 0.38), Math.round(cy - H * 0.2), LEN * 0.1, H * 0.5, d)
+
+  // The sensor eye, which is the only thing on it that reads as a front.
+  emissive(p, cx + LEN * 0.32, cy + H * 0.08, LEN * 0.05, H * 0.16, a)
+  trim(p, cx - LEN * 0.06, Math.round(cy - H * 0.16), LEN * 0.12, a)
+
+  if (quad) {
+    // The boom, and a motor pod at each end for the discs to sit on.
+    const boomY = Math.round(cy - H * 0.85)
+    p.fill(cx - Math.round(LEN * 0.42), boomY, Math.round(LEN * 0.84), Math.max(1, Math.round(H * 0.16)), d[2])
+    p.fill(cx - Math.round(LEN * 0.42), boomY, Math.round(LEN * 0.84), 1, d[3])
+    for (const side of [-1, 1]) {
+      const x = cx + side * LEN * 0.42
+      box(p, x - LEN * 0.06, boomY - H * 0.2, Math.max(2, Math.round(LEN * 0.12)), Math.max(2, Math.round(H * 0.4)), r)
+      p.line(x, boomY + H * 0.16, x + side * LEN * 0.04, cy - H * 0.5, d[1])
+    }
+  } else {
+    // Hover: a ducted plenum under the hull instead of a boom.
+    p.fill(cx - Math.round(LEN * 0.3), Math.round(cy + H * 0.5), Math.round(LEN * 0.6), 1, d[1])
+    for (let x = 0; x < LEN * 0.56; x += 3) p.set(Math.round(cx - LEN * 0.28 + x), Math.round(cy + H * 0.5) + 1, a[2])
+  }
+  // Landing skids, stubby, because it lands on anything.
+  p.fill(cx - Math.round(LEN * 0.2), Math.round(cy + H * 0.5), 1, Math.max(2, Math.round(H * 0.3)), d[1])
+  p.fill(cx + Math.round(LEN * 0.12), Math.round(cy + H * 0.5), 1, Math.max(2, Math.round(H * 0.3)), d[1])
+
+  return { canvas: sealPart(p, v.metal), origin: originAt(p, cx, cy) }
+}
+
+/**
  * The main rotor, drawn as motion blur.
  *
- * The old art was a single dark bar that got squashed on its Y axis to fake a
- * spin, which strobes and reads as a windscreen wiper. What a rotor actually
- * looks like is a translucent disc with the blade nearest the eye dark and its
- * predecessors fading behind it — so that is what is drawn: a swept fan of
- * ghosted blades at falling alpha around a shallow ellipse, plus the two
- * blades currently caught by the light.
+ * The old art was a single dark bar squashed on its Y axis to fake a spin,
+ * which strobes and reads as a windscreen wiper. What a turning rotor actually
+ * looks like from the side is a very flat lens of moving air with one blade
+ * caught sharp at the near edge and its predecessors fading behind it — so
+ * that is what is drawn: a shallow translucent disc, a fan of ghosted chords
+ * at falling alpha, and two solid blades on the disc plane.
  *
  * Deliberately **not** sealed with an outline. An outline around a motion blur
- * turns it straight back into a solid object.
+ * turns it straight back into a solid object, which is the one thing it must
+ * never be.
  */
 function drawRotorDisc(kit: Kit, spanPx: number, blades: number): PartArt {
-  const S = Math.max(8, Math.round(spanPx * RES))
-  const tilt = Math.max(2, Math.round(S * 0.11))
-  const p = new Pix(S * 2 + 6, tilt * 2 + 8)
+  const S = Math.max(6, Math.round(spanPx * RES))
+  const tilt = Math.max(1, Math.round(S * 0.07))
+  const p = new Pix(S * 2 + 6, tilt * 2 + 7)
   const cx = Math.round(p.w / 2)
   const cy = Math.round(p.h / 2)
   const d = kit.iron.ramp
 
-  // The disc itself: the faintest wash, so the sweep has a volume.
-  p.ellipse(cx, cy, S, tilt, d[2], 26)
-  p.ellipse(cx, cy - 1, S * 0.96, tilt * 0.7, d[3], 18)
+  // The swept disc: barely there, and flatter than feels right on paper. Any
+  // more and it reads as a cloud sitting on the aircraft.
+  p.ellipse(cx, cy, S, tilt, d[2], 16)
 
-  // Ghost blades. Each is a chord of the disc at its own azimuth; the alpha
-  // falls away behind the leading blade, which is what makes the sweep read as
-  // a direction rather than as a smear.
-  for (let i = 0; i < blades; i += 1) {
-    const t = i / blades
-    const az = -0.9 - t * 2.1
-    const alpha = Math.round(210 * Math.pow(1 - t, 1.6)) + 18
-    const x0 = cx + Math.cos(az) * S
-    const y0 = cy + Math.sin(az) * tilt
-    const x1 = cx - Math.cos(az) * S
-    const y1 = cy - Math.sin(az) * tilt
-    p.line(x0, y0, x1, y1, i === 0 ? d[1] : d[2], alpha)
+  // Ghost blades trailing the leading one. The alpha falls away fast, which is
+  // what gives the sweep a direction instead of a smear.
+  for (let i = 1; i <= blades; i += 1) {
+    const t = i / (blades + 1)
+    const lift = tilt * (1 - t * 1.9)
+    const alpha = Math.round(120 * Math.pow(1 - t, 1.5)) + 14
+    p.line(cx - S * (1 - t * 0.12), cy + lift, cx + S * (1 - t * 0.12), cy - lift, d[2], alpha)
   }
-  // The leading blade, solid, with a lit upper edge.
-  p.line(cx - S, cy + tilt * 0.2, cx + S, cy - tilt * 0.2, d[1])
-  p.line(cx - S, cy + tilt * 0.2 - 1, cx + S, cy - tilt * 0.2 - 1, d[3], 150)
-  // Blade tip markers, the way real rotors are painted so the crew can see them.
-  p.set(cx - S + 1, Math.round(cy + tilt * 0.2), kit.accent[4])
-  p.set(cx + S - 1, Math.round(cy - tilt * 0.2), kit.accent[4])
-  // Hub and swashplate.
-  orb(p, cx, cy, Math.max(1.5, S * 0.06), Math.max(1.5, S * 0.06), kit.hull.ramp)
+
+  // The two blades on the disc plane, solid, with the near one lit along its
+  // upper edge and both tipped in the faction colour the way real blades are
+  // painted so the ground crew can see them.
+  p.line(cx - S, cy + tilt * 0.55, cx + S, cy - tilt * 0.55, d[1])
+  p.line(cx - S, cy + tilt * 0.55 - 1, cx + S, cy - tilt * 0.55 - 1, d[3], 170)
+  p.set(cx - S + 1, Math.round(cy + tilt * 0.55), kit.accent[4])
+  p.set(cx + S - 1, Math.round(cy - tilt * 0.55), kit.accent[4])
+
+  // Hub and swashplate, so the blur has something to turn about.
+  orb(p, cx, cy, Math.max(1.5, S * 0.07), Math.max(1.5, S * 0.07), kit.hull.ramp)
 
   return { canvas: raw(p), origin: originAt(p, cx, cy) }
 }
@@ -2155,21 +2211,21 @@ function buildFlyerParts(v: UnitVisual, height: number): Record<string, PartArt>
   const bulk = v.bulk ?? 1
   const px = (f: number) => f * height
   const parts: Record<string, PartArt> = {
-    body: drawFuselage(v, kit, height),
+    body: v.chassis === 'rotor' ? drawFuselage(v, kit, height) : drawDroneBody(v, kit, height),
     gun: drawNoseGun(v, kit, px(F.gunLen))
   }
 
   if (v.chassis === 'rotor') {
     parts.rotor = drawRotorDisc(kit, px(F.rotorSpan) * bulk, 7)
-    parts.tailRotor = drawTailRotor(kit, px(0.11))
+    parts.tailRotor = drawTailRotor(kit, px(0.15))
   } else if (v.chassis === 'quad') {
     // A quadcopter in side view shows two of its four discs, the far pair
     // darkened into the near pair's shadow.
-    parts.rotorF = drawRotorDisc(kit, px(0.3) * bulk, 6)
-    parts.rotorB = drawRotorDisc(kit, px(0.3) * bulk, 6)
+    parts.rotorF = drawRotorDisc(kit, px(0.26) * bulk, 5)
+    parts.rotorB = drawRotorDisc(kit, px(0.26) * bulk, 5)
   } else {
-    parts.thrusterF = drawThruster(kit, px(0.12), false)
-    parts.thrusterB = drawThruster(kit, px(0.12), true)
+    parts.thrusterF = drawThruster(kit, px(0.17), false)
+    parts.thrusterB = drawThruster(kit, px(0.17), true)
   }
 
   return parts
