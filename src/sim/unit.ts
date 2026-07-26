@@ -108,6 +108,19 @@ export default class Unit implements Damageable {
    * an attack pose on the frame a unit comes into range is the single most
    * obvious way to make a rig look like a puppet.
    */
+  /**
+   * Where the unit was when the rig was last driven.
+   *
+   * Animation is paced by ground actually covered, not by intent. A soldier
+   * queued behind a stalled front rank is still in the `advance` state — it
+   * simply cannot move — so keying the walk off the state marched the whole
+   * column in place. Distance is also what stops the feet skating: a fast unit
+   * takes quick steps and a slow one plods, without either being tuned.
+   */
+  private lastVisualX = 0
+  /** Smoothed ground speed, px/s, used to decide whether the unit is walking. */
+  private paceAvg = 0
+  private walkingNow = false
   private clipPhase = 0
   private prevPose: Pose | null = null
   private blendLeft = 0
@@ -217,6 +230,9 @@ export default class Unit implements Damageable {
       .setAlpha(0.62)
       .setDisplaySize(def.height * 0.78, def.height * 0.26)
 
+    // Seed the pacing reference, or the first frame reads the whole spawn
+    // offset as distance travelled and snaps the walk cycle.
+    this.lastVisualX = this.x
     this.buildRig()
 
     const barW = Math.max(24, def.height * 0.62)
@@ -1098,11 +1114,28 @@ export default class Unit implements Damageable {
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
     this.teamRing.setPosition(this.x, this.world.groundY + 1)
 
-    // Which clip, and how fast. A walk is paced by how far the unit actually
-    // travels rather than by the clock, so a fast unit takes quick steps and a
-    // slow one plods — the feet stop skating either way.
+    // How far the unit actually got since the last frame. Everything about
+    // which clip plays, and how fast, comes from this rather than from what the
+    // unit was trying to do.
+    const travelled = Math.abs(this.x - this.lastVisualX)
+    this.lastVisualX = this.x
+
+    // A queue that is slowly compressing creeps forward a fraction of a pixel
+    // per frame, which sits right on any fixed threshold and makes the whole
+    // column flicker between standing and walking. So: smooth the pace, and
+    // give it hysteresis — it takes a quarter of the unit's own speed to start
+    // walking and a tenth to stop. Scaled to the unit's speed rather than a
+    // constant, or a titan and a drone would need different numbers.
+    const instant = dtMs > 0 ? (travelled * 1000) / dtMs : 0
+    this.paceAvg += (instant - this.paceAvg) * Math.min(1, dtMs / 120)
+    const nominal = Math.max(1, this.def.speed * this.speedMult)
+    this.walkingNow = this.walkingNow
+      ? this.paceAvg > nominal * 0.1
+      : this.paceAvg > nominal * 0.25
+    const walking = moving && this.walkingNow
+
     const attacking = this.swing > 0
-    const name: 'idle' | 'walk' | 'attack' = attacking ? 'attack' : moving ? 'walk' : 'idle'
+    const name: 'idle' | 'walk' | 'attack' = attacking ? 'attack' : walking ? 'walk' : 'idle'
     const clip = rig.clips[name]
 
     if (name !== this.lastClip) {
@@ -1115,9 +1148,9 @@ export default class Unit implements Damageable {
     }
 
     if (name === 'walk') {
-      // One clip cycle per two strides, tied to distance covered.
+      // One clip cycle per two strides, tied to distance actually covered.
       const strideLength = Math.max(10, height * 0.62)
-      this.clipPhase += (Math.abs(this.def.speed * this.speedMult * this.frenzy) * (dtMs / 1000)) / (strideLength * 2)
+      this.clipPhase += travelled / (strideLength * 2)
     } else if (name === 'attack') {
       // The clip runs across the swing, so the contact pose lands with the hit.
       this.clipPhase = 1 - this.swing
@@ -1160,7 +1193,7 @@ export default class Unit implements Damageable {
     }
 
     // Footfall dust on the two contact poses of the walk cycle.
-    if (moving && this.layer === 'ground') {
+    if (walking && this.layer === 'ground') {
       const phase = Math.floor(this.clipPhase * 2)
       if (phase !== this.lastStepPhase) {
         this.lastStepPhase = phase
