@@ -36,7 +36,7 @@ export function applyCommand(bf: Battlefield, faction: Faction, command: Command
   const army = bf.armyFor(faction)
   switch (command.t) {
     case 'unit':
-      bf.queueUnit(faction, command.id, command.lane ?? 1)
+      bf.queueUnit(faction, command.id, command.lane ?? 2)
       break
     case 'evolve':
       bf.evolve(faction)

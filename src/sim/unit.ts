@@ -48,6 +48,8 @@ const GROUND_FRICTION = 6.5
 const AIR_DRAG = 1.2
 /** Minimum gap kept between friendly units so columns queue up instead of stacking. */
 const QUEUE_GAP = 6
+/** A swarm packs its file far tighter — more bodies per stretch of road. */
+const SWARM_GAP = 2
 /** How much slack counts as "closed up behind the rank ahead". */
 const CLOSE_SLACK = 8
 /**
@@ -75,7 +77,7 @@ export default class Unit implements Damageable {
   y: number
   /** Which of the three tracks this soldier walks. Fixed at spawn — unless
    * the soldier is a flanker, whose own rule may move it once blocked. */
-  lane = 1
+  lane = 2
   /** The ground line of this soldier's lane, in world pixels. */
   groundLine: number
   hp: number
@@ -123,8 +125,10 @@ export default class Unit implements Damageable {
   private knockStacks = 0
   /** How long this soldier has been pressed against its own line, in ms. */
   private blockedMs = 0
-  /** Set by targeting when the current shot crosses into an adjacent lane. */
-  crossLaneShot = false
+  /** Lanes the current shot crosses: 0 own file, 1 next door, 2 plunging. */
+  crossLaneShot = 0
+  /** True while this flanker's file is clear ahead — set by the battlefield. */
+  raiding = false
   /** Weight of the ranks pressing in behind this one. Set by the battlefield. */
   press = 1
   /** Position in this match's spawn order. Set by the battlefield. */
@@ -247,7 +251,7 @@ export default class Unit implements Damageable {
     x: number,
     world: UnitWorld,
     spawnJitter?: number,
-    lane = 1
+    lane = 2
   ) {
     this.scene = scene
     this.def = def
@@ -558,8 +562,10 @@ export default class Unit implements Damageable {
         this.vy = -Math.min(560, impulse * 1.5)
         this.airborne = true
       }
-      // Only a blow heavy enough to actually shift a soldier interrupts it.
-      if (impulse > STAGGER_FLOOR) this.stagger = Math.max(this.stagger, Math.min(420, impulse * 1.4))
+      // Only a blow heavy enough to actually shift a soldier interrupts it —
+      // and a soldier drilled into an Iron Line takes half again as much.
+      const floor = this.techs?.has('iron_line') && this.layer === 'ground' ? STAGGER_FLOOR * 1.6 : STAGGER_FLOOR
+      if (impulse > floor) this.stagger = Math.max(this.stagger, Math.min(420, impulse * 1.4))
     }
 
     if (this.hp <= 0) this.kill(source)
@@ -861,7 +867,8 @@ export default class Unit implements Damageable {
    */
   private formedUp(blockerX: number | null): boolean {
     if (blockerX === null) return true
-    const limit = blockerX - this.dir * (this.radius + QUEUE_GAP)
+    const gap = this.def.conduct === 'swarm' ? SWARM_GAP : QUEUE_GAP
+    const limit = blockerX - this.dir * (this.radius + gap)
     if ((limit - this.x) * this.dir <= CLOSE_SLACK) {
       this.holdMs = HOLD_MS
       return true
@@ -888,18 +895,23 @@ export default class Unit implements Damageable {
   }
 
   private advance(dt: number, blockerX: number | null): void {
-    const step = this.def.speed * this.speedMult * this.frenzy * (this.miredFor > 0 ? 0.35 : 1) * dt * this.dir
+    // An open road is an invitation: a flanker in an enemy-free file rides it.
+    const raid = this.raiding ? 1.3 : 1
+    const step = this.def.speed * this.speedMult * this.frenzy * raid * (this.miredFor > 0 ? 0.35 : 1) * dt * this.dir
     const nextX = this.x + step
     if (blockerX !== null) {
-      const limit = blockerX - this.dir * (this.radius + QUEUE_GAP)
+      const gap = this.def.conduct === 'swarm' ? SWARM_GAP : QUEUE_GAP
+      const limit = blockerX - this.dir * (this.radius + gap)
       if ((this.dir === 1 && nextX > limit) || (this.dir === -1 && nextX < limit)) {
         this.x = limit
         // The knight's move. A flanker does not wait in a queue: blocked long
         // enough, it asks the field for a clear adjacent lane and takes it.
         // The rule is fixed and the clock is simulation time, so both peers
         // watch the same soldier make the same decision at the same tick.
+        // Pack Tactics cuts the patience to almost nothing.
         this.blockedMs += dt * 1000
-        if (this.def.flanker && this.blockedMs > 1500) this.world.requestFlank?.(this)
+        const patience = this.techs?.has('pack_tactics') ? 550 : 1500
+        if (this.def.flanker && this.blockedMs > patience) this.world.requestFlank?.(this)
         return
       }
     }

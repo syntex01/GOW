@@ -261,14 +261,14 @@ export default class AiController {
    * nothing on the board the lanes are rotated so the opening is spread.
    */
   private pickLane(): number {
-    const pressure = [0, 0, 0]
+    const pressure = [0, 0, 0, 0, 0]
     let any = false
     for (const u of this.bf.units) {
       if (!u.alive || u.layer === 'air') continue
       any = true
       pressure[u.lane] += (u.faction === 'player' ? 1 : -1) * u.def.cost
     }
-    if (!any) return this.laneRotation++ % 3
+    if (!any) return this.laneRotation++ % 5
     let best = 0
     for (let lane = 1; lane < pressure.length; lane += 1) {
       if (pressure[lane] > pressure[best]) best = lane

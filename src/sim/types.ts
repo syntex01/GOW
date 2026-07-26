@@ -43,9 +43,11 @@ export function damageMultiplier(damage: DamageType, armor: ArmorType): number {
  * one-dimensional combat simulation — frontage, press, blocking — unchanged,
  * which is also what keeps every measured balance number valid per lane.
  */
-export const LANE_COUNT = 3
+export const LANE_COUNT = 5
 /** Vertical offset of each lane's ground line from the base ground line. */
-export const LANE_Y = [-44, 0, 44] as const
+export const LANE_Y = [-68, -34, 0, 34, 68] as const
+/** The centre file — where a build order goes when nobody chose. */
+export const LANE_MID = 2
 
 /** A minimal 2D vector used throughout the simulation. */
 export interface Vec2 {

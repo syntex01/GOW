@@ -715,6 +715,56 @@ export const TECHS: TechNode[] = [
     effect: 'Fields the Titan Bloom: throws its own fruiting bodies, which burst on the way down.'
   },
 
+  // ── Lane doctrines: research that changes how a file is fought ──
+  {
+    id: 'phalanx_doctrine',
+    name: 'Phalanx Doctrine',
+    branch: 'core',
+    kind: 'behaviour',
+    ring: 3,
+    row: 1,
+    age: 1,
+    cost: 900,
+    requires: ['drill_yard'],
+    effect: 'Braced spears read a charge before it lands. Your phalanx units punish flankers far harder.'
+  },
+  {
+    id: 'pack_tactics',
+    name: 'Pack Tactics',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 3,
+    row: 10,
+    age: 1,
+    cost: 950,
+    requires: ['butchery'],
+    effect: 'Your flankers stop waiting for permission: blocked for a moment, they are already in the next lane.'
+  },
+  {
+    id: 'iron_line',
+    name: 'Iron Line',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 4,
+    row: 5,
+    age: 2,
+    cost: 1400,
+    requires: ['shieldwall'],
+    effect: 'The file holds. Your infantry press harder from the ranks behind, and light fire no longer staggers them.'
+  },
+  {
+    id: 'plunging_volleys',
+    name: 'Plunging Volleys',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 4,
+    row: 11,
+    age: 2,
+    cost: 1500,
+    requires: ['long_arms'],
+    effect: 'Arcing fire drops two lanes over at a third strength. No file is entirely out of your reach.'
+  },
+
   // ───────────────────────── Ring 7 — the rim ─────────────────────────
   {
     id: 'ascend_nekrotics',

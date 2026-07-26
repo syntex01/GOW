@@ -74,6 +74,8 @@ const SUBSTEP_MS = 20
 const MAX_SUBSTEPS = 16
 /** How many of the nearest enemies a shooter will spread its fire across. */
 const FIRE_SPREAD = 4
+/** Damage kept by a shot that crosses 0, 1 or 2 lane boundaries. */
+const CROSS_LANE_DAMAGE = [1, 0.5, 0.32] as const
 /** How far back a rank still counts as pressing into the fight ahead of it. */
 const PRESS_REACH = 105
 /** Extra share of a blow contributed by each supporting rank. */
@@ -847,12 +849,25 @@ export default class Battlefield {
       // shoots. The ranks crowding up behind a fighter put their shoulders into
       // the blow, which is what makes buying the second twenty worth anything.
       let support = 0
-      for (let j = i + 1; j < order.length && support < MAX_PRESS; j += 1) {
+      const cap = unit.def.conduct === 'swarm' ? MAX_PRESS + 2 : MAX_PRESS
+      for (let j = i + 1; j < order.length && support < cap; j += 1) {
         if (Math.abs(order[j].x - unit.x) > PRESS_REACH) break
         support += 1
       }
-      unit.press = 1 + support * PRESS_BONUS
+      unit.press = 1 + support * (unit.techs?.has('iron_line') ? PRESS_BONUS + 0.15 : PRESS_BONUS)
       const blocker = unit.layer === 'air' ? null : aheadX
+      if (unit.def.flanker) {
+        // An open file ahead is a road: raiders ride it a third faster.
+        let clear = true
+        for (const foe of enemyLanes[unit.lane]) {
+          const dx = (foe.x - unit.x) * dir
+          if (dx > -40 && dx < 360) {
+            clear = false
+            break
+          }
+        }
+        unit.raiding = clear
+      }
       const target = this.pickTarget(unit, enemyLanes, enemyAir, enemyBase)
       unit.update(dtMs, blocker, target)
       if (unit.layer === 'ground' && unit.alive) {
@@ -862,18 +877,35 @@ export default class Battlefield {
   }
 
   /**
-   * The rulebook. Each role sees the board its own fixed way, and everything a
-   * commander can exploit follows from these five lines of vision:
+   * THE RULEBOOK — one unified counter web across unit, tech and position.
+   * Every piece sees the board a fixed way; every strength has a documented
+   * answer, and most have two. This comment is the design contract:
    *
-   *  - melee and tanks fight in their own lane, full stop;
-   *  - shooters fight their own lane first, and only when it is empty do they
-   *    fire into an adjacent lane, at a moiety of their damage;
-   *  - siege bombards whichever lane is thickest, all three in reach;
-   *  - aircraft ignore lanes in both directions;
-   *  - the fortress stands at the end of every lane.
+   * Vision (position):
+   *  - melee and tanks fight their own file, full stop;
+   *  - shooters spill to the next file at 1/2 damage only when theirs is
+   *    empty — and two files over at 1/3 with Plunging Volleys;
+   *  - siege bombards whichever file is thickest, minimum range inside;
+   *  - aircraft ignore files in both directions; the fortress ends them all.
+   *
+   * Conducts (unit):        strong into            answered by
+   *  - SWARM  (tight+deep)  anything 3x its price  bombard, cleave, splash
+   *  - PHALANX (intercept)  flankers, cavalry      shooters, bombard
+   *  - SCREEN (taunt)       hunters, gun lines     bombard, air, swarms
+   *  - HUNT  (kill weakest) healers, crews, siege  screens, phalanx walls
+   *  - FLANK (knight move)  bombard/spill files    phalanx, a held wide file
+   *  - SPILL (support fire) the file next door     flank into the empty file
+   *  - BOMBARD (densest)    stacked files          spread files, flank, air
+   *  - FLIGHT (no files)    everything grounded    pierce/energy hitsAir
+   *
+   * Doctrines (tech): Phalanx Doctrine sharpens interception ×2.1; Pack
+   * Tactics cuts a flanker's patience to half a second; Iron Line deepens
+   * the press and shrugs light stagger; Plunging Volleys buys the third
+   * file at a third strength. Each doctrine strengthens one edge of the
+   * web and none of them removes a counter.
    */
   private pickTarget(unit: Unit, enemyLanes: Unit[][], enemyAir: Unit[], enemyBase: Base): Damageable | null {
-    unit.crossLaneShot = false
+    unit.crossLaneShot = 0
     const attack = unit.def.attack
     const melee = attack.kind === 'melee'
     const flying = unit.layer === 'air'
@@ -889,6 +921,24 @@ export default class Battlefield {
     }
 
     const pickFrom = (pool: { target: Damageable; dist: number }[]): Damageable => {
+      // A screen's whole purpose is to be dealt with first: while one stands
+      // in the pool, everything that is not a shell or a wing must cut it
+      // down before touching what it protects. Bombardment and aircraft
+      // ignoring the taunt is the counter to the screen itself.
+      if (!siege && !flying) {
+        const screens = pool.filter(e => e.target instanceof Unit && e.target.def.conduct === 'screen')
+        if (screens.length > 0) pool = screens
+      }
+      // A hunter ignores the nearest man and opens the softest one in reach —
+      // rear-lane healers and gun crews stop being safe by geometry alone.
+      if (unit.def.conduct === 'hunt') {
+        pool.sort((a, b) => {
+          const ha = a.target instanceof Unit ? a.target.hp / a.target.maxHp : 2
+          const hb = b.target instanceof Unit ? b.target.hp / b.target.maxHp : 2
+          return ha - hb || a.dist - b.dist
+        })
+        return pool[0].target
+      }
       pool.sort((a, b) => a.dist - b.dist)
       // Shooters spread their fire across the front of the enemy formation
       // instead of every one of them deleting the same man; which of the
@@ -925,8 +975,20 @@ export default class Battlefield {
           if (lane >= 0 && lane < LANE_COUNT) gather(enemyLanes[lane], spill)
         }
         if (spill.length > 0) {
-          unit.crossLaneShot = true
+          unit.crossLaneShot = 1
           return pickFrom(spill)
+        }
+        // Plunging Volleys: arcing fire reaches two files over, at a third
+        // strength — bought, not given, and the price never disappears.
+        if (unit.techs?.has('plunging_volleys')) {
+          const plunge: { target: Damageable; dist: number }[] = []
+          for (const lane of [unit.lane - 2, unit.lane + 2]) {
+            if (lane >= 0 && lane < LANE_COUNT) gather(enemyLanes[lane], plunge)
+          }
+          if (plunge.length > 0) {
+            unit.crossLaneShot = 2
+            return pickFrom(plunge)
+          }
         }
       }
     }
@@ -1074,7 +1136,7 @@ export default class Battlefield {
     }
   }
 
-  spawnUnit(faction: Faction, def: UnitDef, atX?: number, lane = 1): Unit {
+  spawnUnit(faction: Faction, def: UnitDef, atX?: number, lane = 2): Unit {
     // Doctrine morphs derive defs at runtime, so the sprite for this one may
     // not have been drawn yet. Cosmetic only — it cannot move the hash.
     ensureUnitArt(this.scene, def)
@@ -1148,14 +1210,31 @@ export default class Battlefield {
       unit.damageMult *
       army.modifiers.unitDamage *
       this.escalation *
-      // Half strength across a lane boundary — supporting fire, not coverage.
-      (unit.crossLaneShot ? 0.5 : 1)
+      // Full strength in your own file, half next door, a third two over —
+      // supporting fire, never coverage of two lanes for the price of one.
+      CROSS_LANE_DAMAGE[unit.crossLaneShot]
     const sfx = WEAPON_SFX[unit.def.visual.weapon] ?? 'melee_light'
 
     if (attack.kind === 'melee') {
       audio.play(sfx, 0.4)
+      // Braced spears read a charge before it lands: a phalanx striking a
+      // flanker hits half again as hard, and drilled to doctrine, double.
+      // This is the counter that keeps the knight's move honest.
+      // Strong enough that the matchup is a verdict, not a coin flip: a
+      // charge into set spears loses, every time, at equal gold.
+      const intercept =
+        unit.def.conduct === 'phalanx' && target instanceof Unit && target.def.flanker
+          ? unit.techs?.has('phalanx_doctrine')
+            ? 2.4
+            : 1.85
+          : 1
+      // Mobbing: a swarm dragging down something three times its price hits
+      // a third harder — the many beat the one, and the answer to the many
+      // is cleave, splash and bombardment, never a bigger single blade.
+      const mob =
+        unit.def.conduct === 'swarm' && target instanceof Unit && target.def.cost >= unit.def.cost * 3 ? 1.3 : 1
       const event: DamageEvent = {
-        amount: damage * unit.press,
+        amount: damage * unit.press * intercept * mob,
         type: unit.def.damageType,
         // You cannot shove a man further than you can follow him. Without this
         // a melee line knocks its own target out of its own reach on every
@@ -1543,7 +1622,7 @@ export default class Battlefield {
 
   // ───────────────────────────── Player actions ─────────────────────────────
 
-  queueUnit(faction: Faction, unitId: string, lane = 1): boolean {
+  queueUnit(faction: Faction, unitId: string, lane = 2): boolean {
     return this.armyFor(faction).enqueue(unitId, lane)
   }
 

@@ -508,13 +508,13 @@ export default class HUDScene extends Phaser.Scene {
    */
   private buildLanePicker(): void {
     const x = 12
-    const y0 = BAR_Y - 96
-    const names = ['FAR', 'MID', 'NEAR']
+    const y0 = BAR_Y - 130
+    const names = ['FAR', '·', 'MID', '·', 'NEAR']
     this.laneRows = []
-    for (let lane = 0; lane < 3; lane += 1) {
-      const y = y0 + lane * 28
+    for (let lane = 0; lane < 5; lane += 1) {
+      const y = y0 + lane * 24
       const box = this.add
-        .rectangle(x, y, 148, 24, UI.panel, 0.85)
+        .rectangle(x, y, 148, 21, UI.panel, 0.85)
         .setOrigin(0, 0)
         .setStrokeStyle(1, UI.panelEdge)
         .setDepth(900)
@@ -524,13 +524,13 @@ export default class HUDScene extends Phaser.Scene {
         audio.play('ui_click', 0.35)
         this.refreshLanes()
       })
-      const name = label(this, x + 8, y + 5, `${['Z', 'X', 'C'][lane]} · ${names[lane]}`, {
+      const name = label(this, x + 8, y + 4, `${['Z', 'X', 'C', 'V', 'B'][lane]} ${names[lane]}`, {
         size: 11,
         bold: true,
         color: UI.textDim
       }).setDepth(901)
-      const mine = label(this, x + 88, y + 5, '', { size: 11, color: UI.good }).setDepth(901)
-      const theirs = label(this, x + 116, y + 5, '', { size: 11, color: UI.bad }).setDepth(901)
+      const mine = label(this, x + 88, y + 4, '', { size: 11, color: UI.good }).setDepth(901)
+      const theirs = label(this, x + 116, y + 4, '', { size: 11, color: UI.bad }).setDepth(901)
       void name
       this.laneRows.push({ box, mine, theirs })
     }
@@ -540,7 +540,7 @@ export default class HUDScene extends Phaser.Scene {
   private refreshLanes(): void {
     if (this.laneRows.length === 0) return
     const bf = this.battle?.battlefield
-    for (let lane = 0; lane < 3; lane += 1) {
+    for (let lane = 0; lane < 5; lane += 1) {
       const row = this.laneRows[lane]
       const active = this.battle.localLane === lane
       row.box.setStrokeStyle(active ? 2 : 1, active ? UI.gold : UI.panelEdge)

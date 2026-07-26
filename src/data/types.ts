@@ -138,6 +138,20 @@ export interface UnitDef {
    * adjacent lane rather than wait. Fixed rule, no input — the knight's move.
    */
   flanker?: boolean
+  /**
+   * How this piece conducts itself in its file. The conducts are the pieces
+   * of the positional game, and each one is strong into another and weak to a
+   * third — the counter web is documented where the battlefield enforces it.
+   *
+   *  - `swarm`   packs its file twice as tight and presses two ranks deeper;
+   *  - `phalanx` intercepts chargers: heavy bonus damage against flankers;
+   *  - `screen`  taunts — enemies in its file must cut it down first;
+   *  - `hunt`    ignores the nearest man and kills the weakest in reach.
+   *
+   * Line (default), spill (ranged), bombard (siege) and flight (air) complete
+   * the vocabulary; those follow from role rather than a flag.
+   */
+  conduct?: 'swarm' | 'phalanx' | 'screen' | 'hunt'
   /** Can this unit shoot air targets? Ground melee cannot. */
   hitsAir?: boolean
   /** Chance of a 2x hit. */

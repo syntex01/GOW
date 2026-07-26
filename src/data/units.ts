@@ -29,6 +29,7 @@ export const UNITS: UnitDef[] = [
     pop: 1,
     height: 60,
     attack: { kind: 'melee', knockback: 60, splash: 58 },
+    conduct: 'swarm',
     description: 'Cheap, expendable, and surprisingly effective in a mob.',
     visual: {
       kind: 'humanoid',
@@ -107,6 +108,7 @@ export const UNITS: UnitDef[] = [
     height: 62,
     attack: { kind: 'melee', knockback: 50, splash: 58 },
     bonusVs: { heavy: 1.4, light: 1.2 },
+    conduct: 'phalanx',
     description: 'Reach beats muscle. Strikes before the enemy closes.',
     visual: {
       kind: 'humanoid',
@@ -142,6 +144,7 @@ export const UNITS: UnitDef[] = [
     pop: 2,
     height: 75,
     attack: { kind: 'melee', knockback: 190, splash: 90 },
+    conduct: 'screen',
     description: 'A wall of muscle and mammoth bone. Sends bodies flying.',
     visual: {
       kind: 'humanoid',
@@ -214,6 +217,7 @@ export const UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 110, splash: 62 },
     bonusVs: { unarmored: 1.25 },
     flanker: true,
+    conduct: 'hunt',
     description: 'Sprints past the front line and shreds ranged support.',
     visual: {
       kind: 'rider',
@@ -251,6 +255,7 @@ export const UNITS: UnitDef[] = [
     pop: 1,
     height: 65,
     attack: { kind: 'melee', knockback: 70, splash: 64 },
+    conduct: 'swarm',
     description: 'Drilled, armoured and cheap enough to field in numbers.',
     visual: {
       kind: 'humanoid',
@@ -330,6 +335,7 @@ export const UNITS: UnitDef[] = [
     height: 66,
     attack: { kind: 'melee', knockback: 60, splash: 80 },
     bonusVs: { heavy: 1.75, light: 1.3 },
+    conduct: 'phalanx',
     description: 'Braced pikes gut cavalry and heavy armour alike.',
     visual: {
       kind: 'humanoid',
@@ -366,6 +372,7 @@ export const UNITS: UnitDef[] = [
     crit: 0.12,
     attack: { kind: 'melee', knockback: 150, splash: 85 },
     bonusVs: { unarmored: 1.25 },
+    conduct: 'screen',
     description: 'Charges the line and refuses to fall over.',
     visual: {
       kind: 'rider',
@@ -533,6 +540,7 @@ export const UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 40, splash: 62 },
     bonusVs: { unarmored: 1.25, heavy: 1.5 },
     flanker: true,
+    conduct: 'hunt',
     description: 'Rapier work — fast, precise, and brutal against soft targets.',
     visual: {
       kind: 'humanoid',
@@ -612,6 +620,7 @@ export const UNITS: UnitDef[] = [
     pop: 2,
     height: 83,
     attack: { kind: 'melee', knockback: 170, splash: 90 },
+    conduct: 'screen',
     description: 'Breastplated cavalry that rides straight through a firing line.',
     visual: {
       kind: 'rider',
@@ -972,6 +981,7 @@ export const UNITS: UnitDef[] = [
       burst: { rounds: 6, gapMs: 95 },
       muzzle: [26, 6]
     },
+    conduct: 'hunt',
     description: 'Ignores the ground fight entirely. Only anti-air can touch it.',
     visual: {
       kind: 'aircraft',
@@ -1044,6 +1054,7 @@ export const UNITS: UnitDef[] = [
     pop: 2,
     height: 74,
     attack: { kind: 'melee', knockback: 90, splash: 78 },
+    flanker: true,
     description: 'Breaching crew. Crosses the ground nobody else will and gets in under the guns.',
     visual: {
       kind: 'humanoid',
@@ -1123,6 +1134,7 @@ export const UNITS: UnitDef[] = [
     height: 78,
     attack: { kind: 'melee', knockback: 150, splash: 84 },
     aura: { damageReduction: 0.28, radius: 190 },
+    conduct: 'screen',
     description: 'Projects a barrier that blunts every hit landing near it.',
     visual: {
       kind: 'humanoid',
@@ -1169,6 +1181,7 @@ export const UNITS: UnitDef[] = [
       burst: { rounds: 4, gapMs: 110 },
       muzzle: [16, 4]
     },
+    conduct: 'hunt',
     description: 'Fast, fragile, and impossible to ignore without anti-air.',
     visual: {
       kind: 'aircraft',
@@ -1345,6 +1358,7 @@ export const UNITS: UnitDef[] = [
       burst: { rounds: 2, gapMs: 260 },
       muzzle: [46, -62]
     },
+    conduct: 'screen',
     description: 'The last word in ground warfare. Slow, self-repairing, unstoppable.',
     visual: {
       kind: 'mech',
@@ -1383,6 +1397,7 @@ export const UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 110, splash: 80 },
     bonusVs: { unarmored: 1.3 },
     flanker: true,
+    conduct: 'hunt',
     description: 'Closes faster than anything can traverse. Paper against armour, murder on a gun line.',
     visual: {
       kind: 'humanoid',

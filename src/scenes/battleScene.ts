@@ -22,8 +22,8 @@ import type Base from '../sim/base'
 import Battlefield from '../sim/battlefield'
 import { OPPOSITE, type Faction } from '../sim/types'
 
-export const WORLD_WIDTH = 1380
-export const GROUND_Y = 545
+export const WORLD_WIDTH = 1920
+export const GROUND_Y = 520
 export const AIR_Y = 240
 /** Slight zoom so soldiers read clearly without shrinking the battlefield. */
 const CAMERA_ZOOM = 1.0
@@ -39,7 +39,7 @@ export default class BattleScene extends Phaser.Scene {
   speedIndex = 0
   wave = 1
   /** The lane the next built unit will walk — the whole of placement. */
-  localLane = 1
+  localLane = 2
 
   private background!: Environment
   private debris!: DebrisLayer
@@ -208,7 +208,7 @@ export default class BattleScene extends Phaser.Scene {
     this.wave = 1
     this.waveTimer = 0
     this.cameraFocus = 0
-    this.localLane = 1
+    this.localLane = 2
     this.dragging = false
     this.dragStartX = 0
     this.dragCameraX = 0
@@ -392,13 +392,12 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-SPACE', () => this.tryAbility())
     keyboard.on('keydown-U', () => this.tryEconomy())
     keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
-    // The whole of placement: pick the lane the next piece will walk.
-    keyboard.on('keydown-Z', () => this.setLane(0))
-    keyboard.on('keydown-X', () => this.setLane(1))
-    keyboard.on('keydown-C', () => this.setLane(2))
+    // The whole of placement: pick the file the next piece will walk.
+    const LANE_KEYS = ['Z', 'X', 'C', 'V', 'B']
+    LANE_KEYS.forEach((key, lane) => keyboard.on(`keydown-${key}`, () => this.setLane(lane)))
     keyboard.on('keydown-TAB', (event: KeyboardEvent) => {
       event.preventDefault()
-      this.setLane((this.localLane + 1) % 3)
+      this.setLane((this.localLane + 1) % 5)
     })
     keyboard.on('keydown-BACKSPACE', () => {
       if (this.localArmy.queue.length === 0) return
@@ -423,7 +422,9 @@ export default class BattleScene extends Phaser.Scene {
       const moved = Math.abs(pointer.x - this.dragStartX) > 6
       if (!moved && pointer.y < this.cameras.main.height - 120) {
         const dy = pointer.y - GROUND_Y
-        if (dy > -70 && dy < 72) this.setLane(dy < -22 ? 0 : dy < 22 ? 1 : 2)
+        if (dy > -92 && dy < 94) {
+          this.setLane(dy < -51 ? 0 : dy < -17 ? 1 : dy < 17 ? 2 : dy < 51 ? 3 : 4)
+        }
       }
       this.dragging = false
     })

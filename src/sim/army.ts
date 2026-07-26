@@ -231,7 +231,7 @@ export default class Army {
     return this.queue.reduce((sum, entry) => sum + entry.def.pop, 0)
   }
 
-  enqueue(unitId: string, lane = 1): boolean {
+  enqueue(unitId: string, lane = 2): boolean {
     // The command bar hands back whatever it is currently showing, which may be
     // a morph id. Strip it back to the authored unit and re-derive the morph
     // from this army's own techs: in a networked match the two peers hold the
@@ -244,7 +244,7 @@ export default class Army {
     this.gold -= def.cost
     this.queue.push({
       def,
-      lane: Math.max(0, Math.min(2, Math.round(lane))),
+      lane: Math.max(0, Math.min(4, Math.round(lane))),
       remainingMs: def.buildMs / this.modifiers.buildSpeed,
       totalMs: def.buildMs / this.modifiers.buildSpeed
     })
