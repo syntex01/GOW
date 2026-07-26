@@ -110,8 +110,6 @@ interface Frame {
   ww: number
   H: number
   drop: number
-  /** Half the usable canvas width, either side of `cx`. */
-  half: number
 }
 
 /**
@@ -190,6 +188,20 @@ function stripeDown(p: Pix, x: number, y: number, h: number, r: Ramp): void {
 function drawBackGear(f: Frame, v: UnitVisual, pal: Palette): void {
   const { p, cx, top, H, W } = f
   const R = Math.round
+
+  if (v.torso === 'exo') {
+    // A powered suit mounts its own thruster pack, and that *replaces* the
+    // weapon's kit rather than stacking behind it — two packs in the same three
+    // pixels of shoulder is a smear, not two readable objects.
+    const bw = Math.max(3, R(W * 0.36))
+    const by = top + R(H * 0.12)
+    const bh = Math.max(4, R(H * 0.6))
+    const bx = backX(f, bw, H * 0.3)
+    box(p, bx, by, bw, bh, pal.metal)
+    p.set(bx + 1, by + bh, pal.glow[4])
+    p.set(bx + bw - 1, by + bh, pal.glow[1])
+    return
+  }
 
   switch (v.weapon) {
     case 'bow':
@@ -620,7 +632,7 @@ function drawExo(f: Frame, pal: Palette): void {
   trunk(p, cx, top, sw, ww, H, d)
 
   /** One armour plate, inset from the trunk's edge so the suit shows around it. */
-  const platee = (from: number, to: number, inset: number): void => {
+  const armourPlate = (from: number, to: number, inset: number): void => {
     for (let i = from; i <= to && i < H; i += 1) {
       const w = rowW(f, i) - inset * 2
       if (w < 2) continue
@@ -636,8 +648,8 @@ function drawExo(f: Frame, pal: Palette): void {
   }
 
   const seam = Math.max(2, R(H * 0.46))
-  platee(1, seam, 1)
-  platee(seam + 2, H - 2, 1)
+  armourPlate(1, seam, 1)
+  armourPlate(seam + 2, H - 2, 1)
 
   // Hard-edged shoulder blocks. Square where plate is round — that contrast is
   // what makes powered armour read as fabricated rather than forged.
@@ -703,12 +715,16 @@ export function drawTorsoHi(
   // the origin's x is always the middle column.
   const half = Math.round(W * 1.6) + 3
   const headroom = Math.round(H * 0.6) + 4
-  const p = partCanvas(half * 2 + 1, headroom + H + drop + 1)
+  // Tail room below the hem for gear that hangs past the hip — a scabbard runs
+  // onto the thigh, and without this it reaches the canvas edge on the largest
+  // units and has its outline sheared off.
+  const tail = Math.max(2, Math.round(H * 0.12))
+  const p = partCanvas(half * 2 + 1, headroom + H + drop + tail)
   const cx = PAD + half
   const top = PAD + headroom
   const bottom = top + H
 
-  const f: Frame = { p, cx, top, bottom, W, sw, ww, H, drop, half }
+  const f: Frame = { p, cx, top, bottom, W, sw, ww, H, drop }
   const pal = palette(v)
 
   drawBackGear(f, v, pal)

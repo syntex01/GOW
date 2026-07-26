@@ -118,7 +118,7 @@ interface Quad {
 const MOUNT: Quad = {
   coreY: -0.52,
   bodyLen: 0.66,
-  bodyDepth: 0.24,
+  bodyDepth: 0.3,
   hipY: 0.1,
   hindHipX: -0.24,
   foreHipX: 0.22,
@@ -129,27 +129,27 @@ const MOUNT: Quad = {
   hindShin: 0.175,
   foreThigh: 0.2,
   foreShin: 0.17,
-  witherX: 0.26,
-  witherY: -0.08,
+  witherX: 0.23,
+  witherY: -0.1,
   neckRest: -0.95,
-  neckLen: 0.19,
+  neckLen: 0.22,
   pollRest: 1.05,
-  headLen: 0.155,
+  headLen: 0.2,
   tailX: -0.31,
   tailY: -0.06,
   tailRest: 0.4,
-  tailLen: 0.2,
-  hindTopW: 0.15,
-  hindMidW: 0.08,
-  foreTopW: 0.125,
-  foreMidW: 0.066,
-  legBotW: 0.04,
-  hoofLen: 0.06,
+  tailLen: 0.22,
+  hindTopW: 0.13,
+  hindMidW: 0.07,
+  foreTopW: 0.105,
+  foreMidW: 0.058,
+  legBotW: 0.038,
+  hoofLen: 0.062,
   hoofH: 0.05,
-  neckBaseW: 0.12,
-  neckTipW: 0.07,
-  headW: 0.085,
-  tailW: 0.06
+  neckBaseW: 0.16,
+  neckTipW: 0.095,
+  headW: 0.115,
+  tailW: 0.07
 }
 
 /** The beast: lower, longer, shoulders above the croup, and it carries nothing. */
@@ -170,37 +170,37 @@ const BEAST: Quad = {
   hindShin: 0.27,
   foreThigh: 0.29,
   foreShin: 0.26,
-  witherX: 0.33,
-  witherY: -0.09,
+  witherX: 0.31,
+  witherY: -0.11,
   // Down and forward, not up: the head belongs below the shoulder line on a
   // stalking animal, and that single angle does more for the read than any
   // amount of drawing on the head itself.
   neckRest: 0.22,
-  neckLen: 0.21,
+  neckLen: 0.22,
   pollRest: -0.08,
-  headLen: 0.18,
+  headLen: 0.21,
   tailX: -0.36,
   tailY: -0.05,
   tailRest: 0.85,
   tailLen: 0.22,
-  hindTopW: 0.17,
-  hindMidW: 0.095,
-  foreTopW: 0.15,
-  foreMidW: 0.085,
-  legBotW: 0.055,
+  hindTopW: 0.155,
+  hindMidW: 0.09,
+  foreTopW: 0.135,
+  foreMidW: 0.08,
+  legBotW: 0.052,
   hoofLen: 0.075,
   hoofH: 0.06,
-  neckBaseW: 0.15,
-  neckTipW: 0.1,
-  headW: 0.1,
-  tailW: 0.05
+  neckBaseW: 0.18,
+  neckTipW: 0.12,
+  headW: 0.13,
+  tailW: 0.055
 }
 
 /** The rider's upper body. Smaller than a footman's — he is sitting down. */
 const R = {
-  /** The seat, relative to the barrel's centre. */
+  /** The seat, relative to the barrel's centre — on the saddle, not in it. */
   seatX: -0.02,
-  seatY: -0.1,
+  seatY: -0.13,
   torsoLen: 0.2,
   neckLen: 0.03,
   headR: 0.078,
@@ -953,14 +953,20 @@ function curve(t: number, points: Profile): number {
   return last[1]
 }
 
-// Landmarks as fractions of half the girth, measured from the spine. t runs
+// Landmarks as fractions of the girth, measured from the spine line. t runs
 // from the croup (0) to the point of the shoulder (1).
-const HORSE_BACK: Profile = [[0, 0.28], [0.1, 0.46], [0.32, 0.38], [0.58, 0.37], [0.86, 0.5], [0.96, 0.42], [1, 0.3]]
-const HORSE_BELLY: Profile = [[0, 0.42], [0.16, 0.36], [0.36, 0.28], [0.66, 0.5], [0.86, 0.5], [1, 0.36]]
+//
+// These swing hard on purpose. The barrel is only about ten pixels deep at a
+// playable size, so a profile that varies by two of them is a brick with
+// rounded ends — the croup, the dip of the loin, the rise of the withers and
+// the tuck of the flank all have to be worth at least a pixel each or the
+// animal has no landmarks at all.
+const HORSE_BACK: Profile = [[0, 0.3], [0.1, 0.5], [0.32, 0.4], [0.58, 0.38], [0.86, 0.54], [0.96, 0.44], [1, 0.3]]
+const HORSE_BELLY: Profile = [[0, 0.46], [0.16, 0.4], [0.36, 0.28], [0.66, 0.52], [0.86, 0.52], [1, 0.34]]
 // The beast carries its shoulders above its croup and tucks harder at the
 // flank, which is most of why it reads as a predator and not as livestock.
-const BEAST_BACK: Profile = [[0, 0.26], [0.12, 0.44], [0.36, 0.34], [0.6, 0.38], [0.82, 0.52], [0.94, 0.42], [1, 0.28]]
-const BEAST_BELLY: Profile = [[0, 0.4], [0.2, 0.34], [0.44, 0.22], [0.72, 0.42], [0.9, 0.44], [1, 0.32]]
+const BEAST_BACK: Profile = [[0, 0.28], [0.12, 0.46], [0.36, 0.34], [0.6, 0.4], [0.82, 0.56], [0.94, 0.44], [1, 0.28]]
+const BEAST_BELLY: Profile = [[0, 0.44], [0.2, 0.36], [0.44, 0.22], [0.72, 0.46], [0.9, 0.48], [1, 0.32]]
 
 /** Tack drawn onto the mount's body, in the rider's own colours. */
 interface Tack {
@@ -1019,15 +1025,23 @@ function drawBarrel(
   }
 
   // ── muscle ──────────────────────────────────────────────────────────────
-  // The haunch and the shoulder, as rounded masses with their own shading. Two
-  // shapes is the whole anatomy budget at this scale; a third turns to noise.
-  orb(p, x0 + L * 0.15, cy + D * 0.04, L * 0.15, D * 0.34, r)
-  orb(p, x0 + L * 0.79, cy + D * 0.08, L * 0.12, D * 0.32, r)
-  // The crease behind the shoulder blade, and one rib stroke on the flank.
-  p.line(x0 + L * 0.69, cy - D * 0.26, x0 + L * 0.64, cy + D * 0.3, r[1])
-  p.line(x0 + L * 0.46, cy + D * 0.06, x0 + L * 0.45, cy + D * 0.3, r[1])
-  // The stifle groove in front of the haunch.
-  p.line(x0 + L * 0.28, cy - D * 0.2, x0 + L * 0.25, cy + D * 0.28, r[1])
+  // Two grooves and two lit patches, and that is the entire anatomy budget.
+  // Shaded blobs were tried here first and they simply eat the body: an orb
+  // wide enough to read as a haunch covers a third of the barrel in its own
+  // shadow, and the animal turns into a dark lump with legs.
+  const crease = (t: number) => {
+    const i = Math.round(t * (L - 1))
+    p.fill(x0 + i, tops[i] + 1, 1, Math.max(2, Math.round((bots[i] - tops[i]) * 0.72)), r[1])
+  }
+  crease(0.28) // in front of the haunch, where the stifle sits
+  crease(0.68) // behind the shoulder blade
+  const patch = (t: number, w: number) => {
+    const i = Math.round(t * (L - 1))
+    const n = Math.max(1, Math.round(L * w))
+    for (let k = 0; k < n && i + k < L; k += 1) p.fill(x0 + i + k, tops[i + k] + 1, 1, 2, r[3])
+  }
+  patch(0.08, 0.14) // the round of the rump
+  patch(0.74, 0.14) // the top of the shoulder
 
   // ── trim detail back to the outline ─────────────────────────────────────
   for (let x = 0; x < p.w; x += 1) {

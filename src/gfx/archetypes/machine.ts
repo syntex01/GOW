@@ -166,18 +166,18 @@ function ram(p: Pix, x0: number, y0: number, x1: number, y1: number, r: Ramp): v
  */
 const W = {
   hipY: -0.52,
-  hullLen: 0.32,
-  hullW: 0.28,
+  hullLen: 0.35,
+  hullW: 0.33,
   cockpit: 0.13,
   packLen: 0.17,
-  shoulderDrop: 0.06,
-  shoulderSpread: 0.07,
+  shoulderDrop: 0.07,
+  shoulderSpread: 0.115,
   upperArm: 0.19,
-  gunLen: 0.44,
+  gunLen: 0.42,
   thigh: 0.2,
   shin: 0.23,
   footLen: 0.15,
-  footPlate: 0.26,
+  footPlate: 0.2,
   hipSpread: 0.06,
   strutThick: 0.095,
   /** Rest angles of the reverse joint, measured from hanging straight down. */
@@ -277,121 +277,116 @@ function buildWalkerSkeleton(): Skeleton {
 }
 
 /**
- * The walker's walk.
+ * How far a reverse-jointed leg reaches, and how a knee bend shortens it.
  *
- * Six keys instead of four, and the two extra ones are the whole point. A
- * heavy machine does not glide between contacts: the foot lands, and *then*
- * the mass arrives — the hull drops, the standing knee folds to absorb it, and
- * the whole thing pushes back up over the next quarter cycle. Those settle
- * keys sit just after each contact, which is what turns a stride into weight.
+ * With the shin's local angle held at twice the negative of the thigh's, both
+ * segments make the same angle with the vertical, and the whole leg becomes a
+ * symmetric Z whose height is simply `(thigh + shin) * cos(theta)`. That one
+ * identity is what makes this rig tractable: a walk can be authored as "how
+ * much is this leg carrying" and "how far forward is it", and the geometry
+ * that keeps the foot on the floor falls out of it rather than being eyeballed
+ * key by key.
  */
-const WALKER_WALK: Clip = {
-  name: 'walk',
-  duration: 900,
-  loop: true,
-  ease: 'sine',
-  keys: [
-    {
-      // Contact: the back leg has just planted forward, the front leg trails.
-      t: 0,
-      pose: {
-        root: { y: -0.006 },
-        hull: { angle: -0.05 },
-        thighB: { angle: -0.3 },
-        shinB: { angle: 0.24 },
-        footB: { angle: 0.06 },
-        thighF: { angle: 0.26 },
-        shinF: { angle: -0.16 },
-        footF: { angle: -0.1 },
-        armUpper: { angle: 0.06 }
-      }
-    },
-    {
-      // Settle. The tonnage lands on the leading leg: hull down and pitched
-      // forward, knee folded, the trailing foot rolling off its toe.
-      t: 0.12,
-      pose: {
-        root: { y: 0.014 },
-        hull: { angle: 0.07 },
-        cockpit: { angle: -0.05 },
-        thighB: { angle: -0.2 },
-        shinB: { angle: 0.4 },
-        footB: { angle: -0.02 },
-        thighF: { angle: 0.3 },
-        shinF: { angle: -0.1 },
-        footF: { angle: -0.24 },
-        armUpper: { angle: 0.1 }
-      },
-      ease: 'quad'
-    },
-    {
-      // Passing: pushed back up, the free leg tucked through with the knee
-      // folded hard so the foot plate clears the ground.
-      t: 0.3,
-      pose: {
-        root: { y: -0.012 },
-        hull: { angle: -0.02 },
-        thighB: { angle: 0.04 },
-        shinB: { angle: 0.06 },
-        footB: { angle: 0.04 },
-        thighF: { angle: -0.06 },
-        shinF: { angle: 0.5 },
-        footF: { angle: -0.34 },
-        armUpper: { angle: -0.02 }
-      }
-    },
-    { t: 0.5, pose: mirrorWalkerKey(0) },
-    { t: 0.62, pose: mirrorWalkerKey(1), ease: 'quad' },
-    { t: 0.8, pose: mirrorWalkerKey(2) }
-  ]
+const LEG_REACH = W.thigh + W.shin
+const LEG_REST_DROP = LEG_REACH * Math.cos(W.thighRest)
+
+/**
+ * One leg's three angles from a swing and a knee bend.
+ *
+ * @param swing  whole-leg rotation about the hip. Negative reaches forward.
+ * @param bend   extra knee fold. Positive shortens the leg.
+ *
+ * The foot angle is the sum that keeps the plate flat on the ground, so a
+ * planted foot never rolls unless a clip asks it to.
+ */
+function legPose(swing: number, bend: number): { thigh: number; shin: number; foot: number } {
+  return { thigh: swing + bend, shin: -2 * bend, foot: bend - swing }
 }
 
 /**
- * Mirrors one of the first three keys onto the other leg.
+ * The knee bend a **planted** leg needs so the hull can sit `drop` lower than
+ * its rest height without the foot going through the floor.
  *
- * Written out rather than hand-authored twice: the second half of a walk is
- * the first half with the legs exchanged, and typing that by hand is how the
- * two halves quietly drift apart.
+ * This is the piece the first cut of this rig got backwards: folding a
+ * reverse joint *lengthens* the leg if the shin is not folded twice as far the
+ * other way, so a machine authored by eye sinks into the ground on every
+ * footfall — which is exactly where a heavy walker most needs to be standing
+ * on something.
  */
-function mirrorWalkerKey(index: number): Pose {
-  const source: Pose[] = [
-    {
-      root: { y: -0.006 },
-      hull: { angle: -0.05 },
-      thighB: { angle: 0.26 },
-      shinB: { angle: -0.16 },
-      footB: { angle: -0.1 },
-      thighF: { angle: -0.3 },
-      shinF: { angle: 0.24 },
-      footF: { angle: 0.06 },
-      armUpper: { angle: -0.06 }
-    },
-    {
-      root: { y: 0.014 },
-      hull: { angle: 0.07 },
-      cockpit: { angle: -0.05 },
-      thighB: { angle: 0.3 },
-      shinB: { angle: -0.1 },
-      footB: { angle: -0.24 },
-      thighF: { angle: -0.2 },
-      shinF: { angle: 0.4 },
-      footF: { angle: -0.02 },
-      armUpper: { angle: -0.1 }
-    },
-    {
-      root: { y: -0.012 },
-      hull: { angle: -0.02 },
-      thighB: { angle: -0.06 },
-      shinB: { angle: 0.5 },
-      footB: { angle: -0.34 },
-      thighF: { angle: 0.04 },
-      shinF: { angle: 0.06 },
-      footF: { angle: 0.04 },
-      armUpper: { angle: 0.02 }
-    }
-  ]
-  return source[index]
+function stanceLeg(swing: number, drop: number): { thigh: number; shin: number; foot: number } {
+  const wanted = (LEG_REST_DROP - drop) / Math.cos(swing)
+  const cosTheta = Math.max(-1, Math.min(1, wanted / LEG_REACH))
+  return legPose(swing, Math.acos(cosTheta) - W.thighRest)
 }
+
+/**
+ * The walker's walk.
+ *
+ * Six keys, and the two that matter most are the ones a four-key cycle does
+ * not have. A heavy machine does not glide between contacts: the foot lands,
+ * and *then* the mass arrives — the hull drops, the standing knee folds to
+ * absorb it, and the whole thing is pushed back up over the next quarter of
+ * the cycle. Those settle keys sit just after each contact, and they are the
+ * difference between a stride and a walk cycle.
+ *
+ * Both legs run the same six poses half a cycle apart, so the two halves
+ * cannot drift apart the way two hand-authored halves always eventually do.
+ */
+function buildWalkerWalk(): Clip {
+  // Local phase → (swing, hull drop) for the planted half of a leg's cycle,
+  // then (swing, bend) authored directly for the swinging half.
+  const planted: Array<[number, number, number]> = [
+    // phase, swing, hull drop
+    [0, -0.28, -0.006],
+    [0.12, -0.12, 0.02],
+    [0.3, 0.12, -0.014]
+  ]
+  const swinging: Array<[number, number, number]> = [
+    // phase, swing, knee bend — toe-off, fold-through, reach.
+    [0.5, 0.32, -0.02],
+    [0.62, 0.1, 0.5],
+    [0.8, -0.34, 0.22]
+  ]
+  const at = (u: number) => {
+    const p = planted.find(k => k[0] === u)
+    if (p) return { pose: stanceLeg(p[1], p[2]), drop: p[2] }
+    const sw = swinging.find(k => k[0] === u)!
+    return { pose: legPose(sw[1], sw[2]), drop: 0 }
+  }
+
+  const times = [0, 0.12, 0.3, 0.5, 0.62, 0.8]
+  const keys: Keyframe[] = times.map(t => {
+    // The back leg leads; the front leg is exactly half a cycle behind it.
+    const b = at(t)
+    const f = at(times[(times.indexOf(t) + 3) % 6])
+    // The hull is carried by whichever leg is planted, so its height and pitch
+    // repeat twice per cycle — one bounce per footfall.
+    const stance = t < 0.5 ? b : f
+    const pitch = t % 0.5 < 0.06 ? -0.05 : t % 0.5 < 0.2 ? 0.08 : -0.02
+    return {
+      t,
+      pose: {
+        root: { y: stance.drop },
+        hull: { angle: pitch },
+        cockpit: { angle: -pitch * 0.5 },
+        thighB: { angle: b.pose.thigh },
+        shinB: { angle: b.pose.shin },
+        footB: { angle: b.pose.foot },
+        thighF: { angle: f.pose.thigh },
+        shinF: { angle: f.pose.shin },
+        footF: { angle: f.pose.foot },
+        // The gun arm swings against the near leg, at a fraction of its throw —
+        // a weapon platform steadies its own sights.
+        armUpper: { angle: -f.pose.thigh * 0.16 }
+      },
+      ease: t === 0.12 || t === 0.62 ? 'quad' : 'sine'
+    }
+  })
+
+  return { name: 'walk', duration: 900, loop: true, ease: 'sine', keys }
+}
+
+const WALKER_WALK: Clip = buildWalkerWalk()
 
 /**
  * The walker's idle: a machine holding station under its own weight.
@@ -594,11 +589,11 @@ function drawWalkerPack(v: UnitVisual, kit: Kit, lenPx: number, widPx: number): 
   const a = kit.accent
 
   box(p, cx - Wd / 2, top, Wd, L, d)
-  // Cooling fins across the top half — horizontal, so they read against the
-  // vertical panel lines on the hull in front of them.
-  for (let i = 0; i < Math.round(L * 0.5); i += 2) {
-    p.fill(cx - Wd / 2, top + i, Wd, 1, d[0])
-    p.fill(cx - Wd / 2, top + i + 1, Wd, 1, d[3])
+  // Cooling fins, run vertically. Horizontal ones were tried first and read as
+  // a ribcage — the last thing a machine's back should look like.
+  for (let x = 1; x < Wd - 1; x += 2) {
+    p.fill(cx - Wd / 2 + x, top + 1, 1, Math.round(L * 0.52), d[0])
+    p.fill(cx - Wd / 2 + x + 1, top + 1, 1, Math.round(L * 0.52), d[3])
   }
   // Missile cells: a two-by-two block of dark mouths with lit rims.
   const cell = Math.max(1, Math.round(Wd * 0.3))
@@ -776,7 +771,7 @@ function buildWalkerParts(v: UnitVisual, height: number): Record<string, PartArt
   return {
     hull: drawWalkerHull(v, kit, px(W.hullLen), px(W.hullW) * bulk),
     cockpit: drawWalkerCockpit(v, kit, px(W.cockpit)),
-    pack: drawWalkerPack(v, kit, px(W.packLen), px(W.hullW) * bulk * 0.42),
+    pack: drawWalkerPack(v, kit, px(W.packLen), px(W.hullW) * bulk * 0.34),
     armUpper: drawStrut(px(W.upperArm), strutT * 0.92, kit.hull, kit.accent, {
       cap: true,
       knee: true,
@@ -871,15 +866,21 @@ function layoutFor(v: UnitVisual): VehicleLayout {
   const tracked = v.chassis === 'tracks'
 
   if (machine) {
-    // A gun carriage: two tall spoked wheels on one axle, a timber trail, and
-    // whatever the crew is shooting mounted between them.
-    const wheelR = 0.19
+    // A gun carriage: two tall spoked wheels on one axle, a timber trail that
+    // reaches the ground behind them, and whatever the crew is shooting
+    // mounted between the cheeks.
+    //
+    // The wheel is nearly as tall as the machine, so every dimension here is
+    // set by one question: does the weapon still read once the wheel is drawn
+    // on top of it? Hence a long barrel, a pivot in front of the axle, and a
+    // wheel small enough to sit *inside* the silhouette rather than be it.
+    const wheelR = machine === 'catapult' ? 0.17 : 0.155
     const rollers: Roller[] = [
       {
         name: 'wheelFar',
-        x: -0.02,
+        x: -0.09,
         y: -wheelR,
-        radius: wheelR * 0.92,
+        radius: wheelR * 0.9,
         kind: 'spoke',
         turns: 1,
         depth: 6,
@@ -889,7 +890,7 @@ function layoutFor(v: UnitVisual): VehicleLayout {
       },
       {
         name: 'wheelNear',
-        x: 0.06,
+        x: -0.03,
         y: -wheelR,
         radius: wheelR,
         kind: 'spoke',
@@ -900,21 +901,25 @@ function layoutFor(v: UnitVisual): VehicleLayout {
         shaded: false
       }
     ]
-    const rest = machine === 'mortar' ? -1.02 : machine === 'catapult' ? -2.35 : -0.16
+    // The catapult rests cocked: arm up and raked back over the frame, ready
+    // to be thrown forward over the top. The guns rest close to level.
+    const rest = machine === 'mortar' ? -1.0 : machine === 'catapult' ? -1.95 : -0.14
     return {
       machine,
       tracked: false,
-      hullLen: 0.62 * bulk,
-      hullH: 0.16,
-      hullY: -wheelR * 0.85,
+      hullLen: 0.74 * bulk,
+      // Measured from the axle up to the trunnion line: the carriage part is
+      // drawn about its axle, which is the point it physically pivots on.
+      hullH: machine === 'catapult' ? 0.3 : 0.19,
+      hullY: -wheelR,
       turret: false,
       turretH: 0,
       turretX: 0,
-      barrelLen: machine === 'catapult' ? 0.46 : machine === 'mortar' ? 0.3 : 0.52,
-      barrelThick: machine === 'mortar' ? 0.11 : 0.085,
+      barrelLen: machine === 'catapult' ? 0.5 : machine === 'mortar' ? 0.36 : 0.8,
+      barrelThick: machine === 'mortar' ? 0.12 : machine === 'catapult' ? 0.075 : 0.1,
       barrelRest: rest,
-      barrelUp: machine === 'catapult' ? 0.2 : 0.13,
-      barrelFwd: machine === 'catapult' ? -0.12 : -0.08,
+      barrelUp: machine === 'catapult' ? 0.3 : 0.17,
+      barrelFwd: machine === 'catapult' ? -0.1 : 0.04,
       rollers,
       trackH: 0
     }
@@ -925,28 +930,28 @@ function layoutFor(v: UnitVisual): VehicleLayout {
   const hullLen = 0.56 * bulk
   const rollers: Roller[] = []
   if (tracked) {
-    const roadR = 0.078
+    const roadR = 0.075
     const count = 4
     for (let i = 0; i < count; i += 1) {
       const t = count > 1 ? i / (count - 1) : 0.5
       rollers.push({
         name: `road${i}`,
         x: (-0.3 + t * 0.6) * hullLen,
-        y: -roadR - 0.008,
+        y: -roadR - 0.022,
         radius: roadR,
         kind: 'road',
         turns: 2,
         depth: 10,
-        travel: 0.012,
+        travel: 0.007,
         phase: i * 0.17,
         shaded: false
       })
     }
-    const sprocketR = roadR * 1.15
+    const sprocketR = roadR * 1.3
     rollers.push({
       name: 'sprocketB',
       x: -hullLen * 0.46,
-      y: -sprocketR - 0.03,
+      y: -sprocketR - 0.022,
       radius: sprocketR,
       kind: 'sprocket',
       turns: 2,
@@ -958,7 +963,7 @@ function layoutFor(v: UnitVisual): VehicleLayout {
     rollers.push({
       name: 'sprocketF',
       x: hullLen * 0.46,
-      y: -sprocketR - 0.03,
+      y: -sprocketR - 0.022,
       radius: sprocketR,
       kind: 'sprocket',
       turns: 2,
@@ -1034,7 +1039,6 @@ function buildVehicleSkeleton(L: VehicleLayout): Skeleton {
     // the ground while the hull pitches on its suspension.
     s.push(
       bone('track', 'root', {
-        y: -L.trackH * 0.5,
         angle: -Math.PI / 2,
         part: 'track',
         orient: 'up',
@@ -1498,66 +1502,87 @@ function drawGunBarrel(v: UnitVisual, kit: Kit, lengthPx: number, thickPx: numbe
 }
 
 /**
- * The timber carriage every wheeled war machine sits on: a trail that runs back
- * to a spade, a cross brace, iron strapping and the axle boss.
+ * The timber carriage every wheeled war machine sits on.
  *
- * Drawn upright with the origin on the drawn bottom edge, at axle height, so
- * the wheels sit through it rather than under it.
+ * Drawn about its **axle**, which is both where the wheels hang and the point
+ * the whole engine rocks about when it fires — so that is where the origin
+ * goes, with the trail running back and down to the ground behind it and the
+ * cheeks that carry the trunnions rising in front.
+ *
+ * The first cut of this part was drawn entirely above the axle, which put the
+ * whole carriage behind a wheel that is nearly as tall as the machine. From
+ * three feet away a Catapult was a wheel with a stick coming out of it.
  */
-function drawCarriage(kit: Kit, L: VehicleLayout, height: number): PartArt {
-  const Wd = Math.max(12, Math.round(L.hullLen * height * RES))
-  const H = Math.max(5, Math.round(L.hullH * height * RES))
-  const p = partCanvas(Wd + 4, H + 6)
+function drawCarriage(kit: Kit, L: VehicleLayout, height: number, wheelR: number): PartArt {
+  const Wd = Math.max(14, Math.round(L.hullLen * height * RES))
+  const up = Math.max(4, Math.round(L.hullH * height * RES))
+  const down = Math.max(3, Math.round(wheelR * height * RES))
+  const p = partCanvas(Wd + 4, up + down + 4)
   const cx = Math.round(p.w / 2)
-  const bot = p.h - PAD
-  const top = bot - H
+  const axle = PAD + up
+  const ground = axle + down
   const wood = kit.timber.ramp
   const iron = kit.iron.ramp
   const a = kit.accent
+  const beam = Math.max(2, Math.round(up * 0.34))
 
-  // The trail: a long beam that rises toward the axle and tapers to a spade.
+  // The trail: one heavy beam from under the axle running back and down, with
+  // a spade on the end that digs in when the thing fires.
   p.poly(
     [
-      [cx - Wd * 0.5, bot],
-      [cx - Wd * 0.46, bot - H * 0.3],
-      [cx + Wd * 0.24, top + H * 0.1],
-      [cx + Wd * 0.46, top + H * 0.1],
-      [cx + Wd * 0.46, top + H * 0.6],
-      [cx - Wd * 0.36, bot]
+      [cx + Wd * 0.2, axle - beam * 0.6],
+      [cx + Wd * 0.24, axle + beam * 0.8],
+      [cx - Wd * 0.46, ground],
+      [cx - Wd * 0.46, ground - beam]
     ],
     wood[2]
   )
-  // Lit upper edge of the beam, shadow beneath it.
-  p.line(cx - Wd * 0.46, bot - H * 0.3, cx + Wd * 0.24, top + H * 0.1, wood[3])
-  p.line(cx - Wd * 0.5, bot, cx - Wd * 0.36, bot, wood[0])
-  // Cheeks: the upright timbers the trunnions bolt through.
-  const cheekW = Math.max(2, Math.round(Wd * 0.1))
-  box(p, cx + Wd * 0.06, top, cheekW, Math.max(3, Math.round(H * 0.8)), wood)
-  box(p, cx - Wd * 0.14, top + H * 0.2, cheekW, Math.max(3, Math.round(H * 0.6)), wood)
-  // Iron strapping across both, and the bolts through it.
-  p.fill(cx - Math.round(Wd * 0.16), top + Math.round(H * 0.5), Math.round(Wd * 0.32), 1, iron[1])
-  rivetRow(p, cx - Wd * 0.14, top + Math.round(H * 0.5), Wd * 0.28, 3, iron)
-  // Axle boss, dead centre, where the wheels hang.
-  orb(p, cx + Wd * 0.04, bot - H * 0.34, Math.max(2, Wd * 0.06), Math.max(2, H * 0.18), iron)
-  // Spade at the back of the trail, dug in.
-  box(p, cx - Wd * 0.52, bot - Math.max(2, H * 0.26), Math.max(2, Wd * 0.08), Math.max(2, H * 0.26), iron)
+  p.line(cx + Wd * 0.2, axle - beam * 0.6, cx - Wd * 0.46, ground - beam, wood[3])
+  p.line(cx + Wd * 0.24, axle + beam * 0.8, cx - Wd * 0.46, ground, wood[0])
+  box(p, cx - Wd * 0.5, ground - beam - 1, Math.max(2, Math.round(Wd * 0.07)), beam + 1, iron)
+  // A second, lighter brace above it, so the trail reads as built rather than
+  // as one plank.
+  p.line(cx + Wd * 0.08, axle - beam * 0.4, cx - Wd * 0.3, ground - beam * 1.6, wood[1])
+
+  // Cheeks: the uprights the trunnions or the arm pivot bolt through. They
+  // lean forward, which is what stops a gun carriage looking like a cart.
+  const cheek = Math.max(2, Math.round(Wd * 0.09))
+  p.poly(
+    [
+      [cx - Wd * 0.02, PAD],
+      [cx + Wd * 0.02 + cheek, PAD],
+      [cx + Wd * 0.14 + cheek, axle + beam * 0.6],
+      [cx + Wd * 0.1, axle + beam * 0.6]
+    ],
+    wood[2]
+  )
+  p.line(cx - Wd * 0.02, PAD, cx + Wd * 0.1, axle + beam * 0.6, wood[1])
+  p.line(cx + Wd * 0.02 + cheek, PAD, cx + Wd * 0.14 + cheek, axle + beam * 0.6, wood[3])
+  // Iron strap and bolts across the cheek, and a brace back to the trail.
+  p.fill(cx - Math.round(Wd * 0.02), axle - Math.round(up * 0.3), Math.round(Wd * 0.16), 1, iron[1])
+  rivetRow(p, cx - Wd * 0.01, axle - Math.round(up * 0.3), Wd * 0.14, 3, iron)
+  p.line(cx - Wd * 0.02, PAD + 1, cx - Wd * 0.28, axle + beam * 0.4, wood[1])
+
+  // Axle boss, where the wheels hang.
+  orb(p, cx, axle, Math.max(2, Wd * 0.05), Math.max(2, Wd * 0.05), iron)
 
   if (L.machine === 'catapult') {
-    // Torsion bundle and the windlass the arm is winched down with.
-    orb(p, cx - Wd * 0.02, top + H * 0.34, Math.max(2, Wd * 0.09), Math.max(2, H * 0.26), ramp(0xb9a37a))
-    orb(p, cx - Wd * 0.3, bot - H * 0.42, Math.max(2, Wd * 0.06), Math.max(2, H * 0.2), iron)
-    p.line(cx - Wd * 0.3, bot - H * 0.5, cx + Wd * 0.02, top + H * 0.2, iron[3])
+    // Torsion bundle at the pivot, and the windlass the arm is winched down on.
+    orb(p, cx + Wd * 0.06, PAD + 1, Math.max(2, Wd * 0.07), Math.max(2, up * 0.18), ramp(0xb9a37a))
+    orb(p, cx - Wd * 0.26, axle + beam * 0.2, Math.max(2, Wd * 0.05), Math.max(2, up * 0.14), iron)
+    p.line(cx - Wd * 0.26, axle, cx + Wd * 0.06, PAD + 1, iron[3])
   } else if (L.machine === 'mortar') {
-    // A baseplate, because a mortar drives its recoil into the ground.
-    box(p, cx - Wd * 0.24, bot - Math.max(2, H * 0.22), Math.max(4, Wd * 0.4), Math.max(2, H * 0.22), iron)
+    // A baseplate: a mortar drives its recoil straight into the ground.
+    box(p, cx - Wd * 0.16, ground - Math.max(2, up * 0.2), Math.max(5, Wd * 0.36), Math.max(2, up * 0.2), iron)
+    p.fill(cx - Math.round(Wd * 0.16), ground - Math.max(2, Math.round(up * 0.2)), Math.max(5, Math.round(Wd * 0.36)), 1, iron[3])
   } else {
-    // A ready round and its rack.
-    box(p, cx - Wd * 0.3, top + H * 0.44, Math.max(3, Wd * 0.12), Math.max(2, H * 0.24), iron)
-    p.set(Math.round(cx - Wd * 0.26), Math.round(top + H * 0.46), a[3])
+    // A ready round in its rack, on the trail where the crew can reach it.
+    box(p, cx - Wd * 0.3, axle + beam * 0.2, Math.max(3, Wd * 0.1), Math.max(3, up * 0.3), iron)
+    p.set(Math.round(cx - Wd * 0.27), Math.round(axle + beam * 0.4), a[3])
   }
-  trim(p, cx - Wd * 0.44, bot - Math.round(H * 0.16), Wd * 0.12, a)
+  trim(p, cx - Wd * 0.42, ground - Math.max(2, Math.round(beam * 0.6)), Wd * 0.1, a)
 
-  return { canvas: sealPart(p, 0x7a5433), origin: originAt(p, cx, bot) }
+  return { canvas: sealPart(p, 0x7a5433), origin: originAt(p, cx, axle) }
 }
 
 /**
@@ -1674,7 +1699,7 @@ function buildVehicleParts(v: UnitVisual, height: number, L: VehicleLayout): Rec
   const px = (f: number) => f * height
   const parts: Record<string, PartArt> = {}
 
-  parts.hull = L.machine ? drawCarriage(kit, L, height) : drawTankHull(v, kit, L, height)
+  parts.hull = L.machine ? drawCarriage(kit, L, height, L.rollers[1].radius) : drawTankHull(v, kit, L, height)
   if (L.tracked) parts.track = drawTrackBelt(px(L.hullLen * 1.02), px(L.trackH), kit)
   if (L.turret) parts.turret = drawTurret(v, kit, L, height)
 
@@ -1741,10 +1766,10 @@ const F = {
   bodyLen: 0.62,
   bodyH: 0.3,
   rotorSpan: 0.72,
-  rotorUp: -0.3,
-  rotorFwd: 0.02,
-  tailFwd: -0.56,
-  tailUp: -0.1,
+  rotorUp: -0.38,
+  rotorFwd: 0.03,
+  tailFwd: -0.55,
+  tailUp: -0.08,
   gunFwd: 0.3,
   gunDown: 0.1,
   gunLen: 0.22
@@ -1779,8 +1804,8 @@ function buildFlyerSkeleton(chassis: UnitVisual['chassis']): Skeleton {
     // The tail rotor, though, is seen face-on — so that one really does spin.
     s.push(bone('tailRotor', 'body', { x: F.tailFwd, y: F.tailUp, part: 'tailRotor', orient: 'right', depth: 12 }))
   } else if (quad) {
-    s.push(bone('rotorF', 'body', { x: 0.34, y: -0.16, part: 'rotorF', orient: 'right', depth: 60 }))
-    s.push(bone('rotorB', 'body', { x: -0.34, y: -0.16, part: 'rotorB', orient: 'right', depth: 12 }))
+    s.push(bone('rotorF', 'body', { x: 0.32, y: -0.24, part: 'rotorF', orient: 'right', depth: 60 }))
+    s.push(bone('rotorB', 'body', { x: -0.34, y: -0.24, part: 'rotorB', orient: 'right', depth: 12 }))
   } else {
     // Hover: lift comes out of two gimballed thrusters, which tilt to translate.
     s.push(bone('thrusterF', 'body', { x: 0.26, y: 0.12, part: 'thrusterF', orient: 'right', depth: 34 }))
@@ -1870,128 +1895,140 @@ const FLYER_ATTACK: Clip = {
 // ─────────────────────────────── Flyer parts ───────────────────────────────
 
 /**
- * The airframe: a flat-bottomed fuselage with a chined spine, a canopy set into
- * it, a tail boom and a fin. Authored pointing right, origin at the centre of
- * mass, so the bone angle reads directly as pitch.
+ * The airframe.
  *
- * The straight bottom line is doing most of the work. It is the single mark
- * that makes an aircraft look engineered rather than organic, so nothing is
- * allowed to break it except the skids and the gun.
+ * Authored pointing right with its origin at the centre of mass, so the bone
+ * angle reads directly as pitch and everything bolted to it banks with it.
+ *
+ * The proportions are the whole job. A helicopter is a deep cabin at the front
+ * and a **thin** boom behind it — the first cut of this made the fuselage one
+ * constant-depth blob from nose to tail and it came out looking like a fish.
+ * The straight belly line does the rest: it is the single mark that makes an
+ * aircraft read as engineered, so nothing is allowed to break it except the
+ * skids, the stores and the gun.
  */
 function drawFuselage(v: UnitVisual, kit: Kit, height: number): PartArt {
   const bulk = v.bulk ?? 1
-  const Wd = Math.max(12, Math.round(F.bodyLen * bulk * height * RES))
-  const H = Math.max(6, Math.round(F.bodyH * height * RES))
+  const LEN = Math.max(16, Math.round(F.bodyLen * bulk * height * RES * 2))
+  const H = Math.max(5, Math.round(F.bodyH * height * RES))
   const rotary = v.chassis === 'rotor'
-  const p = partCanvas(Wd * 2.1, H * 3)
+  const p = partCanvas(LEN + 8, H * 3.6)
   const cx = Math.round(p.w / 2)
-  const cy = Math.round(p.h / 2)
-  const nose = cx + Wd
-  const tail = cx - Wd
+  const cy = Math.round(p.h * 0.54)
+  const nose = cx + Math.round(LEN * 0.42)
+  const tail = cx - Math.round(LEN * 0.58)
   const belly = cy + Math.round(H * 0.5)
+  const roof = cy - Math.round(H * 0.5)
   const r = kit.hull.ramp
   const d = kit.shade.ramp
   const a = kit.accent
 
-  // Fuselage.
+  // ── tail boom, drawn first so the cabin overlaps it ──
+  const boomTop = cy - Math.round(H * 0.2)
+  const boomH = Math.max(2, Math.round(H * 0.34))
+  p.fill(tail + Math.round(LEN * 0.06), boomTop, Math.round(LEN * 0.5), boomH, r[2])
+  p.fill(tail + Math.round(LEN * 0.06), boomTop, Math.round(LEN * 0.5), 1, r[3])
+  p.fill(tail + Math.round(LEN * 0.06), boomTop + boomH - 1, Math.round(LEN * 0.5), 1, r[0])
+
+  // Fin and horizontal stabiliser.
   p.poly(
     [
-      [tail + Wd * 0.2, cy - H * 0.1],
-      [tail + Wd * 0.44, cy - H * 0.62],
-      [cx + Wd * 0.2, cy - H * 0.72],
-      [nose - Wd * 0.08, cy - H * 0.3],
-      [nose, cy + H * 0.05],
-      [nose - Wd * 0.18, belly],
-      [tail + Wd * 0.26, belly],
-      [tail + Wd * 0.16, cy + H * 0.2]
+      [tail + LEN * 0.02, cy - H * 0.1],
+      [tail + LEN * 0.01, cy - H * 1.05],
+      [tail + LEN * 0.13, cy - H * 0.95],
+      [tail + LEN * 0.16, cy - H * 0.06]
     ],
     r[2]
   )
-  // Tail boom, thin, running back to the fin.
-  p.fill(tail + Wd * 0.05, cy - H * 0.22, Math.round(Wd * 0.4), Math.max(2, Math.round(H * 0.28)), r[2])
-  p.fill(tail + Wd * 0.05, Math.round(cy - H * 0.22), Math.round(Wd * 0.4), 1, r[3])
-  p.fill(tail + Wd * 0.05, Math.round(cy + H * 0.06), Math.round(Wd * 0.4), 1, r[1])
+  p.line(tail + LEN * 0.01, cy - H * 1.05, tail + LEN * 0.13, cy - H * 0.95, r[4])
+  p.fill(tail, Math.round(cy - H * 0.62), Math.max(3, Math.round(LEN * 0.16)), Math.max(1, Math.round(H * 0.12)), d[2])
+  trim(p, tail + LEN * 0.03, Math.round(cy - H * 0.82), LEN * 0.09, a)
 
-  // Lit spine and shadowed belly — the two lines that give it volume.
-  p.line(tail + Wd * 0.44, cy - H * 0.62, cx + Wd * 0.2, cy - H * 0.72, r[4])
-  p.line(cx + Wd * 0.2, cy - H * 0.72, nose - Wd * 0.08, cy - H * 0.3, r[3])
-  p.fill(tail + Math.round(Wd * 0.26), belly - 1, Math.round(Wd * 1.5), 1, r[0])
-  // Panel seam along the flank, and rivets down it.
-  seamH(p, tail + Wd * 0.5, cy + Math.round(H * 0.06), Wd * 1.2, r)
-  rivetRow(p, tail + Wd * 0.6, cy - Math.round(H * 0.3), Wd * 0.9, 5, r)
-
-  // Canopy, set into the spine.
+  // ── cabin ──
   p.poly(
     [
-      [cx + Wd * 0.16, cy - H * 0.7],
-      [cx + Wd * 0.66, cy - H * 0.52],
-      [cx + Wd * 0.72, cy - H * 0.1],
-      [cx + Wd * 0.14, cy - H * 0.24]
+      [cx - LEN * 0.22, roof + H * 0.24],
+      [cx - LEN * 0.02, roof],
+      [nose - LEN * 0.1, roof + H * 0.18],
+      [nose, cy + H * 0.06],
+      [nose - LEN * 0.08, belly],
+      [cx - LEN * 0.24, belly]
+    ],
+    r[2]
+  )
+  // Hard highlight along the spine, shadow along the belly.
+  p.line(cx - LEN * 0.22, roof + H * 0.24, cx - LEN * 0.02, roof, r[4])
+  p.line(cx - LEN * 0.02, roof, nose - LEN * 0.1, roof + H * 0.18, r[4])
+  p.line(nose - LEN * 0.1, roof + H * 0.18, nose, cy + H * 0.06, r[3])
+  p.fill(cx - Math.round(LEN * 0.24), belly - 1, Math.round(LEN * 0.58), 1, r[0])
+  // A seam along the flank with rivets under it.
+  seamH(p, cx - LEN * 0.16, cy + Math.round(H * 0.12), LEN * 0.44, r)
+  rivetRow(p, cx - LEN * 0.14, cy - Math.round(H * 0.1), LEN * 0.36, 4, r)
+
+  // Canopy: small, forward, stepped. A big one turns the machine into a bus.
+  p.poly(
+    [
+      [cx + LEN * 0.06, roof + H * 0.12],
+      [cx + LEN * 0.26, roof + H * 0.18],
+      [cx + LEN * 0.3, cy + H * 0.06],
+      [cx + LEN * 0.04, cy - H * 0.02]
     ],
     kit.glass[2]
   )
-  p.line(cx + Wd * 0.16, cy - H * 0.7, cx + Wd * 0.66, cy - H * 0.52, kit.glass[4])
-  p.line(cx + Wd * 0.4, cy - H * 0.61, cx + Wd * 0.44, cy - H * 0.17, kit.glass[1])
-  p.set(Math.round(cx + Wd * 0.6), Math.round(cy - H * 0.4), kit.glass[4])
-
-  // Fin and stabiliser.
-  p.poly(
-    [
-      [tail + Wd * 0.08, cy - H * 0.2],
-      [tail + Wd * 0.02, cy - H * 1.1],
-      [tail + Wd * 0.3, cy - H * 1.0],
-      [tail + Wd * 0.34, cy - H * 0.16]
-    ],
-    r[2]
-  )
-  p.line(tail + Wd * 0.02, cy - H * 1.1, tail + Wd * 0.3, cy - H * 1.0, r[4])
-  p.fill(tail, Math.round(cy - H * 0.66), Math.max(3, Math.round(Wd * 0.24)), Math.max(1, Math.round(H * 0.1)), r[1])
-  trim(p, tail + Wd * 0.08, Math.round(cy - H * 0.9), Wd * 0.18, a)
+  p.line(cx + LEN * 0.06, roof + H * 0.12, cx + LEN * 0.26, roof + H * 0.18, kit.glass[4])
+  p.line(cx + LEN * 0.17, roof + H * 0.15, cx + LEN * 0.19, cy + H * 0.02, kit.glass[1])
+  p.set(Math.round(cx + LEN * 0.24), Math.round(roof + H * 0.34), kit.glass[4])
 
   if (rotary) {
-    // Rotor mast and gearbox fairing, so the disc has something to sit on.
-    box(p, cx + Wd * 0.02, cy - H * 1.0, Math.max(2, Math.round(Wd * 0.12)), Math.max(3, Math.round(H * 0.34)), d)
-    orb(p, cx + Wd * 0.08, cy - H * 0.78, Wd * 0.12, H * 0.16, r)
-    // Stub wing with a rocket pod under it.
+    // Engine deck and gearbox fairing, then the mast the disc sits on.
+    box(p, cx - LEN * 0.14, roof - Math.round(H * 0.22), Math.max(4, Math.round(LEN * 0.2)), Math.max(3, Math.round(H * 0.3)), d)
+    louvres(p, cx - Math.round(LEN * 0.12), roof - Math.round(H * 0.16), LEN * 0.08, H * 0.2, d)
+    const mastX = cx + Math.round(LEN * 0.02)
+    p.fill(mastX, roof - Math.round(H * 1.0), Math.max(2, Math.round(LEN * 0.04)), Math.round(H * 0.9), r[2])
+    p.fill(mastX, roof - Math.round(H * 1.0), 1, Math.round(H * 0.9), r[3])
+    orb(p, mastX + 1, roof - H * 0.2, LEN * 0.05, H * 0.18, r)
+
+    // Stub wing and a rocket pod under it.
     p.poly(
       [
-        [cx - Wd * 0.3, cy + H * 0.12],
-        [cx + Wd * 0.24, cy + H * 0.16],
-        [cx + Wd * 0.1, belly - 1],
-        [cx - Wd * 0.42, belly - 1]
+        [cx - LEN * 0.14, cy + H * 0.3],
+        [cx + LEN * 0.12, cy + H * 0.32],
+        [cx + LEN * 0.04, belly + H * 0.1],
+        [cx - LEN * 0.22, belly + H * 0.08]
       ],
       d[2]
     )
-    const podW = Math.max(4, Math.round(Wd * 0.34))
-    box(p, cx - Wd * 0.34, belly, podW, Math.max(3, Math.round(H * 0.22)), d)
-    p.fill(cx - Math.round(Wd * 0.34), belly, podW, 1, d[3])
-    for (let i = 0; i < 3; i += 1) {
-      p.set(Math.round(cx - Wd * 0.34 + podW - 1), Math.round(belly + 1 + i), a[3])
-    }
-    // Skids: two struts and a rail, which is what keeps the belly line honest.
-    const skidY = belly + Math.round(H * 0.42)
-    p.fill(cx - Math.round(Wd * 0.5), skidY, Math.round(Wd * 1.1), 1, d[1])
-    p.fill(cx - Math.round(Wd * 0.32), belly, 1, skidY - belly, d[1])
-    p.fill(cx + Math.round(Wd * 0.4), belly, 1, skidY - belly, d[1])
-    p.set(Math.round(cx + Wd * 0.6), skidY, 0, 0)
+    const podW = Math.max(4, Math.round(LEN * 0.18))
+    box(p, cx - LEN * 0.16, belly + Math.round(H * 0.1), podW, Math.max(3, Math.round(H * 0.24)), d)
+    p.fill(cx - Math.round(LEN * 0.16), belly + Math.round(H * 0.1), podW, 1, d[3])
+    for (let i = 0; i < 3; i += 1) p.set(Math.round(cx - LEN * 0.16 + podW - 1), Math.round(belly + H * 0.14 + i), a[3])
+
+    // Skids: two struts and a rail. They are what keep the belly line honest.
+    const skidY = belly + Math.round(H * 0.62)
+    p.fill(cx - Math.round(LEN * 0.24), skidY, Math.round(LEN * 0.56), 1, d[1])
+    p.fill(cx - Math.round(LEN * 0.16), belly, 1, skidY - belly, d[1])
+    p.fill(cx + Math.round(LEN * 0.2), belly, 1, skidY - belly, d[1])
+    p.set(Math.round(cx + LEN * 0.32), skidY, d[1])
   } else {
-    // Fixed-wing or lifter: a swept wing seen edge-on and a stores pylon.
+    // Lifter or drone: a swept wing seen edge-on and a sensor turret beneath.
     p.poly(
       [
-        [cx - Wd * 0.44, cy + H * 0.1],
-        [cx + Wd * 0.3, cy + H * 0.14],
-        [cx + Wd * 0.1, cy + H * 0.36],
-        [cx - Wd * 0.62, cy + H * 0.32]
+        [cx - LEN * 0.24, cy + H * 0.26],
+        [cx + LEN * 0.14, cy + H * 0.3],
+        [cx + LEN * 0.02, belly + H * 0.12],
+        [cx - LEN * 0.34, belly + H * 0.08]
       ],
       d[2]
     )
-    p.line(cx - Wd * 0.44, cy + H * 0.1, cx + Wd * 0.3, cy + H * 0.14, r[3])
-    box(p, cx - Wd * 0.3, belly, Math.max(4, Math.round(Wd * 0.4)), Math.max(2, Math.round(H * 0.2)), d)
+    p.line(cx - LEN * 0.24, cy + H * 0.26, cx + LEN * 0.14, cy + H * 0.3, r[3])
+    orb(p, cx + LEN * 0.06, belly + H * 0.12, LEN * 0.07, H * 0.2, d)
+    // Booms out to the lift units, so the rotors are not floating.
+    p.fill(cx - Math.round(LEN * 0.34), roof + Math.round(H * 0.1), Math.round(LEN * 0.7), Math.max(1, Math.round(H * 0.12)), d[1])
   }
 
-  // Exhaust glow aft and a nav light forward.
-  emissive(p, tail + Wd * 0.36, cy - H * 0.06, Wd * 0.08, H * 0.1, a)
-  p.set(Math.round(nose - Wd * 0.12), Math.round(cy - H * 0.12), a[4])
+  // Exhaust glow aft of the cabin, and a nav light on the nose.
+  emissive(p, cx - LEN * 0.2, cy - H * 0.12, LEN * 0.04, H * 0.12, a)
+  p.set(Math.round(nose - LEN * 0.04), Math.round(cy + H * 0.02), a[4])
 
   return { canvas: sealPart(p, v.metal), origin: originAt(p, cx, cy) }
 }

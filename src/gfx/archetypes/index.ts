@@ -1,5 +1,7 @@
 import type { UnitVisual } from '../../data/types'
 import { footmanArchetype } from './footman'
+import { flyerArchetype, vehicleArchetype, walkerArchetype } from './machine'
+import { beastArchetype, riderArchetype } from './rider'
 import type { Archetype, ArchetypeBuild } from './types'
 
 export type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
@@ -12,7 +14,16 @@ export type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
  * body plans are converted one at a time rather than in a single flip that
  * would have to be right about fifty-seven units at once.
  */
-export const ARCHETYPES: Archetype[] = [footmanArchetype]
+export const ARCHETYPES: Archetype[] = [
+  // Beast claims a humanoid carrying a beast chassis, so it has to be asked
+  // before the footman, which would otherwise swallow it.
+  beastArchetype,
+  footmanArchetype,
+  riderArchetype,
+  walkerArchetype,
+  vehicleArchetype,
+  flyerArchetype
+]
 
 export function archetypeFor(v: UnitVisual): Archetype | null {
   for (const a of ARCHETYPES) if (a.claims(v)) return a

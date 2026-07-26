@@ -1,6 +1,5 @@
 import type { UnitVisual } from '../../data/types'
 import {
-  PAD,
   cloth as clothMat,
   foot as drawFoot,
   hand as drawHand,
@@ -13,7 +12,8 @@ import {
 } from '../anatomy'
 import { ramp, tone } from '../pixel'
 import { bone, validateSkeleton, type Clip, type Skeleton } from '../rig'
-import { drawCape, drawShield, drawTorso } from '../unitArt'
+import { drawCape, drawShield } from '../unitArt'
+import { drawTorsoHi } from '../torsos'
 import { drawHeadHi } from '../heads'
 import { drawWeaponHi } from '../weapons'
 import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
@@ -530,11 +530,14 @@ function buildParts(v: UnitVisual, height: number): {
     neckY: px(P.hipY - P.torsoLen)
   }
 
-  // The torso canvas carries PAD rows of empty space below the drawn body, so
-  // an origin of exactly 1 floats the whole upper body a few pixels above the
-  // hips. Anchor on the drawn edge instead.
-  const chestCanvas = drawTorso(v, legacyMetrics)
-  parts.chest = { canvas: chestCanvas, origin: [0.5, (chestCanvas.h - PAD) / chestCanvas.h] }
+  // The torso library returns its own waist-seam origin, computed from the row
+  // the trunk actually ends on — so a robe skirt or a plate fauld can overhang
+  // the hips without dragging the joint down with it.
+  parts.chest = drawTorsoHi(v, {
+    widthPx: px(0.25),
+    heightPx: px(P.torsoLen),
+    bulk
+  })
   // The head library computes its own neck-join origin from the drawn geometry
   // rather than the old hardcoded 0.82, which was tuned for one helmet and
   // wrong for the ten others.
