@@ -49,6 +49,9 @@ export const LANE_Y = [-68, -34, 0, 34, 68] as const
 /** The centre file — where a build order goes when nobody chose. */
 export const LANE_MID = 2
 
+/** The research direction an army has leant into, or null while undecided. */
+export type TechBranchLean = 'carnage' | 'ordnance' | 'engineering' | 'occult' | 'blight' | null
+
 /** A minimal 2D vector used throughout the simulation. */
 export interface Vec2 {
   x: number

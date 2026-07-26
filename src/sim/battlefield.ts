@@ -17,8 +17,9 @@ import Base, { type TurretSlot } from './base'
 import { BASE_H, BASE_W } from '../gfx/propArt'
 import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
+import Terrain from './terrain'
 import Unit, { type UnitWorld } from './unit'
-import { ADVANCE_DIR, LANE_COUNT, OPPOSITE, type Damageable, type DamageType, type Faction } from './types'
+import { ADVANCE_DIR, LANE_COUNT, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type TechBranchLean } from './types'
 
 export interface BattlefieldConfig {
   worldWidth: number
@@ -152,6 +153,20 @@ export default class Battlefield {
    * is ever allowed to read.
    */
   readonly goreMap: Float32Array
+  /** Sim-time of the last blow landed anywhere — the peace clock's zero. */
+  lastViolenceMs = 0
+  /** The ground itself: mounds of the dead, craters, and slow healing. */
+  readonly terrain: Terrain
+  /** Bodies quietly becoming ground. */
+  decomposing: { x: number; lane: number; mass: number; dueMs: number }[] = []
+  /**
+   * What stood on the field before anyone fought over it. Trees and huts
+   * block shots in their lane until something knocks them down — the clean
+   * world the match opens with, and the first thing artillery erases.
+   */
+  readonly props: { x: number; lane: number; kind: 'tree' | 'hut'; hp: number; maxHp: number; radius: number; blockH: number; alive: boolean }[] = []
+  /** A prop changed (took damage or fell); the scene should repaint it. */
+  onPropChanged?: (index: number) => void
   /** Spawn counter for this match, so nothing depends on a global id. */
   private spawnSeq = 0
   private readonly goreBucketWidth: number
@@ -216,6 +231,7 @@ export default class Battlefield {
       scavenge: unit => this.scavenge(unit),
       onDeathCharge: unit => this.detonateCorpse(unit),
       requestFlank: unit => this.handleFlank(unit),
+      reliefAt: (x, lane) => this.terrain.heightAt(x, lane),
       homeX: faction => {
         const base = this.baseFor(faction)
         return base.x + ADVANCE_DIR[faction] * base.radius
@@ -264,6 +280,25 @@ export default class Battlefield {
     // ground from clean, coarse enough to stay cheap and to hash.
     this.goreBucketWidth = 16
     this.goreMap = new Float32Array(Math.ceil(config.worldWidth / this.goreBucketWidth) + 1)
+    this.terrain = new Terrain(config.worldWidth)
+    // The clean opening board: a handful of trees and huts on the middle
+    // ground, dealt from the match seed so both peers stand the same world.
+    const propCount = 5 + this.rng.int(0, 3)
+    for (let i = 0; i < propCount; i += 1) {
+      const x = config.worldWidth * (0.28 + this.rng.next() * 0.44)
+      const lane = this.rng.int(0, LANE_COUNT - 1)
+      const tree = this.rng.next() < 0.7
+      this.props.push({
+        x,
+        lane,
+        kind: tree ? 'tree' : 'hut',
+        hp: tree ? 320 : 760,
+        maxHp: tree ? 320 : 760,
+        radius: tree ? 10 : 20,
+        blockH: tree ? 42 : 34,
+        alive: true
+      })
+    }
 
     this.physics = new PhysicsWorld(config.groundY, config.worldWidth, this.rng, {
       onStain: (body, x, y, speed, onWall) => this.handleStain(body, x, y, speed, onWall),
@@ -378,6 +413,45 @@ export default class Battlefield {
    * Corpse walls. Remains stop shots, so a side that has been losing ground
    * ends up with cover exactly where it needs it.
    */
+  /** Which lane's ground line a world y sits closest to. */
+  laneAtY(y: number): number {
+    let best = 2
+    let bestD = Infinity
+    for (let lane = 0; lane < LANE_COUNT; lane += 1) {
+      const d = Math.abs(y - (this.config.groundY + LANE_Y[lane]))
+      if (d < bestD) {
+        bestD = d
+        best = lane
+      }
+    }
+    return best
+  }
+
+  private damageProp(index: number, amount: number): void {
+    const prop = this.props[index]
+    if (!prop || !prop.alive || amount <= 0) return
+    prop.hp -= amount
+    if (prop.hp <= 0) {
+      prop.alive = false
+      const ground = this.config.groundY + LANE_Y[prop.lane]
+      // What falls becomes ground: a stump's worth for a tree, a low ruin of
+      // rubble for a hut — the first scar tissue of the match.
+      this.terrain.addMass(prop.x, prop.lane, prop.kind === 'tree' ? 5 : 11, this.elapsedMs)
+      for (let i = 0; i < (prop.kind === 'tree' ? 4 : 7); i += 1) {
+        this.physics.spawn(
+          'rubble',
+          prop.x + this.rng.spread(prop.radius),
+          ground - prop.blockH * 0.5,
+          this.rng.spread(120),
+          -this.rng.range(60, 200),
+          { size: this.rng.range(0.5, 1), floor: ground }
+        )
+      }
+      this.vfx.impact(prop.x, ground - prop.blockH * 0.5, prop.kind === 'tree' ? 0x7a6a44 : 0xa89880, 1.4, false)
+    }
+    this.onPropChanged?.(index)
+  }
+
   blockedByRemains(x: number, y: number, faction: Faction): boolean {
     const foe = this.armyFor(OPPOSITE[faction])
     if (!foe.hasTech('corpse_wall')) return false
@@ -696,7 +770,10 @@ export default class Battlefield {
       mix(u.hp * 10)
     }
     mix(this.projectiles.length)
-    // Debris and stains change outcomes, so they are part of the fingerprint.
+    // The ground and what stands on it change outcomes, so they are part of
+    // the fingerprint alongside the debris and the stains.
+    this.terrain.hash(mix)
+    for (const prop of this.props) mix(prop.alive ? Math.round(prop.hp) : -1)
     mix(this.physics.hash())
     for (let i = 0; i < this.goreMap.length; i += 1) mix(Math.round(this.goreMap[i] * 20))
 
@@ -715,12 +792,67 @@ export default class Battlefield {
 
     this.updateUnits(dtMs)
     this.updateProjectiles(dtMs)
+    this.updateGround(dtMs)
     this.updateTurrets(dtMs)
     // Debris advances on the same fixed sub-step as everything else, so a
     // corpse lands in the same place on both machines.
     this.physics.step(dtMs)
     this.runArmyBehaviours(dtMs)
     this.updateZones(dtMs)
+  }
+
+  /**
+   * The ground's own turn: bodies due to decompose become height, and peace
+   * heals what war piled up — at the pace of whichever era the world is in.
+   */
+  private updateGround(dtMs: number): void {
+    let write = 0
+    for (const entry of this.decomposing) {
+      if (this.elapsedMs >= entry.dueMs) {
+        this.terrain.addMass(entry.x, entry.lane, entry.mass, this.elapsedMs, this.era >= 3 ? 8 : 0)
+      } else {
+        this.decomposing[write] = entry
+        write += 1
+      }
+    }
+    this.decomposing.length = write
+    this.terrain.settle(dtMs, this.elapsedMs, this.era)
+    if (this.elapsedMs - this.lastViolenceMs > 15000) {
+      const dry = Math.pow(0.5, dtMs / [20000, 40000, 90000, 200000, 480000][this.era])
+      for (let i = 0; i < this.goreMap.length; i += 1) {
+        if (this.goreMap[i] === 0) continue
+        this.goreMap[i] *= dry
+        if (this.goreMap[i] < 0.01) this.goreMap[i] = 0
+      }
+    }
+  }
+
+  /** The world's era: however far EITHER commander has pushed the ages. */
+  get era(): number {
+    return Math.max(this.player.age, this.enemy.age)
+  }
+
+  /**
+   * Which direction an army has leant its research — the emergent flavour of
+   * its half of the apocalypse. Core nodes belong to everyone and say nothing.
+   */
+  leanOf(faction: Faction): TechBranchLean {
+    const counts: Record<string, number> = {}
+    const army = this.armyFor(faction)
+    for (const id of army.techs) {
+      const branch = TECHS_BY_ID[id]?.branch
+      if (!branch || branch === 'core') continue
+      counts[branch] = (counts[branch] ?? 0) + 1
+    }
+    let best: TechBranchLean = null
+    let bestN = 1
+    for (const [branch, n] of Object.entries(counts)) {
+      if (n > bestN) {
+        best = branch as TechBranchLean
+        bestN = n
+      }
+    }
+    return best
   }
 
   private tickArmy(army: Army, dtMs: number): void {
@@ -1030,6 +1162,29 @@ export default class Battlefield {
         p.destroy()
         continue
       }
+      // The ground the war has built stops shots the flat field never did: a
+      // mound of the dead is cover for whoever stands behind it.
+      const lane = p.config.lane ?? 2
+      const groundLine = this.config.groundY + LANE_Y[lane]
+      if (this.terrain.blocksShot(p.x, lane, groundLine - p.y)) {
+        this.vfx.impact(p.x, p.y, 0x6b5a42, 0.9, false)
+        p.destroy()
+        continue
+      }
+      // Standing timber and huts take the hit meant for the man behind them.
+      let struckProp = false
+      for (let i = 0; i < this.props.length; i += 1) {
+        const prop = this.props[i]
+        if (!prop.alive || prop.lane !== lane) continue
+        if (Math.abs(p.x - prop.x) > prop.radius) continue
+        if (p.y < groundLine - prop.blockH) continue
+        this.damageProp(i, p.config.damage)
+        this.vfx.impact(p.x, p.y, prop.kind === 'tree' ? 0x5c7a3a : 0xa89880, 0.9, false)
+        p.destroy()
+        struckProp = true
+        break
+      }
+      if (struckProp) continue
       const result = p.update(dtMs, candidates)
       if (result.hit) {
         this.resolveProjectileHit(p, result.hit)
@@ -1307,6 +1462,7 @@ export default class Battlefield {
             target,
             hitsAir: unit.def.hitsAir ?? false,
             owner: unit,
+            lane: target instanceof Unit ? target.lane : unit.lane,
             bonusVs: unit.def.bonusVs,
             crit: unit.def.crit
           },
@@ -1367,6 +1523,17 @@ export default class Battlefield {
     audio.play('coin', 0.25)
     this.onUnitKilled?.(winner)
     this.onCorpse?.(unit)
+    // The body starts its way into the ground. Early-age dead are soil in
+    // seconds; the late ages leave more mass and take far longer to settle.
+    if (unit.layer === 'ground') {
+      const age = unit.def.age
+      this.decomposing.push({
+        x: unit.x,
+        lane: unit.lane,
+        mass: unit.def.height * (0.055 + age * 0.02) * (this.leanOf(OPPOSITE[unit.faction]) === 'carnage' ? 1.25 : 1),
+        dueMs: this.elapsedMs + [9000, 14000, 21000, 30000, 40000][age]
+      })
+    }
     this.applyDeathDoctrines(unit, winner)
   }
 
@@ -1516,6 +1683,7 @@ export default class Battlefield {
 
   /** Core damage pipeline: modifiers, crits, stats, then the target's own logic. */
   applyDamage(attacker: Damageable | null, target: Damageable, event: DamageEvent): void {
+    this.lastViolenceMs = this.elapsedMs
     if (!target.alive) return
     let amount = event.amount
     const bonus = event.bonusVs?.[target.armor]
@@ -1570,6 +1738,23 @@ export default class Battlefield {
         amount: event.amount * falloff,
         knockback: event.knockback * falloff
       })
+    }
+
+    // Heavy explosive ordnance rearranges the ground itself: mass in the bowl
+    // is partly destroyed and partly thrown to the rim. Gated by era so the
+    // stone age stays a field and the last age becomes the moon.
+    if (event.type === 'explosive' && radius >= 70 && this.era >= 1 && laneLock === undefined) {
+      const lane = this.laneAtY(y)
+      const deep = this.armyFor(faction) && this.leanOf(faction) === 'ordnance' ? 1.35 : 1
+      const depth = Math.min(16, (radius * 0.08 + event.amount * 0.008) * (0.5 + this.era * 0.18) * deep)
+      this.terrain.crater(x, lane, radius * 0.55, depth, this.elapsedMs)
+    }
+
+    // Whatever stood in the blast takes it too.
+    for (let i = 0; i < this.props.length; i += 1) {
+      const prop = this.props[i]
+      if (!prop.alive || Math.abs(prop.x - x) > radius + prop.radius) continue
+      this.damageProp(i, event.amount * 0.8)
     }
 
     const army = this.armyFor(faction)

@@ -31,6 +31,8 @@ export interface UnitWorld {
   goreAt?: (x: number) => number
   /** A unit wants to eat the remains around it, for Bonepickers. */
   scavenge?: (unit: Unit) => void
+  /** Ground relief under a point of a lane — mounds up, craters down. */
+  reliefAt?: (x: number, lane: number) => number
   /** Front of a side's own fortress — as far back as anything will give ground. */
   homeX: (faction: Faction) => number
   /** A blocked flanker wants to move itself to a clear adjacent lane. */
@@ -75,7 +77,7 @@ export default class Unit implements Damageable {
 
   x: number
   y: number
-  /** Which of the three tracks this soldier walks. Fixed at spawn — unless
+  /** Which of the five files this soldier walks. Fixed at spawn — unless
    * the soldier is a flanker, whose own rule may move it once blocked. */
   lane = 2
   /** The ground line of this soldier's lane, in world pixels. */
@@ -111,12 +113,17 @@ export default class Unit implements Damageable {
     if (this.layer === 'ground' && !this.airborne) this.y = this.groundLine
     this.blockedMs = 0
     this.world.vfx.footDust(this.x, this.groundLine)
+    this.setStage(this.stageY)
   }
 
-  /** Stage this soldier on the path and sort it among its neighbours. */
+  /** Stage this soldier on the path and sort it among its neighbours. Depth
+   * runs with the lane first and the stage within it, so a near-file soldier
+   * always draws over a far-file one — the ground plane's own sorting rule. */
   setStage(offset: number): void {
     this.stageY = offset
-    if (this.layer === 'ground') this.container.setDepth(120 + offset * 0.05)
+    if (this.layer === 'ground') {
+      this.container.setDepth(120 + (LANE_Y[this.lane] + 68) * 0.08 + offset * 0.02)
+    }
   }
 
   /** Grace left on the licence to shoot from formation. See formedUp(). */
@@ -634,7 +641,14 @@ export default class Unit implements Damageable {
     // was carrying something that has not gone off yet.
     const butchery = this.techs?.has('butchery') ?? false
     if (this.techs?.has('demolition')) this.world.onDeathCharge?.(this)
-    if (butchery || this.overkill >= 0.55 || this.lastHitType === 'explosive') {
+    // How readily a body comes apart is the era speaking. Two stone-age
+    // spearmen kill each other and both fall over whole; by the last age the
+    // same field is a slaughterhouse. Carnage research drags the bar down a
+    // whole age early, wherever it happens in history.
+    const era = this.def.age
+    const bar = [1.2, 0.9, 0.65, 0.45, 0.3][era] - (this.techs?.has('bloodlust') || butchery ? 0.15 : 0)
+    const explosiveTears = this.lastHitType === 'explosive' && era >= 1
+    if (butchery || this.overkill >= bar || explosiveTears) {
       this.dismember(mechanical)
     } else {
       this.bleedOut(mechanical)
@@ -682,8 +696,10 @@ export default class Unit implements Damageable {
       )
     }
 
-    // A burst of droplets thrown along the direction of the killing blow.
-    const spray = mechanical ? 0 : 10 + Math.round(this.overkill * 10)
+    // A burst of droplets thrown along the direction of the killing blow —
+    // a trickle in the early ages, a butcher's yard by the late ones.
+    const eraBlood = [0.35, 0.55, 0.8, 1, 1.2][this.def.age]
+    const spray = mechanical ? 0 : Math.round((10 + this.overkill * 10) * eraBlood)
     for (let i = 0; i < spray; i += 1) {
       physics.spawn(
         'blood',
@@ -715,7 +731,8 @@ export default class Unit implements Damageable {
     const physics = this.world.physics
     const rand = this.world.rng
     const away = this.lastHitDir || -this.dir
-    for (let i = 0; i < 8; i += 1) {
+    const drops = Math.max(3, Math.round(8 * [0.35, 0.55, 0.8, 1, 1.2][this.def.age]))
+    for (let i = 0; i < drops; i += 1) {
       physics.spawn(
         'blood',
         this.x + rand.spread(this.def.height * 0.12),
@@ -1251,10 +1268,14 @@ export default class Unit implements Damageable {
     const height = this.def.height
 
     this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
-    this.container.setPosition(this.x, this.y + this.stageY)
-    this.shadow.setPosition(this.x, this.groundLine + this.stageY + 2)
+    // A soldier stands on whatever the war has made of the ground: up on the
+    // mounds, down into the craters. Purely visual — ballistics and reach stay
+    // on the flat sim line, so the balance measurements keep their meaning.
+    const relief = this.layer === 'ground' ? Math.max(-12, Math.min(20, this.world.reliefAt?.(this.x, this.lane) ?? 0)) : 0
+    this.container.setPosition(this.x, this.y + this.stageY - relief)
+    this.shadow.setPosition(this.x, this.groundLine + this.stageY - relief + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
-    this.teamRing.setPosition(this.x, this.groundLine + this.stageY + 1)
+    this.teamRing.setPosition(this.x, this.groundLine + this.stageY - relief + 1)
 
     // How far the unit actually got since the last frame. Everything about
     // which clip plays, and how fast, comes from this rather than from what the

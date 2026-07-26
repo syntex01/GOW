@@ -22,6 +22,8 @@ export interface ProjectileConfig {
   hitsAir: boolean
   /** Who fired it — used for kill attribution and stats. */
   owner?: Damageable
+  /** The file this shot was fired down. Terrain and cover live per lane. */
+  lane?: number
   bonusVs?: Partial<Record<string, number>>
   crit?: number
 }

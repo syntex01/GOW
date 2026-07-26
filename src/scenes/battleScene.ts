@@ -10,6 +10,7 @@ import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
 import Environment from '../gfx/environment'
 import DebrisLayer from '../gfx/debrisLayer'
 import Splatter from '../gfx/splatter'
+import TerrainLayer from '../gfx/terrainLayer'
 import Lighting from '../gfx/lighting'
 import { AGE_THEMES } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
@@ -44,6 +45,10 @@ export default class BattleScene extends Phaser.Scene {
   private background!: Environment
   private debris!: DebrisLayer
   private splatter!: Splatter
+  private terrainLayer!: TerrainLayer
+  /** Accumulator for the peace-time stain sweep. */
+  private erosionClock = 0
+  private erosionX = 0
   private lighting!: Lighting
   private vfx!: Vfx
   /** Absent in peer-to-peer matches, where both sides are human. */
@@ -149,6 +154,8 @@ export default class BattleScene extends Phaser.Scene {
       )
     }
 
+    this.terrainLayer = new TerrainLayer(this, this.battlefield, GROUND_Y)
+
     this.battlefield.onCorpse = unit => {
       const machine = unit.def.visual.kind !== 'humanoid' && unit.def.visual.kind !== 'rider'
       // A heap of Nekrotic dead should not look like a heap of Cinder Host
@@ -159,7 +166,7 @@ export default class BattleScene extends Phaser.Scene {
       const dye = creed ? FACTIONS_BY_ID[creed].accent : null
       this.debris.addCorpse(
         unit.x,
-        GROUND_Y + unit.stageY,
+        unit.groundLine + unit.stageY,
         unit.faction === 'player' ? 1 : -1,
         unit.def.height,
         machine,
@@ -604,6 +611,19 @@ export default class BattleScene extends Phaser.Scene {
     const cam = this.cameras.main
     this.background.update(delta, cam.scrollX)
     this.splatter.beginFrame(delta)
+    this.terrainLayer.update(delta)
+    // Peace scrubs the stains, era by era: a stone-age field is green again in
+    // a minute of quiet; a fusion-age one keeps its filth to the end.
+    this.erosionClock += delta
+    if (this.erosionClock > 900) {
+      this.erosionClock = 0
+      const bf = this.battlefield
+      if (bf.elapsedMs - bf.lastViolenceMs > 12000) {
+        const strength = [0.16, 0.09, 0.05, 0.02, 0.008][bf.era]
+        this.erosionX = (this.erosionX + 173) % WORLD_WIDTH
+        this.splatter.erode(this.erosionX, 130, strength)
+      }
+    }
     this.debris.render(this.battlefield.physics)
     // Composite lighting from whatever registered a light this frame.
     this.lighting.render(cam.worldView.x, cam.worldView.y)
@@ -780,6 +800,7 @@ export default class BattleScene extends Phaser.Scene {
     this.background.destroy()
     this.debris.destroy()
     this.splatter.destroy()
+    this.terrainLayer.destroy()
     this.lighting.destroy()
     this.vfx.destroy()
   }

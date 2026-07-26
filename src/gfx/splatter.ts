@@ -849,6 +849,19 @@ export default class Splatter {
     }
   }
 
+  /**
+   * Peace, cleaning up. Softly erases a column of stains — called by the
+   * scene while nothing is fighting, at a rate set by the world's era, so an
+   * early-age field comes back green and a late-age one never quite does.
+   */
+  erode(x: number, radius: number, strength: number): void {
+    if (!this.texture || this.destroyed) return
+    const brush = this.scene.make.image({ key: 'fx:soft', add: false })
+    brush.setDisplaySize(radius * 2, this.texture.height * 1.2).setAlpha(Math.min(1, strength))
+    this.texture.erase(brush, x, this.texture.height / 2)
+    brush.destroy()
+  }
+
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
