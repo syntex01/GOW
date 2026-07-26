@@ -1,52 +1,69 @@
 import Phaser from 'phaser'
 import { save } from '../core/save'
 import { AGE_THEMES, type AgeTheme } from './palette'
-import Pix, { ditherAt, mix, pixelNoise, ramp, tone, type PixelCanvas, type Ramp } from './pixel'
+import Pix, { ditherAt, mix, pixelNoise, ramp, tone, type PixelCanvas } from './pixel'
 import { LANE_Y } from '../sim/types'
 
 /**
- * The world behind the battle.
+ * The world beyond the battlefield.
  *
- * This is a whole environment rather than a backdrop: a sky with weather in it,
- * four ranges of terrain receding into haze, a floor that lies down, and a bank
- * of scenery close enough to the camera to blur past. Every pixel of it is
- * generated here — nothing ships as an image — and every age gets its own
- * landmarks, its own light and its own atmosphere.
+ * A sky with weather in it, four ranges of terrain receding toward the horizon,
+ * and a ribbon of ground haze that seats them on the plane the armies fight on.
+ * Every pixel is generated here — nothing ships as an image — and every age gets
+ * its own skyline, its own celestial body and its own air.
  *
- * ## The rules this file obeys, and why
+ * ## What this is trying to look like
  *
- * 1. **A TileSprite tiles in both axes.** Art shorter than its band repeats
+ * Flat, layered, painted shapes: the backdrop of a Dead Cells or a Kingdom Two
+ * Crowns rather than a photograph seen through gauze. That intent decides every
+ * rule below, and each rule exists because breaking it produced *haze* — the
+ * one failure this whole file is organised against.
+ *
+ * 1. **Value before colour.** Six planes — the floor, four ranges, the air at
+ *    the horizon — are assigned luminances on a fixed staircase *before* any of
+ *    them is assigned a hue, and their colours are then driven onto those
+ *    values. No theme can flatten the staircase and none can invert it. See
+ *    `ladderFloor` and `envBandBase`.
+ * 2. **The staircase needs room, not just rungs.** The ladder is anchored low
+ *    on purpose: nineteen points of separation between planes sitting at 140
+ *    reads as one grey field, and the same nineteen points between planes
+ *    sitting at 60 reads as layers.
+ * 3. **The glow finishes above the skyline.** The sky arrives at its horizon
+ *    colour at `SKY_GLOW_FRAC`, a little over the top of the far range's crest
+ *    window — not on the ground line, where all of it would be hidden behind
+ *    the ranges and the mountains would stand against the dim middle of the
+ *    gradient with nothing between them.
+ * 4. **Dither is a *join*, never a field.** Every gradient here is quantised
+ *    into flat bands with a short dithered seam between each pair, and the seams
+ *    wander so no boundary is a ruled line. Dithering a whole surface lays a
+ *    checkerboard film over the frame, and a checkerboard film is haze.
+ * 5. **A lit edge is a lit *face*.** Light is described by value steps across
+ *    real areas — a third of a wall, a flank of a cone, the crown of a cloud.
+ *    A one-pixel rim following a silhouette is a drawn outline, not light, and
+ *    a ridgeline full of them is a tangle of scratches.
+ * 6. **A TileSprite tiles in both axes.** Art shorter than its band repeats
  *    vertically and draws the same crest twice up the screen; art narrower than
- *    the viewport runs a hard seam down the picture. So every layer is authored
- *    at *exactly* its band height, and every layer is authored wider than the
- *    viewport plus the furthest its own tile position can travel. The sizes are
- *    declared once, at the top, and both the art and the sprites read them.
- * 2. **`tilePositionX` counts texture pixels, and every layer draws at a tile
- *    scale of two.** A raw camera offset therefore slides a layer at twice the
- *    camera's speed. Everything is scaled by `ENV_RES`.
- * 3. **Aerial perspective is enforced, not hoped for.** All four ranges derive
- *    from one near-rock colour hazed toward the horizon, and then their
- *    luminance is *driven* to a guaranteed separation. A theme cannot repaint
- *    the hills into the wrong order however hard it tries.
- * 4. **No smooth alpha gradients anywhere.** A gradient rectangle has a hard
- *    edge at the row where it starts, which draws a line across the whole
- *    screen. Every fade in here is ordered dithering between two palette tones.
- * 5. **Light comes from the upper right**, five tones per material from
- *    `ramp()`, and outlines — where there are any — are post-passes.
+ *    the viewport runs a hard seam down the picture. Every layer is authored at
+ *    *exactly* its band height and at `ENV_LAYER_WIDTH`, from noise that is
+ *    periodic over that width, with every landmark drawn three times so shapes
+ *    cross the wrap instead of being clipped by it.
+ * 7. **Light comes from the upper right**, five tones per material from
+ *    `ramp()`, and the environment authors at full resolution (`ENV_RES = 1`).
  */
 
 // ──────────────────────────── Geometry ────────────────────────────
 //
-// World pixels. Art is generated at `ENV_RES` times this and drawn back at a tile
-// scale of two, which keeps the backdrop on the same pixel grid as the sprites.
+// World pixels, and `ENV_RES` is 1, so these are art pixels too.
 
 /**
  * Authored width of every scrolling layer.
  *
- * The widest viewport is 1280 and the fastest layer (the near bank) travels at
- * 1.35x a camera that can itself only cross `worldWidth - viewport`. 2048 has a
- * wide margin over anything the game can ask for, and it is a power of two, so
- * the periodic noise the terrain is built from wraps exactly.
+ * A layer must cover the viewport plus everything its own tile position can
+ * travel. The camera can only cross `worldWidth - viewport` = 1920 - 1280 = 640,
+ * and the fastest screen-space layers are the nearest range and the haze at
+ * 0.46, so the requirement is 1280 + 0.46 x 640 = 1575. 2048 clears it with
+ * room to spare and is a power of two, which is what lets the periodic noise
+ * the terrain is built from wrap exactly.
  */
 export const ENV_LAYER_WIDTH = 2048
 
@@ -54,11 +71,11 @@ export const ENV_LAYER_WIDTH = 2048
  * Height of each range, far to near. Each is authored at exactly this.
  *
  * The heights are not arbitrary. Every range's foot sits on the ground line, so
- * its height is what decides where its crest can be, and the four crests have
- * to stack into a readable staircase with the sky left open above the far one —
- * roughly y=140 for the far summits down to y=430 for the near hills, on a
- * 720-tall frame with the ground at 545. Each canvas also carries enough room
- * above its own crest for the tallest landmark that can stand on it.
+ * its height is what decides where its crest window can be — see `CREST_HI` and
+ * `CREST_LO`, which are fractions of these. Each canvas also carries enough room
+ * above its own crest for the tallest thing that can stand on it, which is why
+ * the far one is a good deal taller than the frame: an arcology spire or an
+ * orbital elevator has to be able to run off the top of the picture.
  */
 export const ENV_BAND_HEIGHTS = [544, 440, 330, 244] as const
 
@@ -83,12 +100,6 @@ export const ENV_FOG_HEIGHT = 52
 
 /** The battlefield floor. Taller than any viewport shows, so it cannot repeat. */
 export const ENV_GROUND_HEIGHT = 200
-
-/** The near bank that frames the battlefield from below. */
-export const ENV_BANK_HEIGHT = 150
-
-/** How far above the ground line the near bank's bottom edge sits. */
-export const ENV_BANK_DROP = 72
 
 /** High thin cloud: top of screen, slowest. */
 export const ENV_CIRRUS_Y = 0
@@ -138,6 +149,18 @@ function theme(age: number): AgeTheme {
 
 // ──────────────────────────── Colour ────────────────────────────
 
+/**
+ * The RGB hex behind a packed buffer word.
+ *
+ * `Pix` stores the little-endian ABGR word an ImageData view wants, so masking
+ * a pixel with 0xffffff hands back *blue* in the high byte. Reading a pixel
+ * back and passing it to `mix` without this swaps every red for every blue —
+ * which is why the old star field was tinted against its own sky.
+ */
+function rgbOf(value: number): number {
+  return ((value & 0xff) << 16) | (value & 0xff00) | ((value >>> 16) & 0xff)
+}
+
 function lum(c: number): number {
   return 0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)
 }
@@ -164,87 +187,105 @@ function driveLum(base: number, wanted: number): number {
   return tone(base, (lo + hi) / 2)
 }
 
-/** How much sky is mixed into each range. Far is nearly all sky. */
-const BAND_HAZE = [0.66, 0.44, 0.24, 0.07]
+/**
+ * The value ladder.
+ *
+ * Aerial perspective here is not hoped for, it is a staircase with a fixed
+ * rise. Every plane in the picture — the floor the soldiers stand on, the four
+ * ranges behind them, the air along the horizon — is assigned a *luminance*
+ * before it is assigned a colour, and its colour is then driven onto that
+ * value. No theme can flatten the staircase, and none can invert it.
+ *
+ * The rise is deliberately large. The old backdrop derived its separation from
+ * whatever gap a theme happened to leave between its rock and its sky, clamped
+ * into a range; where a theme left no gap, the clamp was doing all the work and
+ * the ranges arrived as four shades of the same fog. Fixing the rise first and
+ * bending the colours to it afterwards is what makes every age read as layers
+ * of flat, separated shapes.
+ */
+
+/** Luminance between one range and the next. Twelve is the readable minimum. */
+const LADDER_STEP = 19
+
+/** Extra rise from the farthest range to the air it stands against. */
+const LADDER_SKY_GAP = 24
 
 /**
- * The smallest and largest total spread, in luminance, from the near range to
- * the far one.
+ * The bottom of the ladder: the value of the ground under the camera.
  *
- * The floor is what stops the ranges collapsing into one grey mass when a theme
- * paints its rock and its sky at the same value. The ceiling is what stops the
- * far range overshooting the sky it is supposed to be dissolving into — a
- * mountain sixty miles away is *never* brighter than the air in front of it by
- * much, and a range that is reads as a wall of glowing rock.
+ * Clamped, because five more steps are built upward from here and a theme whose
+ * ground is nearly white leaves no room above it. Night themes are pinned lower
+ * still: their skies go black at the zenith and glow along the horizon, which
+ * is where every scrap of contrast in a night scene actually lives.
  */
+function ladderFloor(age: number): number {
+  const t = theme(age)
+  // The ceiling matters more than the floor. Five rungs and a sky gap are built
+  // on top of this, and an anchor in the eighties puts the whole staircase up
+  // in the bright end of the range where a nineteen-point step is a tenth of
+  // the value it sits on and the eye stops reading it as a step at all. That is
+  // what "hazy" was: not a want of separation but a want of *room*.
+  const base = Math.max(30, Math.min(64, lum(t.ground)))
+  return lum(t.sky[2]) < 80 ? Math.min(base, 38) : base
+}
+
+/** The value of range `d`, far (0) to near (3). */
+function ladderLum(age: number, d: number): number {
+  return ladderFloor(age) + (ENV_BAND_HEIGHTS.length - d) * LADDER_STEP
+}
+
 /**
- * Where the nearest range sits relative to its own horizon. Land reads as land
- * because it is decisively darker than the sky it stands against — or brighter,
- * in the ages whose light comes from the ground.
+ * The colour the sky arrives at along the horizon — the top of the ladder.
+ *
+ * A theme's horizon colour is a suggestion; the value it has to reach is not.
+ * Where a theme sits too low, its own sun colour is mixed in *before* the value
+ * is driven, so a night sky lifts into a glow rather than into grey.
  */
-const NEAR_GROUND_SHARE = 0.56
-const BAND_SPREAD_MIN = 27
-const BAND_SPREAD_MAX = 46
+function skyHorizon(age: number): number {
+  const t = theme(age)
+  const want = ladderLum(age, 0) + LADDER_SKY_GAP
+  const have = lum(t.sky[2])
+  const warm = want > have + 4 ? mix(t.sky[2], t.sun, Math.min(0.72, (want - have) / 85)) : t.sky[2]
+  return driveLum(warm, want)
+}
+
+/** How much horizon air is mixed into each range before its value is set. */
+const BAND_HAZE = [0.52, 0.36, 0.19, 0.05]
+
+/**
+ * How far each range is pulled toward cold air on top of that.
+ *
+ * Value separation alone leaves four ranges that are the same colour at four
+ * brightnesses, which is exactly what a filter does and exactly what an eye
+ * does not believe. Distance is *cool* — the blue end of the spectrum scatters
+ * — so the far ranges take a little of it and the near one takes none.
+ */
+const BAND_COOL = [0.26, 0.17, 0.08, 0]
+const COLD_AIR = 0x5a6a94
 
 /**
  * The base colour of one range.
  *
- * Every range is the *same* rock, seen through more or less air, so the
- * ordering is structural: more haze is always closer to the sky. Hazing alone
- * is not enough, though — where a theme's rock and sky sit at the same value,
- * mixing one toward the other changes hue without moving value at all, and the
- * bands collapse into a single grey mass. So the value is driven directly, band
- * by band, until there is a real step between each pair. No palette can defeat
- * that, and none of them can invert it either.
+ * Every range is the same rock seen through more or less air, so the hue walks
+ * toward the horizon with distance; the value is then driven onto the rung the
+ * ladder reserved for it, which is what guarantees the step.
  */
 export function envBandBase(age: number, depth: number): number {
   const t = theme(age)
-  const rock = t.ridges[2]
-  const horizon = t.sky[2]
   const d = Math.max(0, Math.min(BAND_HAZE.length - 1, depth))
-  const base = mix(rock, horizon, BAND_HAZE[d])
-
-  const rawNear = lum(mix(rock, horizon, BAND_HAZE[BAND_HAZE.length - 1]))
-  // Distance moves a band toward the sky's value. Where sky and rock share a
-  // value there is no physical answer, so fall back on the painter's
-  // convention: distance lightens.
-  const direction = Math.abs(lum(horizon) - rawNear) < 8 ? 1 : Math.sign(lum(horizon) - rawNear)
-  // Land has to sit clear of its own sky, not merely a shade off it. The
-  // staircase between the ranges was already right, but the whole flight of it
-  // started so close to the horizon's value that the ridges, the ground and the
-  // soldiers standing on it all washed into one pale field. Anchoring the
-  // nearest range well away from the sky, in whichever direction this age's
-  // light runs, puts the contrast back without disturbing the steps above it.
-  const anchor = direction > 0 ? lum(horizon) * NEAR_GROUND_SHARE : Math.min(238, lum(horizon) / NEAR_GROUND_SHARE)
-  const nearLum = direction > 0 ? Math.min(rawNear, anchor) : Math.max(rawNear, anchor)
-  const towardSky = lum(horizon) - nearLum
-  // Take slightly over half the distance from the rock to the sky, then hold it
-  // inside the bounds above, so every theme gets a visible staircase and none
-  // of them get a far range that outshines its own horizon.
-  const spread = Math.min(
-    BAND_SPREAD_MAX,
-    Math.max(BAND_SPREAD_MIN, Math.abs(towardSky) * 0.55)
-  )
-  const steps = BAND_HAZE.length - 1
-  const wanted = nearLum + ((steps - d) / steps) * spread * direction
-
-  return driveLum(base, wanted)
+  const hazed = mix(t.ridges[2], skyHorizon(age), BAND_HAZE[d])
+  return driveLum(mix(hazed, COLD_AIR, BAND_COOL[d]), ladderLum(age, d))
 }
 
 /**
- * The floor colour, forced to continue the depth sequence past the nearest
- * range. If the units cannot be told from the ground under their feet, nothing
- * else about the scene matters.
+ * The floor colour: the bottom rung, one step nearer than the nearest range.
+ *
+ * If the units cannot be told from the ground under their feet, nothing else
+ * about the scene matters — so the floor keeps the theme's own hue and takes
+ * the ladder's value.
  */
 export function envGroundBase(age: number): number {
-  const t = theme(age)
-  const near = envBandBase(age, ENV_BAND_HEIGHTS.length - 1)
-  const towardSky = lum(t.sky[2]) - lum(near)
-  const direction = Math.abs(towardSky) < 8 ? 1 : Math.sign(towardSky)
-  const g = t.ground
-  const gap = direction * (lum(near) - lum(g))
-  if (gap >= 10) return g
-  return driveLum(g, lum(near) - direction * 16)
+  return driveLum(theme(age).ground, ladderFloor(age))
 }
 
 /** The warm colour the light in this age actually is. */
@@ -309,6 +350,8 @@ function smoothNoise2(seed: number) {
   }
 }
 
+// ──────────────────────────── Placement ────────────────────────────
+
 export interface Placement {
   x: number
   kind: string
@@ -321,27 +364,35 @@ export interface Placement {
  * Places landmarks along a layer.
  *
  * Even spacing looks printed and pure randomness clumps, so each item gets a
- * slot and jitters within it. That reads as *composed* — the spacing varies,
- * but nothing ever lands on top of anything else.
+ * slot and jitters inside it. Nothing is inset from the edges: every landmark
+ * is drawn three times, at `x - width`, `x` and `x + width`, so a shape that
+ * straddles the wrap is genuinely continuous rather than merely kept away from
+ * it.
  */
-function scatter(seed: number, width: number, count: number, kinds: readonly string[], min: number, max: number): Placement[] {
+function scatter(
+  seed: number,
+  width: number,
+  count: number,
+  kinds: readonly string[],
+  min: number,
+  max: number
+): Placement[] {
   const noise = pixelNoise(seed)
-  // Inset by the widest thing that can be placed, so nothing is ever clipped in
-  // half by the edge of the layer — which would show as a cut silhouette on the
-  // one frame the wrap ever crossed the screen.
-  const inset = max * 1.6
-  const slot = (width - inset * 2) / count
+  const slot = width / count
   const out: Placement[] = []
+  let last = ''
   for (let i = 0; i < count; i += 1) {
-    const jitter = noise(i, 1)
-    const pick = noise(i, 2)
-    const scale = noise(i, 3)
+    // Weighted toward the head of the list: the first entry is the one that
+    // says which age this is, so it should turn up more often than the filler.
+    let idx = Math.min(kinds.length - 1, Math.floor(Math.pow(noise(i, 2), 1.35) * kinds.length))
+    // …but never twice running. Two walled cities two hundred pixels apart is
+    // the one thing that gives a generated skyline away as generated.
+    if (kinds[idx] === last) idx = (idx + 1) % kinds.length
+    last = kinds[idx]
     out.push({
-      x: Math.round(inset + slot * (i + 0.16 + jitter * 0.68)),
-      // Weighted toward the head of the list: the first entry is the one that
-      // says which age this is, so it should turn up more than the filler.
-      kind: kinds[Math.min(kinds.length - 1, Math.floor(Math.pow(pick, 1.7) * kinds.length))],
-      size: Math.round(min + scale * (max - min)),
+      x: Math.round(slot * (i + 0.14 + noise(i, 1) * 0.72)),
+      kind: kinds[idx],
+      size: Math.round(min + noise(i, 3) * (max - min)),
       flip: noise(i, 4) > 0.5,
       seed: Math.round(noise(i, 5) * 9999)
     })
@@ -362,727 +413,1183 @@ export interface EnvAnchor {
   phase: number
 }
 
-/** What stands on the skyline in each age, from the far range to the near one. */
-const AGE_CAST: readonly (readonly (readonly string[])[])[] = [
-  [
-    ['volcano', 'peak', 'peak'],
-    ['monolith', 'arch', 'deadTree', 'peak'],
-    ['monolith', 'deadTree', 'fern', 'rock'],
-    ['fern', 'fern', 'deadTree', 'bonepile', 'rock']
-  ],
-  [
-    ['peakFort', 'peak', 'peak'],
-    ['castle', 'towerRuin', 'pine', 'wall'],
-    ['windmill', 'pine', 'wall', 'pine'],
-    ['pine', 'pine', 'wall', 'rock']
-  ],
-  [
-    ['dome', 'peak', 'cityBlocks'],
-    ['towerRuin', 'chimney', 'bridge', 'oak'],
-    ['windmill', 'oak', 'wall', 'chimney'],
-    ['oak', 'oak', 'crate', 'rock']
-  ],
-  [
-    ['cityBlocks', 'chimney', 'peak'],
-    ['towerRuin', 'pylon', 'wreckHull', 'chimney'],
-    ['mast', 'pylon', 'wreckHull', 'deadTree'],
-    ['wire', 'crate', 'deadTree', 'rock']
-  ],
-  [
-    ['spires', 'cityBlocks', 'peak'],
-    ['crashedShip', 'spires', 'pylon', 'dish'],
-    ['pylon', 'mast', 'wreckHull', 'spires'],
-    ['wire', 'mast', 'crate', 'rock']
-  ]
-]
+/**
+ * Everything one landmark needs to draw itself.
+ *
+ * Four tones and a light colour, and that is the whole budget. A silhouette on
+ * a distant range that reaches for a fifth tone stops being a silhouette; the
+ * separation that makes it readable comes from the *ladder*, not from detail
+ * inside the shape.
+ */
+interface Land {
+  p: Pix
+  /** Centre column and base row, already wrapped into the layer. */
+  x: number
+  y: number
+  /** Nominal height in art pixels. */
+  s: number
+  body: number
+  lit: number
+  dark: number
+  deep: number
+  /** The colour of light in this age — windows, fires, hot rock. */
+  key: number
+  /** Cold structural colour: stone, steel, bone. */
+  pale: number
+  seed: number
+  flip: boolean
+  /** Which range this is standing on. */
+  d: number
+  /** Null on the two wrap copies, so anchors are only emitted once. */
+  anchors: EnvAnchor[] | null
+}
+
+type LandFn = (l: Land) => void
+
+function hang(l: Land, kind: EnvAnchor['kind'], x: number, y: number, scale: number): void {
+  if (!l.anchors) return
+  l.anchors.push({
+    kind,
+    x: Math.round(x),
+    y: Math.round(y),
+    scale,
+    phase: ((l.seed * 37) % 1000) / 1000
+  })
+}
+
+/** Deterministic per-landmark variation. */
+function vary(l: Land, k: number): number {
+  const n = pixelNoise(l.seed + 1)
+  return n(k, k * 7 + 3)
+}
 
 /**
- * The small growth scattered along the two near crests.
+ * A rectangular mass with a lit face and a shadowed one.
  *
- * Deliberately a shorter list than the landmark cast: a ruined tower is a thing
- * you notice once, and at scrub size the same silhouette is just a smudge.
+ * The lit face is a *third of the block*, never a one-pixel line down its edge.
+ * Rim-lighting every silhouette is what turned the old skyline into a tangle of
+ * bright scratches; a value step across a real area reads as a lit wall.
  */
-const AGE_SCRUB: readonly (readonly string[])[] = [
-  ['fern', 'fern', 'rock', 'deadTree'],
-  ['pine', 'pine', 'pine', 'rock'],
-  ['oak', 'pine', 'rock', 'oak'],
-  ['deadTree', 'rock', 'crate', 'deadTree'],
-  ['rock', 'crate', 'deadTree', 'rock']
-]
+function block(l: Land, cx: number, top: number, half: number, bot: number, body: number, lit: number, dark: number): void {
+  const w = Math.max(1, Math.round(half * 2))
+  const x0 = Math.round(cx - half)
+  l.p.fill(x0, top, w, bot - top, body)
+  const litW = Math.max(1, Math.round(w * 0.3))
+  l.p.fill(x0 + w - litW, top, litW, bot - top, lit)
+  if (w >= 5) l.p.fill(x0, top, Math.max(1, Math.round(w * 0.2)), bot - top, dark)
+}
 
-/** The landmarks that need a level footing cut for them. Nothing else gets one. */
+/** A tapered tower: wider at the foot, lit down its right third. */
+function taper(l: Land, cx: number, top: number, bot: number, halfTop: number, halfBot: number, body: number, lit: number): void {
+  for (let y = top; y < bot; y += 1) {
+    const tt = (y - top) / Math.max(1, bot - top)
+    const half = halfTop + (halfBot - halfTop) * tt
+    const x0 = Math.round(cx - half)
+    const w = Math.max(1, Math.round(half * 2))
+    l.p.fill(x0, y, w, 1, body)
+    l.p.fill(x0 + w - Math.max(1, Math.round(w * 0.32)), y, Math.max(1, Math.round(w * 0.32)), 1, lit)
+  }
+}
+
+/**
+ * Shades a solid of revolution — a cone, a volcano, a spire.
+ *
+ * Shading a cone by its column alone paints a vertical seam straight down the
+ * middle of it and the shape reads as a flat triangle cut in two. The
+ * terminator on a real cone fans out from the apex, so each pixel is placed
+ * across *the slice it belongs to* instead, and the boundary between light and
+ * shadow becomes the slant line that makes the form read as round.
+ */
+function revolve(
+  l: Land,
+  half: number,
+  topAt: (dx: number) => number,
+  halfAt: (y: number) => number,
+  body: number,
+  lit: number,
+  dark: number
+): void {
+  for (let dx = -half; dx <= half; dx += 1) {
+    const top = Math.round(topAt(dx))
+    for (let y = top; y < l.y; y += 1) {
+      const hw = Math.max(1, halfAt(y))
+      const u = Math.max(-1, Math.min(1, dx / hw))
+      l.p.set(l.x + dx, y, u > 0.16 ? lit : u < -0.44 ? dark : body)
+    }
+  }
+}
+
+// ── stone age ──
+
+const mesa: LandFn = l => {
+  const { p, x, s } = l
+  const topH = Math.max(3, Math.round(s * 0.66))
+  const botH = Math.max(4, Math.round(s * 1.02))
+  const top = l.y - s
+  p.poly([[x - botH, l.y], [x - topH, top], [x + topH, top], [x + botH, l.y]], l.body)
+  p.poly([[x + topH * 0.18, top], [x + topH, top], [x + botH, l.y], [x + botH * 0.24, l.y]], l.lit)
+  p.poly([[x - botH, l.y], [x - topH, top], [x - topH * 0.6, top], [x - botH * 0.66, l.y]], l.dark)
+  // Strata: horizontal, two of them, and nothing else. A mesa is a stack of
+  // beds; drawing every bed turns it into corduroy.
+  for (let k = 1; k <= 2; k += 1) {
+    const yy = top + Math.round(s * (0.26 + k * 0.24))
+    const half = Math.round(topH + (botH - topH) * ((yy - top) / Math.max(1, s)))
+    p.fill(x - half, yy, half * 2, 1, l.dark)
+  }
+}
+
+const peak: LandFn = l => {
+  const { s } = l
+  const half = Math.max(3, Math.round(s * (0.78 + vary(l, 1) * 0.4)))
+  const expo = 1.1 + vary(l, 2) * 0.35
+  revolve(
+    l,
+    half,
+    dx => l.y - s * Math.pow(1 - Math.abs(dx) / half, expo),
+    y => half * (1 - Math.pow(Math.max(0, Math.min(1, (l.y - y) / s)), 1 / expo)),
+    l.body,
+    l.lit,
+    l.dark
+  )
+}
+
+const volcano: LandFn = l => {
+  const { p, x, s } = l
+  const half = Math.max(8, Math.round(s * 1.75))
+  const craterHalf = Math.max(3, Math.round(s * 0.3))
+  const hot = mix(l.key, 0xff5a1e, 0.55)
+  const expo = 1.24
+  const rim = Math.round(l.y - s)
+  revolve(
+    l,
+    half,
+    dx => {
+      const a = Math.abs(dx)
+      // A real notch, not a nick: the crater floor sits a fifth of the cone's
+      // height below its rim, which is what makes the summit read as open.
+      if (a <= craterHalf) return l.y - s * (0.8 + 0.2 * Math.pow(a / craterHalf, 1.6))
+      return l.y - s * Math.pow(1 - (a - craterHalf) / (half - craterHalf), expo)
+    },
+    y => craterHalf + (half - craterHalf) * (1 - Math.pow(Math.max(0, Math.min(1, (l.y - y) / s)), 1 / expo)),
+    l.body,
+    l.lit,
+    l.dark
+  )
+  // The far wall of the crater in shadow — clipped to the notch itself, so it
+  // is a hollow in the summit rather than a box sitting on top of it.
+  const floorY = Math.round(l.y - s * 0.8)
+  for (let dx = -craterHalf + 1; dx <= craterHalf - 1; dx += 1) {
+    const wall = Math.round(l.y - s * (0.8 + 0.2 * Math.pow(Math.abs(dx) / craterHalf, 1.6)))
+    p.fill(x + dx, wall, 1, floorY - wall + 1, l.deep)
+  }
+  for (let dx = -craterHalf + 3; dx <= craterHalf - 3; dx += 1) {
+    if (vary(l, 60 + dx) < 0.35) continue
+    p.set(x + dx, floorY - 1, hot)
+    if (vary(l, 90 + dx) > 0.6) p.set(x + dx, floorY - 2, mix(hot, l.key, 0.55))
+  }
+  // One lava run down the lit flank, and nothing on the shadowed one.
+  let cx = x + craterHalf * 0.9
+  let cy = floorY
+  const len = Math.round(s * (0.5 + vary(l, 11) * 0.3))
+  for (let i = 0; i < len; i += 1) {
+    cy += 1
+    cx += 0.5 + vary(l, 20 + i) * 0.6
+    if (cy >= l.y) break
+    if (vary(l, 40 + i) < 0.25) continue
+    p.set(Math.round(cx), cy, i % 4 === 0 ? mix(hot, l.key, 0.5) : hot)
+  }
+  hang(l, 'smoke', x, rim, 2.5)
+  hang(l, 'light', x, floorY - 1, 2.2)
+}
+
+const archRock: LandFn = l => {
+  const { p, x, s } = l
+  const half = Math.max(5, Math.round(s * 0.8))
+  const legW = Math.max(2, Math.round(s * 0.24))
+  const spanTop = l.y - s
+  const spanH = Math.max(2, Math.round(s * 0.3))
+  block(l, x - half + legW / 2, spanTop + spanH, legW / 2, l.y, l.body, l.lit, l.dark)
+  block(l, x + half - legW / 2, spanTop + spanH, legW / 2, l.y, l.body, l.lit, l.dark)
+  // The span, thicker at the haunches than at the crown.
+  for (let dx = -half; dx <= half; dx += 1) {
+    const tt = Math.abs(dx) / half
+    const thick = Math.round(spanH * (0.6 + tt * tt * 0.9))
+    const top = spanTop + Math.round(spanH * (1 - Math.pow(1 - tt, 2) * 0.55)) - thick
+    p.fill(x + dx, top, 1, thick, dx > 0 ? l.lit : l.body)
+  }
+}
+
+const monolith: LandFn = l => {
+  const { x, s } = l
+  const count = 1 + Math.floor(vary(l, 1) * 3)
+  for (let i = 0; i < count; i += 1) {
+    const h = Math.round(s * (0.6 + vary(l, 10 + i) * 0.45))
+    const half = Math.max(1, Math.round(h * 0.17))
+    const cx = x + Math.round((i - (count - 1) / 2) * s * 0.5)
+    block(l, cx, l.y - h, half, l.y + 1, l.body, l.lit, l.dark)
+  }
+}
+
+const ribcage: LandFn = l => {
+  const { p, x, s } = l
+  const bone = mix(l.lit, l.pale, 0.55)
+  const boneDark = mix(l.body, l.dark, 0.5)
+  const len = Math.max(8, Math.round(s * 2.4))
+  const arcAt = (t: number): number => l.y - s * (0.42 + 0.58 * Math.sin(Math.PI * Math.min(1, Math.max(0, t))))
+  const ribs = 6 + Math.floor(vary(l, 1) * 3)
+  for (let i = 0; i < ribs; i += 1) {
+    const t = 0.16 + (i / (ribs - 1)) * 0.68
+    const sx = x - len / 2 + t * len
+    const sy = arcAt(t)
+    const drop = Math.max(2, Math.round(l.y - sy))
+    for (let k = 0; k <= drop; k += 1) {
+      const u = k / drop
+      const rx = sx - Math.pow(u, 1.6) * s * 0.46
+      p.set(Math.round(rx), Math.round(sy) + k, k < drop * 0.72 ? bone : boneDark)
+      p.set(Math.round(rx) + 1, Math.round(sy) + k, boneDark)
+    }
+  }
+  // The spine over the top of them, and a skull dropped off one end.
+  for (let t = 0.08; t <= 0.92; t += 0.004) {
+    const sx = Math.round(x - len / 2 + t * len)
+    const sy = Math.round(arcAt(t))
+    p.fill(sx, sy - 1, 1, 3, bone)
+  }
+  const hx = Math.round(x - len / 2 + 0.06 * len)
+  const hy = Math.round(arcAt(0.08))
+  const hr = Math.max(2, Math.round(s * 0.22))
+  p.ellipse(hx, hy + hr, hr * 1.25, hr, bone)
+  p.fill(hx - hr, hy + hr, Math.max(1, Math.round(hr * 0.7)), Math.max(1, Math.round(hr * 0.6)), l.deep)
+}
+
+const skull: LandFn = l => {
+  const { p, x, s } = l
+  const bone = mix(l.lit, l.pale, 0.5)
+  const rx = Math.max(3, Math.round(s * 0.62))
+  const ry = Math.max(3, Math.round(s * 0.52))
+  p.ellipse(x, l.y - ry, rx, ry, bone)
+  p.fill(x - Math.round(rx * 0.72), l.y - Math.round(ry * 0.9), Math.max(1, Math.round(rx * 0.6)), Math.max(1, Math.round(ry * 0.7)), l.body)
+  // Two sockets and a jaw: the three marks that make a skull a skull.
+  p.fill(x - Math.round(rx * 0.55), l.y - Math.round(ry * 1.1), Math.max(1, Math.round(rx * 0.3)), Math.max(1, Math.round(ry * 0.34)), l.deep)
+  p.fill(x + Math.round(rx * 0.1), l.y - Math.round(ry * 1.1), Math.max(1, Math.round(rx * 0.3)), Math.max(1, Math.round(ry * 0.34)), l.deep)
+  p.fill(x - Math.round(rx * 0.6), l.y - 1, Math.round(rx * 1.2), 1, l.deep)
+}
+
+const deadTree: LandFn = l => {
+  const { p, x, s } = l
+  const top = l.y - s
+  p.thickLine(x, l.y, x + Math.round(s * 0.1), top, Math.max(1, Math.round(s * 0.12)), l.body)
+  const arms = 3 + Math.floor(vary(l, 1) * 3)
+  for (let i = 0; i < arms; i += 1) {
+    const t = 0.35 + (i / arms) * 0.6
+    const by = l.y - s * t
+    const dir = i % 2 === 0 ? 1 : -1
+    const len = s * (0.3 + vary(l, 10 + i) * 0.26) * (1 - t * 0.4)
+    p.line(x, by, x + dir * len, by - len * 0.75, dir > 0 ? l.lit : l.dark)
+  }
+}
+
+const boulder: LandFn = l => {
+  const { p, x, s } = l
+  const rx = Math.max(2, Math.round(s * 0.9))
+  const ry = Math.max(1, Math.round(s * 0.6))
+  p.ellipse(x, l.y - ry + 1, rx, ry, l.body)
+  p.ellipse(x + Math.round(rx * 0.3), l.y - ry * 1.2, Math.round(rx * 0.55), Math.round(ry * 0.55), l.lit)
+  p.fill(x - rx, l.y - 1, rx * 2, 1, l.deep)
+}
+
+const fern: LandFn = l => {
+  const { p, x, s } = l
+  const fronds = 4 + Math.floor(vary(l, 1) * 3)
+  for (let i = 0; i < fronds; i += 1) {
+    const a = -Math.PI / 2 + (i / (fronds - 1) - 0.5) * 1.5
+    const len = s * (0.7 + vary(l, 10 + i) * 0.5)
+    p.line(x, l.y, x + Math.cos(a) * len, l.y + Math.sin(a) * len, i > fronds / 2 ? l.lit : l.body)
+  }
+}
+
+// ── medieval ──
+
+/** A wall with crenellations: the one detail that says "fortified" at any size. */
+function battlement(l: Land, x0: number, x1: number, top: number, bot: number, body: number, lit: number): void {
+  l.p.fill(x0, top, x1 - x0, bot - top, body)
+  l.p.fill(x0, top, x1 - x0, Math.max(1, Math.round((bot - top) * 0.22)), lit)
+  const step = Math.max(3, Math.round((bot - top) * 0.9))
+  for (let x = x0; x < x1; x += step) {
+    l.p.fill(x, top - Math.max(1, Math.round(step * 0.4)), Math.max(1, Math.round(step * 0.5)), Math.max(1, Math.round(step * 0.4)), body)
+  }
+}
+
+const cragCity: LandFn = l => {
+  const { p, x, s } = l
+  const half = Math.max(10, Math.round(s * 1.25))
+  const crestY = l.y - Math.round(s * 0.5)
+  // The crag: a wedge of rock with one sheer lit face.
+  p.poly([[x - half, l.y], [x - half * 0.62, crestY], [x + half * 0.7, crestY], [x + half, l.y]], l.body)
+  p.poly([[x + half * 0.18, crestY], [x + half * 0.7, crestY], [x + half, l.y], [x + half * 0.42, l.y]], l.lit)
+  p.poly([[x - half, l.y], [x - half * 0.62, crestY], [x - half * 0.3, crestY], [x - half * 0.66, l.y]], l.dark)
+  // The town on top: a curtain wall, roofs behind it, a keep and a spire.
+  const wallH = Math.max(3, Math.round(s * 0.13))
+  const stone = mix(l.body, l.pale, 0.4)
+  const stoneLit = mix(l.lit, l.pale, 0.45)
+  const roof = mix(l.dark, l.body, 0.4)
+  const roofCount = 5 + Math.floor(vary(l, 1) * 4)
+  for (let i = 0; i < roofCount; i += 1) {
+    const rw = Math.max(3, Math.round(s * (0.13 + vary(l, 10 + i) * 0.1)))
+    const rh = Math.max(3, Math.round(s * (0.14 + vary(l, 20 + i) * 0.14)))
+    const rx = x - half * 0.55 + (i / roofCount) * half * 1.15
+    block(l, rx, crestY - rh, rw / 2, crestY, roof, mix(roof, l.pale, 0.3), l.deep)
+    p.poly([[rx - rw / 2 - 1, crestY - rh], [rx, crestY - rh - rw * 0.5], [rx + rw / 2 + 1, crestY - rh]], mix(roof, l.deep, 0.35))
+  }
+  const keepH = Math.round(s * 0.52)
+  const keepHalf = Math.max(2, Math.round(s * 0.14))
+  block(l, x + half * 0.16, crestY - keepH, keepHalf, crestY, stone, stoneLit, l.dark)
+  battlement(l, Math.round(x + half * 0.16 - keepHalf), Math.round(x + half * 0.16 + keepHalf), crestY - keepH, crestY - keepH + wallH, stone, stoneLit)
+  // The cathedral spire, the tallest thing in the age.
+  const spireH = Math.round(s * 0.72)
+  const spireX = x - half * 0.3
+  block(l, spireX, crestY - spireH * 0.6, Math.max(1, Math.round(s * 0.075)), crestY, stone, stoneLit, l.dark)
+  p.poly([
+    [spireX - s * 0.09, crestY - spireH * 0.6],
+    [spireX, crestY - spireH],
+    [spireX + s * 0.09, crestY - spireH * 0.6]
+  ], mix(roof, l.deep, 0.2))
+  battlement(l, Math.round(x - half * 0.62), Math.round(x + half * 0.72), crestY - wallH, crestY, stone, stoneLit)
+  hang(l, 'light', x + half * 0.16, crestY - keepH - 1, 1.5)
+  hang(l, 'light', spireX, crestY - spireH, 1.2)
+  hang(l, 'smoke', x - half * 0.05, crestY - Math.round(s * 0.2), 1.1)
+}
+
+const cathedral: LandFn = l => {
+  const { p, x, s } = l
+  const stone = mix(l.body, l.pale, 0.35)
+  const stoneLit = mix(l.lit, l.pale, 0.4)
+  const roof = mix(l.dark, l.body, 0.35)
+  const naveH = Math.round(s * 0.44)
+  const naveHalf = Math.max(3, Math.round(s * 0.52))
+  block(l, x, l.y - naveH, naveHalf, l.y, stone, stoneLit, l.dark)
+  p.poly([[x - naveHalf - 1, l.y - naveH], [x, l.y - naveH - s * 0.16], [x + naveHalf + 1, l.y - naveH]], roof)
+  // Two west towers and a crossing spire.
+  for (const side of [-1, 1]) {
+    const tx = x + side * naveHalf * 0.78
+    const th = Math.round(s * (side < 0 ? 0.78 : 0.7))
+    const thalf = Math.max(1, Math.round(s * 0.12))
+    block(l, tx, l.y - th, thalf, l.y, stone, stoneLit, l.dark)
+    p.poly([[tx - thalf - 1, l.y - th], [tx, l.y - th - s * 0.2], [tx + thalf + 1, l.y - th]], roof)
+  }
+  const spireH = Math.round(s * 1.0)
+  p.poly([[x - s * 0.1, l.y - naveH - s * 0.1], [x, l.y - spireH], [x + s * 0.1, l.y - naveH - s * 0.1]], roof)
+  p.fill(x, Math.round(l.y - spireH), 1, Math.round(s * 0.5), stoneLit)
+  hang(l, 'light', x, l.y - spireH, 1.1)
+}
+
+const towerRuin: LandFn = l => {
+  const { p, x, s } = l
+  const stone = mix(l.body, l.pale, 0.3)
+  const stoneLit = mix(l.lit, l.pale, 0.35)
+  const half = Math.max(2, Math.round(s * 0.24))
+  const top = l.y - s
+  block(l, x, top, half, l.y, stone, stoneLit, l.dark)
+  // A broken crown: two teeth of different heights, not a saw.
+  p.fill(x - half, top, Math.round(half * 0.8), Math.max(1, Math.round(s * 0.16)), 0, 0)
+  p.fill(x + Math.round(half * 0.2), top, Math.round(half * 0.6), Math.max(1, Math.round(s * 0.09)), 0, 0)
+  const holes = 2 + Math.floor(vary(l, 1) * 2)
+  for (let i = 0; i < holes; i += 1) {
+    p.fill(x - Math.round(half * 0.3), Math.round(l.y - s * (0.28 + i * 0.24)), Math.max(1, Math.round(half * 0.4)), Math.max(1, Math.round(s * 0.1)), l.deep)
+  }
+}
+
+const windmill: LandFn = l => {
+  const { p, x, s } = l
+  const stone = mix(l.body, l.pale, 0.28)
+  const bodyH = Math.round(s * 0.62)
+  taper(l, x, l.y - bodyH, l.y, s * 0.15, s * 0.24, stone, mix(l.lit, l.pale, 0.35))
+  const capY = l.y - bodyH
+  p.poly([[x - s * 0.19, capY], [x, capY - s * 0.16], [x + s * 0.19, capY]], l.dark)
+  // Four sails as one X, drawn thick enough to survive the distance.
+  const hub = capY - Math.round(s * 0.06)
+  const arm = s * 0.42
+  const t = Math.max(1, Math.round(s * 0.05))
+  p.thickLine(x - arm * 0.72, hub - arm * 0.72, x + arm * 0.72, hub + arm * 0.72, t, l.dark)
+  p.thickLine(x - arm * 0.72, hub + arm * 0.72, x + arm * 0.72, hub - arm * 0.72, t, l.dark)
+}
+
+const curtainWall: LandFn = l => {
+  const { x, s } = l
+  const half = Math.max(6, Math.round(s * 1.5))
+  const stone = mix(l.body, l.pale, 0.3)
+  const stoneLit = mix(l.lit, l.pale, 0.35)
+  const h = Math.max(3, Math.round(s * 0.55))
+  battlement(l, x - half, x + half, l.y - h, l.y, stone, stoneLit)
+  for (const side of [-1, 1]) {
+    const th = Math.round(h * 1.6)
+    block(l, x + side * half, l.y - th, Math.max(2, Math.round(s * 0.18)), l.y, stone, stoneLit, l.dark)
+  }
+}
+
+const pine: LandFn = l => {
+  const { p, x, s } = l
+  const half = Math.max(1, Math.round(s * 0.34))
+  p.fill(x, l.y - Math.round(s * 0.2), 1, Math.round(s * 0.2), l.dark)
+  const tiers = 3
+  for (let i = 0; i < tiers; i += 1) {
+    const t = i / tiers
+    const yb = l.y - s * (0.14 + t * 0.6)
+    const yt = yb - s * 0.4
+    const hw = half * (1 - t * 0.55)
+    p.poly([[x - hw, yb], [x, yt], [x + hw, yb]], i === 0 ? l.body : l.body)
+    p.poly([[x, yb], [x, yt], [x + hw, yb]], l.lit)
+  }
+}
+
+// ── renaissance ──
+
+const domeCity: LandFn = l => {
+  const { p, x, s } = l
+  const stone = mix(l.body, l.pale, 0.42)
+  const stoneLit = mix(l.lit, l.pale, 0.5)
+  const roof = mix(l.dark, l.body, 0.45)
+  const half = Math.max(10, Math.round(s * 1.5))
+  // A low city of flat roofs with one great dome rising out of it.
+  const blocks = 7 + Math.floor(vary(l, 1) * 5)
+  for (let i = 0; i < blocks; i += 1) {
+    const bw = Math.max(3, Math.round(s * (0.12 + vary(l, 10 + i) * 0.14)))
+    const bh = Math.max(3, Math.round(s * (0.1 + vary(l, 20 + i) * 0.2)))
+    const bx = x - half + (i / blocks) * half * 2
+    block(l, bx, l.y - bh, bw / 2, l.y, stone, stoneLit, l.dark)
+    p.fill(Math.round(bx - bw / 2), Math.round(l.y - bh), bw, 1, roof)
+  }
+  const drumH = Math.round(s * 0.34)
+  const domeR = Math.max(4, Math.round(s * 0.42))
+  const drumY = l.y - drumH
+  block(l, x, drumY, domeR * 0.9, l.y, stone, stoneLit, l.dark)
+  p.ellipse(x, drumY, domeR, domeR * 0.98, roof)
+  p.fill(x - domeR, drumY, domeR * 2, 1, stoneLit)
+  // The lit quarter of the dome, and the lantern on top.
+  for (let dy = -domeR; dy <= 0; dy += 1) {
+    for (let dx = 0; dx <= domeR; dx += 1) {
+      if (dx * dx + dy * dy > domeR * domeR) continue
+      const n = (dx * 0.75 - dy * 0.66) / domeR
+      if (n > 0.42) p.set(x + dx, drumY + dy, mix(roof, l.pale, 0.42))
+    }
+  }
+  block(l, x, drumY - domeR - Math.round(s * 0.14), Math.max(1, Math.round(s * 0.05)), drumY - domeR + 1, stoneLit, stoneLit, stone)
+  // A campanile off to one side, so the skyline is not symmetrical.
+  const cx = x + half * (l.flip ? -0.62 : 0.62)
+  const ch = Math.round(s * 0.86)
+  block(l, cx, l.y - ch, Math.max(1, Math.round(s * 0.1)), l.y, stone, stoneLit, l.dark)
+  p.poly([[cx - s * 0.13, l.y - ch], [cx, l.y - ch - s * 0.16], [cx + s * 0.13, l.y - ch]], roof)
+  hang(l, 'light', cx, l.y - ch - 1, 1.2)
+  hang(l, 'smoke', x - half * 0.5, l.y - Math.round(s * 0.3), 1.0)
+}
+
+const aqueduct: LandFn = l => {
+  const { p, x, s } = l
+  const stone = mix(l.body, l.pale, 0.34)
+  const stoneLit = mix(l.lit, l.pale, 0.4)
+  const half = Math.max(10, Math.round(s * 2.1))
+  const deckH = Math.max(2, Math.round(s * 0.12))
+  const arches = Math.max(3, Math.round((half * 2) / Math.max(4, s * 0.52)))
+  const pitch = (half * 2) / arches
+  const pierW = Math.max(2, Math.round(pitch * 0.32))
+  // Lower tier: tall piers carrying the deck.
+  for (let i = 0; i <= arches; i += 1) {
+    const px = x - half + i * pitch
+    block(l, px, l.y - s * 0.72, pierW / 2, l.y, stone, stoneLit, l.dark)
+  }
+  p.fill(x - half - 1, Math.round(l.y - s * 0.72), half * 2 + 2, deckH, stone)
+  p.fill(x - half - 1, Math.round(l.y - s * 0.72), half * 2 + 2, 1, stoneLit)
+  // Upper tier: half as tall, twice as many, which is what an aqueduct does.
+  const upper = arches * 2
+  const upitch = (half * 2) / upper
+  for (let i = 0; i <= upper; i += 1) {
+    const px = x - half + i * upitch
+    block(l, px, l.y - s, Math.max(1, upitch * 0.3) / 2, l.y - s * 0.72, stone, stoneLit, l.dark)
+  }
+  p.fill(x - half - 1, Math.round(l.y - s), half * 2 + 2, Math.max(2, Math.round(deckH * 0.7)), stone)
+  p.fill(x - half - 1, Math.round(l.y - s), half * 2 + 2, 1, stoneLit)
+}
+
+const masts: LandFn = l => {
+  const { p, x, s } = l
+  const ships = 2 + Math.floor(vary(l, 1) * 3)
+  const rope = mix(l.body, l.pale, 0.3)
+  for (let i = 0; i < ships; i += 1) {
+    const sx = x + Math.round((i - (ships - 1) / 2) * s * 0.85)
+    const hullW = Math.max(3, Math.round(s * 0.5))
+    const hullH = Math.max(2, Math.round(s * 0.16))
+    p.poly([
+      [sx - hullW, l.y - hullH],
+      [sx + hullW, l.y - hullH],
+      [sx + hullW * 0.7, l.y],
+      [sx - hullW * 0.7, l.y]
+    ], l.dark)
+    const mh = s * (0.8 + vary(l, 10 + i) * 0.4)
+    p.fill(sx, Math.round(l.y - hullH - mh), 1, Math.round(mh), rope)
+    for (let k = 1; k <= 2; k += 1) {
+      const yy = Math.round(l.y - hullH - mh * (0.4 + k * 0.25))
+      const yw = Math.round(s * 0.22 * (1 - k * 0.25))
+      p.fill(sx - yw, yy, yw * 2, 1, rope)
+    }
+  }
+}
+
+const oak: LandFn = l => {
+  const { p, x, s } = l
+  const cr = Math.max(2, Math.round(s * 0.46))
+  p.fill(x, Math.round(l.y - s * 0.5), Math.max(1, Math.round(s * 0.1)), Math.round(s * 0.5), l.dark)
+  p.ellipse(x, l.y - s * 0.62, cr * 1.15, cr, l.body)
+  p.ellipse(x + cr * 0.4, l.y - s * 0.72, cr * 0.62, cr * 0.55, l.lit)
+}
+
+// ── modern ──
+
+const skyline: LandFn = l => {
+  const { p, x, s } = l
+  const half = Math.max(12, Math.round(s * 1.9))
+  const conc = mix(l.body, l.dark, 0.35)
+  const concLit = l.lit
+  const towers = 9 + Math.floor(vary(l, 1) * 6)
+  for (let i = 0; i < towers; i += 1) {
+    const bw = Math.max(3, Math.round(s * (0.12 + vary(l, 10 + i) * 0.16)))
+    const bh = Math.max(4, Math.round(s * (0.24 + Math.pow(vary(l, 20 + i), 1.6) * 0.9)))
+    const bx = x - half + (i / (towers - 1)) * half * 2
+    block(l, bx, l.y - bh, bw / 2, l.y, conc, concLit, l.deep)
+    // A hint of floors — two dark lines, not a grid.
+    for (let k = 1; k <= 2; k += 1) {
+      p.fill(Math.round(bx - bw / 2), Math.round(l.y - bh * (0.3 + k * 0.26)), bw, 1, l.deep)
+    }
+    if (bh > s * 0.7 && l.anchors) hang(l, 'light', bx, l.y - bh - 1, 1.1)
+  }
+  // Two stacks over the roofline, because a skyline needs something vertical.
+  for (let k = 0; k < 2; k += 1) {
+    const sx = x + half * (k === 0 ? -0.5 : 0.66)
+    const sh = Math.round(s * (1.1 + vary(l, 40 + k) * 0.35))
+    taper(l, sx, l.y - sh, l.y, s * 0.045, s * 0.085, conc, concLit)
+    p.fill(Math.round(sx - s * 0.06), Math.round(l.y - sh), Math.max(2, Math.round(s * 0.12)), Math.max(1, Math.round(s * 0.04)), l.deep)
+    hang(l, 'smoke', sx, l.y - sh, 1.5)
+  }
+}
+
+const coolingTower: LandFn = l => {
+  const { p, x, s } = l
+  const conc = mix(l.body, l.pale, 0.24)
+  const concLit = mix(l.lit, l.pale, 0.3)
+  const top = l.y - s
+  const halfAt = (t: number): number => {
+    // A hyperboloid: wide at the foot, waisted, flaring at the lip.
+    const u = t - 0.72
+    return s * (0.2 + u * u * 0.58)
+  }
+  for (let y = top; y < l.y; y += 1) {
+    const t = (y - top) / Math.max(1, s)
+    const half = halfAt(t)
+    const x0 = Math.round(x - half)
+    const w = Math.max(1, Math.round(half * 2))
+    p.fill(x0, y, w, 1, conc)
+    p.fill(x0 + w - Math.max(1, Math.round(w * 0.3)), y, Math.max(1, Math.round(w * 0.3)), 1, concLit)
+  }
+  // The lip and the shadow inside it.
+  const lip = Math.round(halfAt(0))
+  p.fill(x - lip, top, lip * 2, Math.max(1, Math.round(s * 0.05)), l.deep)
+  p.fill(x - lip, top, lip * 2, 1, concLit)
+  hang(l, 'smoke', x, top, 2.2)
+}
+
+const smokestack: LandFn = l => {
+  const { p, x, s } = l
+  const brick = mix(l.body, l.dark, 0.28)
+  taper(l, x, l.y - s, l.y, s * 0.05, s * 0.1, brick, l.lit)
+  p.fill(Math.round(x - s * 0.07), Math.round(l.y - s), Math.max(2, Math.round(s * 0.14)), Math.max(1, Math.round(s * 0.035)), l.deep)
+  for (let k = 1; k <= 2; k += 1) {
+    p.fill(Math.round(x - s * 0.07), Math.round(l.y - s * (0.4 + k * 0.22)), Math.max(2, Math.round(s * 0.14)), 1, l.deep)
+  }
+  hang(l, 'smoke', x, l.y - s, 1.4)
+  hang(l, 'light', x, l.y - s * 0.94, 0.8)
+}
+
+const gasometer: LandFn = l => {
+  const { p, x, s } = l
+  const half = Math.max(3, Math.round(s * 0.7))
+  const steel = mix(l.body, l.pale, 0.22)
+  block(l, x, l.y - s * 0.8, half, l.y, steel, mix(l.lit, l.pale, 0.28), l.dark)
+  p.ellipse(x, l.y - s * 0.8, half, s * 0.16, mix(steel, l.pale, 0.2))
+  // The lattice cage around it: verticals only, widely spaced.
+  for (let i = -3; i <= 3; i += 1) {
+    const gx = Math.round(x + (i / 3) * half)
+    p.fill(gx, Math.round(l.y - s), 1, Math.round(s), l.deep)
+  }
+  p.fill(x - half, Math.round(l.y - s), half * 2, 1, l.deep)
+}
+
+const crane: LandFn = l => {
+  const { p, x, s } = l
+  const steel = mix(l.body, l.dark, 0.2)
+  const legH = Math.round(s * 0.62)
+  const legHalf = Math.max(2, Math.round(s * 0.34))
+  const dir = l.flip ? -1 : 1
+  for (const side of [-1, 1]) {
+    p.thickLine(x + side * legHalf, l.y, x + side * legHalf * 0.4, l.y - legH, Math.max(1, Math.round(s * 0.055)), steel)
+  }
+  // The A-frame and the jib reaching out over the water.
+  const apex = l.y - s
+  p.thickLine(x - legHalf * 0.4, l.y - legH, x, apex, Math.max(1, Math.round(s * 0.05)), steel)
+  p.thickLine(x + legHalf * 0.4, l.y - legH, x, apex, Math.max(1, Math.round(s * 0.05)), steel)
+  const jib = s * 1.15
+  p.thickLine(x - dir * jib * 0.32, l.y - legH * 1.05, x + dir * jib, l.y - legH * 1.35, Math.max(1, Math.round(s * 0.05)), steel)
+  p.line(x, apex, x + dir * jib, l.y - legH * 1.35, l.dark)
+  p.line(x, apex, x - dir * jib * 0.32, l.y - legH * 1.05, l.dark)
+  p.fill(Math.round(x + dir * jib * 0.75), Math.round(l.y - legH * 1.3), 1, Math.round(s * 0.28), l.deep)
+  hang(l, 'light', x, apex, 0.9)
+  // The searchlight the modern age sweeps across its own sky rides the gantry.
+  hang(l, 'beam', x, apex, 1)
+}
+
+const pylon: LandFn = l => {
+  const { p, x, s } = l
+  const steel = mix(l.body, l.dark, 0.3)
+  const halfBot = Math.max(2, Math.round(s * 0.2))
+  const halfTop = Math.max(1, Math.round(s * 0.07))
+  p.thickLine(x - halfBot, l.y, x - halfTop, l.y - s, 1, steel)
+  p.thickLine(x + halfBot, l.y, x + halfTop, l.y - s, 1, steel)
+  // Cross-arms, widest at the bottom.
+  for (let k = 0; k < 3; k += 1) {
+    const yy = l.y - s * (0.5 + k * 0.21)
+    const aw = s * (0.44 - k * 0.09)
+    p.fill(Math.round(x - aw), Math.round(yy), Math.round(aw * 2), 1, steel)
+    p.set(Math.round(x - aw), Math.round(yy) - 1, steel)
+    p.set(Math.round(x + aw), Math.round(yy) - 1, steel)
+  }
+  // A couple of bracing X's rather than a full lattice.
+  p.line(x - halfBot, l.y, x + halfTop, l.y - s * 0.5, l.dark)
+  p.line(x + halfBot, l.y, x - halfTop, l.y - s * 0.5, l.dark)
+}
+
+const warehouse: LandFn = l => {
+  const { p, x, s } = l
+  const half = Math.max(6, Math.round(s * 1.4))
+  const conc = mix(l.body, l.dark, 0.25)
+  const h = Math.max(3, Math.round(s * 0.5))
+  block(l, x, l.y - h, half, l.y, conc, l.lit, l.deep)
+  // A sawtooth roof: north lights, all facing the same way.
+  const teeth = Math.max(3, Math.round(half / Math.max(3, s * 0.28)))
+  const pitch = (half * 2) / teeth
+  for (let i = 0; i < teeth; i += 1) {
+    const tx = x - half + i * pitch
+    p.poly([
+      [tx, l.y - h],
+      [tx + pitch, l.y - h - s * 0.2],
+      [tx + pitch, l.y - h]
+    ], l.dark)
+    p.fill(Math.round(tx + pitch) - 1, Math.round(l.y - h - s * 0.2), 1, Math.round(s * 0.2), l.lit)
+  }
+}
+
+const wire: LandFn = l => {
+  const { p, x, s } = l
+  const h = Math.max(2, Math.round(s * 0.9))
+  p.fill(x, l.y - h, 1, h, l.dark)
+  const lean = Math.round(s * 0.5)
+  p.line(x, l.y - h, x + lean, l.y - h + Math.round(s * 0.35), l.dark)
+  p.line(x, l.y - h, x - lean, l.y - h + Math.round(s * 0.4), l.dark)
+}
+
+// ── future ──
+
+const arcology: LandFn = l => {
+  const { p, x, s } = l
+  const alloy = mix(l.body, l.pale, 0.3)
+  const alloyLit = mix(l.lit, l.pale, 0.4)
+  const tiers = 5
+  let half = s * 0.62
+  let base = l.y
+  for (let i = 0; i < tiers; i += 1) {
+    const th = s * (0.2 - i * 0.022)
+    block(l, x, base - th, half, base, alloy, alloyLit, l.deep)
+    // A lit deck edge and a row of windows on each terrace.
+    p.fill(Math.round(x - half), Math.round(base - th), Math.round(half * 2), 1, alloyLit)
+    const wins = Math.max(2, Math.round(half / 3))
+    for (let k = 0; k < wins; k += 1) {
+      const wx = Math.round(x - half + 2 + (k / wins) * (half * 2 - 3))
+      p.set(wx, Math.round(base - th * 0.5), l.key)
+    }
+    base -= th
+    half *= 0.66
+  }
+  // The mast: a needle carrying the whole silhouette upward.
+  const mastH = s * 0.5
+  p.fill(x - 1, Math.round(base - mastH), 3, Math.round(mastH), alloy)
+  p.fill(x + 1, Math.round(base - mastH), 1, Math.round(mastH), alloyLit)
+  hang(l, 'light', x, base - mastH, 1.4)
+  hang(l, 'light', x - s * 0.4, l.y - s * 0.16, 1.0)
+}
+
+const orbitalElevator: LandFn = l => {
+  const { p, x, s } = l
+  const alloy = mix(l.body, l.pale, 0.34)
+  const alloyLit = mix(l.lit, l.pale, 0.44)
+  // The anchor station: a broad terraced base.
+  const baseHalf = Math.max(4, Math.round(s * 0.5))
+  block(l, x, l.y - s * 0.22, baseHalf, l.y, alloy, alloyLit, l.deep)
+  block(l, x, l.y - s * 0.4, baseHalf * 0.55, l.y - s * 0.22, alloy, alloyLit, l.deep)
+  // The ribbon: dead straight, thinning, running off the top of the layer.
+  const top = -8
+  const bot = Math.round(l.y - s * 0.4)
+  for (let y = bot; y > top; y -= 1) {
+    const t = (bot - y) / Math.max(1, bot - top)
+    const wdt = Math.max(1, Math.round(3 * (1 - t * 0.6)))
+    p.fill(x - Math.floor(wdt / 2), y, wdt, 1, alloy)
+    p.fill(x - Math.floor(wdt / 2) + wdt - 1, y, 1, 1, alloyLit)
+  }
+  // Climbers on the ribbon: three small lit nodes at different heights.
+  for (let k = 0; k < 3; k += 1) {
+    const cy = Math.round(bot - (bot - top) * (0.16 + k * 0.28))
+    p.fill(x - 2, cy, 5, 3, alloyLit)
+    p.fill(x - 1, cy + 1, 3, 1, l.key)
+  }
+  hang(l, 'beam', x, l.y - s * 0.4, 1)
+  hang(l, 'light', x, l.y - s * 0.42, 1.3)
+}
+
+const spires: LandFn = l => {
+  const { p, x, s } = l
+  const alloy = mix(l.body, l.pale, 0.26)
+  const alloyLit = mix(l.lit, l.pale, 0.36)
+  const count = 3 + Math.floor(vary(l, 1) * 3)
+  for (let i = 0; i < count; i += 1) {
+    const sx = x + Math.round((i - (count - 1) / 2) * s * 0.42)
+    const sh = s * (0.5 + vary(l, 10 + i) * 0.6)
+    const half = Math.max(1, s * 0.06)
+    taper(l, sx, l.y - sh, l.y, half * 0.5, half, alloy, alloyLit)
+    p.fill(Math.round(sx), Math.round(l.y - sh - s * 0.1), 1, Math.round(s * 0.1), alloyLit)
+    if (i % 2 === 0) hang(l, 'light', sx, l.y - sh - s * 0.1, 0.9)
+  }
+}
+
+const habBlock: LandFn = l => {
+  const { p, x, s } = l
+  const alloy = mix(l.body, l.pale, 0.22)
+  const half = Math.max(3, Math.round(s * 0.6))
+  const h = Math.round(s * 0.7)
+  block(l, x, l.y - h, half, l.y, alloy, mix(l.lit, l.pale, 0.3), l.deep)
+  p.ellipse(x, l.y - h, half, s * 0.2, alloy)
+  for (let k = 0; k < 3; k += 1) {
+    for (let i = -2; i <= 2; i += 1) {
+      p.set(Math.round(x + i * (half / 2.6)), Math.round(l.y - h * (0.25 + k * 0.24)), l.key)
+    }
+  }
+}
+
+const dish: LandFn = l => {
+  const { p, x, s } = l
+  const steel = mix(l.body, l.pale, 0.25)
+  p.fill(x, Math.round(l.y - s * 0.55), Math.max(1, Math.round(s * 0.1)), Math.round(s * 0.55), steel)
+  const r = Math.max(3, Math.round(s * 0.5))
+  const cy = Math.round(l.y - s * 0.62)
+  // A dish is a bowl seen edge-on: an ellipse with a bite out of its face.
+  p.ellipse(x, cy, r * 0.72, r, steel)
+  p.ellipse(x - r * 0.2, cy, r * 0.5, r * 0.82, mix(l.lit, l.pale, 0.36))
+  p.fill(x + Math.round(r * 0.5), cy - 1, Math.round(r * 0.5), 2, steel)
+}
+
+const rock: LandFn = l => {
+  const { p, x, s } = l
+  const rx = Math.max(1, Math.round(s * 0.7))
+  const ry = Math.max(1, Math.round(s * 0.45))
+  p.ellipse(x, l.y - ry, rx, ry, l.body)
+  p.ellipse(x + Math.round(rx * 0.3), l.y - ry * 1.3, Math.max(1, Math.round(rx * 0.45)), Math.max(1, Math.round(ry * 0.45)), l.lit)
+}
+
+const LANDMARKS: Record<string, LandFn> = {
+  mesa,
+  peak,
+  volcano,
+  arch: archRock,
+  monolith,
+  ribcage,
+  skull,
+  deadTree,
+  boulder,
+  fern,
+  cragCity,
+  cathedral,
+  towerRuin,
+  windmill,
+  wall: curtainWall,
+  pine,
+  domeCity,
+  aqueduct,
+  masts,
+  oak,
+  skyline,
+  coolingTower,
+  smokestack,
+  gasometer,
+  crane,
+  pylon,
+  warehouse,
+  wire,
+  arcology,
+  elevator: orbitalElevator,
+  spires,
+  hab: habBlock,
+  dish,
+  rock
+}
+
+/** Things that need level ground cut under them before they are drawn. */
 const BUILT = new Set([
-  'peakFort',
-  'castle',
+  'cragCity',
+  'cathedral',
   'towerRuin',
-  'wall',
-  'dome',
-  'cityBlocks',
-  'chimney',
-  'bridge',
   'windmill',
-  'crashedShip',
-  'wreckHull',
+  'wall',
+  'domeCity',
+  'aqueduct',
+  'masts',
+  'skyline',
+  'coolingTower',
+  'smokestack',
+  'gasometer',
+  'crane',
+  'warehouse',
+  'arcology',
+  'elevator',
   'spires',
-  'crate'
+  'hab',
+  'dish',
+  'ribcage'
 ])
 
-/** Things that grow, which have to be sized against the range they stand on. */
-const ORGANIC = new Set(['pine', 'oak', 'deadTree', 'fern', 'bonepile', 'rock'])
+/** How wide a landmark's footprint is, as a multiple of its height. */
+const FOOTPRINT: Record<string, number> = {
+  volcano: 1.75,
+  mesa: 1.05,
+  peak: 1.2,
+  skyline: 1.95,
+  aqueduct: 2.15,
+  domeCity: 1.55,
+  cragCity: 1.3,
+  ribcage: 1.25,
+  masts: 1.4,
+  wall: 1.55,
+  warehouse: 1.45,
+  arcology: 0.7,
+  spires: 0.75,
+  gasometer: 0.75,
+  crane: 0.6,
+  arch: 0.85,
+  monolith: 0.6,
+  cathedral: 0.6,
+  hab: 0.65,
+  elevator: 0.55
+}
 
-/** How many landmarks each range carries, and how tall they run, in art pixels. */
-const CAST_COUNT = [3, 5, 7, 10]
-const CAST_MIN = [26, 24, 18, 12]
-const CAST_MAX = [50, 46, 34, 24]
+/** The five tones and the light colour one range lends to what stands on it. */
+interface LandTones {
+  body: number
+  lit: number
+  dark: number
+  deep: number
+  key: number
+  pale: number
+}
 
 /**
- * One silhouette on the skyline.
- *
- * Everything here is built from the range's own ramp, so a landmark is the same
- * rock as the hill it stands on, only darker — which is what stops it reading
- * as a sticker pasted onto the horizon. Nearer ranges get a lit top and right
- * edge; the far range stays flat, because at that distance nothing has edges.
+ * Draws one landmark, three times, so a shape that crosses the layer's wrap is
+ * continuous instead of clipped in half. Anchors are emitted by the middle copy
+ * only; the live scene wraps their positions itself.
  */
 function drawLandmark(
   p: Pix,
-  kind: string,
-  x: number,
+  w: number,
+  spot: Placement,
+  size: number,
   baseY: number,
-  s: number,
-  r: Ramp,
-  depth: number,
-  glow: number,
-  seed: number,
-  flip: boolean,
-  out: EnvAnchor[]
+  tones: LandTones,
+  d: number,
+  anchors: EnvAnchor[]
 ): void {
-  const rnd = pixelNoise(seed + 17)
-  const body = r[1]
-  const lit = depth === 0 ? r[2] : r[3]
-  const dark = depth === 0 ? r[1] : r[0]
-  const dir = flip ? -1 : 1
-  const S = Math.max(4, s)
-
-  /** A lit block: top and right catch the light, the left falls into shadow. */
-  const blk = (bx: number, by: number, bw: number, bh: number): void => {
-    const X = Math.round(bx)
-    const Y = Math.round(by)
-    const W = Math.max(1, Math.round(bw))
-    const H = Math.max(1, Math.round(bh))
-    p.fill(X, Y, W, H, body)
-    p.fill(X, Y, W, 1, lit)
-    if (H > 2) p.fill(X, Y + 1, 1, H - 1, dark)
-    if (W > 2) p.fill(X + W - 1, Y + 1, 1, H - 1, lit)
-  }
-
-  /** A window, vent or beacon: two pixels of light, with an anchor for the live one. */
-  const spark = (sx: number, sy: number, live: boolean): void => {
-    p.set(Math.round(sx), Math.round(sy), glow)
-    if (live && out.length < 40) {
-      out.push({ kind: 'light', x: Math.round(sx), y: Math.round(sy), scale: depth >= 2 ? 1.4 : 1, phase: rnd(sx | 0, sy | 0) })
-    }
-  }
-
-  const smoke = (sx: number, sy: number, scale: number): void => {
-    out.push({ kind: 'smoke', x: Math.round(sx), y: Math.round(sy), scale, phase: rnd(sx | 0, 3) })
-  }
-
-  switch (kind) {
-    case 'peak': {
-      // A rocky spur breaking the ridgeline. Asymmetric on purpose: a summit
-      // with the same slope on both sides reads as a pyramid, and there are no
-      // pyramids in a mountain range.
-      const half = Math.max(3, Math.round(S * 0.75))
-      const apex = 0.34 + rnd(1, 1) * 0.3
-      for (let i = 0; i <= half * 2; i += 1) {
-        const t = i / (half * 2)
-        const col = Math.round(x - half + i)
-        const side = t < apex ? t / apex : (1 - t) / (1 - apex)
-        const shoulder = Math.pow(side, t < apex ? 0.72 : 1.45)
-        const hgt = Math.round(S * shoulder - rnd(col, 1) * S * 0.14)
-        if (hgt <= 0) continue
-        p.fill(col, baseY - hgt, 1, hgt, t > apex ? r[2] : body)
-        p.set(col, baseY - hgt, t > apex ? lit : dark)
-      }
-      break
-    }
-    case 'volcano': {
-      // A cone with the crater bitten out of the top, glowing inside.
-      const half = Math.max(6, Math.round(S * 1.7))
-      for (let i = -half; i <= half; i += 1) {
-        const t = Math.abs(i) / half
-        // Straight flanks, not a dome: the concave sweep of a shield volcano
-        // rounded off into a mushroom.
-        const hgt = Math.round(S * (1 - Math.pow(t, 1.25)))
-        if (hgt <= 0) continue
-        p.fill(x + i, baseY - hgt, 1, hgt, i > 0 ? r[2] : body)
-        p.set(x + i, baseY - hgt, i > 0 ? lit : dark)
-      }
-      const craterW = Math.max(3, Math.round(S * 0.5))
-      const craterY = baseY - Math.round(S * 0.94)
-      p.fill(x - (craterW >> 1), craterY, craterW, 2, dark)
-      for (let i = 0; i < craterW; i += 1) {
-        if (ditherAt(x + i, craterY, 0.6)) p.set(x - (craterW >> 1) + i, craterY, glow)
-      }
-      // Lava creeping down the lit face.
-      for (let i = 0; i < 3; i += 1) {
-        const lx = x + Math.round((rnd(i, 7) - 0.3) * S * 0.5)
-        let ly = craterY + 2
-        for (let k = 0; k < S * 0.5; k += 1) {
-          if (ditherAt(lx, ly, 0.45)) p.set(lx, ly, glow)
-          ly += 1
-        }
-      }
-      smoke(x, craterY - 1, 1.35)
-      break
-    }
-    case 'peakFort': {
-      // A keep clinging to a summit: a battered wall, a stepped keep and a
-      // watch tower with a pitched roof. Silhouette first — at this distance
-      // the roofline is the only thing that says "fortress" rather than "block".
-      const w = Math.max(6, Math.round(S * 0.9))
-      const wallH = Math.max(3, Math.round(S * 0.34))
-      for (let k = 0; k < wallH; k += 1) {
-        const t = k / wallH
-        const cw = Math.round(w * (0.86 + t * 0.26))
-        p.fill(x - (cw >> 1), baseY - wallH + k, cw, 1, body)
-        p.set(x - (cw >> 1), baseY - wallH + k, dark)
-        if (cw > 2) p.set(x - (cw >> 1) + cw - 1, baseY - wallH + k, lit)
-      }
-      p.fill(x - (w >> 1), baseY - wallH, w, 1, lit)
-      for (let i = 0; i < w; i += 3) p.fill(x - (w >> 1) + i, baseY - wallH - 2, 2, 2, body)
-      const kw = Math.max(3, Math.round(w * 0.42))
-      const kh = Math.round(S * 0.4)
-      const kx = x - (kw >> 1) + dir * Math.round(w * 0.14)
-      blk(kx, baseY - wallH - kh, kw, kh)
-      // Pitched roof on the tower.
-      for (let i = 0; i <= Math.round(kw * 0.7); i += 1) {
-        const rw = kw - i * 2
-        if (rw <= 0) break
-        p.fill(kx + i, baseY - wallH - kh - Math.round(kw * 0.7) + i, rw, 1, i < 2 ? lit : body)
-      }
-      spark(kx + (kw >> 1), baseY - wallH - Math.round(kh * 0.5), depth <= 1)
-      break
-    }
-    case 'castle': {
-      // A curtain wall between two towers, with a gatehouse at the near end.
-      const w = Math.max(8, Math.round(S * 1.5))
-      const wallH = Math.round(S * 0.4)
-      blk(x - (w >> 1), baseY - wallH, w, wallH)
-      for (let i = 0; i < w; i += 4) p.fill(x - (w >> 1) + i, baseY - wallH - 2, 2, 2, body)
-      const towerH = Math.round(S * 0.8)
-      const tw = Math.max(3, Math.round(S * 0.2))
-      for (const side of [-1, 1]) {
-        const tx = x + side * ((w >> 1) - tw)
-        blk(tx, baseY - towerH, tw, towerH)
-        // Conical roof.
-        for (let i = 0; i < Math.round(tw * 0.9); i += 1) {
-          const rw = tw - i * 2
-          if (rw <= 0) break
-          p.fill(tx + i, baseY - towerH - Math.round(tw * 0.9) + i, rw, 1, i < 2 ? lit : body)
-        }
-        spark(tx + (tw >> 1), baseY - towerH + 2, depth >= 1)
-      }
-      for (let i = 0; i < 3; i += 1) spark(x - (w >> 3) + i * 3, baseY - Math.round(wallH * 0.55), false)
-      break
-    }
-    case 'towerRuin': {
-      // Broken off at an angle, with the floors showing through the break.
-      const w = Math.max(3, Math.round(S * 0.36))
-      const h = Math.round(S * 0.95)
-      blk(x - (w >> 1), baseY - h, w, h)
-      // Bite the top corner out, so it reads as broken rather than unfinished.
-      for (let i = 0; i < w; i += 1) {
-        const cut = Math.round((dir > 0 ? i / w : 1 - i / w) * S * 0.3 + rnd(i, 11) * 2)
-        for (let k = 0; k < cut; k += 1) p.set(x - (w >> 1) + i, baseY - h + k, 0, 0)
-        p.set(x - (w >> 1) + i, baseY - h + cut, lit)
-      }
-      for (let fy = baseY - Math.round(h * 0.5); fy < baseY - 2; fy += Math.max(3, Math.round(S * 0.2))) {
-        p.fill(x - (w >> 1) + 1, fy, Math.max(1, w - 2), 1, dark)
-      }
-      if (w >= 4) spark(x, baseY - Math.round(h * 0.42), depth >= 1)
-      // Rubble skirt.
-      for (let i = -w; i <= w; i += 1) {
-        if (rnd(i + 40, 12) < 0.5) continue
-        p.set(x + i, baseY - 1, body)
-      }
-      break
-    }
-    case 'wall': {
-      // A run of collapsed masonry, its top edge chewed away.
-      const w = Math.max(5, Math.round(S * 1.4))
-      const h = Math.round(S * 0.32)
-      for (let i = 0; i < w; i += 1) {
-        const notch = rnd(i, 13) > 0.72 ? Math.round(rnd(i, 14) * h * 0.7) : 0
-        const top = baseY - h + notch
-        p.fill(x - (w >> 1) + i, top, 1, h - notch, body)
-        p.set(x - (w >> 1) + i, top, lit)
-      }
-      for (let i = 2; i < w; i += 4) p.fill(x - (w >> 1) + i, baseY - h + 2, 1, h - 3, dark)
-      break
-    }
-    case 'dome': {
-      // A cathedral: dome, drum and a lantern spire above it.
-      const rx = Math.max(3, Math.round(S * 0.44))
-      const drum = Math.round(S * 0.3)
-      blk(x - rx, baseY - drum, rx * 2, drum)
-      p.ellipse(x, baseY - drum, rx, rx * 0.95, body)
-      p.ellipse(x + rx * 0.22, baseY - drum - rx * 0.16, rx * 0.7, rx * 0.68, r[2])
-      p.ellipse(x + rx * 0.36, baseY - drum - rx * 0.3, rx * 0.3, rx * 0.28, lit)
-      p.fill(x, baseY - drum - Math.round(rx * 1.6), 1, Math.round(rx * 0.6), body)
-      p.set(x, baseY - drum - Math.round(rx * 1.6), lit)
-      for (let i = 0; i < 3; i += 1) spark(x - rx + 2 + i * Math.max(2, rx), baseY - Math.round(drum * 0.5), false)
-      break
-    }
-    case 'cityBlocks': {
-      // A skyline: slabs of different heights, some with their tops blown off.
-      const w = Math.max(8, Math.round(S * 1.9))
-      let cx = x - (w >> 1)
-      let i = 0
-      while (cx < x + (w >> 1)) {
-        const bw = Math.max(2, Math.round(S * (0.14 + rnd(i, 21) * 0.2)))
-        const bh = Math.max(3, Math.round(S * (0.3 + rnd(i, 22) * 0.8)))
-        blk(cx, baseY - bh, bw, bh)
-        if (rnd(i, 23) > 0.62) {
-          // A broken crown on this one.
-          for (let k = 0; k < bw; k += 1) {
-            const cut = Math.round(rnd(cx + k, 24) * S * 0.16)
-            for (let q = 0; q < cut; q += 1) p.set(cx + k, baseY - bh + q, 0, 0)
-          }
-        }
-        if (bw >= 3 && bh >= 6) {
-          for (let wy = baseY - bh + 3; wy < baseY - 2; wy += 3) {
-            for (let wx = cx + 1; wx < cx + bw - 1; wx += 2) {
-              if (rnd(wx, wy) > 0.72) spark(wx, wy, false)
-            }
-          }
-        }
-        if (rnd(i, 25) > 0.7 && bh > S * 0.7) spark(cx + (bw >> 1), baseY - bh - 1, depth <= 2)
-        cx += bw + 1
-        i += 1
-      }
-      if (depth <= 1) smoke(x + Math.round(S * 0.3), baseY - Math.round(S * 0.9), 1)
-      break
-    }
-    case 'chimney': {
-      // A works chimney, tapered, with a smoke plume hanging off it.
-      const h = Math.round(S * 1.1)
-      const wTop = Math.max(2, Math.round(S * 0.1))
-      const wBot = Math.max(3, Math.round(S * 0.2))
-      for (let k = 0; k < h; k += 1) {
-        const t = k / h
-        const cw = Math.round(wTop + (wBot - wTop) * t)
-        p.fill(x - (cw >> 1), baseY - h + k, cw, 1, body)
-        p.set(x - (cw >> 1), baseY - h + k, dark)
-        if (cw > 2) p.set(x - (cw >> 1) + cw - 1, baseY - h + k, lit)
-      }
-      p.fill(x - (wTop >> 1) - 1, baseY - h, wTop + 2, 1, lit)
-      blk(x - Math.round(S * 0.3), baseY - Math.round(S * 0.24), Math.round(S * 0.6), Math.round(S * 0.24))
-      smoke(x, baseY - h, 0.9)
-      break
-    }
-    case 'bridge': {
-      // An aqueduct span: piers under arches, the deck running off both edges.
-      const w = Math.max(10, Math.round(S * 2))
-      const h = Math.round(S * 0.55)
-      p.fill(x - (w >> 1), baseY - h, w, Math.max(2, Math.round(S * 0.1)), body)
-      p.fill(x - (w >> 1), baseY - h, w, 1, lit)
-      const piers = Math.max(2, Math.round(w / Math.max(4, S * 0.4)))
-      for (let i = 0; i <= piers; i += 1) {
-        const px = x - (w >> 1) + Math.round((i * w) / piers)
-        p.fill(px, baseY - h, Math.max(1, Math.round(S * 0.08)), h, body)
-      }
-      break
-    }
-    case 'windmill': {
-      // Tower, cap and four sails caught mid-turn.
-      const h = Math.round(S * 0.62)
-      const w = Math.max(3, Math.round(S * 0.24))
-      for (let k = 0; k < h; k += 1) {
-        const cw = Math.round(w * (0.7 + (k / h) * 0.5))
-        p.fill(x - (cw >> 1), baseY - h + k, cw, 1, body)
-        if (cw > 2) p.set(x - (cw >> 1) + cw - 1, baseY - h + k, lit)
-      }
-      const hubY = baseY - h - 1
-      p.fill(x - (w >> 1) - 1, hubY, w + 2, 2, dark)
-      const arm = Math.max(3, Math.round(S * 0.34))
-      for (let i = 0; i < 4; i += 1) {
-        const a = (i / 4) * Math.PI * 2 + 0.4
-        p.line(x, hubY, x + Math.cos(a) * arm, hubY + Math.sin(a) * arm, body)
-      }
-      break
-    }
-    case 'monolith': {
-      // Standing stones: a trilithon, leaning, with a fallen one beside it.
-      const h = Math.round(S * 0.9)
-      const w = Math.max(2, Math.round(S * 0.16))
-      const gap = Math.max(3, Math.round(S * 0.45))
-      blk(x - gap, baseY - h, w, h)
-      blk(x + gap - w, baseY - Math.round(h * 0.86), w, Math.round(h * 0.86))
-      p.fill(x - gap, baseY - h - Math.max(1, Math.round(S * 0.08)), gap * 2, Math.max(1, Math.round(S * 0.08)), body)
-      p.fill(x - gap, baseY - h - Math.max(1, Math.round(S * 0.08)), gap * 2, 1, lit)
-      if (S > 16) p.fill(x + gap + 2, baseY - Math.round(S * 0.12), Math.round(S * 0.4), Math.round(S * 0.12), body)
-      break
-    }
-    case 'arch': {
-      // A wind-cut rock arch: two thick legs carrying a sagging span.
-      const half = Math.max(4, Math.round(S * 0.62))
-      const h = Math.round(S * 0.9)
-      const leg = Math.max(2, Math.round(S * 0.24))
-      for (const side of [-1, 1]) {
-        const lx = x + side * (half - (leg >> 1))
-        for (let k = 0; k < h; k += 1) {
-          const t = k / h
-          const lw = Math.max(1, Math.round(leg * (0.7 + t * 0.7)))
-          p.fill(lx - (lw >> 1), baseY - h + k, lw, 1, side > 0 ? r[2] : body)
-          p.set(lx - (lw >> 1), baseY - h + k, dark)
-          if (lw > 2) p.set(lx - (lw >> 1) + lw - 1, baseY - h + k, side > 0 ? lit : body)
-        }
-      }
-      const spanH = Math.max(2, Math.round(S * 0.2))
-      for (let i = -half; i <= half; i += 1) {
-        const sag = Math.round(Math.cos((i / half) * 1.3) * spanH * 0.5)
-        p.fill(x + i, baseY - h - sag, 1, spanH, body)
-        p.set(x + i, baseY - h - sag, lit)
-      }
-      break
-    }
-    case 'pylon': {
-      // A lattice pylon: cross-braced, arms out, a lamp on the mast head.
-      const h = Math.round(S * 1.05)
-      const half = Math.max(2, Math.round(S * 0.18))
-      p.line(x - half, baseY, x - 1, baseY - h, body)
-      p.line(x + half, baseY, x + 1, baseY - h, r[2])
-      for (let k = 2; k < h; k += Math.max(2, Math.round(S * 0.14))) {
-        const t = k / h
-        const hw = Math.max(1, Math.round(half * (1 - t)))
-        p.fill(x - hw, baseY - k, hw * 2 + 1, 1, body)
-        p.line(x - hw, baseY - k, x + hw, baseY - k - Math.round(S * 0.12), dark)
-      }
-      for (const arm of [0.62, 0.82]) {
-        const ay = baseY - Math.round(h * arm)
-        const aw = Math.round(S * 0.4)
-        p.fill(x - aw, ay, aw * 2 + 1, 1, body)
-        p.set(x - aw, ay - 1, body)
-        p.set(x + aw, ay - 1, body)
-      }
-      p.fill(x, baseY - h - 2, 1, 2, body)
-      spark(x, baseY - h - 2, true)
-      break
-    }
-    case 'mast': {
-      // A guyed antenna mast with a dish half way up.
-      const h = Math.round(S * 1.25)
-      p.fill(x, baseY - h, 1, h, body)
-      p.set(x, baseY - h, lit)
-      p.line(x, baseY - Math.round(h * 0.82), x - Math.round(S * 0.42), baseY, dark)
-      p.line(x, baseY - Math.round(h * 0.82), x + Math.round(S * 0.42), baseY, dark)
-      for (let k = Math.round(h * 0.2); k < h; k += Math.max(3, Math.round(S * 0.22))) {
-        p.fill(x - 1, baseY - k, 3, 1, body)
-      }
-      p.ellipse(x + 2, baseY - Math.round(h * 0.55), Math.max(1.4, S * 0.1), Math.max(1.4, S * 0.1), body)
-      spark(x, baseY - h, true)
-      out.push({ kind: 'beam', x, y: baseY - h, scale: 1, phase: rnd(x, 32) })
-      break
-    }
-    case 'dish': {
-      // A tracking dish on a stubby pylon.
-      const h = Math.round(S * 0.5)
-      blk(x - 1, baseY - h, 3, h)
-      const rx = Math.max(2, Math.round(S * 0.42))
-      p.ellipse(x, baseY - h - rx * 0.5, rx, rx * 0.85, body)
-      p.eraseEllipse(x - rx * 0.35, baseY - h - rx * 0.55, rx * 0.72, rx * 0.6)
-      p.ellipse(x - rx * 0.1, baseY - h - rx * 0.5, rx * 0.5, rx * 0.45, r[2])
-      spark(x + Math.round(rx * 0.6), baseY - h - Math.round(rx * 0.4), true)
-      out.push({ kind: 'beam', x, y: baseY - h, scale: 0.8, phase: rnd(x, 33) })
-      break
-    }
-    case 'wreckHull': {
-      // An armoured hull, nose down in the dirt, tracks shed behind it.
-      const w = Math.max(6, Math.round(S * 1.3))
-      const h = Math.max(3, Math.round(S * 0.42))
-      const tilt = Math.round(h * 0.7)
-      for (let i = 0; i < w; i += 1) {
-        const t = i / w
-        const top = baseY - h + Math.round(tilt * (dir > 0 ? t : 1 - t))
-        p.fill(x - (w >> 1) + i, top, 1, baseY - top, body)
-        p.set(x - (w >> 1) + i, top, lit)
-      }
-      // Turret, knocked half off.
-      const tw = Math.max(2, Math.round(w * 0.3))
-      blk(x - (tw >> 1) + dir * Math.round(w * 0.1), baseY - h - Math.round(h * 0.6), tw, Math.round(h * 0.6))
-      p.fill(x + dir * Math.round(w * 0.3), baseY - h - Math.round(h * 0.4), Math.round(w * 0.3) * dir || 1, 1, body)
-      if (rnd(x, 41) > 0.5 && depth <= 2) smoke(x, baseY - h - Math.round(h * 0.6), 0.55)
-      break
-    }
-    case 'crashedShip': {
-      // A hull ploughed into the ridge: broken spine, fins up, engines cold.
-      const w = Math.max(14, Math.round(S * 2.4))
-      const h = Math.max(5, Math.round(S * 0.62))
-      const nose = x - dir * (w >> 1)
-      for (let i = 0; i < w; i += 1) {
-        const t = i / w
-        const px = x - (w >> 1) + i
-        const rise = Math.round(h * Math.pow(dir > 0 ? t : 1 - t, 1.6))
-        const thick = Math.max(1, Math.round(h * (0.35 + 0.5 * Math.sin(Math.PI * t))))
-        p.fill(px, baseY - rise - thick, 1, thick + rise, body)
-        p.set(px, baseY - rise - thick, lit)
-      }
-      // A dorsal fin at the high end, and a torn gash in the flank.
-      const finX = x + dir * Math.round(w * 0.28)
-      p.poly(
-        [
-          [finX, baseY - h - Math.round(S * 0.5)],
-          [finX + dir * Math.round(S * 0.34), baseY - h],
-          [finX - dir * Math.round(S * 0.2), baseY - h]
-        ],
-        body
-      )
-      for (let i = 0; i < Math.round(w * 0.3); i += 1) {
-        const gx = x - dir * Math.round(w * 0.1) + i * dir
-        if (rnd(gx, 51) > 0.45) p.set(gx, baseY - Math.round(h * 0.5), dark)
-      }
-      for (let i = 0; i < 4; i += 1) {
-        spark(x - dir * Math.round(w * 0.3) + i * dir * 3, baseY - Math.round(h * 0.75), i === 1)
-      }
-      p.set(nose, baseY - 1, dark)
-      smoke(x + dir * Math.round(w * 0.15), baseY - h - Math.round(S * 0.4), 1.1)
-      break
-    }
-    case 'spires': {
-      // Megastructure: three tapering towers with lit seams up their faces.
-      const count = 3
-      for (let i = 0; i < count; i += 1) {
-        const off = Math.round((i - 1) * S * 0.45)
-        const h = Math.round(S * (0.7 + rnd(i, 61) * 0.75))
-        const w = Math.max(2, Math.round(S * 0.16 * (1 - i * 0.14)))
-        for (let k = 0; k < h; k += 1) {
-          const t = k / h
-          const cw = Math.max(1, Math.round(w * (0.35 + t * 0.75)))
-          p.fill(x + off - (cw >> 1), baseY - h + k, cw, 1, body)
-          if (cw > 2) p.set(x + off - (cw >> 1) + cw - 1, baseY - h + k, lit)
-        }
-        for (let k = 3; k < h - 2; k += 1) {
-          if (ditherAt(x + off, baseY - h + k, 0.5)) p.set(x + off, baseY - h + k, glow)
-        }
-        spark(x + off, baseY - h, i === 1)
-      }
-      break
-    }
-    case 'deadTree': {
-      const h = Math.round(S * 0.8)
-      p.fill(x, baseY - h, 1, h, body)
-      p.set(x, baseY - h, lit)
-      for (let i = 0; i < 4; i += 1) {
-        const by = baseY - Math.round(h * (0.45 + i * 0.16))
-        const reach = Math.round(S * 0.3 * (1 - i * 0.14)) * (i % 2 === 0 ? 1 : -1)
-        p.line(x, by, x + reach, by - Math.round(h * 0.2), body)
-      }
-      break
-    }
-    case 'pine': {
-      const h = Math.round(S * 0.9)
-      p.fill(x, baseY - Math.round(h * 0.2), 1, Math.round(h * 0.2), dark)
-      for (let i = 0; i < h; i += 1) {
-        const half = Math.round((1 - i / h) * S * 0.3)
-        p.fill(x - half, baseY - Math.round(h * 0.2) - i, half * 2 + 1, 1, body)
-        if (half > 0) p.set(x + half, baseY - Math.round(h * 0.2) - i, depth >= 2 ? r[2] : body)
-      }
-      break
-    }
-    case 'oak': {
-      const h = Math.round(S * 0.5)
-      p.fill(x, baseY - h, 1, h, dark)
-      p.ellipse(x, baseY - h - S * 0.28, S * 0.42, S * 0.32, body)
-      p.ellipse(x + S * 0.14, baseY - h - S * 0.36, S * 0.22, S * 0.16, depth >= 2 ? r[2] : body)
-      break
-    }
-    case 'fern': {
-      for (let i = -2; i <= 2; i += 1) {
-        p.line(x, baseY, x + i * S * 0.28, baseY - S * (0.75 - Math.abs(i) * 0.12), body)
-      }
-      break
-    }
-    case 'bonepile': {
-      p.ellipse(x, baseY, S * 0.5, S * 0.22, body)
-      for (let i = 0; i < 3; i += 1) {
-        const bx = x + Math.round((rnd(i, 71) - 0.5) * S)
-        p.line(bx, baseY, bx + Math.round((rnd(i, 72) - 0.5) * S * 0.7), baseY - Math.round(S * 0.6), r[2])
-      }
-      break
-    }
-    case 'crate': {
-      const w = Math.max(3, Math.round(S * 0.7))
-      const h = Math.max(2, Math.round(S * 0.5))
-      blk(x - (w >> 1), baseY - h, w, h)
-      p.line(x - (w >> 1), baseY - h, x - (w >> 1) + w - 1, baseY - 1, dark)
-      if (rnd(x, 81) > 0.5) blk(x - (w >> 1) + Math.round(w * 0.5), baseY - h - Math.round(h * 0.7), Math.round(w * 0.6), Math.round(h * 0.7))
-      break
-    }
-    case 'wire': {
-      // Barbed wire on stakes: two sagging strands with barbs on them.
-      const span = Math.max(6, Math.round(S * 1.6))
-      const h = Math.round(S * 0.6)
-      for (const px of [x - (span >> 1), x + (span >> 1)]) {
-        p.fill(px, baseY - h, 1, h, body)
-        p.line(px, baseY - h, px + Math.round(S * 0.2), baseY, dark)
-      }
-      for (let i = 0; i <= span; i += 1) {
-        const t = i / span
-        const sag = Math.sin(t * Math.PI) * S * 0.16
-        const yy = Math.round(baseY - h + sag)
-        p.set(x - (span >> 1) + i, yy, body)
-        p.set(x - (span >> 1) + i, Math.round(yy + h * 0.4 + sag * 0.3), body)
-        if (i % 5 === 2) {
-          p.set(x - (span >> 1) + i, yy - 1, body)
-          p.set(x - (span >> 1) + i, yy + 1, body)
-        }
-      }
-      break
-    }
-    case 'rock':
-    default: {
-      const rx = Math.max(1.5, S * 0.42)
-      p.ellipse(x, baseY, rx, rx * 0.62, body)
-      p.ellipse(x + rx * 0.24, baseY - rx * 0.2, rx * 0.5, rx * 0.3, depth === 0 ? body : r[2])
-      break
-    }
+  const fn = LANDMARKS[spot.kind]
+  if (!fn) return
+  for (const off of [-w, 0, w]) {
+    fn({
+      p,
+      x: spot.x + off,
+      y: baseY,
+      s: size,
+      body: tones.body,
+      lit: tones.lit,
+      dark: tones.dark,
+      deep: tones.deep,
+      key: tones.key,
+      pale: tones.pale,
+      seed: spot.seed,
+      flip: spot.flip,
+      d,
+      anchors: off === 0 ? anchors : null
+    })
   }
 }
 
 // ──────────────────────────── The sky ────────────────────────────
 
 /**
- * The sky for one age: a stepped gradient, a baked glow around the sun, a star
- * field, and one atmospheric feature that belongs to the age.
+ * Where the sky finishes arriving at its horizon colour.
  *
- * The glow is baked into the sky rather than added as a sprite because a glow
- * sprite is an alpha gradient, and an alpha gradient over a dithered sky is the
- * one thing that would give the whole picture away. Quantised into steps with
- * dithered joins, the sun brightens the air around it without a single soft
- * edge anywhere.
+ * *Not* where the ground plane's horizon is. Arriving at the horizon colour on
+ * the ground line puts the entire glow behind the four ranges, where nobody
+ * can ever see it, and leaves the far range standing against the dim middle of
+ * the gradient with nothing between them. The glow has to be finished *above*
+ * the skyline — a little over the top of the far range's crest window — so
+ * that what the mountains are actually silhouetted against is the bright part.
+ */
+const SKY_GLOW_FRAC = 0.3
+
+/**
+ * The sky.
+ *
+ * A big flat gradient field, quantised into broad bands of solid colour with a
+ * short dithered join between each pair. That is the whole trick: the old sky
+ * dithered *everywhere*, which laid a checkerboard film over the entire frame
+ * and read as haze. Here two thirds of every band is one untouched colour, the
+ * joins wander by a few pixels so no boundary is a ruled line, and the eye
+ * reads a painted sky rather than a screen door.
  */
 export function envSkyPix(age: number, worldW: number, worldH: number): Pix {
   const t = theme(age)
   const w = A(worldW)
   const h = A(worldH)
   const p = new Pix(w, h)
-  const [top, midC, low] = t.sky
-  const glowC = mix(t.sun, low, 0.25)
+  const horizon = skyHorizon(age)
+  const stops: readonly (readonly [number, number])[] = [
+    [0, t.sky[0]],
+    [0.11, t.sky[1]],
+    [SKY_GLOW_FRAC, horizon],
+    [1, horizon]
+  ]
+  const colourAt = (tt: number): number => {
+    for (let i = 1; i < stops.length; i += 1) {
+      if (tt <= stops[i][0] || i === stops.length - 1) {
+        const u = Math.min(1, Math.max(0, (tt - stops[i - 1][0]) / Math.max(1e-6, stops[i][0] - stops[i - 1][0])))
+        return mix(stops[i - 1][1], stops[i][1], u)
+      }
+    }
+    return horizon
+  }
+
+  const STEPS = 44
+  const levels: number[] = []
+  for (let i = 0; i <= STEPS + 1; i += 1) levels.push(colourAt(i / STEPS))
+
+  // The band edges are not level. A gradient quantised on a flat row draws
+  // thirty perfectly horizontal rules across the picture; a few pixels of
+  // low-frequency wander makes them air.
+  const wob = wrapNoise(age * 17 + 3, w, 3, 2, 0.5)
+  const wob2 = wrapNoise(age * 23 + 11, w, 7, 2, 0.5)
+  const glowC = mix(horizon, t.sun, 0.55)
   const sunAt = ENV_SUN_POS[Math.max(0, Math.min(ENV_SUN_POS.length - 1, age))]
   const sunX = sunAt[0] * w
   const sunY = sunAt[1] * h
-  const glowR = h * 0.86
+  const glowR = h * 0.78
 
-  for (let y = 0; y < h; y += 1) {
-    const tt = y / (h - 1)
-    const local = tt < 0.55 ? tt / 0.55 : (tt - 0.55) / 0.45
-    const from = tt < 0.55 ? top : midC
-    const to = tt < 0.55 ? midC : low
-    const steps = 18
-    const scaled = local * steps
-    const step = Math.floor(scaled)
-    const a = mix(from, to, Math.min(1, step / steps))
-    const b = mix(from, to, Math.min(1, (step + 1) / steps))
-    for (let x = 0; x < w; x += 1) {
-      let c = ditherAt(x, y, scaled % 1) ? b : a
-      // Sun glow: six quantised rings, each boundary dithered.
-      const d = Math.hypot((x - sunX) * 0.92, y - sunY) / glowR
-      if (d < 1) {
-        const strength = (1 - d) * (1 - d) * 5.6
-        const level = Math.floor(strength) + (ditherAt(x, y, strength % 1) ? 1 : 0)
-        if (level > 0) c = mix(c, glowC, Math.min(0.72, level * 0.115))
+  for (let x = 0; x < w; x += 1) {
+    const shift = (wob(x) - 0.5) * 5 + (wob2(x) - 0.5) * 2
+    for (let y = 0; y < h; y += 1) {
+      const tt = Math.min(1, Math.max(0, (y + shift) / (h - 1)))
+      const q = tt * STEPS
+      const k = Math.floor(q)
+      const f = q - k
+      // Flat, flat, and a narrow dithered join in between.
+      const join = f < 0.34 ? 0 : f > 0.68 ? 1 : (f - 0.34) / 0.34
+      let c = join <= 0 ? levels[k] : join >= 1 ? levels[k + 1] : ditherAt(x, y, join) ? levels[k + 1] : levels[k]
+
+      // The glow around the sun, in eight small steps rather than four large
+      // ones. A big step in a radial ramp draws a visible arc across the sky,
+      // and four of them read as a target painted behind the sun.
+      const dd = Math.hypot((x - sunX) * 0.94, y - sunY) / glowR
+      if (dd < 1) {
+        const strength = Math.pow(1 - dd, 2.1) * 8
+        const lv = Math.floor(strength)
+        const fr = strength - lv
+        const edge = fr < 0.3 ? 0 : fr > 0.72 ? 1 : (fr - 0.3) / 0.42
+        const level = lv + (edge <= 0 ? 0 : edge >= 1 ? 1 : ditherAt(x, y, edge) ? 1 : 0)
+        if (level > 0) c = mix(c, glowC, Math.min(0.5, level * 0.062))
       }
       p.set(x, y, c)
     }
   }
 
-  // Stars, only where the sky is genuinely dark, and brighter the higher they
-  // are. Baked into the sky so the cloud banks in front of them occlude them.
+  skyFeature(p, age, w, h, horizon)
+
+  // Stars, only where the sky is genuinely dark. Baked in, so the cloud banks
+  // in front of them occlude them.
   const stars = pixelNoise(age * 313 + 91)
-  for (let y = 0; y < h * 0.8; y += 1) {
+  for (let y = 0; y < h * 0.72; y += 1) {
     for (let x = 0; x < w; x += 1) {
-      const here = p.get(x, y) & 0xffffff
-      const dark = 1 - Math.min(1, lum(here) / 120)
-      if (dark <= 0.05) continue
+      const here = rgbOf(p.get(x, y))
+      const dark = 1 - Math.min(1, lum(here) / 82)
+      if (dark <= 0.06) continue
       const n = stars(x, y)
-      const fall = 1 - y / (h * 0.8)
-      if (n > 0.9988) {
-        p.set(x, y, mix(here, 0xffffff, 0.85 * dark * (0.35 + fall * 0.65)))
-        // A handful get a cross of dimmer pixels, so the field has a few
-        // genuine stars in it rather than a uniform sprinkle.
-        if (n > 0.99975) {
-          const halo = mix(here, 0xffffff, 0.4 * dark)
+      const fall = 1 - y / (h * 0.72)
+      if (n > 0.99915) {
+        p.set(x, y, mix(here, 0xffffff, 0.9 * dark * (0.4 + fall * 0.6)))
+        if (n > 0.99982) {
+          const halo = mix(here, 0xffffff, 0.42 * dark)
           p.set(x - 1, y, halo)
           p.set(x + 1, y, halo)
           p.set(x, y - 1, halo)
           p.set(x, y + 1, halo)
         }
-      } else if (n > 0.995) {
-        p.set(x, y, mix(here, 0xffffff, 0.34 * dark * fall))
+      } else if (n > 0.9962) {
+        p.set(x, y, mix(here, 0xffffff, 0.4 * dark * fall))
       }
     }
   }
+  return p
+}
 
-  // One thing per age that the sky itself does.
-  const feature = pixelNoise(age * 77 + 5)
+/**
+ * A long flat bank of high cloud lying across the sky.
+ *
+ * Tapered at both ends, wavering along its length and torn into it, because a
+ * perfect horizontal lens repeated five times is a set of venetian blinds. Used
+ * by the two ages whose air is full of something.
+ */
+function stratum(
+  p: Pix,
+  w: number,
+  seed: number,
+  cx: number,
+  cy: number,
+  half: number,
+  thick: number,
+  body: number,
+  lit: number
+): void {
+  const wave = wrapNoise(seed, w, 5, 2, 0.5)
+  const tear = wrapNoise(seed + 17, w, 30, 2, 0.5)
+  for (let off = -w; off <= w; off += w) {
+    for (let dx = -half; dx <= half; dx += 1) {
+      const xx = Math.round(cx + dx + off)
+      if (xx < 0 || xx >= w) continue
+      const u = Math.abs(dx) / half
+      const gap = tear(xx)
+      if (gap < 0.34 - (1 - u) * 0.26) continue
+      const hh = Math.round(thick * (1 - u * u) * (0.4 + gap * 1.2))
+      if (hh <= 0) continue
+      const yy = Math.round(cy + (wave(xx) - 0.5) * thick * 5)
+      p.fill(xx, yy - hh, 1, hh * 2, body)
+      p.fill(xx, yy - hh, 1, 1, lit)
+    }
+  }
+}
+
+/** One deliberate thing per age that the sky itself does. */
+function skyFeature(p: Pix, age: number, w: number, h: number, horizon: number): void {
+  const t = theme(age)
   switch (age) {
     case 0: {
-      // Volcanic murk hanging along the horizon.
-      const murk = mix(t.fog, 0x000000, 0.35)
-      for (let y = Math.round(h * 0.58); y < h; y += 1) {
-        const tt = (y - h * 0.58) / (h * 0.42)
-        for (let x = 0; x < w; x += 1) {
-          if (ditherAt(x, y, Math.sin(tt * Math.PI) * 0.42)) p.set(x, y, mix(p.get(x, y) & 0xffffff, murk, 0.5))
-        }
+      // Volcanic ash drawn out into long streamers by the wind. Flat, tapered,
+      // and well clear of the horizon, so the glow the ranges stand against
+      // stays open beneath them.
+      const ash = mix(t.sky[1], 0x000000, 0.2)
+      const ashLit = mix(ash, t.sun, 0.4)
+      const n0 = pixelNoise(701)
+      for (let i = 0; i < 5; i += 1) {
+        stratum(
+          p,
+          w,
+          701 + i * 13,
+          n0(i, 3) * w,
+          h * (0.11 + i * 0.038 + n0(i, 1) * 0.02),
+          w * (0.13 + n0(i, 2) * 0.15),
+          h * (0.006 + n0(i, 4) * 0.01),
+          ash,
+          ashLit
+        )
+      }
+      break
+    }
+    case 1: {
+      // A warm shelf of air lying on the horizon — the one thing a clear day
+      // has that a flat gradient does not.
+      const warm = mix(horizon, t.sun, 0.3)
+      const edge = wrapNoise(811, w, 6, 3, 0.5)
+      for (let x = 0; x < w; x += 1) {
+        const y0 = Math.round(h * 0.455 + edge(x) * h * 0.028)
+        const y1 = Math.round(h * 0.53)
+        p.fill(x, y0 + 4, 1, y1 - y0 - 4, warm)
+        for (let k = 0; k < 5; k += 1) if (ditherAt(x, y0 + k, k / 5)) p.set(x, y0 + k, warm)
       }
       break
     }
     case 2: {
-      // An overcast ceiling pressing down from the top of the frame.
-      const lid = mix(t.sky[0], 0x000000, 0.3)
-      const shape = wrapNoise(age * 13 + 1, w, 5, 3)
+      // An overcast lid pressing down from the top of the frame, with a lobed
+      // lower edge rather than a straight one.
+      const lid = mix(t.sky[0], 0x000000, 0.22)
+      const lidLit = mix(lid, t.sun, 0.24)
+      // A fractal lower edge. Circular lobes give a scalloped hem, which is
+      // bunting; real cloud base is irregular at every scale at once, and four
+      // octaves of periodic noise is exactly that.
+      const coarse = wrapNoise(907, w, 3, 2, 0.5)
+      const fine = wrapNoise(911, w, 11, 4, 0.55)
       for (let x = 0; x < w; x += 1) {
-        const edge = h * (0.1 + shape(x) * 0.14)
-        for (let y = 0; y < edge + 12; y += 1) {
-          const tt = 1 - Math.max(0, (y - edge) / 12)
-          if (ditherAt(x, y, tt * 0.9)) p.set(x, y, mix(p.get(x, y) & 0xffffff, lid, 0.6))
-        }
+        const y1 = Math.round(h * (0.09 + coarse(x) * 0.16 + (fine(x) - 0.5) * 0.06))
+        p.fill(x, 0, 1, y1, lid)
+        p.fill(x, Math.max(0, y1 - Math.round(h * 0.025)), 1, Math.round(h * 0.025), lidLit)
       }
       break
     }
     case 3: {
-      // Smog: horizontal banding low in the sky.
-      for (let y = Math.round(h * 0.44); y < h; y += 1) {
-        const band = 0.3 + Math.sin(y * 0.42) * 0.16
-        for (let x = 0; x < w; x += 1) {
-          if (ditherAt(x, y, band * 0.5)) p.set(x, y, mix(p.get(x, y) & 0xffffff, t.fog, 0.22))
-        }
+      // Smog: three long strata of denser air, tapered at both ends.
+      const smog = mix(t.fog, t.sky[1], 0.34)
+      const smogLit = mix(smog, t.sun, 0.22)
+      const n = pixelNoise(1009)
+      for (let i = 0; i < 5; i += 1) {
+        stratum(
+          p,
+          w,
+          1009 + i * 11,
+          n(i, 3) * w,
+          h * (0.17 + i * 0.04 + n(i, 1) * 0.02),
+          w * (0.18 + n(i, 2) * 0.18),
+          h * (0.005 + n(i, 4) * 0.009),
+          smog,
+          smogLit
+        )
       }
       break
     }
     case 4: {
-      // A shattered orbital ring arcing across the whole sky, and a nebula.
-      const ringC = mix(t.fog, 0xffffff, 0.45)
-      for (let x = 0; x < w; x += 1) {
-        const yy = h * 0.34 - Math.sin((x / w) * Math.PI * 0.86 + 0.3) * h * 0.2
-        const thick = 1 + Math.round(Math.sin((x / w) * Math.PI) * 2)
-        for (let k = 0; k < thick; k += 1) {
-          const gapped = feature(x >> 3, k) > 0.12
-          if (!gapped) continue
-          if (ditherAt(x, Math.round(yy) + k, 0.85 - k * 0.2)) {
-            p.set(x, Math.round(yy) + k, mix(p.get(x, Math.round(yy) + k) & 0xffffff, ringC, 0.75))
-          }
+      // The planet's own ring, seen edge-on from its surface: a broad banded
+      // arc across the whole sky. This is the age's biggest single shape and it
+      // is drawn flat, in four solid values, with no dither in it at all.
+      const cxr = w * 0.5
+      const cyr = h * 2.62
+      const R = h * 2.35
+      const bands: readonly (readonly [number, number, number])[] = [
+        [0, 5, 0.3],
+        [6, 15, 0.62],
+        [17, 22, 0.4],
+        [25, 30, 0.16]
+      ]
+      const nebC = mix(t.sky[1], t.sun, 0.55)
+      const neb = smoothNoise2(913)
+      for (let y = 0; y < h * 0.62; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+          const v = neb(x * 0.013, y * 0.021)
+          if (v > 0.7) p.set(x, y, mix(rgbOf(p.get(x, y)), nebC, v > 0.775 ? 0.2 : 0.1))
         }
       }
-      const neb = smoothNoise2(age * 91 + 3)
-      const nebC = mix(t.fog, 0xffffff, 0.2)
-      for (let y = 0; y < h * 0.6; y += 1) {
-        for (let x = 0; x < w; x += 1) {
-          const v = neb(x * 0.02, y * 0.03)
-          if (v > 0.62 && ditherAt(x, y, (v - 0.62) * 2.4)) {
-            p.set(x, y, mix(p.get(x, y) & 0xffffff, nebC, 0.3))
-          }
+      for (let x = 0; x < w; x += 1) {
+        const dx = x - cxr
+        const inner = Math.sqrt(Math.max(0, R * R - dx * dx))
+        for (const [a, b, k] of bands) {
+          const y0 = Math.round(cyr - inner - b)
+          const y1 = Math.round(cyr - inner - a)
+          const c = mix(t.sky[1], mix(t.sun, 0xffffff, 0.5), k)
+          for (let y = y0; y < y1; y += 1) if (y >= 0 && y < h) p.set(x, y, c)
         }
       }
       break
@@ -1090,67 +1597,96 @@ export function envSkyPix(age: number, worldW: number, worldH: number): Pix {
     default:
       break
   }
-  return p
 }
 
-/** The sun or moon: a hard disc, a banded corona and a few glare spikes. */
+/**
+ * The sun, the moon or whatever else this age hangs in its sky.
+ *
+ * One hard disc and a corona of three or four solid rings. The rings are
+ * quantised and their joins dithered over a couple of pixels, so the body has
+ * weight and glare without a soft edge anywhere on it.
+ */
 export function envCelestialPix(age: number): Pix {
   const t = theme(age)
   const moon = age === 4
-  const r = moon ? 13 : 15
-  const size = r * 2 + 40
+  const r = [27, 20, 23, 18, 22][Math.max(0, Math.min(4, age))]
+  const pad = Math.round(r * 2.6)
+  const size = r * 2 + pad * 2
   const p = new Pix(size, size)
   const c = size / 2
-  const core = mix(t.sun, 0xffffff, moon ? 0.1 : 0.4)
+  const core = mix(t.sun, 0xffffff, moon ? 0.12 : 0.45)
   const rim = t.sun
-  const halo = mix(t.sun, t.sky[1], 0.45)
+  const halo = mix(t.sun, skyHorizon(age), 0.45)
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const d = Math.hypot(x - c, y - c)
       if (d <= r) {
-        p.set(x, y, d > r - 1.6 ? rim : core)
-      } else {
-        const fall = Math.max(0, 1 - (d - r) / (size / 2 - r))
-        const scaled = fall * fall * 3.4
-        const level = Math.floor(scaled) + (ditherAt(x, y, scaled % 1) ? 1 : 0)
-        if (level > 0) p.set(x, y, level > 2 ? rim : halo)
+        p.set(x, y, d > r - Math.max(1.5, r * 0.11) ? rim : core)
+        continue
       }
+      // The corona is drawn in *alpha*, not in opaque tones. A halo painted as
+      // solid colour has to guess the sky behind it, and on the ages whose sun
+      // hangs in a dark zenith that guess is a bright disc — the fried egg the
+      // first pass produced. Six quantised alpha steps composite against
+      // whatever sky is actually there.
+      const fall = Math.max(0, 1 - (d - r) / (size / 2 - r))
+      const scaled = Math.pow(fall, 1.5) * 6
+      const lv = Math.floor(scaled)
+      const fr = scaled - lv
+      const edge = fr < 0.32 ? 0 : fr > 0.72 ? 1 : (fr - 0.32) / 0.4
+      const level = lv + (edge <= 0 ? 0 : edge >= 1 ? 1 : ditherAt(x, y, edge) ? 1 : 0)
+      if (level > 0) p.set(x, y, mix(halo, rim, Math.min(1, level / 5)), Math.min(230, level * 36))
     }
   }
+
   if (moon) {
-    // Craters, then a bite out of the limb so it reads as a phase.
+    // Craters, then a terminator, so it reads as a body and not a lamp.
     const n = pixelNoise(4001)
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       const a = n(i, 1) * Math.PI * 2
-      const rr = n(i, 2) * r * 0.6
-      p.ellipse(c + Math.cos(a) * rr, c + Math.sin(a) * rr, 1 + n(i, 3) * 2, 1 + n(i, 3) * 1.6, mix(core, t.sky[1], 0.42))
+      const rr = n(i, 2) * r * 0.66
+      p.ellipse(c + Math.cos(a) * rr, c + Math.sin(a) * rr, 1.5 + n(i, 3) * 3, 1.2 + n(i, 3) * 2.4, mix(core, halo, 0.5))
     }
     for (let y = 0; y < size; y += 1) {
       for (let x = 0; x < size; x += 1) {
         if (Math.hypot(x - c, y - c) > r) continue
-        if (Math.hypot(x - (c - r * 0.62), y - (c - r * 0.16)) < r * 0.94) p.set(x, y, mix(halo, t.sky[0], 0.55))
+        if (Math.hypot(x - (c - r * 1.08), y - (c - r * 0.2)) < r * 1.02) p.set(x, y, mix(core, t.sky[0], 0.55))
       }
     }
-  } else {
-    // Glare: four short spikes, dithered so they do not read as a cross.
+  } else if (age === 0) {
+    // A low sun with two bars of haze lying across it: the single cheapest
+    // thing that says "this is the horizon and the air is thick".
+    const bar = mix(rim, t.sky[1], 0.55)
+    for (let k = 0; k < 2; k += 1) {
+      p.fill(c - r, c - r * (0.12 - k * 0.42), r * 2, Math.max(2, Math.round(r * 0.13)), bar)
+    }
+  } else if (age !== 2) {
+    // Glare: four short spikes, dithered out, only on the ages with a clear sky.
     for (let i = 0; i < 4; i += 1) {
       const dx = i < 2 ? (i === 0 ? 1 : -1) : 0
       const dy = i < 2 ? 0 : i === 2 ? 1 : -1
       for (let k = r; k < size / 2 - 1; k += 1) {
         const strength = 1 - (k - r) / (size / 2 - r)
-        if (ditherAt(c + dx * k, c + dy * k, strength * strength * 1.4)) {
-          p.set(c + dx * k, c + dy * k, rim)
-        }
+        if (ditherAt(c + dx * k, c + dy * k, strength * strength * 1.5)) p.set(c + dx * k, c + dy * k, rim)
       }
     }
   }
   return p
 }
 
+// ──────────────────────────── Cloud ────────────────────────────
+
 /**
- * A cloud bank, authored to tile: every lump is drawn twice where it crosses
- * the wrap, so there is no seam however far the bank drifts.
+ * A cloud bank, drawn as shapes rather than as a density field.
+ *
+ * Cumulus is a stack of lobes with a *flat* base and a lit crown; cirrus is a
+ * thin lens with torn ends. Both are painted in three solid values with hard
+ * boundaries — the boundary between a lit lobe and a shaded one is a curve, and
+ * a curve drawn as a curve reads better than a curve implied by dithering.
+ *
+ * Everything is drawn three times, at `x - w`, `x` and `x + w`, so the bank
+ * drifts forever without a seam.
  */
 export function envCloudPix(age: number, tier: 0 | 1, worldW: number, worldH: number): Pix {
   const t = theme(age)
@@ -1158,86 +1694,109 @@ export function envCloudPix(age: number, tier: 0 | 1, worldW: number, worldH: nu
   const h = A(worldH)
   const p = new Pix(w, h)
   const overcast = age === 2 || age === 3
-  const bodyC = mix(t.fog, t.sky[1], tier === 0 ? 0.6 : 0.34)
-  const litC = mix(bodyC, keyLight(age), tier === 0 ? 0.3 : 0.5)
-  const darkC = mix(bodyC, t.sky[0], 0.42)
-  const n = pixelNoise(age * 401 + tier * 7)
-  // Periodic in x, because the cloud banks drift for the whole match and their
-  // wrap *will* cross the screen. A lump drawn on both sides of the wrap has to
-  // have the same torn edge on both sides or a seam walks past the camera every
-  // few minutes.
-  const field = wrapNoise(age * 53 + tier * 11, w, 48, 3, 0.55)
+  const horizon = skyHorizon(age)
+  const body = mix(horizon, t.sky[1], tier === 0 ? 0.3 : 0.16)
+  const lit = mix(body, keyLight(age), tier === 0 ? 0.4 : 0.55)
+  const shade = mix(body, t.sky[1], 0.62)
+  const deep = mix(shade, t.sky[0], 0.4)
+  const n = pixelNoise(age * 401 + tier * 7 + 3)
 
-  const stamp = (cx: number, cy: number, rx: number, ry: number, wobble: number): void => {
-    for (let off = -w; off <= w; off += w) {
-      const ox = cx + off
-      if (ox + rx < 0 || ox - rx > w) continue
-      for (let y = Math.max(0, Math.floor(cy - ry - 2)); y < Math.min(h, Math.ceil(cy + ry + 2)); y += 1) {
-        for (let x = Math.max(0, Math.floor(ox - rx - 2)); x < Math.min(w, Math.ceil(ox + rx + 2)); x += 1) {
-          const dx = (x - ox) / rx
-          const dy = (y - cy) / ry
-          const d = Math.hypot(dx, dy)
-          const edge = 1 + (field(x + y * 2.7) - 0.5) * wobble
-          if (d > edge) continue
-          const core = 1 - d / edge
-          if (core < 0.24 && !ditherAt(x, y, core * 3.4)) continue
-          // Lit on the top and the right, shadowed underneath: the same key
-          // light as every other thing in the game.
-          const up = (cy - y) / ry
-          const right = (x - ox) / rx
-          const litness = up * 0.7 + right * 0.4
-          let c = bodyC
-          if (litness > 0.34) c = ditherAt(x, y, (litness - 0.34) * 2) ? litC : bodyC
-          else if (litness < -0.1) c = ditherAt(x, y, (-litness - 0.1) * 1.7) ? darkC : bodyC
-          p.set(x, y, c)
+  if (tier === 1) {
+    const count = overcast ? 9 : 7
+    for (let i = 0; i < count; i += 1) {
+      const cx = ((i + n(i, 1) * 0.75) * w) / count
+      const baseY = Math.round(h * (0.5 + n(i, 2) * 0.36))
+      const scale = h * (0.13 + n(i, 3) * 0.11)
+      const spanX = Math.round(scale * (1.5 + n(i, 4) * 1.4))
+      const lobeCount = 3 + Math.floor(n(i, 5) * 4)
+      const lobes: { x: number; y: number; r: number }[] = []
+      for (let k = 0; k < lobeCount; k += 1) {
+        const u = lobeCount === 1 ? 0 : k / (lobeCount - 1) - 0.5
+        lobes.push({
+          x: u * spanX * 1.5 + (n(i, 10 + k) - 0.5) * spanX * 0.24,
+          // The tallest lobe sits off centre. A symmetrical pile reads as a bun.
+          y: -scale * (0.45 + Math.pow(Math.sin((k + 0.7) * 1.9) * 0.5 + 0.5, 1.2) * 0.85 + n(i, 20 + k) * 0.2),
+          r: scale * (0.55 + n(i, 30 + k) * 0.4) * (1 - Math.abs(u) * 0.42)
+        })
+      }
+      // The silhouette first, as the upper envelope of the lobes. Filling each
+      // lobe on its own leaves daylight between them and the cloud reads as a
+      // bag of circles; one envelope with one flat base reads as weather.
+      const reach = spanX + scale * 2
+      const top = new Float64Array(reach * 2 + 1).fill(baseY + 1)
+      for (const lb of lobes) {
+        for (let dx = Math.ceil(lb.x - lb.r); dx <= Math.floor(lb.x + lb.r); dx += 1) {
+          const idx = dx + reach
+          if (idx < 0 || idx >= top.length) continue
+          const y = baseY + lb.y - Math.sqrt(Math.max(0, lb.r * lb.r - (dx - lb.x) * (dx - lb.x)))
+          if (y < top[idx]) top[idx] = y
+        }
+      }
+      for (let off = -w; off <= w; off += w) {
+        const ox = cx + off
+        if (ox + reach < 0 || ox - reach > w) continue
+        for (let dx = -reach; dx <= reach; dx += 1) {
+          const x = Math.round(ox + dx)
+          if (x < 0 || x >= w) continue
+          const y0 = Math.ceil(top[dx + reach])
+          if (y0 > baseY - 2) continue
+          for (let y = Math.max(0, y0); y <= Math.min(h - 1, baseY); y += 1) {
+            // Shading comes from whichever lobe owns this pixel, so the boundary
+            // between light and shadow curves the way the lump does.
+            let best = -1
+            let bnx = 0
+            let bny = 0
+            for (const lb of lobes) {
+              const ddx = (dx - lb.x) / lb.r
+              const ddy = (y - (baseY + lb.y)) / lb.r
+              const dd = ddx * ddx + ddy * ddy
+              if (dd > 1) continue
+              if (1 - dd > best) {
+                best = 1 - dd
+                bnx = ddx
+                bny = ddy
+              }
+            }
+            const litness = best < 0 ? -0.2 : -bny * 0.86 + bnx * 0.5
+            const fromBase = (baseY - y) / scale
+            let c = body
+            if (fromBase < 0.1) c = deep
+            else if (fromBase < 0.34) c = shade
+            else if (litness > 0.56) c = lit
+            else if (litness < 0.04) c = shade
+            p.set(x, y, c)
+          }
         }
       }
     }
-  }
-
-  if (tier === 0) {
-    // Cirrus: torn banks of fine cloud, drifting apart. Built from a handful of
-    // overlapping puffs rather than one long streak, because a streak drawn as
-    // a stretched ellipse reads as a scratch on the lens.
-    const count = overcast ? 8 : 5
-    for (let i = 0; i < count; i += 1) {
-      const cx = n(i, 1) * w
-      const cy = h * (0.12 + n(i, 2) * 0.6)
-      const len = w * (0.04 + n(i, 3) * 0.05)
-      const thick = h * (0.06 + n(i, 4) * 0.07)
-      const puffs = 4 + Math.floor(n(i, 6) * 4)
-      for (let k = 0; k < puffs; k += 1) {
-        const t = k / (puffs - 1) - 0.5
-        stamp(
-          cx + t * len * 2.4 + (n(i, 10 + k) - 0.5) * len * 0.5,
-          cy + t * thick * 1.1 + (n(i, 20 + k) - 0.5) * thick * 0.7,
-          len * (0.5 + n(i, 30 + k) * 0.5) * (1 - Math.abs(t) * 0.5),
-          thick * (0.45 + n(i, 40 + k) * 0.4) * (1 - Math.abs(t) * 0.6),
-          0.7
-        )
-      }
-    }
   } else {
-    // Cumulus: stacked masses with flat bottoms and piled tops.
-    const count = overcast ? 7 : 5
+    const count = overcast ? 9 : 7
     for (let i = 0; i < count; i += 1) {
-      const cx = n(i, 11) * w
-      const cy = h * (0.44 + n(i, 12) * 0.34)
-      const rx = h * (0.5 + n(i, 13) * 0.55)
-      const ry = h * (0.19 + n(i, 14) * 0.14)
-      stamp(cx, cy, rx, ry, 0.32)
-      for (let k = 0; k < 4; k += 1) {
-        const kx = cx + (n(i, 20 + k) - 0.5) * rx * 1.3
-        const ky = cy - ry * (0.35 + n(i, 30 + k) * 0.8)
-        stamp(kx, ky, rx * (0.3 + n(i, 40 + k) * 0.26), ry * (0.7 + n(i, 50 + k) * 0.5), 0.42)
-      }
-      // A flat, shadowed base — the single detail that stops a cloud from
-      // looking like a bag of circles.
-      for (let x = Math.round(cx - rx); x < Math.round(cx + rx); x += 1) {
-        const px = ((x % w) + w) % w
-        for (let y = Math.round(cy + ry * 0.5); y < Math.round(cy + ry * 1.1); y += 1) {
-          if (p.get(px, y) === 0) continue
-          if (ditherAt(px, y, 0.55)) p.set(px, y, darkC)
+      const cx = ((i + n(i, 1) * 0.8) * w) / count
+      const cy = h * (0.14 + n(i, 2) * 0.6)
+      const len = w * (0.06 + n(i, 3) * 0.08)
+      const thick = h * (0.008 + n(i, 4) * 0.016)
+      const tear = wrapNoise(age * 91 + i * 13 + tier, w, 40, 2, 0.5)
+      const slant = (n(i, 6) - 0.5) * thick * 3
+      for (let off = -w; off <= w; off += w) {
+        const ox = cx + off
+        if (ox + len < 0 || ox - len > w) continue
+        for (let dx = -len; dx <= len; dx += 1) {
+          const x = Math.round(ox + dx)
+          if (x < 0 || x >= w) continue
+          const u = Math.abs(dx) / len
+          const gap = tear(x)
+          if (gap < 0.42 - (1 - u) * 0.3) continue
+          const half = thick * (1 - Math.pow(u, 1.6)) * (0.3 + gap * 1.5)
+          if (half < 0.5) continue
+          const yc = cy + (dx / len) * slant
+          const y0 = Math.round(yc - half)
+          const y1 = Math.round(yc + half)
+          for (let y = y0; y <= y1; y += 1) {
+            if (y < 0 || y >= h) continue
+            const v = (y - y0) / Math.max(1, y1 - y0)
+            p.set(x, y, v < 0.42 ? lit : v > 0.8 ? shade : body)
+          }
         }
       }
     }
@@ -1253,13 +1812,100 @@ export interface EnvBandArt {
 }
 
 /**
+ * The crest window of each range, as a fraction of that range's own height.
+ *
+ * These are not free parameters. Every range's foot is pinned to the ground
+ * line, so the window decides exactly where its skyline lands on screen — and
+ * the four windows are chosen so the crests stack into a readable staircase
+ * with the top third of the frame left open as sky at every age.
+ */
+const CREST_HI = [0.66, 0.7, 0.727, 0.787]
+const CREST_LO = [0.813, 0.845, 0.885, 0.951]
+
+/** How much of each range is actually visible before the next one covers it. */
+const BAND_VISIBLE = [110, 88, 70, 48]
+
+/** What stands on the skyline in each age, from the far range to the near one. */
+const AGE_CAST: readonly (readonly (readonly string[])[])[] = [
+  [
+    ['volcano', 'mesa', 'peak', 'mesa', 'peak'],
+    ['mesa', 'peak', 'arch', 'monolith'],
+    ['ribcage', 'monolith', 'mesa', 'deadTree'],
+    ['skull', 'boulder', 'deadTree', 'ribcage']
+  ],
+  [
+    ['cragCity', 'peak', 'mesa', 'peak', 'peak'],
+    ['cathedral', 'towerRuin', 'peak', 'wall'],
+    ['windmill', 'wall', 'towerRuin', 'pine'],
+    ['pine', 'pine', 'wall', 'boulder']
+  ],
+  [
+    ['domeCity', 'domeCity', 'mesa', 'peak', 'peak'],
+    ['aqueduct', 'towerRuin', 'domeCity', 'windmill'],
+    ['masts', 'windmill', 'wall', 'oak'],
+    ['oak', 'oak', 'wall', 'rock']
+  ],
+  [
+    ['skyline', 'skyline', 'mesa', 'skyline', 'peak'],
+    ['coolingTower', 'smokestack', 'gasometer', 'warehouse', 'coolingTower'],
+    ['crane', 'warehouse', 'pylon', 'smokestack'],
+    ['pylon', 'wire', 'deadTree', 'rock']
+  ],
+  [
+    ['arcology', 'arcology', 'spires', 'mesa', 'spires'],
+    ['elevator', 'arcology', 'spires', 'dish'],
+    ['spires', 'hab', 'dish', 'pylon'],
+    ['wire', 'hab', 'rock', 'pylon']
+  ]
+]
+
+/** The small growth scattered along the two near crests. */
+const AGE_SCRUB: readonly (readonly string[])[] = [
+  ['fern', 'fern', 'rock', 'deadTree'],
+  ['pine', 'pine', 'rock', 'pine'],
+  ['oak', 'oak', 'rock', 'pine'],
+  ['wire', 'rock', 'deadTree', 'rock'],
+  ['wire', 'rock', 'wire', 'rock']
+]
+
+const CAST_COUNT = [4, 6, 8, 11]
+const CAST_MIN = [56, 34, 18, 11]
+const CAST_MAX = [98, 60, 32, 20]
+
+/** Landmarks that are bigger or smaller than the range's nominal figure. */
+const SIZE_SCALE: Record<string, number> = {
+  volcano: 1.6,
+  cragCity: 1.2,
+  domeCity: 1.15,
+  skyline: 1.05,
+  arcology: 1.35,
+  elevator: 1.55,
+  aqueduct: 0.8,
+  ribcage: 0.8,
+  masts: 0.8
+}
+
+/** Things that grow, and so are specks at distance rather than buildings. */
+const ORGANIC = new Set(['pine', 'oak', 'deadTree', 'fern', 'boulder', 'rock', 'skull', 'wire'])
+
+/** The shape families the land itself is massed from, per age. */
+const LANDFORM: readonly (readonly string[])[] = [
+  ['mesa', 'mesa', 'cone', 'dome'],
+  ['cone', 'dome', 'cone', 'ridge'],
+  ['dome', 'cone', 'dome', 'ridge'],
+  ['dome', 'ridge', 'dome', 'cone'],
+  ['cone', 'cone', 'ridge', 'dome']
+]
+
+/**
  * One range of terrain.
  *
- * The four of them are the spine of the picture: the same rock at four
- * distances, each with its own profile, its own contrast, its own cast of
- * landmarks and its own scroll rate. The far one is a jagged skyline with
- * almost no contrast; the near one is a hillside with facets, scrub and a foot
- * that sinks into shadow.
+ * A clean silhouette and three or four confident value steps, and nothing else.
+ * The land is *massed* from big shapes — mesas, cones, domes, long ridges —
+ * rather than sculpted out of noise, because noise gives lumps and the eye
+ * wants forms. Interior detail is a lit facet where a face genuinely turns into
+ * the light, a step down into the valleys, and a shadow at the feet. There is
+ * no rim line following the crest and no dither over the body.
  */
 export function envBandArt(age: number, depth: number, worldW: number, worldH: number): EnvBandArt {
   const t = theme(age)
@@ -1267,231 +1913,234 @@ export function envBandArt(age: number, depth: number, worldW: number, worldH: n
   const h = A(worldH)
   const p = new Pix(w, h)
   const anchors: EnvAnchor[] = []
-  const d = Math.max(0, Math.min(3, depth))
+  const d = Math.max(0, Math.min(ENV_BAND_HEIGHTS.length - 1, depth))
   const base = envBandBase(age, d)
-  const r = ramp(base, { contrast: 0.5 + d * 0.3 })
-  const glow = mix(t.fog, keyLight(age), 0.5)
+  const r = ramp(base, { contrast: [0.3, 0.42, 0.56, 0.72][d], hueShift: 0.05, shadowSat: 0.05 })
+  const key = keyLight(age)
 
-  // Crest window, as a fraction of the layer height measured from its top.
-  // Everything above it is headroom for whatever stands on the crest.
-  const crestHi = [0.2, 0.23, 0.23, 0.23][d]
-  const crestLo = [0.44, 0.47, 0.49, 0.6][d]
+  const hi = CREST_HI[d] * h
+  const lo = CREST_LO[d] * h
+  const span = lo - hi
 
-  // Two terms, because a landscape has two: the massing, which is where the
-  // ground is high and low, and the ridging, which is where it comes to a
-  // point. Fractal noise on its own gives smooth lumps; ridged noise on its own
-  // gives a row of teeth. Together they give a range.
-  const massCells = [4, 5, 5, 6][d]
-  const ridgeCells = [7, 9, 10, 12][d]
-  const ridgeShare = [0.5, 0.45, 0.36, 0.3][d]
-  const ridgeSharp = [1.5, 1.7, 2, 2.2][d]
-  const mass = wrapNoise(age * 97 + d * 31, w, massCells, 5, 0.58)
-  const rough = wrapNoise(age * 53 + d * 19 + 7, w, ridgeCells, 3, 0.55)
-
-  const tops: number[] = []
+  // ── massing ──
+  const swell = wrapNoise(age * 97 + d * 31 + 5, w, [3, 4, 5, 6][d], 4, 0.5)
+  const grain = wrapNoise(age * 53 + d * 19 + 11, w, [9, 14, 22, 34][d], 3, 0.5)
+  const tops = new Float64Array(w)
   for (let x = 0; x < w; x += 1) {
-    // The profile lands inside 0..1 by construction. Clamping it instead
-    // flattens every summit into a mesa with sheer sides, which is exactly what
-    // a mountain range does not look like.
-    const ridged = Math.pow(1 - Math.abs(2 * rough(x) - 1), ridgeSharp)
-    let profile = mass(x) * (1 - ridgeShare) + ridged * ridgeShare
-    // Fractal noise piles up around its own mean, so a raw profile only ever
-    // uses the middle half of the crest window and the range comes out as a
-    // gentle swell. An S-curve pushes it back out toward both ends without ever
-    // clipping, which is what puts real height between the summits and the
-    // passes.
-    profile = profile * profile * (3 - 2 * profile)
-    tops.push(Math.round(h * crestLo - profile * h * (crestLo - crestHi)))
+    let m = swell(x)
+    m = m * m * (3 - 2 * m)
+    const g = (grain(x) - 0.5) * [0.1, 0.12, 0.16, 0.2][d]
+    tops[x] = lo - (m * 0.34 + g) * span
   }
 
-  /**
-   * Cuts a footing under a building so it stands on ground rather than on a
-   * slope — and *only* under a building. Levelling a wide span for every prop
-   * turns the whole ridgeline into a row of mesas with vertical sides, which is
-   * how this layer looked when it was first built. The cut is narrow, and its
-   * edges ease back into the natural profile instead of stepping.
-   */
-  const plinth = (cx: number, half: number, taper: number): void => {
-    let deepest = 0
-    for (let x = cx - half; x <= cx + half; x += 1) {
-      const i = ((x % w) + w) % w
-      if (tops[i] > deepest) deepest = tops[i]
-    }
-    for (let x = cx - half - taper; x <= cx + half + taper; x += 1) {
-      const i = ((x % w) + w) % w
-      if (tops[i] >= deepest) continue
-      const out = Math.max(0, Math.abs(x - cx) - half) / Math.max(1, taper)
-      const ease = 1 - out * out * (3 - 2 * out)
-      tops[i] = Math.round(tops[i] + (deepest - tops[i]) * ease)
-    }
-  }
-
-  /**
-   * How wide a landmark's base is, as a multiple of its height. A volcano is
-   * three times as wide as it is tall; a dead tree is a stick.
-   */
-  const footHalf = (kind: string, size: number): number => {
-    const k =
-      kind === 'volcano'
-        ? 1.75
-        : kind === 'crashedShip'
-          ? 1.25
-          : kind === 'bridge' || kind === 'cityBlocks'
-            ? 1.05
-            : kind === 'castle' || kind === 'wall' || kind === 'wire' || kind === 'wreckHull'
-              ? 0.85
-              : kind === 'arch' || kind === 'monolith' || kind === 'spires'
-                ? 0.65
-                : 0.45
-    return Math.max(1, Math.round(size * k))
-  }
-
-  /**
-   * The level a landmark stands on: the *lowest* ground anywhere under its
-   * footprint.
-   *
-   * Seating it on the ground directly beneath its centre instead leaves a hole
-   * of open sky under one side of anything wider than the terrain is flat —
-   * which is what a volcano did, hovering over a crescent of the range behind
-   * it. Taking the deepest point buries the base instead, which is what a
-   * mountain sitting in a landscape actually does.
-   */
-  const seat = (cx: number, half: number): number => {
-    let deepest = 0
-    for (let x = cx - half; x <= cx + half; x += 1) {
-      const i = ((x % w) + w) % w
-      if (tops[i] > deepest) deepest = tops[i]
-    }
-    return deepest
-  }
-
-  const cast = AGE_CAST[Math.max(0, Math.min(AGE_CAST.length - 1, age))][d]
-  const spots = scatter(age * 131 + d * 29 + 3, w, CAST_COUNT[d], cast, CAST_MIN[d], CAST_MAX[d])
-  // Flatten before shading, so the footing is shaded like the rest of the hill.
-  for (const spot of spots) {
-    if (!BUILT.has(spot.kind)) continue
-    plinth(spot.x, Math.round(spot.size * 0.45), Math.round(spot.size * 0.8))
-  }
-
-  // ── the body of the range ──
-  const facetNoise = pixelNoise(age * 17 + d * 5)
-  const capped = t.weather === 'snow' || t.weather === 'rain' || age === 1
-  // A smoothed copy of the crest to read the facets off. Taking the slope
-  // straight from the raw profile picks up every pixel of noise in it and
-  // shades the hillside in one-pixel vertical stripes — a barcode, not a hill.
-  const smoothTops: number[] = []
-  for (let x = 0; x < w; x += 1) {
-    let sum = 0
-    for (let k = -6; k <= 6; k += 1) sum += tops[((x + k) % w + w) % w]
-    smoothTops.push(sum / 13)
-  }
-  for (let x = 0; x < w; x += 1) {
-    const top = Math.max(0, tops[x])
-    // Which way this face turns. Falling away to the right means it is lit.
-    const near = smoothTops[(x + 6) % w] - smoothTops[(x - 6 + w) % w]
-    const far = smoothTops[(x + 22) % w] - smoothTops[(x - 22 + w) % w]
-    // Faces turned toward the light get a lighter tone, faces turned away a
-    // darker one, always dithered between neighbouring steps. Kept inside the
-    // middle of the ramp: swinging the whole hillside from shadow to highlight
-    // turns a landscape into a barcode.
-    const litness = Math.max(-1, Math.min(1, (near * 0.5 + far * 0.16) / 9)) * (0.55 + d * 0.15)
-    const f = Math.max(0.35, Math.min(3.2, 1.75 + litness * 1.15))
-
-    // The facet only describes the shoulder of the hill. Carrying it all the
-    // way down the layer paints a full-height vertical stripe wherever one
-    // steep face happens to be — a curtain hanging over the picture — so it
-    // eases back to the base tone below the crest.
-    //
-    // The foot shadow is folded into the same pass. It seats this range behind
-    // the next one, and both of its steps are dithered: a hard cut here draws a
-    // straight line across the whole screen, which no landscape has.
-    const faceDepth = Math.max(6, h * 0.3)
-    const span = Math.max(1, h - top)
-    for (let y = top; y < h; y += 1) {
-      const dt = Math.min(1, (y - top) / faceDepth)
-      // Seated at the base tone rather than a step above it. Starting the body
-      // at r[2] meant the upper half of every slab was painted lighter than the
-      // colour the aerial-perspective ramp had just been so careful to choose,
-      // and because the farthest band is also the tallest, that lighter half
-      // covered most of the screen. The lit tones belong on the crest and the
-      // faces turned into the light, not across the whole face of the range.
-      const local = 1.45 + (f - 2) * (1 - dt * dt)
-      const kk = Math.max(0, Math.min(3, Math.floor(local)))
-      let c = ditherAt(x, y, local - kk) ? r[Math.min(4, kk + 1)] : r[kk]
-      const tt = (y - top) / span
-      if (tt > 0.46 && ditherAt(x, y, (tt - 0.46) * 1.8)) c = r[1]
-      if (tt > 0.7 && ditherAt(x + 2, y + 1, (tt - 0.7) * 2.4)) c = r[0]
-      p.set(x, y, c)
-    }
-    // The crest itself catches the light hardest of all — but only where it is
-    // actually turned into it. A rim that runs the whole ridgeline is a drawn
-    // outline, not a lit edge.
-    if (litness > 0.42) {
-      p.set(x, top, r[4])
-      p.set(x, top + 1, r[3])
-    } else if (litness > 0.04) {
-      p.set(x, top, r[3])
-    } else {
-      p.set(x, top, r[1])
-      p.set(x, top + 1, r[1])
-    }
-
-    // Snow and scree, but only in ages cold enough for it, only on summits that
-    // are genuinely high, and only on the faces that catch the light. A cap
-    // that follows the whole crest reads as a light band painted along the
-    // horizon, and that is what it looked like on the first pass.
-    if (capped && d <= 1 && top < h * (crestHi + (crestLo - crestHi) * 0.28) && litness > 0.14) {
-      const capC = mix(r[4], keyLight(age), 0.3)
-      const depthIn = Math.round(h * 0.014 + facetNoise(x, 9) * h * 0.02)
-      for (let y = top + 1; y < top + depthIn; y += 1) {
-        const tt = (y - top) / Math.max(1, depthIn)
-        if (ditherAt(x, y, (1 - tt) * 0.9)) p.set(x, y, capC)
-      }
-    }
-
-    // Gullies: a short shadow running down a steep face, tapering out. Long
-    // ones read as paint running down the picture.
-    if (d >= 1 && facetNoise(x, 3) > 0.965 && litness < 0.2) {
-      const len = Math.round(h * (0.02 + facetNoise(x, 4) * 0.05))
-      for (let y = top + 2; y < top + 2 + len; y += 1) {
-        const fade = 1 - (y - top - 2) / Math.max(1, len)
-        if (ditherAt(x, y, fade * 1.2)) p.set(x, y, r[0])
-      }
+  const forms = scatter(age * 401 + d * 53 + 9, w, [4, 5, 6, 7][d], LANDFORM[Math.min(4, age)], 0, 1000)
+  for (const f of forms) {
+    const kind = f.kind
+    const rise = span * (0.3 + Math.pow(f.size / 1000, 1.1) * 0.72)
+    const summit = lo - rise
+    const ratio = kind === 'mesa' ? 1.15 : kind === 'cone' ? 1.05 : kind === 'dome' ? 1.6 : 2.4
+    const half = Math.max(8, rise * ratio)
+    const reach = (lo - summit) * 1.2 + span * 0.14
+    for (let dx = -half; dx <= half; dx += 1) {
+      const u = Math.min(1, Math.abs(dx) / half)
+      let drop: number
+      if (kind === 'mesa') drop = u < 0.5 ? 0 : Math.pow((u - 0.5) / 0.5, 0.62)
+      else if (kind === 'cone') drop = Math.pow(u, 1.12)
+      else if (kind === 'dome') drop = 1 - Math.sqrt(Math.max(0, 1 - u * u))
+      else drop = u < 0.6 ? u * 0.22 : 0.132 + Math.pow((u - 0.6) / 0.4, 0.8) * 0.868
+      const y = summit + drop * reach
+      // Rounded, and not merely wrapped. `half` is fractional, so `dx` is too,
+      // and a fractional index into a typed array reads `undefined`, compares
+      // false against everything and writes nowhere — which silently threw away
+      // every landform in the range and left four bands of gentle noise.
+      const i = (((Math.round(f.x + dx) % w) + w) % w)
+      if (y < tops[i]) tops[i] = y
     }
   }
 
   // ── what stands on it ──
-  for (const spot of spots) {
-    // A tree on a distant range is a speck. Sized like a building it becomes a
-    // lollipop the size of a cathedral, which is exactly how it first looked.
-    const size = ORGANIC.has(spot.kind) ? Math.round(spot.size * (d <= 1 ? 0.38 : 0.62)) : spot.size
-    const baseY = seat(spot.x, footHalf(spot.kind, size)) + 1
-    drawLandmark(p, spot.kind, spot.x, baseY, size, r, d, glow, spot.seed, spot.flip, anchors)
+  const cast = AGE_CAST[Math.max(0, Math.min(AGE_CAST.length - 1, age))][d]
+  const spots = scatter(age * 131 + d * 29 + 3, w, CAST_COUNT[d], cast, CAST_MIN[d], CAST_MAX[d])
+  const sized = spots.map(spot => {
+    let size = spot.size * (SIZE_SCALE[spot.kind] ?? 1)
+    if (ORGANIC.has(spot.kind)) size *= d <= 1 ? 0.34 : 0.62
+    return { spot, size: Math.max(3, Math.round(size)) }
+  })
+
+  const footHalf = (kind: string, size: number): number =>
+    Math.max(2, Math.round(size * (FOOTPRINT[kind] ?? 0.5)))
+
+  /**
+   * Cuts a level footing under a building, and only under a building. Levelling
+   * a wide span for every prop turns a ridgeline into a row of mesas with
+   * vertical sides; the cut is narrow and its edges ease back into the profile.
+   */
+  const plinth = (cx: number, half: number): void => {
+    const taperW = Math.max(3, Math.round(half * 0.9))
+    let deepest = 0
+    for (let x = cx - half; x <= cx + half; x += 1) {
+      const i = (((x | 0) % w) + w) % w
+      if (tops[i] > deepest) deepest = tops[i]
+    }
+    for (let x = cx - half - taperW; x <= cx + half + taperW; x += 1) {
+      const i = (((x | 0) % w) + w) % w
+      if (tops[i] >= deepest) continue
+      const out = Math.max(0, Math.abs(x - cx) - half) / taperW
+      const ease = 1 - out * out * (3 - 2 * out)
+      tops[i] = tops[i] + (deepest - tops[i]) * ease
+    }
+  }
+  for (const { spot, size } of sized) {
+    if (BUILT.has(spot.kind)) plinth(spot.x, footHalf(spot.kind, size))
   }
 
-  // Camp fires on the hills of the ages that have no electricity to blink.
-  // Something has to be alive out there in every age, not only the ones with
-  // pylons on them.
-  if (d === 2 && age <= 2) {
-    const fires = scatter(age * 307 + 19, w, 3, ['fire'], 6, 10)
-    for (const fire of fires) {
-      const fy = tops[fire.x % w] - 1
-      p.set(fire.x, fy, glow)
-      p.set(fire.x - 1, fy + 1, mix(glow, r[1], 0.45))
-      p.set(fire.x + 1, fy + 1, mix(glow, r[1], 0.45))
-      anchors.push({ kind: 'light', x: fire.x, y: fy, scale: 1.6, phase: fire.seed / 9999 })
+  const topsI = new Int32Array(w)
+  for (let x = 0; x < w; x += 1) topsI[x] = Math.max(0, Math.round(tops[x]))
+
+  // ── which faces turn into the light ──
+  const R = [17, 14, 11, 9][d]
+  const sm = new Float64Array(w)
+  for (let x = 0; x < w; x += 1) {
+    let sum = 0
+    for (let k = -R; k <= R; k += 1) sum += topsI[(((x + k) % w) + w) % w]
+    sm[x] = sum / (R * 2 + 1)
+  }
+  const face = new Int8Array(w)
+  const litDepth = new Float64Array(w)
+  const thresh = R * 0.4
+  const cap = BAND_VISIBLE[d] * 0.62
+  for (let x = 0; x < w; x += 1) {
+    const slope = sm[(x + R) % w] - sm[(((x - R) % w) + w) % w]
+    face[x] = slope > thresh ? 1 : slope < -thresh ? -1 : 0
+    litDepth[x] = Math.min(cap, Math.abs(slope) * 1.1)
+  }
+  const runOf = new Int32Array(w)
+  for (let i = 0; i < w; ) {
+    let j = i
+    while (j < w && face[j] === face[i]) j += 1
+    for (let k = i; k < j; k += 1) runOf[k] = j - i
+    i = j
+  }
+
+  // ── the body ──
+  // The value steps down into the band's own base, measured from the *foot of
+  // the crest window* rather than from each column's summit. Measuring it from
+  // the summit paints a dark belt across every mountain at its own height,
+  // which reads as a stain on the rock; measuring it from the base is what a
+  // valley filling with shadow actually looks like.
+  const D1 = lo + (h - lo) * 0.24
+  const D2 = lo + (h - lo) * 0.62
+  const wob = wrapNoise(age * 61 + d * 7 + 3, w, 7, 2, 0.5)
+  const wob2 = wrapNoise(age * 67 + d * 11 + 5, w, 5, 2, 0.5)
+  const runMin = [22, 18, 14, 11][d]
+  for (let x = 0; x < w; x += 1) {
+    const top = topsI[x]
+    if (top >= h) continue
+    // Not clamped away from the crest. Pushing the step down to `top + n` on a
+    // tall summit makes the shadow hug the silhouette, and a shadow that
+    // follows an outline is an outline.
+    const d1 = D1 + (wob(x) - 0.5) * span * 0.5
+    const d2 = D2 + (wob2(x) - 0.5) * span * 0.5
+    const ld = litDepth[x]
+    const strong = runOf[x] >= runMin
+    for (let y = top; y < h; y += 1) {
+      const dy = y - top
+      let c = r[2]
+      if (strong && dy < ld) c = face[x] > 0 ? r[3] : face[x] < 0 ? r[1] : r[2]
+      const t1 = (y - d1) / 6
+      if (t1 > 0 && (t1 >= 1 || ditherAt(x, y, t1))) c = r[1]
+      const t2 = (y - d2) / 7
+      if (t2 > 0 && (t2 >= 1 || ditherAt(x, y, t2))) c = r[0]
+      p.set(x, y, c)
+    }
+    // A lit crest, only where a broad face is genuinely turned into the light.
+    if (strong && face[x] > 0 && ld > 5) {
+      p.set(x, top, r[4])
+      p.set(x, top + 1, r[3])
     }
   }
 
-  // A scatter of small growth along the crest of the two near ranges, which is
-  // what makes a hill read as a place rather than as a shape.
+  // ── the feet ──
+  //
+  // The contact shadow that seats this range on the ground plane. It is dithered
+  // in from above so it never draws a rule across the picture, and its lowest
+  // rows sit under the floor's own leading edge.
+  const foot = h - A(ENV_BAND_FOOT)
+  const shadowH = [24, 19, 15, 11][d]
+  for (let x = 0; x < w; x += 1) {
+    const top = topsI[x]
+    for (let y = Math.max(top, foot - shadowH); y < h; y += 1) {
+      const tt = (y - (foot - shadowH)) / shadowH
+      if (tt >= 0.62 || ditherAt(x, y, tt * 1.5)) p.set(x, y, r[0])
+    }
+  }
+
+  // ── snow, where the age is cold enough for it ──
+  if ((age === 1 || age === 4) && d <= 1) {
+    const snowC = mix(r[4], key, 0.34)
+    const snowShade = mix(r[3], t.sky[1], 0.34)
+    const line = wrapNoise(age * 77 + d * 5 + 1, w, 9, 3, 0.5)
+    const snowLine = hi + span * 0.3
+    for (let x = 0; x < w; x += 1) {
+      const top = topsI[x]
+      if (top >= snowLine) continue
+      const bottom = Math.round(snowLine + (line(x) - 0.5) * span * 0.34)
+      for (let y = top; y < bottom; y += 1) p.set(x, y, face[x] >= 0 ? snowC : snowShade)
+    }
+  }
+
+  // ── landmarks ──
+  const seat = (cx: number, half: number): number => {
+    let deepest = 0
+    for (let x = cx - half; x <= cx + half; x += 1) {
+      const i = (((x | 0) % w) + w) % w
+      if (topsI[i] > deepest) deepest = topsI[i]
+    }
+    return deepest
+  }
+  // What stands on a range is darker than the range itself, and the further
+  // away it is the darker it goes. A distant building lit to the same value as
+  // the hill under it has no silhouette at all — which is how the first pass
+  // put a pale grey city on a pale grey crag and lost both.
+  const sink = [0.62, 0.46, 0.3, 0.16][d]
+  const tones: LandTones = {
+    body: mix(r[2], r[0], sink),
+    lit: mix(r[3], r[1], sink),
+    dark: mix(r[1], r[0], 0.55),
+    deep: r[0],
+    key: mix(key, r[4], 0.15),
+    pale: mix(r[4], r[2], sink)
+  }
+  for (const { spot, size } of sized) {
+    drawLandmark(p, w, spot, size, seat(spot.x, footHalf(spot.kind, size)) + 1, tones, d, anchors)
+  }
+
+  // Camp fires on the middle range of the ages that have no electricity to
+  // blink. Something has to be alive out there in every age.
+  if (d === 2 && age <= 2) {
+    const fires = scatter(age * 307 + 19, w, 3, ['fire'], 6, 10)
+    for (const fire of fires) {
+      const fy = topsI[fire.x % w] - 1
+      p.set(fire.x, fy, tones.key)
+      p.set(fire.x - 1, fy + 1, mix(tones.key, r[1], 0.5))
+      p.set(fire.x + 1, fy + 1, mix(tones.key, r[1], 0.5))
+      anchors.push({ kind: 'light', x: fire.x, y: fy, scale: 1.5, phase: fire.seed / 9999 })
+    }
+  }
+
+  // Growth along the two near crests: what makes a hill read as a place.
   if (d >= 2) {
-    const scrubKinds = AGE_SCRUB[Math.max(0, Math.min(AGE_SCRUB.length - 1, age))]
-    const scrub = scatter(age * 211 + d * 41, w, d === 2 ? 30 : 42, scrubKinds, d === 2 ? 4 : 6, d === 2 ? 8 : 13)
+    const scrub = scatter(
+      age * 211 + d * 41,
+      w,
+      d === 2 ? 18 : 26,
+      AGE_SCRUB[Math.max(0, Math.min(AGE_SCRUB.length - 1, age))],
+      d === 2 ? 4 : 6,
+      d === 2 ? 8 : 13
+    )
     const throwaway: EnvAnchor[] = []
     for (const spot of scrub) {
-      const baseY = seat(spot.x, footHalf(spot.kind, spot.size)) + 1
-      drawLandmark(p, spot.kind, spot.x, baseY, spot.size, r, d, glow, spot.seed, spot.flip, throwaway)
+      drawLandmark(p, w, spot, spot.size, seat(spot.x, footHalf(spot.kind, spot.size)) + 1, tones, d, throwaway)
     }
   }
 
@@ -1499,35 +2148,47 @@ export function envBandArt(age: number, depth: number, worldW: number, worldH: n
 }
 
 /**
- * The haze that seats the battlefield against the hills.
+ * The ground haze: a thin ribbon of air lying along the horizon, and nothing
+ * more.
  *
- * Dithered, and gone at both edges, so there is no row anywhere that steps —
- * the fault that used to draw a hard horizontal line right across the picture.
- * Wisps are laid through it at slightly different densities so it moves like
- * air rather than sitting there like a sheet of tracing paper.
+ * The class draws this at sixty percent alpha with its *bottom* on the ground
+ * line, so everything here is authored to be dense in its last few rows and
+ * gone well before its top. A fog layer that fills its own strip is a veil over
+ * the picture; a fog layer that pools at the feet of the hills is weather.
  */
 export function envFogPix(age: number, worldW: number, worldH: number): Pix {
-  const t = theme(age)
   const w = A(worldW)
   const h = A(worldH)
   const p = new Pix(w, h)
-  // Tied to the range it sits in front of rather than to the raw theme colour,
-  // so the haze is the same air the hills are seen through.
-  const bandC = envBandBase(age, ENV_BAND_HEIGHTS.length - 1)
-  const near = mix(t.fog, bandC, 0.34)
-  const far = mix(mix(t.fog, t.sky[2], 0.45), bandC, 0.25)
-  // Both fields are periodic in x: this band drifts as well as scrolling, so
-  // its wrap has to match itself.
-  const wisp = wrapNoise(age * 71 + 13, w, 26, 3, 0.55)
-  const roll = wrapNoise(age * 29 + 3, w, 4, 3)
+  // Tied to the range it lies in front of rather than to the raw theme colour:
+  // this is the air those hills are already being seen through, so it lifts
+  // them a little and never turns into a sheet of light along the ground line.
+  const near = envBandBase(age, ENV_BAND_HEIGHTS.length - 1)
+  const air = mix(near, skyHorizon(age), 0.42)
+  const wisp = wrapNoise(age * 71 + 13, w, 22, 3, 0.55)
+  const roll = wrapNoise(age * 29 + 3, w, 5, 3, 0.5)
 
   for (let y = 0; y < h; y += 1) {
-    const tt = h > 1 ? y / (h - 1) : 0
-    const density = Math.pow(Math.sin(tt * Math.PI), 1.15) * 0.3
-    const colour = tt < 0.45 ? far : near
+    const tt = h > 1 ? y / (h - 1) : 1
+    // Nothing at all above the ribbon, then a fast climb into the ground line.
+    const density = Math.pow(Math.max(0, tt - 0.46) / 0.54, 1.8) * 0.6
+    if (density <= 0.004) continue
     for (let x = 0; x < w; x += 1) {
-      const local = density * (0.55 + wisp(x + y * 4.3) * 0.9) * (0.75 + roll(x) * 0.5)
-      if (ditherAt(x, y, local)) p.set(x, y, colour)
+      const local = density * (0.6 + wisp(x + y * 5.1) * 0.85) * (0.7 + roll(x) * 0.6)
+      if (ditherAt(x, y, local)) p.set(x, y, air)
+    }
+  }
+  // Two flat wisps lying across it, which is what stops a haze band from
+  // reading as a printed gradient.
+  const n = pixelNoise(age * 17 + 5)
+  for (let i = 0; i < 2; i += 1) {
+    const cy = Math.round(h * (0.7 + i * 0.11))
+    const thick = 1 + Math.round(n(i, 1) * 2)
+    const streak = wrapNoise(age * 43 + i * 7, w, 12, 2, 0.5)
+    for (let x = 0; x < w; x += 1) {
+      const v = streak(x)
+      if (v < 0.46) continue
+      for (let k = 0; k < thick; k += 1) if (ditherAt(x, cy + k, (v - 0.46) * 2.2)) p.set(x, cy + k, air)
     }
   }
   return p
@@ -1882,82 +2543,6 @@ export function envGroundPix(age: number, worldW: number, worldH: number): Pix {
     const rr = 1 + Math.round(noise(i, 97) * 1.6 * (0.5 + ry / h))
     p.ellipse(rx, ry, rr, Math.max(1, rr * 0.7), deep[0])
     p.set(rx + Math.round(rr * 0.4), ry - Math.round(rr * 0.6), soil[3])
-  }
-  return p
-}
-
-/**
- * The near bank: the closest thing to the camera, scrolling faster than the
- * world, almost black, and carrying whatever litters the edge of the field in
- * this age.
- */
-export function envBankPix(age: number, worldW: number, worldH: number): Pix {
-  const t = theme(age)
-  const w = A(worldW)
-  const h = A(worldH)
-  const p = new Pix(w, h)
-  const bodyC = tone(envGroundBase(age), -0.55)
-  const edgeC = tone(envGroundBase(age), -0.3)
-  const deepC = tone(envGroundBase(age), -0.78)
-  const r: Ramp = [deepC, bodyC, bodyC, edgeC, edgeC]
-  const noise = pixelNoise(age * 311 + 13)
-  const surface = wrapNoise(age * 29 + 5, w, 7, 4, 0.56)
-  // The bank sits low in its strip: it frames the battlefield from below and
-  // must never climb over the feet of the units fighting on it. Its top edge is
-  // swung hard, because a black bar with a level top across the whole screen is
-  // the single most artificial thing a backdrop can do.
-  const topAt = (x: number): number => {
-    const s = surface(x)
-    // Pushed out toward both ends, for the same reason the ranges are: fractal
-    // noise on its own gives a top edge that barely moves.
-    const swung = s * s * (3 - 2 * s)
-    return Math.round(h * 0.56 + swung * h * 0.42)
-  }
-
-  for (let x = 0; x < w; x += 1) {
-    const top = Math.max(0, topAt(x))
-    p.fill(x, top, 1, h - top, bodyC)
-    p.set(x, top, edgeC)
-    // Depth inside the bank itself: it falls away toward the camera.
-    for (let y = top + 3; y < h; y += 1) {
-      const tt = (y - top - 3) / Math.max(1, h - top - 3)
-      if (ditherAt(x, y, tt * 1.3)) p.set(x, y, deepC)
-    }
-  }
-
-  const kinds: Record<string, string> = {
-    embers: 'fern',
-    clear: 'pine',
-    rain: 'oak',
-    ash: 'wire',
-    snow: 'wire'
-  }
-  const kind = kinds[t.weather] ?? 'rock'
-  const throwaway: EnvAnchor[] = []
-  for (const spot of scatter(age * 613 + 7, w, Math.round(w / 24), [kind, kind, 'rock', kind], 5, 17)) {
-    drawLandmark(p, spot.kind, spot.x, topAt(spot.x) + 1, spot.size, r, 3, bodyC, spot.seed, spot.flip, throwaway)
-  }
-  // The bottom edge has to dissolve rather than stop. This strip ends part way
-  // down the floor, and a solid dark band with a straight lower edge draws a
-  // line right across the battlefield — the same fault the old fog band had,
-  // one layer further forward. Dithered out, it reads as scrub thinning into
-  // the dirt.
-  const fadeFrom = Math.round(h * 0.6)
-  for (let y = fadeFrom; y < h; y += 1) {
-    const tt = (y - fadeFrom) / Math.max(1, h - fadeFrom)
-    for (let x = 0; x < w; x += 1) {
-      if (ditherAt(x + 1, y + 2, tt * 1.3)) p.set(x, y, 0, 0)
-    }
-  }
-
-  // Tufts breaking the top edge, so the silhouette is never a clean curve.
-  for (let x = 0; x < w; x += 2) {
-    if (noise(x, 3) < 0.52) continue
-    const top = Math.max(0, topAt(x))
-    const tall = 2 + Math.round(noise(x, 4) * 5)
-    for (let i = -1; i <= 1; i += 1) {
-      p.line(x + i, top, x + i * 2, top - tall * (1 - Math.abs(i) * 0.4), bodyC)
-    }
   }
   return p
 }
