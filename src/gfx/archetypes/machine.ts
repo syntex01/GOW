@@ -1740,17 +1740,20 @@ export const vehicleArchetype: Archetype = {
       walk: vehicleWalk(L),
       attack: vehicleAttack(L)
     }
-    // Muzzle: out from the trunnion along the barrel's rest angle.
+    // Muzzle: out from the trunnion along the barrel. A catapult is measured
+    // at its *release* angle rather than its rest angle — the stone leaves the
+    // sling as the arm comes over the top, not where the arm sits cocked.
     const pivotY = (L.turret ? L.hullY - L.hullH - L.turretH : L.hullY - L.hullH) + L.barrelUp
     const pivotX = L.barrelFwd + (L.turret ? L.turretX : 0)
+    const throwAngle = L.machine === 'catapult' ? -0.6 : L.barrelRest
     return {
       skeleton: buildVehicleSkeleton(L),
       parts: buildVehicleParts(v, height, L),
       clips,
       height,
       muzzle: [
-        pivotX + Math.cos(L.barrelRest) * L.barrelLen,
-        pivotY + Math.sin(L.barrelRest) * L.barrelLen
+        pivotX + Math.cos(throwAngle) * L.barrelLen,
+        pivotY + Math.sin(throwAngle) * L.barrelLen
       ]
     }
   }

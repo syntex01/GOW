@@ -663,84 +663,110 @@ const RIDE_IDLE: Clip = {
 }
 
 /**
- * The attack.
+ * The attack, in two flavours.
  *
  * Anticipation, strike, recovery — the same shape as the footman's, but the
  * anticipation is done by the *mount*. The horse gathers and lifts its forehand
- * off the ground, which throws the rider's weight back and cocks the weapon
- * arm; then the front feet come down and the whole animal drives forward
- * underneath the blow. A cavalryman does not hit with his shoulder, he hits
- * with half a ton of horse, and the clip has to say so.
+ * off the ground, which throws the rider's weight back and cocks the arm; then
+ * the front feet come down and the whole animal drives forward underneath the
+ * blow. A cavalryman does not hit with his shoulder, he hits with half a ton of
+ * horse, and the clip has to say so.
+ *
+ * The two flavours exist because a lance is not a sabre. A sabre is *swung*:
+ * the hand travels nearly three radians from cocked-behind to forward-and-down,
+ * and the weapon travels with it. A lance is *couched*: it stays level the
+ * whole way through and the reach comes from the horse, not the arm. Feeding a
+ * lance through the sabre's arc points it straight into the ground at contact,
+ * which is what the first pass of this did.
  */
-const RIDE_ATTACK: Clip = {
-  name: 'attack',
-  duration: 540,
-  loop: false,
-  ease: 'quad',
-  keys: [
-    { t: 0, pose: { ...STAND } },
-    {
-      // Gather and rear: forehand up, hocks under, rider coiled away.
-      t: 0.34,
-      pose: {
-        ...legs([0.02, -0.5, 0.28], [0.1, -0.44, 0.24], [-0.4, 0.8, 0.34], [-0.55, 0.95, 0.4]),
-        root: { y: -0.018 },
-        barrel: { angle: -0.2 },
-        neck: { angle: -0.24 },
-        beastHead: { angle: 0.2 },
-        tail: { angle: -0.2 },
-        seat: { y: 0.006, angle: -0.14 },
-        rTorso: { angle: -0.2 },
-        rHead: { angle: 0.08 },
-        rUpperArmF: { angle: -1.1 },
-        rForeArmF: { angle: -0.66 },
-        rUpperArmB: { angle: 0.24 },
-        rForeArmB: { angle: 0.5 }
+function rideAttack(style: 'swing' | 'thrust'): Clip {
+  const swing = style === 'swing'
+  // upper arm, forearm — at the wind-up, at contact, and through the follow.
+  const arm = swing
+    ? { wind: [-1.15, -0.7], hit: [0.85, 0.12], follow: [0.5, 0.4] }
+    : { wind: [-0.45, 0.25], hit: [-0.1, -0.05], follow: [-0.24, 0.12] }
+  // A sabre needs the horse under it and a torso wound up to swing from; a
+  // lance needs the horse behind it and a body that folds straight forward.
+  const twist = swing ? 1 : 0.4
+  const rear = swing ? 1 : 0.65
+  return {
+    name: 'attack',
+    duration: 540,
+    loop: false,
+    ease: 'quad',
+    keys: [
+      { t: 0, pose: { ...STAND } },
+      {
+        // Gather and rear: forehand up, hocks under, rider coiled back.
+        t: 0.34,
+        pose: {
+          ...legs(
+            [0.02, -0.5, 0.28],
+            [0.1, -0.44, 0.24],
+            [-0.4 * rear, 0.8 * rear, 0.34 * rear],
+            [-0.55 * rear, 0.95 * rear, 0.4 * rear]
+          ),
+          root: { y: -0.018 * rear, x: -0.014 },
+          barrel: { angle: -0.2 * rear },
+          neck: { angle: -0.24 },
+          beastHead: { angle: 0.2 },
+          tail: { angle: -0.2 },
+          seat: { y: 0.006, angle: -0.14 * twist },
+          rTorso: { angle: -0.2 * twist },
+          rHead: { angle: 0.08 },
+          rUpperArmF: { angle: arm.wind[0] },
+          rForeArmF: { angle: arm.wind[1] },
+          rUpperArmB: { angle: 0.24 },
+          rForeArmB: { angle: 0.5 }
+        },
+        ease: 'cubic'
       },
-      ease: 'cubic'
-    },
-    {
-      // Contact. `back` overshoots this and settles into it, which is the
-      // difference between a blow landing and an arm waving.
-      t: 0.46,
-      pose: {
-        ...legs([0.5, -0.06, -0.14], [0.42, -0.02, -0.1], [-0.2, 0.12, 0.04], [-0.28, 0.16, 0.06]),
-        root: { y: 0.012 },
-        barrel: { angle: 0.1 },
-        neck: { angle: 0.2 },
-        beastHead: { angle: -0.16 },
-        tail: { angle: 0.18 },
-        seat: { y: -0.008, angle: 0.26 },
-        rTorso: { angle: 0.3 },
-        rHead: { angle: -0.06 },
-        rUpperArmF: { angle: 0.82 },
-        rForeArmF: { angle: 0.12 },
-        rUpperArmB: { angle: -0.3 },
-        rForeArmB: { angle: 0.2 }
+      {
+        // Contact. `back` overshoots this and settles into it, which is the
+        // difference between a blow landing and an arm waving.
+        t: 0.46,
+        pose: {
+          ...legs([0.5, -0.06, -0.14], [0.42, -0.02, -0.1], [-0.2, 0.12, 0.04], [-0.28, 0.16, 0.06]),
+          root: { y: 0.012, x: 0.02 },
+          barrel: { angle: 0.1 },
+          neck: { angle: 0.2 },
+          beastHead: { angle: -0.16 },
+          tail: { angle: 0.18 },
+          seat: { y: -0.008, angle: 0.26 },
+          rTorso: { angle: 0.3 * twist },
+          rHead: { angle: -0.06 },
+          rUpperArmF: { angle: arm.hit[0] },
+          rForeArmF: { angle: arm.hit[1] },
+          rUpperArmB: { angle: -0.3 },
+          rForeArmB: { angle: 0.2 }
+        },
+        ease: 'back'
       },
-      ease: 'back'
-    },
-    {
-      // Follow through, still committed forward.
-      t: 0.64,
-      pose: {
-        ...legs([0.34, -0.16, -0.06], [0.28, -0.14, -0.04], [-0.1, 0.08, 0.02], [-0.14, 0.1, 0.02]),
-        root: { y: 0.006 },
-        barrel: { angle: 0.05 },
-        neck: { angle: 0.1 },
-        beastHead: { angle: -0.06 },
-        tail: { angle: 0.08 },
-        seat: { y: -0.003, angle: 0.16 },
-        rTorso: { angle: 0.16 },
-        rUpperArmF: { angle: 0.5 },
-        rForeArmF: { angle: 0.4 },
-        rUpperArmB: { angle: -0.14 }
+      {
+        // Follow through, still committed forward.
+        t: 0.64,
+        pose: {
+          ...legs([0.34, -0.16, -0.06], [0.28, -0.14, -0.04], [-0.1, 0.08, 0.02], [-0.14, 0.1, 0.02]),
+          root: { y: 0.006, x: 0.008 },
+          barrel: { angle: 0.05 },
+          neck: { angle: 0.1 },
+          beastHead: { angle: -0.06 },
+          tail: { angle: 0.08 },
+          seat: { y: -0.003, angle: 0.16 },
+          rTorso: { angle: 0.16 * twist },
+          rUpperArmF: { angle: arm.follow[0] },
+          rForeArmF: { angle: arm.follow[1] },
+          rUpperArmB: { angle: -0.14 }
+        },
+        ease: 'sine'
       },
-      ease: 'sine'
-    },
-    { t: 1, pose: { ...STAND }, ease: 'sine' }
-  ]
+      { t: 1, pose: { ...STAND }, ease: 'sine' }
+    ]
+  }
 }
+
+const RIDE_SWING = rideAttack('swing')
+const RIDE_THRUST = rideAttack('thrust')
 
 /**
  * The beast stands folded rather than propped: hock high and well behind, wrist
@@ -1571,16 +1597,26 @@ export const riderArchetype: Archetype = {
       saddle: leather(tone(0x6a4a32, -0.3)),
       accent: v.accent
     }
+    const couched = ranged || COUCHED_WEAPONS.has(v.weapon)
     const parts = { ...quadParts(MOUNT, v, height, { wild: false, tack }), ...riderParts(v, height).parts }
-    const clips: Record<ClipName, Clip> = { idle: RIDE_IDLE, walk: RIDE_WALK, attack: RIDE_ATTACK }
+    const clips: Record<ClipName, Clip> = {
+      idle: RIDE_IDLE,
+      walk: RIDE_WALK,
+      attack: couched ? RIDE_THRUST : RIDE_SWING
+    }
     return {
       skeleton: buildRiderSkeleton(
-        // A lance or a spear is couched flat along the line of the charge, a
-        // firearm is levelled the same way, and anything meant to be swung
-        // rides up and back where it can come down. Measured against the hand,
-        // which points straight down at rest: 0.1 leaves the weapon horizontal
-        // and forward, and the ranged case has to pay back the raised arm.
-        ranged ? Math.PI / 2 - (-1.28 + 0.42) : COUCHED_WEAPONS.has(v.weapon) ? 0.1 : -Math.PI * 0.82,
+        // Every weapon in the library is drawn pointing *up* out of its grip,
+        // and `orient: 'right'` feeds the bone's world angle straight into the
+        // sprite's rotation — so a weapon reads level and forward when its bone
+        // reaches PI/2, and these rest angles are simply what each hand pose
+        // needs to add up to that.
+        //
+        // A lance or a spear is couched flat along the line of the charge and a
+        // firearm is levelled the same way, so both settle at PI/2 against
+        // their own arm. A sabre instead rests carried up and forward and comes
+        // *through* PI/2 on the swing, landing forward and down at contact.
+        ranged ? 0.86 : COUCHED_WEAPONS.has(v.weapon) ? 0.1 : -0.5,
         ranged
       ),
       parts,
