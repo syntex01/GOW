@@ -124,6 +124,34 @@ function buildUiTextures(scene: Phaser.Scene): void {
     }
     // One-pixel border, following the chamfer.
     const edgeRamp = ramp(edge, { contrast: 0.5 })
+    // An inner bead, three pixels in. Nine-slice stretches the middle of each
+    // border band, so a line that runs the length of a band survives the
+    // stretch intact — which is what lets a panel of any size keep a drawn
+    // edge instead of a drawn rectangle.
+    for (let i = CORNER; i < s - CORNER; i += 1) {
+      p.set(i, 3, edgeRamp[4], alpha)
+      p.set(i, s - 4, edgeRamp[1], alpha)
+      p.set(3, i, edgeRamp[3], alpha)
+      p.set(s - 4, i, edgeRamp[1], alpha)
+    }
+    // Corner brackets and their rivets. These live in the corner cells, which
+    // are the only parts of a nine-slice that are never stretched, so they stay
+    // square on a panel of any proportion.
+    for (const [ox, oy, sx, sy] of [
+      [0, 0, 1, 1],
+      [s - 1, 0, -1, 1],
+      [0, s - 1, 1, -1],
+      [s - 1, s - 1, -1, -1]
+    ] as [number, number, number, number][]) {
+      const lit = oy === 0 ? edgeRamp[4] : edgeRamp[1]
+      for (let i = 0; i < 5; i += 1) {
+        p.set(ox + sx * (CORNER + i), oy + sy * 1, lit, alpha)
+        p.set(ox + sx * 1, oy + sy * (CORNER + i), lit, alpha)
+      }
+      p.set(ox + sx * 5, oy + sy * 5, edgeRamp[oy === 0 ? 4 : 2], alpha)
+      p.set(ox + sx * 6, oy + sy * 5, edgeRamp[1], alpha)
+      p.set(ox + sx * 5, oy + sy * 6, edgeRamp[1], alpha)
+    }
     for (let i = 0; i < s; i += 1) {
       for (const [x, y] of [
         [i, 0],
