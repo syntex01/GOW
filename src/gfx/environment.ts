@@ -1584,7 +1584,7 @@ export function envFloorPix(age: number, worldW: number, above: number, below: n
   // Three worn paths, one per lane, straddling each lane's feet line. The
   // lanes are the game now, so the board draws its own files: a commander
   // reads where a piece will walk the same way a chess player reads a rank.
-  const PATH_HALF = 14
+  const PATH_HALF = 9
   const centres = LANE_Y.map(off => hA + off + 7)
   const pathAt = (x: number, y: number): number => {
     let best = 0
