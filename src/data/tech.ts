@@ -819,14 +819,14 @@ function stat(
  */
 export const STAT_TECHS: TechNode[] = [
   // Ring 1 — the basics, straight off the root.
-  stat('drill_yard', 'Drill Yard', 'core', 1, 0, 0, 320, ['collapse'], 'unitDamage', 1.12, 'Soldiers drilled properly hit harder. Applies to everything you build from now on.'),
-  stat('rations', 'Rations', 'core', 1, 2, 0, 320, ['collapse'], 'unitHp', 1.12, 'Fed troops last longer. New arrivals come out of the gate tougher.'),
+  stat('drill_yard', 'Drill Yard', 'core', 1, 0, 0, 320, ['collapse'], 'unitDamage', 1.09, 'Soldiers drilled properly hit harder. Applies to everything you build from now on.'),
+  stat('rations', 'Rations', 'core', 1, 2, 0, 320, ['collapse'], 'unitHp', 1.16, 'Fed troops last longer. New arrivals come out of the gate tougher.'),
   stat('foraging', 'Foraging', 'core', 1, 6, 0, 340, ['collapse'], 'income', 1.15, 'Parties sent out between engagements. Gold arrives faster.'),
   stat('quartermaster', 'Quartermaster', 'core', 1, 8, 0, 360, ['collapse'], 'buildSpeed', 1.2, 'Somebody competent is running the queue. Everything is built sooner.'),
 
   // Ring 2 — still generic, but now reachable through two different parents.
-  stat('forge_work', 'Forge Work', 'core', 2, 1, 1, 620, ['drill_yard', 'field_stripping'], 'unitDamage', 1.14, 'Better steel, better edges. Another flat gain to every weapon you field.'),
-  stat('shieldwall', 'Shieldwall', 'core', 2, 4, 1, 640, ['rations', 'powder_discipline'], 'toughness', 1.14, 'Trained to stand together. Everything you own takes less from every hit.'),
+  stat('forge_work', 'Forge Work', 'core', 2, 1, 1, 620, ['drill_yard', 'field_stripping'], 'unitDamage', 1.1, 'Better steel, better edges. Another flat gain to every weapon you field.'),
+  stat('shieldwall', 'Shieldwall', 'core', 2, 4, 1, 640, ['rations', 'powder_discipline'], 'toughness', 1.16, 'Trained to stand together. Everything you own takes less from every hit.'),
   stat('spoils', 'Spoils', 'core', 2, 7, 1, 600, ['foraging', 'old_rites'], 'bounty', 1.25, 'What you kill is worth more. Gold and experience both.'),
   stat('long_arms', 'Long Arms', 'core', 2, 9, 1, 660, ['quartermaster', 'powder_discipline'], 'unitRange', 1.12, 'Longer barrels, longer hafts. Your soldiers reach further before they are reached.'),
 
@@ -835,24 +835,24 @@ export const STAT_TECHS: TechNode[] = [
   stat('deep_stores', 'Deep Stores', 'core', 3, 4, 2, 1100, ['foraging', 'shieldwall'], 'income', 1.2, 'Reserves nobody has found yet. Income again, and it compounds with the last one.'),
   stat('masonry', 'Masonry', 'engineering', 3, 5, 2, 1150, ['salvage', 'shieldwall'], 'baseHp', 1.25, 'The fortress is rebuilt properly. It holds a great deal more punishment.'),
   stat('war_drums', 'War Drums', 'occult', 3, 7, 2, 1050, ['spoils', 'blood_pact'], 'abilityRate', 1.25, 'Something keeps time. Your special ability comes back faster.'),
-  stat('honed_edges', 'Honed Edges', 'carnage', 3, 8, 2, 1200, ['forge_work', 'butchery'], 'unitDamage', 1.16, 'Maintained between engagements rather than after them.'),
+  stat('honed_edges', 'Honed Edges', 'carnage', 3, 8, 2, 1200, ['forge_work', 'butchery'], 'unitDamage', 1.1, 'Maintained between engagements rather than after them.'),
 
   // Ring 4 — the expensive middle, where you are already leaning somewhere.
-  stat('tempering', 'Tempering', 'core', 4, 8, 2, 1500, ['forge_work'], 'unitHp', 1.16, 'Worked and quenched again. Everything you build survives more.'),
+  stat('tempering', 'Tempering', 'core', 4, 8, 2, 1500, ['forge_work'], 'unitHp', 1.2, 'Worked and quenched again. Everything you build survives more.'),
   stat('marksmanship', 'Marksmanship', 'ordnance', 4, 9, 3, 1700, ['long_arms', 'ricochet'], 'unitRange', 1.15, 'Trained to the sight rather than the volume of fire.'),
   stat('levy', 'Levy', 'core', 4, 10, 2, 1450, ['quartermaster', 'deep_stores'], 'buildSpeed', 1.22, 'Conscription. The queue moves whether or not anyone wants it to.'),
   stat('tribute', 'Tribute', 'occult', 4, 11, 3, 1800, ['spoils', 'war_drums'], 'bounty', 1.3, 'Taken from the dead and counted in front of the living.'),
   stat('outriders', 'Outriders', 'core', 4, 12, 3, 1600, ['forced_march'], 'unitSpeed', 1.15, 'Screening elements ahead of the line. Everything moves up faster.'),
 
   // Ring 5 — heavy, late, and priced like it.
-  stat('plate_lines', 'Plate Lines', 'engineering', 5, 3, 3, 2300, ['tempering', 'masonry'], 'toughness', 1.16, 'Standardised plate, produced in quantity for once.'),
-  stat('heavy_powder', 'Heavy Powder', 'ordnance', 5, 4, 4, 2600, ['marksmanship', 'shrapnel'], 'unitDamage', 1.2, 'A coarser, angrier mix. Everything you fire hits appreciably harder.'),
+  stat('plate_lines', 'Plate Lines', 'engineering', 5, 3, 3, 2300, ['tempering', 'masonry'], 'toughness', 1.18, 'Standardised plate, produced in quantity for once.'),
+  stat('heavy_powder', 'Heavy Powder', 'ordnance', 5, 4, 4, 2600, ['marksmanship', 'shrapnel'], 'unitDamage', 1.12, 'A coarser, angrier mix. Everything you fire hits appreciably harder.'),
   stat('citadel', 'Citadel', 'engineering', 5, 12, 4, 2700, ['masonry'], 'baseHp', 1.3, 'The fortress is now the strongest thing on the field by a distance.'),
   stat('logistics', 'War Logistics', 'core', 5, 13, 4, 2600, ['deep_stores', 'levy'], 'income', 1.25, 'The whole apparatus behind the line finally works.'),
   stat('zeal', 'Zeal', 'occult', 5, 14, 4, 2500, ['war_drums', 'tribute'], 'abilityRate', 1.3, 'They want to use it. Your ability charges faster again.'),
 
   // Ring 6 — the last stat nodes, alongside the deep behaviours.
-  stat('grand_forge', 'Grand Forge', 'core', 6, 3, 4, 3400, ['heavy_powder', 'honed_edges'], 'unitDamage', 1.22, 'Everything your army carries is made in one place now, and made well.'),
+  stat('grand_forge', 'Grand Forge', 'core', 6, 3, 4, 3400, ['heavy_powder', 'honed_edges'], 'unitDamage', 1.12, 'Everything your army carries is made in one place now, and made well.'),
   stat('grand_armoury', 'Grand Armoury', 'core', 6, 4, 4, 3400, ['plate_lines', 'tempering'], 'unitHp', 1.22, 'Full kit, issued to everyone, replaced when it fails.'),
   stat('war_economy', 'War Economy', 'core', 6, 12, 4, 3600, ['logistics', 'citadel'], 'income', 1.3, 'Nothing is produced that is not for this. Income one last time.'),
   stat('total_mobilisation', 'Total Mobilisation', 'core', 6, 13, 4, 3600, ['logistics', 'outriders'], 'buildSpeed', 1.28, 'Everyone who can hold something is holding something.')
