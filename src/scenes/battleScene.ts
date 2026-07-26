@@ -57,11 +57,11 @@ export default class BattleScene extends Phaser.Scene {
   /** Absent in peer-to-peer matches, where both sides are human. */
   ai?: AiController
   private waveTimer = 0
-  private cameraFocus = 0
   private dragStartX = 0
   private dragCameraX = 0
   private dragging = false
-  private manualCameraUntil = 0
+  /** Keys that pan the camera — arrows and A/D, held rather than tapped. */
+  private panDir: Record<'left' | 'right', Phaser.Input.Keyboard.Key[]> = { left: [], right: [] }
   private ended = false
   /** A disconnect has been seen and is waiting out its grace window. */
   private leaving = false
@@ -217,12 +217,10 @@ export default class BattleScene extends Phaser.Scene {
     this.speedIndex = 0
     this.wave = 1
     this.waveTimer = 0
-    this.cameraFocus = 0
     this.localLane = 2
     this.dragging = false
     this.dragStartX = 0
     this.dragCameraX = 0
-    this.manualCameraUntil = 0
   }
 
   /** The army and fortress this client is playing. */
@@ -255,6 +253,11 @@ export default class BattleScene extends Phaser.Scene {
     // Host commands the left fortress, guest the right. Both simulate the
     // same world; only the point of view differs.
     this.localFaction = setup.netRole === 'host' ? 'player' : 'enemy'
+    // With no auto-follow, the opening frame is the one thing the scene sets:
+    // each commander starts looking at their own fortress.
+    if (this.localFaction === 'enemy') {
+      this.cameras.main.setScroll(WORLD_WIDTH - this.cameras.main.width / CAMERA_ZOOM, CAMERA_SCROLL_Y)
+    }
     const peer = session.peer ?? undefined
 
     this.lockstep = new LockstepDriver(this.battlefield, this.localFaction, {
@@ -419,7 +422,10 @@ export default class BattleScene extends Phaser.Scene {
       keyboard.on(`keydown-${DIGIT_KEYS[i - 1]}`, () => this.queueByIndex(i - 1))
     }
 
-    // Drag to pan; releases back to auto-follow after a moment.
+    // The camera belongs to the player, full stop. Drag to pan (the world
+    // moves with the hand, clamped to the board), arrows or A/D to slide,
+    // and the screen edges nudge it the way an RTS does. Nothing ever moves
+    // it on its own.
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
       if (pointer.y > this.cameras.main.height - 120) return
       this.dragging = true
@@ -441,11 +447,24 @@ export default class BattleScene extends Phaser.Scene {
     this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
       if (!this.dragging || !pointer.isDown) return
       const dx = (this.dragStartX - pointer.x) / CAMERA_ZOOM
-      if (Math.abs(dx) > 4) {
-        this.cameras.main.setScroll(Math.round(this.dragCameraX + dx), CAMERA_SCROLL_Y)
-        this.manualCameraUntil = this.time.now + 2600
-      }
+      this.panCamera(this.dragCameraX + dx - this.cameras.main.scrollX)
     })
+
+    this.panDir.left = [
+      keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
+      keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A)
+    ]
+    this.panDir.right = [
+      keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
+      keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D)
+    ]
+  }
+
+  /** Moves the camera by a delta, pinned to the board. One clamp, one place. */
+  private panCamera(dx: number): void {
+    const cam = this.cameras.main
+    const max = Math.max(0, WORLD_WIDTH - cam.width / CAMERA_ZOOM)
+    cam.setScroll(Math.round(Phaser.Math.Clamp(cam.scrollX + dx, 0, max)), CAMERA_SCROLL_Y)
   }
 
   private setLane(lane: number): void {
@@ -516,7 +535,6 @@ export default class BattleScene extends Phaser.Scene {
     }
     this.dispatch({ t: 'ability' })
     if (!this.isNetworked) this.checkAbilityAchievement()
-    this.manualCameraUntil = 0
     return true
   }
 
@@ -703,26 +721,26 @@ export default class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** Keeps the front line framed without fighting the player's own panning. */
+  /**
+   * The player's camera controls, and only the player's: held pan keys and
+   * the RTS edge-nudge. There is deliberately no auto-follow — a camera that
+   * moves itself was the single most reported piece of jank, because every
+   * repositioning the player made was quietly fought and then undone.
+   */
   private updateCamera(delta: number): void {
-    const cam = this.cameras.main
-    if (this.time.now < this.manualCameraUntil) return
-
-    const bf = this.battlefield
-    let playerFront = bf.playerBase.x
-    let enemyFront = bf.enemyBase.x
-    for (const u of bf.units) {
-      if (!u.alive) continue
-      if (u.faction === 'player') playerFront = Math.max(playerFront, u.x)
-      else enemyFront = Math.min(enemyFront, u.x)
+    if (this.ended || this.dragging) return
+    const speed = (delta / 1000) * 720
+    let dx = 0
+    if (this.panDir.left.some(k => k.isDown)) dx -= speed
+    if (this.panDir.right.some(k => k.isDown)) dx += speed
+    // Edge scroll, only while the pointer is actually over the battlefield —
+    // never from the HUD strip, and never while a panel owns the input.
+    const pointer = this.input.activePointer
+    if (dx === 0 && !this.modalOpen && pointer.y > 70 && pointer.y < this.cameras.main.height - 120) {
+      if (pointer.x < 26) dx -= speed
+      else if (pointer.x > this.cameras.main.width - 26) dx += speed
     }
-
-    // Focus on the contact point, biased slightly toward the player's side.
-    const contact = (playerFront + enemyFront) / 2
-    const halfView = cam.width / (2 * CAMERA_ZOOM)
-    const target = Phaser.Math.Clamp(contact - 30, halfView, WORLD_WIDTH - halfView)
-    this.cameraFocus = Phaser.Math.Linear(this.cameraFocus || target, target, Math.min(1, delta / 420))
-    cam.setScroll(Math.round(this.cameraFocus - cam.width / 2), CAMERA_SCROLL_Y)
+    if (dx !== 0) this.panCamera(dx)
   }
 
   private updateMusicIntensity(): void {
