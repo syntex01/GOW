@@ -161,7 +161,15 @@ export default class Lighting {
         bandHeight + 1
       )
     }
+    // Cleared to opaque black rather than to nothing. This texture is
+    // composited with ADD, and ADD ignores alpha: a pixel left transparent but
+    // still carrying last frame's colour is added at full strength anyway. That
+    // turned the glow layer into a flat veil lifting the whole frame by fifty
+    // levels of luminance, which flattened every bit of aerial perspective the
+    // environment had been built to produce. Black adds nothing, so this costs
+    // the bloom nothing and costs the veil everything.
     glow.clear()
+    glow.fill(0x000000, 1)
 
     for (const light of this.lights) {
       const sx = light.x - scrollX

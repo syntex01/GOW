@@ -6,7 +6,7 @@ import { session } from '../core/session'
 import { ageDef } from '../data/ages'
 import { TECHS_BY_ID, type TechId } from '../data/tech'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
-import Background from '../gfx/background'
+import Environment from '../gfx/environment'
 import DebrisLayer from '../gfx/debrisLayer'
 import Splatter from '../gfx/splatter'
 import Lighting from '../gfx/lighting'
@@ -38,7 +38,7 @@ export default class BattleScene extends Phaser.Scene {
   speedIndex = 0
   wave = 1
 
-  private background!: Background
+  private background!: Environment
   private debris!: DebrisLayer
   private splatter!: Splatter
   private lighting!: Lighting
@@ -79,7 +79,7 @@ export default class BattleScene extends Phaser.Scene {
 
     this.lighting = new Lighting(this, 700)
     this.vfx = new Vfx(this, GROUND_Y, this.lighting)
-    this.background = new Background(this, WORLD_WIDTH, GROUND_Y)
+    this.background = new Environment(this, WORLD_WIDTH, GROUND_Y)
     // The mess sits above the ground and below the fighting.
     this.splatter = new Splatter(this, WORLD_WIDTH, GROUND_Y, 70)
     this.debris = new DebrisLayer(this, 100)

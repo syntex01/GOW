@@ -7,7 +7,7 @@ import { AGES } from '../data/ages'
 import { LEVELS } from '../data/levels'
 import { TURRETS } from '../data/turrets'
 import { UNITS } from '../data/units'
-import Background from '../gfx/background'
+import Environment from '../gfx/environment'
 import Lighting from '../gfx/lighting'
 import { AGE_THEMES, TIER_COLORS, UI } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
@@ -21,7 +21,7 @@ const GROUND_Y = 640
 
 /** Main menu, mode selection, codex, settings and achievements. */
 export default class MenuScene extends Phaser.Scene {
-  private background!: Background
+  private background!: Environment
   private lighting!: Lighting
   private vfx!: Vfx
   private parade: Unit[] = []
@@ -41,7 +41,7 @@ export default class MenuScene extends Phaser.Scene {
     this.lighting = new Lighting(this, 300)
     this.lighting.setAge(this.paradeAge)
     this.vfx = new Vfx(this, GROUND_Y, this.lighting)
-    this.background = new Background(this, cam.width, GROUND_Y)
+    this.background = new Environment(this, cam.width, GROUND_Y)
     this.background.setAge(this.paradeAge)
 
     this.viewContainer = this.add.container(0, 0).setDepth(500)

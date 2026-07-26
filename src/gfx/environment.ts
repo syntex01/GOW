@@ -153,6 +153,12 @@ const BAND_HAZE = [0.66, 0.44, 0.24, 0.07]
  * mountain sixty miles away is *never* brighter than the air in front of it by
  * much, and a range that is reads as a wall of glowing rock.
  */
+/**
+ * Where the nearest range sits relative to its own horizon. Land reads as land
+ * because it is decisively darker than the sky it stands against — or brighter,
+ * in the ages whose light comes from the ground.
+ */
+const NEAR_GROUND_SHARE = 0.56
 const BAND_SPREAD_MIN = 27
 const BAND_SPREAD_MAX = 46
 
@@ -174,12 +180,20 @@ export function envBandBase(age: number, depth: number): number {
   const d = Math.max(0, Math.min(BAND_HAZE.length - 1, depth))
   const base = mix(rock, horizon, BAND_HAZE[d])
 
-  const nearLum = lum(mix(rock, horizon, BAND_HAZE[BAND_HAZE.length - 1]))
+  const rawNear = lum(mix(rock, horizon, BAND_HAZE[BAND_HAZE.length - 1]))
   // Distance moves a band toward the sky's value. Where sky and rock share a
   // value there is no physical answer, so fall back on the painter's
   // convention: distance lightens.
+  const direction = Math.abs(lum(horizon) - rawNear) < 8 ? 1 : Math.sign(lum(horizon) - rawNear)
+  // Land has to sit clear of its own sky, not merely a shade off it. The
+  // staircase between the ranges was already right, but the whole flight of it
+  // started so close to the horizon's value that the ridges, the ground and the
+  // soldiers standing on it all washed into one pale field. Anchoring the
+  // nearest range well away from the sky, in whichever direction this age's
+  // light runs, puts the contrast back without disturbing the steps above it.
+  const anchor = direction > 0 ? lum(horizon) * NEAR_GROUND_SHARE : Math.min(238, lum(horizon) / NEAR_GROUND_SHARE)
+  const nearLum = direction > 0 ? Math.min(rawNear, anchor) : Math.max(rawNear, anchor)
   const towardSky = lum(horizon) - nearLum
-  const direction = Math.abs(towardSky) < 8 ? 1 : Math.sign(towardSky)
   // Take slightly over half the distance from the rock to the sky, then hold it
   // inside the bounds above, so every theme gets a visible staircase and none
   // of them get a far range that outshines its own horizon.
@@ -1363,12 +1377,27 @@ export function envBandArt(age: number, depth: number, worldW: number, worldH: n
     // way down the layer paints a full-height vertical stripe wherever one
     // steep face happens to be — a curtain hanging over the picture — so it
     // eases back to the base tone below the crest.
+    //
+    // The foot shadow is folded into the same pass. It seats this range behind
+    // the next one, and both of its steps are dithered: a hard cut here draws a
+    // straight line across the whole screen, which no landscape has.
     const faceDepth = Math.max(6, h * 0.3)
+    const span = Math.max(1, h - top)
     for (let y = top; y < h; y += 1) {
       const dt = Math.min(1, (y - top) / faceDepth)
-      const local = 2 + (f - 2) * (1 - dt * dt)
+      // Seated at the base tone rather than a step above it. Starting the body
+      // at r[2] meant the upper half of every slab was painted lighter than the
+      // colour the aerial-perspective ramp had just been so careful to choose,
+      // and because the farthest band is also the tallest, that lighter half
+      // covered most of the screen. The lit tones belong on the crest and the
+      // faces turned into the light, not across the whole face of the range.
+      const local = 1.45 + (f - 2) * (1 - dt * dt)
       const kk = Math.max(0, Math.min(3, Math.floor(local)))
-      p.set(x, y, ditherAt(x, y, local - kk) ? r[Math.min(4, kk + 1)] : r[kk])
+      let c = ditherAt(x, y, local - kk) ? r[Math.min(4, kk + 1)] : r[kk]
+      const tt = (y - top) / span
+      if (tt > 0.46 && ditherAt(x, y, (tt - 0.46) * 1.8)) c = r[1]
+      if (tt > 0.7 && ditherAt(x + 2, y + 1, (tt - 0.7) * 2.4)) c = r[0]
+      p.set(x, y, c)
     }
     // The crest itself catches the light hardest of all — but only where it is
     // actually turned into it. A rim that runs the whole ridgeline is a drawn
@@ -1381,14 +1410,6 @@ export function envBandArt(age: number, depth: number, worldW: number, worldH: n
     } else {
       p.set(x, top, r[1])
       p.set(x, top + 1, r[1])
-    }
-
-    // The foot sinks away, which seats this range behind the next one. Both
-    // steps are dithered: a hard cut here draws a line across the whole screen.
-    for (let y = top; y < h; y += 1) {
-      const tt = (y - top) / Math.max(1, h - top)
-      if (tt > 0.46 && ditherAt(x, y, (tt - 0.46) * 1.8)) p.set(x, y, r[1])
-      if (tt > 0.7 && ditherAt(x + 2, y + 1, (tt - 0.7) * 2.4)) p.set(x, y, r[0])
     }
 
     // Snow and scree, but only in ages cold enough for it, only on summits that
@@ -1945,6 +1966,10 @@ export default class Environment {
 
   /** Age-independent art: particles, smoke frames, the beam, the vignette. */
   private buildShared(): void {
+    // Every layer is created against this and re-pointed by setAge. Building
+    // the sprites against a real age instead would generate a whole age's worth
+    // of art that the caller is about to replace on the very next line.
+    this.add('env:blank', () => new Pix(2, 2))
     for (let i = 0; i < ENV_SMOKE_FRAMES; i += 1) {
       this.add(`env:smoke:${i}`, () => envSmokePix(i))
     }
@@ -1984,10 +2009,9 @@ export default class Environment {
   private build(): void {
     const w = this.viewW
     const h = this.viewH
-    this.ensureAge(0)
 
     this.sky = this.scene.add
-      .image(0, 0, 'env:sky:0')
+      .image(0, 0, 'env:blank')
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-1000)
@@ -1996,7 +2020,7 @@ export default class Environment {
     // Registered exactly against the glow baked into the sky, so it must not
     // drift: no scroll factor of its own.
     this.celestial = this.scene.add
-      .image(ENV_SUN_POS[0][0] * w, ENV_SUN_POS[0][1] * h, 'env:sun:0')
+      .image(ENV_SUN_POS[0][0] * w, ENV_SUN_POS[0][1] * h, 'env:blank')
       .setScrollFactor(0)
       .setDepth(-997)
       .setScale(1 / RES)
@@ -2004,14 +2028,14 @@ export default class Environment {
     // Both cloud banks are TileSprites authored at exactly their own height and
     // wider than the viewport, so they can drift forever without a seam.
     this.cirrus = this.scene.add
-      .tileSprite(0, ENV_CIRRUS_Y, w, ENV_CIRRUS_HEIGHT, 'env:cirrus:0')
+      .tileSprite(0, ENV_CIRRUS_Y, w, ENV_CIRRUS_HEIGHT, 'env:blank')
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-995)
     this.cirrus.setTileScale(1 / RES, 1 / RES)
 
     this.cumulus = this.scene.add
-      .tileSprite(0, ENV_CUMULUS_Y, w, ENV_CUMULUS_HEIGHT, 'env:cumulus:0')
+      .tileSprite(0, ENV_CUMULUS_Y, w, ENV_CUMULUS_HEIGHT, 'env:blank')
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-993)
@@ -2021,7 +2045,7 @@ export default class Environment {
     // a horizontal seam wherever one ends and the next has not started.
     for (let d = 0; d < ENV_BAND_HEIGHTS.length; d += 1) {
       const band = this.scene.add
-        .tileSprite(0, this.groundY + ENV_BAND_FOOT, w, ENV_BAND_HEIGHTS[d], `env:band:0:${d}`)
+        .tileSprite(0, this.groundY + ENV_BAND_FOOT, w, ENV_BAND_HEIGHTS[d], 'env:blank')
         .setOrigin(0, 1)
         .setScrollFactor(0)
         .setDepth(-980 + d * 4)
@@ -2030,21 +2054,21 @@ export default class Environment {
     }
 
     this.ground = this.scene.add
-      .tileSprite(0, this.groundY, w, ENV_GROUND_HEIGHT, 'env:ground:0')
+      .tileSprite(0, this.groundY, w, ENV_GROUND_HEIGHT, 'env:blank')
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-900)
     this.ground.setTileScale(1 / RES, 1 / RES)
 
     this.fog = this.scene.add
-      .tileSprite(0, this.groundY, w, ENV_FOG_HEIGHT, 'env:fog:0')
+      .tileSprite(0, this.groundY, w, ENV_FOG_HEIGHT, 'env:blank')
       .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(-899)
     this.fog.setTileScale(1 / RES, 1 / RES)
 
     this.bank = this.scene.add
-      .tileSprite(0, this.groundY + ENV_BANK_DROP, w, ENV_BANK_HEIGHT, 'env:bank:0')
+      .tileSprite(0, this.groundY + ENV_BANK_DROP, w, ENV_BANK_HEIGHT, 'env:blank')
       .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(760)
@@ -2366,6 +2390,8 @@ export default class Environment {
     // Scene restarts can land an update between teardown and rebuild; touching
     // a destroyed TileSprite throws inside Phaser's UV update.
     if (this.destroyed) return
+    // A caller that forgets to theme the world still gets a world.
+    if (this.age < 0) this.setAge(0)
     this.time += delta
     this.scrollX = scrollX
 

@@ -59,13 +59,19 @@ export const AGE_THEMES: AgeTheme[] = [
   {
     name: 'Medieval Age',
     tagline: 'Steel, faith and siege.',
-    sky: [0x0e1830, 0x27446a, 0x5c7e97],
-    sun: 0xfff3d0,
-    ridges: [0x243448, 0x2d4356, 0x35513f],
-    ground: 0x3f5c2e,
-    groundDark: 0x263a1c,
-    groundAccent: 0x5a7a3c,
-    fog: 0x8fadc4,
+    // Deliberately deeper than it looks like it should be on paper. Everything
+    // the environment draws is derived from these, and this age's horizon and
+    // haze used to sit so close to the value of its own hills that the ranges,
+    // the ground and the soldiers standing on it all washed into one pale
+    // field — measurably: seventeen points of separation where the other ages
+    // had fifty-six.
+    sky: [0x0c1528, 0x223c5e, 0x46637a],
+    sun: 0xffedc4,
+    ridges: [0x1b2734, 0x233242, 0x27402f],
+    ground: 0x2c4020,
+    groundDark: 0x18280f,
+    groundAccent: 0x466030,
+    fog: 0x6d8ba3,
     props: 'pines',
     weather: 'clear',
     playerStructure: 0x9aa3b5,

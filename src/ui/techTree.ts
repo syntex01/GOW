@@ -13,6 +13,17 @@ import {
 import { MORPH_TECHS } from '../data/morphs'
 import { UI } from '../gfx/palette'
 import type Army from '../sim/army'
+import {
+  CONNECTOR_H,
+  NODE_SIZE_PX,
+  drawConnector,
+  drawLinkBoss,
+  drawNodeFrame,
+  drawNodeIcon,
+  drawTreeBackdrop,
+  nodeSizeFor,
+  type NodeState
+} from './techTreeArt'
 import { Button, formatNumber, hex, label, panel } from './widgets'
 
 /**
@@ -31,19 +42,29 @@ import { Button, formatNumber, hex, label, panel } from './widgets'
  * detail strip at the foot of the panel and follows whatever you point at.
  */
 
-const COL_W = 208
-const ROW_H = 46
-const NODE_W = 168
-const NODE_H = 34
+const COL_W = 254
+const ROW_H = 120
+/** The art is authored small and shown at a whole multiple, as pixel art must be. */
+const ART = 2
+
+/** Five availability states collapse onto the three the art draws. */
+function artState(state: ReturnType<Army['techAvailability']>): NodeState {
+  if (state === 'owned') return 'owned'
+  return state === 'ready' ? 'available' : 'locked'
+}
 
 interface NodeView {
   node: TechNode
   x: number
   y: number
-  box: Phaser.GameObjects.Rectangle
+  frame: Phaser.GameObjects.Image
+  icon: Phaser.GameObjects.Image
   name: Phaser.GameObjects.Text
   tag: Phaser.GameObjects.Text
   state: ReturnType<Army['techAvailability']>
+  art: NodeState | null
+  /** Scale currently applied by the hover lift, so it can be taken back off. */
+  lift?: number
 }
 
 export default class TechTree {
@@ -144,12 +165,20 @@ export default class TechTree {
     this.viewW = panelW - 32
     this.viewH = panelH - 96 - detailH
 
+    if (!scene.textures.exists('tt:backdrop')) {
+      scene.textures.addCanvas('tt:backdrop', drawTreeBackdrop(this.viewW, this.viewH).canvas)
+    }
     const frame = scene.add
-      .rectangle(this.viewX, this.viewY, this.viewW, this.viewH, 0x070c16, 0.55)
+      .image(this.viewX, this.viewY, 'tt:backdrop')
       .setOrigin(0, 0)
-      .setStrokeStyle(1, UI.panelEdge)
+      .setDisplaySize(this.viewW, this.viewH)
       .setInteractive()
     this.container.add(frame)
+    const frameEdge = scene.add
+      .rectangle(this.viewX, this.viewY, this.viewW, this.viewH)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, UI.panelEdge)
+    this.container.add(frameEdge)
 
     this.graph = scene.add.container(this.viewX, this.viewY).setDepth(3001).setScrollFactor(0)
     this.container.add(this.graph)
@@ -243,28 +272,59 @@ export default class TechTree {
     return 34 + (this.slots.get(node.id) ?? node.row) * ROW_H
   }
 
+  /**
+   * Registers a drawn canvas as a texture once and hands back its key. Every
+   * frame, emblem, link and boss in the network is one of a small number of
+   * distinct pictures, so they are drawn once and stamped a hundred times.
+   */
+  private tex(scene: Phaser.Scene, key: string, make: () => { canvas: HTMLCanvasElement }): string {
+    if (!scene.textures.exists(key)) scene.textures.addCanvas(key, make().canvas)
+    return key
+  }
+
+  private frameKey(scene: Phaser.Scene, node: TechNode, state: NodeState): string {
+    const accent = node.kind === 'ascension' && node.becomes ? FACTIONS_BY_ID[node.becomes].accent : undefined
+    const size = nodeSizeFor(node)
+    return this.tex(scene, `tt:f:${size}:${node.branch}:${state}:${accent ?? 0}`, () =>
+      drawNodeFrame(size, node.branch, state, accent)
+    )
+  }
+
+  private iconKey(scene: Phaser.Scene, node: TechNode, state: NodeState): string {
+    const accent = node.kind === 'ascension' && node.becomes ? FACTIONS_BY_ID[node.becomes].accent : undefined
+    return this.tex(scene, `tt:i:${node.id}:${state}`, () => drawNodeIcon(node, state, accent))
+  }
+
   private buildNodes(scene: Phaser.Scene): void {
     for (const node of TECHS) {
       const x = this.nodeX(node)
       const y = this.nodeY(node)
-      const accent = node.kind === 'ascension' && node.becomes
-        ? FACTIONS_BY_ID[node.becomes].accent
-        : BRANCH_ACCENT[node.branch]
+      const size = nodeSizeFor(node)
+      const px = NODE_SIZE_PX[size] * ART
 
-      const box = scene.add
-        .rectangle(x, y, NODE_W, node.kind === 'ascension' ? NODE_H + 6 : NODE_H, UI.panel, 0.95)
-        .setOrigin(0, 0.5)
-        .setStrokeStyle(node.kind === 'ascension' ? 2 : 1, accent)
+      const frame = scene.add
+        .image(x, y, this.frameKey(scene, node, 'locked'))
+        .setDisplaySize(px, px)
         .setInteractive({ useHandCursor: true })
+      const icon = scene.add.image(x, y, this.iconKey(scene, node, 'locked')).setDisplaySize(px, px)
 
-      const name = label(scene, x + 8, y - 12, MORPH_TECHS.has(node.id) ? `${node.name} ⟳` : node.name, {
-        size: 12,
-        bold: true
-      })
-      const tag = label(scene, x + 8, y + 2, '', { size: 10, color: UI.textDim })
+      // A hundred names at once is a wall of text. The medallions carry the
+      // shape of the network; only the nodes that change what your army *is*
+      // wear their name in the open, and everything else answers on hover.
+      const named = size !== 'minor'
+      const name = label(scene, x, y + px / 2 + 4, named ? (MORPH_TECHS.has(node.id) ? `${node.name} ⟳` : node.name) : '', {
+        size: size === 'ascendancy' ? 13 : 11,
+        bold: true,
+        align: 'center'
+      }).setOrigin(0.5, 0)
+      const tag = label(scene, x, y + px / 2 + (size === 'ascendancy' ? 22 : 19), '', {
+        size: 10,
+        color: UI.textDim,
+        align: 'center'
+      }).setOrigin(0.5, 0)
 
-      box.on('pointerover', () => this.showDetail(node.id))
-      box.on('pointerup', () => {
+      frame.on('pointerover', () => this.showDetail(node.id))
+      frame.on('pointerup', () => {
         // A pan that ends over a node is a pan, not a click.
         if (this.dragging) return
         if (this.army.techAvailability(node.id) !== 'ready') {
@@ -275,9 +335,8 @@ export default class TechTree {
         this.onBuy(node.id)
       })
 
-      this.graph.add([box, name, tag])
-      const view: NodeView = { node, x, y, box, name, tag, state: 'locked' }
-      this.views.push(view)
+      this.graph.add([frame, icon, name, tag])
+      this.views.push({ node, x, y, frame, icon, name, tag, state: 'locked', art: null })
     }
   }
 
@@ -293,44 +352,75 @@ export default class TechTree {
 
   // ─────────────────────────────── drawing ────────────────────────────────
 
-  /** Where an edge leaves a parent and where it arrives at a child. */
+  /** Node centres — the links run between the medallions themselves. */
   private edgePoints(parent: TechNode, child: TechNode): [number, number, number, number] {
-    return [
-      this.nodeX(parent) + NODE_W,
-      this.nodeY(parent),
-      this.nodeX(child),
-      this.nodeY(child)
-    ]
+    return [this.nodeX(parent), this.nodeY(parent), this.nodeX(child), this.nodeY(child)]
+  }
+
+  /**
+   * Links, as forged runs rather than hairlines.
+   *
+   * Every run is an elbow of axis-aligned pieces, which is both what keeps a
+   * hundred parallel edges legible where a fan of diagonals turns into
+   * hatching, and what lets the connector art be stamped rather than rotated.
+   * A rosette covers each corner so the mitre never shows. The images are
+   * pooled: the network's shape never changes, only which state each run is in.
+   */
+  private linkPool: Phaser.GameObjects.Image[] = []
+  private linkUsed = 0
+
+  private link(scene: Phaser.Scene, key: string, x: number, y: number, w: number, h: number): void {
+    let img = this.linkPool[this.linkUsed]
+    if (!img) {
+      img = scene.add.image(0, 0, key).setOrigin(0.5, 0.5)
+      this.linkPool.push(img)
+      this.graph.addAt(img, 0)
+    }
+    img.setTexture(key).setPosition(x, y).setDisplaySize(w, h).setVisible(true)
+    this.linkUsed += 1
   }
 
   private drawEdges(): void {
-    const g = this.edges
-    g.clear()
+    const scene = this.graph.scene
+    this.linkUsed = 0
+    const thick = CONNECTOR_H * ART
     for (const view of this.views) {
       const child = view.node
       for (const parentId of child.requires) {
         const parent = TECHS_BY_ID[parentId]
         if (!parent) continue
-        const owned = this.army.techs.has(parentId)
-        const childOwned = this.army.techs.has(child.id)
-        const lit = owned && (childOwned || view.state === 'ready' || view.state === 'gold' || view.state === 'age')
-        const colour = childOwned ? UI.good : lit ? BRANCH_ACCENT[child.branch] : UI.panelEdge
-        const alpha = childOwned ? 0.75 : lit ? 0.55 : 0.22
-        const focus = this.hovered === child.id || this.hovered === parentId
-        g.lineStyle(focus ? 2 : 1, focus ? UI.gold : colour, focus ? 0.95 : alpha)
-
+        const state: NodeState = this.army.techs.has(child.id)
+          ? 'owned'
+          : this.army.techs.has(parentId) && view.state !== 'locked'
+            ? 'available'
+            : 'locked'
+        const branch = child.branch
         const [x1, y1, x2, y2] = this.edgePoints(parent, child)
-        // Elbow rather than a straight diagonal: with a hundred nodes, parallel
-        // runs stay legible where a fan of diagonals turns into hatching.
         const mid = x1 + (x2 - x1) * 0.5
-        g.beginPath()
-        g.moveTo(x1, y1)
-        g.lineTo(mid, y1)
-        g.lineTo(mid, y2)
-        g.lineTo(x2, y2)
-        g.strokePath()
+
+        const runH = (a: number, b: number, y: number) => {
+          const len = Math.abs(b - a)
+          if (len < 12) return
+          const key = this.tex(scene, `tt:h:${Math.round(len / ART)}:${state}:${branch}`, () =>
+            drawConnector(len / ART, state, branch)
+          )
+          this.link(scene, key, (a + b) / 2, y, len, thick)
+        }
+        runH(x1, mid, y1)
+        runH(mid, x2, y2)
+        const vlen = Math.abs(y2 - y1)
+        if (vlen >= 12) {
+          const key = this.tex(scene, `tt:v:${Math.round(vlen / ART)}:${state}:${branch}`, () =>
+            drawConnector(vlen / ART, state, branch, true)
+          )
+          this.link(scene, key, mid, (y1 + y2) / 2, thick, vlen)
+          const boss = this.tex(scene, `tt:b:${state}:${branch}`, () => drawLinkBoss(state, branch))
+          this.link(scene, boss, mid, y1, 13 * ART, 13 * ART)
+          this.link(scene, boss, mid, y2, 13 * ART, 13 * ART)
+        }
       }
     }
+    for (let i = this.linkUsed; i < this.linkPool.length; i += 1) this.linkPool[i].setVisible(false)
   }
 
   // ──────────────────────────────── input ────────────────────────────────
@@ -399,6 +489,14 @@ export default class TechTree {
 
   private showDetail(id: TechId): void {
     if (this.destroyed) return
+    if (this.hovered !== id) {
+      for (const view of this.views) {
+        const lift = view.node.id === id ? 1.12 : 1
+        view.frame.setScale(view.frame.scaleX / (view.lift ?? 1) * lift)
+        view.icon.setScale(view.icon.scaleX / (view.lift ?? 1) * lift)
+        view.lift = lift
+      }
+    }
     this.hovered = id
     const node = TECHS_BY_ID[id]
     if (!node) return
@@ -454,45 +552,47 @@ export default class TechTree {
   /** Re-reads the army so state is right the moment gold or an age changes. */
   refresh(): void {
     if (this.destroyed) return
+    const scene = this.graph.scene
     for (const view of this.views) {
       const state = this.army.techAvailability(view.node.id)
       view.state = state
-      const accent =
-        view.node.kind === 'ascension' && view.node.becomes
-          ? FACTIONS_BY_ID[view.node.becomes].accent
-          : BRANCH_ACCENT[view.node.branch]
+      // Repainting a medallion means swapping two textures, so only do it when
+      // the grade it draws in has actually changed.
+      const art = artState(state)
+      if (art !== view.art) {
+        view.art = art
+        view.frame.setTexture(this.frameKey(scene, view.node, art))
+        view.icon.setTexture(this.iconKey(scene, view.node, art))
+      }
+      view.frame.setAlpha(state === 'locked' ? 0.5 : 1)
+      view.icon.setAlpha(state === 'locked' ? 0.5 : 1)
 
       switch (state) {
         case 'owned':
-          view.box.setFillStyle(0x123322, 0.95).setStrokeStyle(view.node.kind === 'ascension' ? 2 : 1, UI.good)
-          view.name.setColor(hex(UI.text)).setAlpha(1)
+          view.name.setColor(hex(UI.good)).setAlpha(1)
           view.tag.setText(view.node.kind === 'ascension' ? 'ASCENDED' : 'researched').setColor(hex(UI.good))
           break
         case 'ready':
-          view.box.setFillStyle(0x1d2740, 0.98).setStrokeStyle(2, UI.gold)
           view.name.setColor(hex(UI.text)).setAlpha(1)
           view.tag
             .setText(
               view.node.kind === 'ascension'
                 ? 'ASCEND — one only'
-                : `${formatNumber(view.node.cost)}g · research`
+                : `${formatNumber(view.node.cost)}g`
             )
             .setColor(hex(UI.gold))
           break
         case 'gold':
-          view.box.setFillStyle(UI.panel, 0.9).setStrokeStyle(1, accent)
           view.name.setColor(hex(UI.text)).setAlpha(0.8)
           view.tag.setText(`${formatNumber(view.node.cost)}g · short`).setColor(hex(UI.warn))
           break
         case 'age':
-          view.box.setFillStyle(UI.panel, 0.9).setStrokeStyle(1, accent)
           view.name.setColor(hex(UI.text)).setAlpha(0.7)
           view.tag.setText(`age ${view.node.age + 1}`).setColor(hex(UI.warn))
           break
         case 'demand':
           // Bought with deeds, not gold. Show the tally, because a demand you
           // cannot see your progress toward is just an arbitrary wall.
-          view.box.setFillStyle(UI.panel, 0.9).setStrokeStyle(1, accent)
           view.name.setColor(hex(UI.text)).setAlpha(0.85)
           view.tag
             .setText(
@@ -503,9 +603,8 @@ export default class TechTree {
             .setColor(hex(UI.gold))
           break
         default:
-          view.box.setFillStyle(0x0a101c, 0.85).setStrokeStyle(1, UI.panelEdge)
-          view.name.setColor(hex(UI.textDim)).setAlpha(0.55)
-          view.tag.setText('locked').setColor(hex(UI.panelEdge))
+          view.name.setColor(hex(UI.textDim)).setAlpha(0.5)
+          view.tag.setText('').setColor(hex(UI.panelEdge))
           break
       }
     }
