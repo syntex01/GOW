@@ -5,6 +5,7 @@ import { LEVELS_BY_ID, type GameMode } from './data/levels'
 import { morphedDef } from './data/morphs'
 import type { UnitDef } from './data/types'
 import { UNITS_BY_ID } from './data/units'
+import { FACTION_UNITS } from './data/factions'
 import BattleScene from './scenes/battleScene'
 import BootScene from './scenes/bootScene'
 import HUDScene from './scenes/hudScene'
@@ -58,12 +59,15 @@ function start(): void {
     __gowStart: (mode: GameMode, difficulty: Difficulty, levelId?: string) => void
     __gowStartSeeded: (mode: GameMode, difficulty: Difficulty, seed: number) => void
     __gowUnits: typeof UNITS_BY_ID
+    __gowFactionUnits: Record<string, UnitDef>
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
   }
   debug.__gowGame = game
   // Exposed so a smoke test can put a unit on the field without waiting out a
   // build queue in real time.
   debug.__gowUnits = UNITS_BY_ID
+  // The five paths' own soldiers, for tests that field them directly.
+  debug.__gowFactionUnits = Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
   // Lets a test ask "what does this unit become under these doctrines?" without
   // having to reach an age whose roster happens to contain it.
   debug.__gowMorph = (unitId, techs) => {

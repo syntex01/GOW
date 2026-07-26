@@ -59,7 +59,7 @@ import { LANE_Y } from '../sim/types'
  * Authored width of every scrolling layer.
  *
  * A layer must cover the viewport plus everything its own tile position can
- * travel. The camera can only cross `worldWidth - viewport` = 1920 - 1280 = 640,
+ * travel. The camera can only cross `worldWidth - viewport` = 2400 - 1280 = 1120,
  * and the fastest screen-space layers are the nearest range and the haze at
  * 0.46, so the requirement is 1280 + 0.46 x 640 = 1575. 2048 clears it with
  * room to spare and is a power of two, which is what lets the periodic noise

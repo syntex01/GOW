@@ -1142,7 +1142,13 @@ export default class Battlefield {
         const base = this.baseFor(army.faction)
         base.hp = Math.max(1, base.hp - entry.def.buildMs * 0.045)
       }
-      this.spawnUnit(army.faction, entry.def, undefined, entry.lane)
+      // The quantity paths' chaff arrives in squads: one card, several
+      // soldiers, staggered a step apart so they walk out as a file.
+      const copies = entry.def.squad ?? 1
+      for (let c = 0; c < copies; c += 1) {
+        const unit = this.spawnUnit(army.faction, entry.def, undefined, entry.lane)
+        if (copies > 1) unit.x -= ADVANCE_DIR[army.faction] * c * 14
+      }
     }
   }
 

@@ -5,7 +5,7 @@ import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
-import { TECHS_BY_ID, type DeedKey, type TechId } from '../data/tech'
+import { TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
 /** How many cards the command bar can show. */
 const MAX_ROSTER = 9
@@ -15,6 +15,22 @@ const ALL_UNITS_BY_ID: Record<string, UnitDef> = {
   ...UNITS_BY_ID,
   ...Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
 }
+
+/** Which research direction a path unit belongs to, read off its id prefix. */
+const BRANCH_BY_PREFIX: Record<string, string> = {
+  nk: 'carnage',
+  ch: 'ordnance',
+  cy: 'engineering',
+  dc: 'occult',
+  hb: 'blight'
+}
+
+function unitBranch(id: string): string | null {
+  return BRANCH_BY_PREFIX[id.slice(0, 2)] ?? null
+}
+
+/** Units that stay behind their specific research node, lean or no lean. */
+const NODE_GATED = new Set(UNLOCKABLE_UNIT_IDS)
 
 export interface QueueEntry {
   def: UnitDef
@@ -120,28 +136,92 @@ export default class Army {
   }
 
   /**
+   * How many nodes of one direction this army owns. Two is a lean; the count
+   * keeps growing as the commitment deepens.
+   */
+  branchDepth(branch: string): number {
+    let n = 0
+    for (const id of this.techs) {
+      if (TECHS_BY_ID[id]?.branch === branch) n += 1
+    }
+    return n
+  }
+
+  /** The single direction this army has leant furthest, or null while even. */
+  get dominantBranch(): string | null {
+    let best: string | null = null
+    let bestN = 1
+    for (const branch of ['carnage', 'ordnance', 'engineering', 'occult', 'blight']) {
+      const n = this.branchDepth(branch)
+      if (n > bestN) {
+        best = branch
+        bestN = n
+      }
+    }
+    return best
+  }
+
+  /**
    * What this army can build right now.
    *
-   * Research is meant to be *visible*, so a roster is not a fixed list per age:
-   * unlock nodes add units to it as they are researched, and ascending replaces
-   * it outright with the faction's own five. That is the moment the tree pays
-   * off — the command bar you have been using all match becomes a different
-   * army's command bar.
+   * The roster is the research made flesh, and it narrows as the war ages:
+   *
+   *  - Age 0 is the shared stone roster. Nobody has a creed yet.
+   *  - Ages 1–2: the neutral roster of the age, plus the path units of EVERY
+   *    direction this army holds at least two nodes in — spread your early
+   *    research and you can field soldiers of two creeds side by side.
+   *  - Age 3: the paths consolidate. Only the dominant direction's units
+   *    still march with the neutral core.
+   *  - Age 4: the roster is replaced outright by the dominant path's units,
+   *    every age of them — the chaff of age 1 next to the engines of age 4.
+   *    An army that never leant anywhere keeps the neutral future roster.
+   *
+   * Unit nodes (Rite of the Flenser, Drone Forge…) stay gates on their
+   * specific units on top of all of this, and ascending still replaces
+   * everything with the faction's own line.
    */
   get roster(): UnitDef[] {
     // Morphs run last, over whatever the roster turned out to be, so an
     // ascended faction's own units keep changing shape as you research past
     // the ascension rather than freezing the moment you took it.
     if (this.ascendedTo) return morphedRoster(factionRoster(this.ascendedTo), this.techs)
-    const base = rosterForAge(this.age)
-    const extra: UnitDef[] = []
-    for (const id of this.unlocked) {
-      const def = ALL_UNITS_BY_ID[id]
-      if (def) extra.push(def)
+
+    const dominant = this.dominantBranch
+    const pathDefs = (branch: string): UnitDef[] =>
+      FACTION_UNITS.filter(
+        u =>
+          unitBranch(u.id) === branch &&
+          u.age <= this.age &&
+          (!NODE_GATED.has(u.id) || this.unlocked.has(u.id))
+      ).sort((a, b) => a.age - b.age || a.cost - b.cost)
+
+    let list: UnitDef[]
+    if (this.age >= 4 && dominant) {
+      list = pathDefs(dominant)
+    } else {
+      list = [...rosterForAge(this.age)]
+      if (this.age >= 3) {
+        // Consolidation makes room: the path's soldiers push the last of the
+        // neutral core off the bar rather than being clipped by it.
+        if (dominant) {
+          const path = pathDefs(dominant)
+          list = list.slice(0, Math.max(4, MAX_ROSTER - path.length))
+          list.push(...path)
+        }
+      } else if (this.age >= 1) {
+        for (const branch of ['carnage', 'ordnance', 'engineering', 'occult', 'blight']) {
+          if (this.branchDepth(branch) >= 2) list.push(...pathDefs(branch))
+        }
+      }
+      // Non-path research unlocks still land at the end of the bar.
+      for (const id of this.unlocked) {
+        const def = ALL_UNITS_BY_ID[id]
+        if (def && !list.includes(def) && (!unitBranch(id) || unitBranch(id) === dominant || this.age < 3)) {
+          list.push(def)
+        }
+      }
     }
-    // Unlocks go on the end, so the keys a player already knows do not move
-    // under their fingers mid-match.
-    return morphedRoster([...base, ...extra].slice(0, MAX_ROSTER), this.techs)
+    return morphedRoster(list.slice(0, MAX_ROSTER), this.techs)
   }
 
   /** The apocalyptic faction this army ascended into, if it has. */
@@ -220,15 +300,15 @@ export default class Army {
 
   /** Reason a unit cannot be queued right now, or null if it can. */
   blockReason(def: UnitDef): string | null {
-    if (def.age !== this.age) return 'Not available in this age'
+    if (def.age > this.age) return 'Not available in this age'
     if (this.queueFull()) return 'Build queue is full'
-    if (this.population + this.queuedPopulation() + def.pop > this.populationCap) return 'Population cap reached'
+    if (this.population + this.queuedPopulation() + def.pop * (def.squad ?? 1) > this.populationCap) return 'Population cap reached'
     if (this.gold < def.cost) return 'Not enough gold'
     return null
   }
 
   queuedPopulation(): number {
-    return this.queue.reduce((sum, entry) => sum + entry.def.pop, 0)
+    return this.queue.reduce((sum, entry) => sum + entry.def.pop * (entry.def.squad ?? 1), 0)
   }
 
   enqueue(unitId: string, lane = 2): boolean {

@@ -24,7 +24,7 @@ import Battlefield from '../sim/battlefield'
 import { LANE_Y, OPPOSITE, type Faction } from '../sim/types'
 import { rng as cosmeticRng } from '../core/rng'
 
-export const WORLD_WIDTH = 1920
+export const WORLD_WIDTH = 2400
 export const GROUND_Y = 520
 export const AIR_Y = 240
 /** Slight zoom so soldiers read clearly without shrinking the battlefield. */

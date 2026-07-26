@@ -152,6 +152,12 @@ export interface UnitDef {
    * the vocabulary; those follow from role rather than a flag.
    */
   conduct?: 'swarm' | 'phalanx' | 'screen' | 'hunt'
+  /**
+   * One purchase fields this many copies. The quantity paths' chaff comes in
+   * squads — `cost`, `pop` and `buildMs` price the whole squad, while hp,
+   * damage and bounty are per soldier.
+   */
+  squad?: number
   /** Can this unit shoot air targets? Ground melee cannot. */
   hitsAir?: boolean
   /** Chance of a 2x hit. */

@@ -12,9 +12,9 @@ export const AGES: AgeDef[] = [
     evolveCost: 700,
     baseHp: 6000,
     income: 16,
-    populationCap: 12,
+    populationCap: 6,
     abilityId: 'meteor_shower',
-    description: 'Clubs, slings and sharpened bone. Numbers win here.'
+    description: 'Clubs, slings and sharpened bone. Every warrior is precious here.'
   },
   {
     index: 1,
@@ -23,7 +23,7 @@ export const AGES: AgeDef[] = [
     evolveCost: 1700,
     baseHp: 11000,
     income: 30,
-    populationCap: 15,
+    populationCap: 12,
     abilityId: 'arrow_storm',
     description: 'Steel, siege engines and disciplined ranks.'
   },
@@ -34,7 +34,7 @@ export const AGES: AgeDef[] = [
     evolveCost: 3400,
     baseHp: 19000,
     income: 52,
-    populationCap: 18,
+    populationCap: 24,
     abilityId: 'cannonade',
     description: 'Gunpowder rewrites the rules. Range starts to matter.'
   },
@@ -45,7 +45,7 @@ export const AGES: AgeDef[] = [
     evolveCost: 6500,
     baseHp: 32000,
     income: 86,
-    populationCap: 21,
+    populationCap: 52,
     abilityId: 'airstrike',
     description: 'Armour, artillery and the first machines that fly.'
   },
@@ -56,7 +56,7 @@ export const AGES: AgeDef[] = [
     evolveCost: 0,
     baseHp: 52000,
     income: 130,
-    populationCap: 26,
+    populationCap: 120,
     abilityId: 'ion_cannon',
     description: 'Directed energy, walking artillery, orbital fire support.'
   }
