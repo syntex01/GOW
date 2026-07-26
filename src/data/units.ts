@@ -1109,7 +1109,7 @@ export const UNITS: UnitDef[] = [
     buildMs: 3600,
     hp: 3500,
     armor: 'heavy',
-    damage: 230,
+    damage: 290,
     damageType: 'blunt',
     attackMs: 1150,
     range: 48,
@@ -1259,7 +1259,7 @@ export const UNITS: UnitDef[] = [
       knockback: 420,
       muzzle: [52, -44]
     },
-    bonusVs: { structure: 1.6, heavy: 1.3 },
+    bonusVs: { structure: 1.6, heavy: 1.9 },
     description: 'Hypervelocity slug that punches straight through a column.',
     visual: {
       kind: 'mech',
@@ -1317,7 +1317,7 @@ export const UNITS: UnitDef[] = [
     layer: 'ground',
     cost: 5200,
     buildMs: 8000,
-    hp: 6400,
+    hp: 5200,
     armor: 'heavy',
     damage: 560,
     damageType: 'explosive',
@@ -1339,7 +1339,7 @@ export const UNITS: UnitDef[] = [
       gravity: 0,
       spread: 0.015,
       knockback: 520,
-      splash: 148,
+      splash: 110,
       burst: { rounds: 2, gapMs: 260 },
       muzzle: [46, -62]
     },
