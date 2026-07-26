@@ -23,7 +23,15 @@ export default class MultiplayerScene extends Phaser.Scene {
   private stage: Stage = 'choose'
   private buttons: Button[] = []
   private container!: Phaser.GameObjects.Container
-  private domNodes: Phaser.GameObjects.DOMElement[] = []
+  /**
+   * The code boxes are HTML, but they are NOT Phaser DOM elements: under
+   * Scale.FIT Phaser's DOM layer mis-transforms elements the moment the window
+   * is any size other than the design resolution, which scattered these fields
+   * across the screen. Each is instead absolutely positioned over the canvas
+   * from its design-space rectangle, and re-laid whenever the window changes.
+   */
+  private domNodes: { el: HTMLElement; rect: { x: number; y: number; w: number; h: number } }[] = []
+  private relayout = (): void => this.layoutDom()
   private statusText!: Phaser.GameObjects.Text
   private lanOnly = false
   private seed = 0
@@ -70,6 +78,8 @@ export default class MultiplayerScene extends Phaser.Scene {
 
     this.input.keyboard?.on('keydown-ESC', () => this.leave())
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup())
+    window.addEventListener('resize', this.relayout)
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.relayout)
 
     if (!isPeerSupported()) {
       this.stage = 'error'
@@ -101,9 +111,44 @@ export default class MultiplayerScene extends Phaser.Scene {
     // Keep the header buttons (BACK is index 0) and drop everything else.
     this.buttons.slice(1).forEach(b => b.destroy())
     this.buttons = this.buttons.slice(0, 1)
-    this.domNodes.forEach(n => n.destroy())
+    this.domNodes.forEach(n => n.el.remove())
     this.domNodes = []
     this.container.removeAll(true)
+  }
+
+  /** Where the canvas actually sits on the page, and the design→CSS scale. */
+  private canvasFrame(): { s: number; left: number; top: number } {
+    const bounds = this.game.canvas.getBoundingClientRect()
+    return {
+      s: bounds.width / this.scale.width,
+      left: bounds.left + window.scrollX,
+      top: bounds.top + window.scrollY
+    }
+  }
+
+  /** Applies one field's design-space rectangle at the current window scale. */
+  private layoutOne(el: HTMLElement, rect: { x: number; y: number; w: number; h: number }): void {
+    const { s, left, top } = this.canvasFrame()
+    Object.assign(el.style, {
+      left: `${left + rect.x * s}px`,
+      top: `${top + rect.y * s}px`,
+      width: `${rect.w * s}px`,
+      height: `${rect.h * s}px`,
+      fontSize: `${11 * s}px`,
+      padding: `${10 * s}px`,
+      borderRadius: `${8 * s}px`
+    })
+  }
+
+  private layoutDom(): void {
+    for (const node of this.domNodes) this.layoutOne(node.el, node.rect)
+  }
+
+  private placeDom(el: HTMLElement, rect: { x: number; y: number; w: number; h: number }): void {
+    Object.assign(el.style, CODE_STYLE)
+    document.body.appendChild(el)
+    this.domNodes.push({ el, rect })
+    this.layoutOne(el, rect)
   }
 
   /**
@@ -118,23 +163,19 @@ export default class MultiplayerScene extends Phaser.Scene {
     area.value = value
     area.readOnly = true
     area.spellcheck = false
-    Object.assign(area.style, CODE_STYLE, {
-      width: `${width - 130}px`,
-      height: '78px',
-      overflow: 'hidden'
-    })
-    const dom = this.add.dom(x, y + 22, area).setOrigin(0, 0)
-    this.domNodes.push(dom)
-    // Grown to fit rather than left to scroll: a scrolling textarea gets its
-    // own paint layer, and that layer ignores the transform Phaser uses to sit
-    // the element over the canvas, so the code appears a second time — bare
-    // white — further down the screen.
-    area.style.height = `${area.scrollHeight}px`
-    const fieldHeight = area.offsetHeight
+    area.style.overflow = 'hidden'
+    const rect = { x, y: y + 22, w: width - 130, h: 78 }
+    this.placeDom(area, rect)
+    // Measure once at the current scale, then store the height in design
+    // units so every later relayout reproduces the same proportions.
+    const { s } = this.canvasFrame()
+    area.style.height = 'auto'
+    rect.h = Math.ceil(area.scrollHeight / s) + 2
+    this.layoutOne(area, rect)
 
     const copy = this.addButton(x + width - 118, y + 22, {
       width: 118,
-      height: fieldHeight,
+      height: Math.max(78, rect.h),
       text: 'COPY',
       subtext: 'to clipboard',
       fontSize: 18,
@@ -147,7 +188,7 @@ export default class MultiplayerScene extends Phaser.Scene {
       }
     })
 
-    return y + 22 + fieldHeight
+    return y + 22 + rect.h
   }
 
   /** An editable field the player pastes a code into. */
@@ -156,9 +197,7 @@ export default class MultiplayerScene extends Phaser.Scene {
     const area = document.createElement('textarea')
     area.placeholder = 'Paste the code here…'
     area.spellcheck = false
-    Object.assign(area.style, CODE_STYLE, { width: `${width}px`, height: '78px' })
-    const dom = this.add.dom(x, y + 22, area).setOrigin(0, 0)
-    this.domNodes.push(dom)
+    this.placeDom(area, { x, y: y + 22, w: width, h: 78 })
     return () => area.value.trim()
   }
 
@@ -197,7 +236,7 @@ export default class MultiplayerScene extends Phaser.Scene {
 
     // Both labels have to be right at construction: a button built with empty
     // text never makes a text object, so a later setText would go nowhere.
-    const lanButton = this.addButton(cx - 330, 344, {
+    const lanButton = this.addButton(cx - 325, 344, {
       width: 650,
       height: 62,
       text: `LAN MODE: ${this.lanOnly ? 'ON' : 'OFF'}`,
@@ -429,25 +468,27 @@ export default class MultiplayerScene extends Phaser.Scene {
   private cleanup(): void {
     this.buttons.forEach(b => b.destroy())
     this.buttons = []
-    this.domNodes.forEach(n => n.destroy())
+    this.domNodes.forEach(n => n.el.remove())
     this.domNodes = []
+    window.removeEventListener('resize', this.relayout)
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.relayout)
     this.input.keyboard?.removeAllListeners()
   }
 }
 
 const CODE_STYLE: Partial<CSSStyleDeclaration> = {
+  position: 'absolute',
+  zIndex: '30',
+  margin: '0',
+  /** Width and height are the OUTER box, matching the design-space layout. */
+  boxSizing: 'border-box',
   background: '#0d1524',
   color: '#c9d6f0',
   border: '1px solid #2f3f5c',
-  borderRadius: '8px',
-  padding: '10px',
   fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
-  fontSize: '11px',
   lineHeight: '1.35',
   resize: 'none',
-  outline: 'none',
-  /** Keeps each field's painting to its own box, over the canvas. */
-  contain: 'paint'
+  outline: 'none'
 }
 
 function describe(err: unknown): string {
