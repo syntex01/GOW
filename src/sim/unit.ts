@@ -99,6 +99,8 @@ export default class Unit implements Damageable {
   private holdMs = 0
   /** Recent shoves, each one making the next one count for less. */
   private knockStacks = 0
+  /** Weight of the ranks pressing in behind this one. Set by the battlefield. */
+  press = 1
 
   private attackCooldown = 0
   private swing = 0

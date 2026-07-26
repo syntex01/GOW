@@ -72,6 +72,14 @@ const MAX_FRAME_MS = 100
 const SUBSTEP_MS = 20
 /** Hard ceiling on sub-steps per frame so a stall cannot lock the tab. */
 const MAX_SUBSTEPS = 16
+/** How many of the nearest enemies a shooter will spread its fire across. */
+const FIRE_SPREAD = 4
+/** How far back a rank still counts as pressing into the fight ahead of it. */
+const PRESS_REACH = 105
+/** Extra share of a blow contributed by each supporting rank. */
+const PRESS_BONUS = 0.5
+/** Ranks beyond this are too far back to lean on anything. */
+const MAX_PRESS = 4
 
 function emptyStats(): MatchStats {
   return {
@@ -754,7 +762,19 @@ export default class Battlefield {
     const order = dir === 1 ? [...units].reverse() : units
     let aheadX: number | null = null
 
-    for (const unit of order) {
+    for (let i = 0; i < order.length; i += 1) {
+      const unit = order[i]
+      // The weight of the press. Only the front rank of a column can physically
+      // reach the enemy, so a melee squad otherwise delivers the damage of one
+      // man however many you bought, while every soldier in a ranged squad
+      // shoots. The ranks crowding up behind a fighter put their shoulders into
+      // the blow, which is what makes buying the second twenty worth anything.
+      let support = 0
+      for (let j = i + 1; j < order.length && support < MAX_PRESS; j += 1) {
+        if (Math.abs(order[j].x - unit.x) > PRESS_REACH) break
+        support += 1
+      }
+      unit.press = 1 + support * PRESS_BONUS
       const blocker = unit.layer === 'air' ? null : aheadX
       const target = this.pickTarget(unit, targets)
       unit.update(dtMs, blocker, target)
@@ -765,18 +785,25 @@ export default class Battlefield {
   }
 
   private pickTarget(unit: Unit, candidates: Damageable[]): Damageable | null {
-    let best: Damageable | null = null
-    let bestDist = Infinity
+    const inRange: { target: Damageable; dist: number }[] = []
     for (const c of candidates) {
       if (!unit.canTarget(c)) continue
       const dist = unit.distanceTo(c)
       if (dist > unit.reach || dist < unit.minReach) continue
-      if (dist < bestDist) {
-        bestDist = dist
-        best = c
-      }
+      inRange.push({ target: c, dist })
     }
-    if (best) return best
+    if (inRange.length > 0) {
+      inRange.sort((a, b) => a.dist - b.dist)
+      // Shooters spread their fire across the front of the enemy formation
+      // instead of every one of them deleting the same man. Massed fire that
+      // all lands on the nearest target kills the front rank faster than the
+      // rank behind can step up, so a melee line never gets anybody into
+      // contact and its squad size counts for nothing. Which of the front few
+      // a soldier picks comes from its own id, so it is spread but not random,
+      // and both peers pick the same one.
+      const spread = unit.def.attack.kind === 'melee' ? 1 : Math.min(FIRE_SPREAD, inRange.length)
+      return inRange[unit.id % spread].target
+    }
 
     // Nothing in range: keep the nearest enemy as a facing/aim reference.
     let nearest: Damageable | null = null
@@ -959,6 +986,18 @@ export default class Battlefield {
     return 1 + Math.max(0, minutes - 3) * 0.12
   }
 
+  /**
+   * The heaviest shove a melee attacker can land and still keep up with its
+   * target, expressed in the same units as `AttackSpec.knockback`. Heavier
+   * blows are still felt as damage and stagger — they just do not turn a fight
+   * into a foot race the attacker cannot win.
+   */
+  private reachableShove(unit: Unit, target: Damageable): number {
+    const speed = unit.def.speed * unit.speedMult * this.armyFor(unit.faction).modifiers.unitSpeed
+    const mass = target instanceof Unit ? Math.max(0.4, target.def.mass) : 6
+    return (speed * mass) / 1.6
+  }
+
   private handleUnitFire = (unit: Unit, target: Damageable): void => {
     const attack = unit.def.attack
     const army = this.armyFor(unit.faction)
@@ -968,9 +1007,14 @@ export default class Battlefield {
     if (attack.kind === 'melee') {
       audio.play(sfx, 0.4)
       const event: DamageEvent = {
-        amount: damage,
+        amount: damage * unit.press,
         type: unit.def.damageType,
-        knockback: attack.knockback,
+        // You cannot shove a man further than you can follow him. Without this
+        // a melee line knocks its own target out of its own reach on every
+        // blow and spends the fight chasing, landing one hit per pursuit while
+        // being shot the whole way — twenty clubmen drove nineteen slingers
+        // three hundred pixels backwards and lost.
+        knockback: Math.min(attack.knockback, this.reachableShove(unit, target)),
         crit: unit.def.crit,
         bonusVs: unit.def.bonusVs
       }

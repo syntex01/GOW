@@ -28,7 +28,7 @@ export const UNITS: UnitDef[] = [
     xp: 26,
     pop: 1,
     height: 60,
-    attack: { kind: 'melee', knockback: 60, splash: 26 },
+    attack: { kind: 'melee', knockback: 60, splash: 58 },
     description: 'Cheap, expendable, and surprisingly effective in a mob.',
     visual: {
       kind: 'humanoid',
@@ -105,7 +105,7 @@ export const UNITS: UnitDef[] = [
     xp: 46,
     pop: 1,
     height: 62,
-    attack: { kind: 'melee', knockback: 50, splash: 22 },
+    attack: { kind: 'melee', knockback: 50, splash: 70 },
     bonusVs: { heavy: 1.4, light: 1.2 },
     description: 'Reach beats muscle. Strikes before the enemy closes.',
     visual: {
@@ -141,7 +141,7 @@ export const UNITS: UnitDef[] = [
     xp: 78,
     pop: 2,
     height: 75,
-    attack: { kind: 'melee', knockback: 190, splash: 54 },
+    attack: { kind: 'melee', knockback: 190, splash: 90 },
     description: 'A wall of muscle and mammoth bone. Sends bodies flying.',
     visual: {
       kind: 'humanoid',
@@ -211,7 +211,7 @@ export const UNITS: UnitDef[] = [
     pop: 2,
     height: 73,
     crit: 0.15,
-    attack: { kind: 'melee', knockback: 110 },
+    attack: { kind: 'melee', knockback: 110, splash: 62 },
     bonusVs: { unarmored: 1.25 },
     description: 'Sprints past the front line and shreds ranged support.',
     visual: {
@@ -249,7 +249,7 @@ export const UNITS: UnitDef[] = [
     xp: 58,
     pop: 1,
     height: 65,
-    attack: { kind: 'melee', knockback: 70, splash: 28 },
+    attack: { kind: 'melee', knockback: 70, splash: 64 },
     description: 'Drilled, armoured and cheap enough to field in numbers.',
     visual: {
       kind: 'humanoid',
@@ -327,7 +327,7 @@ export const UNITS: UnitDef[] = [
     xp: 88,
     pop: 1,
     height: 66,
-    attack: { kind: 'melee', knockback: 60, splash: 24 },
+    attack: { kind: 'melee', knockback: 60, splash: 80 },
     bonusVs: { heavy: 1.75, light: 1.3 },
     description: 'Braced pikes gut cavalry and heavy armour alike.',
     visual: {
@@ -363,7 +363,7 @@ export const UNITS: UnitDef[] = [
     pop: 2,
     height: 81,
     crit: 0.12,
-    attack: { kind: 'melee', knockback: 150, splash: 50 },
+    attack: { kind: 'melee', knockback: 150, splash: 85 },
     bonusVs: { unarmored: 1.25 },
     description: 'Charges the line and refuses to fall over.',
     visual: {
@@ -529,7 +529,7 @@ export const UNITS: UnitDef[] = [
     pop: 1,
     height: 66,
     crit: 0.22,
-    attack: { kind: 'melee', knockback: 40, splash: 26 },
+    attack: { kind: 'melee', knockback: 40, splash: 62 },
     bonusVs: { unarmored: 1.25 },
     description: 'Rapier work — fast, precise, and brutal against soft targets.',
     visual: {
@@ -609,7 +609,7 @@ export const UNITS: UnitDef[] = [
     xp: 204,
     pop: 2,
     height: 83,
-    attack: { kind: 'melee', knockback: 170, splash: 54 },
+    attack: { kind: 'melee', knockback: 170, splash: 90 },
     description: 'Breastplated cavalry that rides straight through a firing line.',
     visual: {
       kind: 'rider',
