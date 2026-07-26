@@ -139,7 +139,7 @@ export default class Unit implements Damageable {
   /** Vertical velocity — only non-zero while a unit is airborne from a big hit. */
   vy = 0
   private airborne = false
-  private stagger = 0
+  stagger = 0
   /** Move this soldier to another lane. Only the battlefield calls this. */
   setLane(lane: number): void {
     this.lane = Math.max(0, Math.min(LANE_Y.length - 1, lane))
@@ -183,7 +183,7 @@ export default class Unit implements Damageable {
    */
   stageY = 0
 
-  private attackCooldown = 0
+  attackCooldown = 0
   private swing = 0
   private burstLeft = 0
   private burstTimer = 0
@@ -289,6 +289,14 @@ export default class Unit implements Damageable {
   hexedFor = 0
   /** Cooldown for pulsing specials — the Thrallmaster's chant, the Mycelic's roots. */
   pulseTimer = 0
+  /** Toxin: damage per second still working through this soldier's blood. */
+  poisonDps = 0
+  poisonFor = 0
+  /** The Seer's terror: while this runs, this soldier swings 15% slower. */
+  terrorFor = 0
+  /** Charge: the first blow after arriving lands half again as hard. */
+  chargeReady = true
+  private disengagedMs = 0
 
   private world: UnitWorld
   private scene: Phaser.Scene
@@ -600,7 +608,8 @@ export default class Unit implements Damageable {
    * Keeping the clamp here means a future data edit cannot bring that back.
    */
   get reach(): number {
-    const wanted = this.def.range * this.rangeMult * this.highGround
+    const planted = this.def.special === 'siege_mode' ? 1 + 0.4 * (this.rooting / 4000) : 1
+    const wanted = this.def.range * this.rangeMult * this.highGround * planted
     const attack = this.def.attack
     if (attack.kind !== 'projectile' || attack.gravity <= 0) return wanted
     return Math.min(wanted, ballisticReach(attack.speed, attack.gravity))
@@ -898,6 +907,20 @@ export default class Unit implements Damageable {
     if (this.miredFor > 0) this.miredFor -= dtMs
     if (this.cursedFor > 0) this.cursedFor -= dtMs
     if (this.hexedFor > 0) this.hexedFor -= dtMs
+    if (this.terrorFor > 0) this.terrorFor -= dtMs
+    if (this.poisonFor > 0) {
+      this.poisonFor -= dtMs
+      this.hp -= this.poisonDps * (dtMs / 1000)
+      if (this.hp <= 0) this.kill()
+      if (this.poisonFor <= 0) this.poisonDps = 0
+    }
+    // The charge re-arms after a moment out of the fight.
+    if (this.state !== 'engage') {
+      this.disengagedMs += dtMs
+      if (this.disengagedMs > 1500) this.chargeReady = true
+    } else {
+      this.disengagedMs = 0
+    }
     if (this.disabledFor > 0) {
       this.disabledFor -= dtMs
       // A disabled machine still falls, still gets shot, and still slides —
@@ -916,7 +939,7 @@ export default class Unit implements Damageable {
     // faster; anyone standing on the occult's fed ground works slower. Both
     // are capped and both end the moment the soldier steps off the ground
     // that caused them.
-    this.frenzy *= (1 + this.groundFury * 0.28) * (1 - this.dread * 0.12)
+    this.frenzy *= (1 + this.groundFury * 0.28) * (1 - this.dread * 0.12) * (this.terrorFor > 0 ? 0.85 : 1)
     // Bonepickers feed on what is lying around them while they are hurt.
     if (this.techs?.has('bonepickers') && this.hp < this.maxHp * 0.92) {
       this.scavengeTimer -= dtMs
@@ -1317,6 +1340,10 @@ export default class Unit implements Damageable {
    * which is enough that losing one hurts.
    */
   creditKill(): void {
+    if (this.def.special === 'soul_harvest') {
+      this.attackCooldown = 0
+      this.heal(this.maxHp * 0.12)
+    }
     this.kills += 1
     while (this.rank < Unit.RANK_KILLS.length && this.kills >= Unit.RANK_KILLS[this.rank]) {
       this.rank += 1

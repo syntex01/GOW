@@ -1083,6 +1083,36 @@ export default class Battlefield {
       if (!u.alive) continue
       const sp = u.def.special
       if (!sp) continue
+      if (sp === 'siege_mode') {
+        u.rooting = u.state === 'engage' || u.attackCooldown > 0 ? Math.min(4000, u.rooting + dtMs) : Math.max(0, u.rooting - dtMs * 2)
+        continue
+      }
+      if (sp === 'terror') {
+        u.pulseTimer -= dtMs
+        if (u.pulseTimer <= 0) {
+          u.pulseTimer = 600
+          for (const e of this.units) {
+            if (!e.alive || e.faction === u.faction) continue
+            if (Math.abs(e.x - u.x) <= 170) e.terrorFor = 800
+          }
+        }
+        continue
+      }
+      if (sp === 'stagger_ward') {
+        for (const a of this.units) {
+          if (!a.alive || a.faction !== u.faction || a === u) continue
+          if (Math.abs(a.x - u.x) <= 130) a.stagger = 0
+        }
+        continue
+      }
+      if (sp === 'spore_trail') {
+        u.pulseTimer -= dtMs
+        if (u.pulseTimer <= 0) {
+          u.pulseTimer = 1500
+          this.addZone(u.x, 34, 4000, 8, u.faction, 'spore', 0, u.lane)
+        }
+        continue
+      }
       if (sp === 'evergreen') {
         const army = this.armyFor(u.faction)
         // Rooted research already grows the whole army's stance; the Bastion
@@ -1780,8 +1810,20 @@ export default class Battlefield {
       // the charge, or a phalanx that reads it, takes that payoff away.
       const backstab =
         unit.def.flanker && target instanceof Unit && target.target !== null && target.target !== unit ? 1.25 : 1
+      // The Detonant does not fight. It arrives.
+      if (unit.def.special === 'kamikaze') {
+        this.applySplash(target.x, target.y + target.centerOffsetY, 140, unit.faction, {
+          amount: 320,
+          type: 'explosive',
+          knockback: 300
+        }, unit)
+        unit.kill()
+        return
+      }
+      const charged = unit.def.special === 'charge' && unit.chargeReady ? 1.8 : 1
+      if (charged > 1) unit.chargeReady = false
       const event: DamageEvent = {
-        amount: damage * unit.press * intercept * mob * backstab,
+        amount: damage * unit.press * intercept * mob * backstab * charged,
         type: unit.def.damageType,
         // You cannot shove a man further than you can follow him. Without this
         // a melee line knocks its own target out of its own reach on every
@@ -1894,6 +1936,12 @@ export default class Battlefield {
 
     audio.play('heal', 0.35)
     this.vfx.healPulse(unit.x, unit.centerY, attack.radius)
+    if (unit.def.special === 'bog_pulse') {
+      for (const e of this.units) {
+        if (!e.alive || e.faction === unit.faction || e.layer === 'air') continue
+        if (Math.abs(e.x - unit.x) <= attack.radius) e.mire(800)
+      }
+    }
     // Three targets per pulse: enough that a healer pays for the body it costs
     // you, not so many that a pair of them makes the front line unkillable.
     wounded
@@ -2149,6 +2197,15 @@ export default class Battlefield {
     // The Hexer's mark: a marked soldier is structurally uncertain, and
     // everything that reaches it finds the flaw.
     if (target instanceof Unit && target.hexedFor > 0) amount *= 1.25
+    // The Shrike finishes what is already bleeding out.
+    if (
+      attacker instanceof Unit &&
+      attacker.def.special === 'execute' &&
+      target instanceof Unit &&
+      target.hp < target.maxHp * 0.3
+    ) {
+      amount *= 2
+    }
     if (attacker instanceof Unit && attacker.def.special === 'hex_shot' && target instanceof Unit) {
       target.hexedFor = 4000
     }
@@ -2170,6 +2227,30 @@ export default class Battlefield {
     this.statsFor(target.faction).damageTaken += amount
 
     target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback)
+
+    // On-hit riders: the Butcher drinks the wound, the Flagellant tithes it,
+    // the Petardier's concussion knocks the reply out of rhythm, and the
+    // Gall Tosser's toxin keeps working after the dart is gone.
+    if (attacker instanceof Unit && attacker.alive && target instanceof Unit) {
+      switch (attacker.def.special) {
+        case 'lifesteal':
+          attacker.heal(amount * 0.4)
+          break
+        case 'soul_siphon': {
+          attacker.heal(amount * 0.25)
+          const cult = this.armyFor(attacker.faction)
+          cult.abilityCharge = Math.min(1, cult.abilityCharge + 0.004)
+          break
+        }
+        case 'suppress':
+          target.attackCooldown = Math.min(target.def.attackMs * 1.6, target.attackCooldown + 350)
+          break
+        case 'toxin':
+          target.poisonFor = 3000
+          target.poisonDps = Math.max(target.poisonDps, amount * 0.12)
+          break
+      }
+    }
 
     // The Iron Inquisitor answers every blow in kind: a fifth of any melee
     // strike arcs back into the striker. The reflection carries no source,
@@ -2229,6 +2310,14 @@ export default class Battlefield {
       })
     }
 
+    if (attacker instanceof Unit && attacker.def.special === 'gravity_well') {
+      for (const u of this.units) {
+        if (!u.alive || u.faction === faction || u.layer !== 'ground') continue
+        const dx = u.x - x
+        if (Math.abs(dx) > radius * 1.4 || Math.abs(dx) < 8) continue
+        u.launch(-Math.sign(dx) * 200, -150)
+      }
+    }
     if (attacker instanceof Unit && attacker.def.special === 'dread_wave') {
       for (const u of this.units) {
         if (!u.alive || u.faction === faction || u.layer === 'air') continue
