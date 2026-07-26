@@ -20,6 +20,8 @@ export interface QueueEntry {
   def: UnitDef
   remainingMs: number
   totalMs: number
+  /** The one placement decision: which lane this soldier will walk. */
+  lane: number
 }
 
 export const QUEUE_LIMIT = 6
@@ -229,7 +231,7 @@ export default class Army {
     return this.queue.reduce((sum, entry) => sum + entry.def.pop, 0)
   }
 
-  enqueue(unitId: string): boolean {
+  enqueue(unitId: string, lane = 1): boolean {
     // The command bar hands back whatever it is currently showing, which may be
     // a morph id. Strip it back to the authored unit and re-derive the morph
     // from this army's own techs: in a networked match the two peers hold the
@@ -242,6 +244,7 @@ export default class Army {
     this.gold -= def.cost
     this.queue.push({
       def,
+      lane: Math.max(0, Math.min(2, Math.round(lane))),
       remainingMs: def.buildMs / this.modifiers.buildSpeed,
       totalMs: def.buildMs / this.modifiers.buildSpeed
     })
@@ -265,7 +268,7 @@ export default class Army {
     return this.techs.has('blood_pact')
   }
 
-  tick(dtMs: number): { ready: UnitDef[]; income: number } {
+  tick(dtMs: number): { ready: QueueEntry[]; income: number } {
     const dt = dtMs / 1000
     const gained = this.incomePerSecond * dt + this.incomeCarry
     const whole = Math.floor(gained)
@@ -275,7 +278,7 @@ export default class Army {
     const chargeSeconds = this.ability.chargeSeconds / this.modifiers.abilityRate
     this.abilityCharge = Math.min(1, this.abilityCharge + dt / chargeSeconds)
 
-    const ready: UnitDef[] = []
+    const ready: QueueEntry[] = []
     if (this.queue.length > 0) {
       const head = this.queue[0]
       // Blood Pact: the whole queue finishes at once. The cost is taken from
@@ -284,7 +287,7 @@ export default class Army {
       head.remainingMs -= this.instantBuild ? head.remainingMs + 1 : dtMs
       while (this.queue.length > 0 && this.queue[0].remainingMs <= 0) {
         const done = this.queue.shift()
-        if (done) ready.push(done.def)
+        if (done) ready.push(done)
         if (this.queue.length > 0) {
           // Carry leftover time into the next build so the queue never stalls.
           this.queue[0].remainingMs += Math.min(0, done?.remainingMs ?? 0)

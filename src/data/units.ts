@@ -213,6 +213,7 @@ export const UNITS: UnitDef[] = [
     crit: 0.15,
     attack: { kind: 'melee', knockback: 110, splash: 62 },
     bonusVs: { unarmored: 1.25 },
+    flanker: true,
     description: 'Sprints past the front line and shreds ranged support.',
     visual: {
       kind: 'rider',
@@ -531,6 +532,7 @@ export const UNITS: UnitDef[] = [
     crit: 0.22,
     attack: { kind: 'melee', knockback: 40, splash: 62 },
     bonusVs: { unarmored: 1.25, heavy: 1.5 },
+    flanker: true,
     description: 'Rapier work — fast, precise, and brutal against soft targets.',
     visual: {
       kind: 'humanoid',
@@ -1380,6 +1382,7 @@ export const UNITS: UnitDef[] = [
     height: 76,
     attack: { kind: 'melee', knockback: 110, splash: 80 },
     bonusVs: { unarmored: 1.3 },
+    flanker: true,
     description: 'Closes faster than anything can traverse. Paper against armour, murder on a gun line.',
     visual: {
       kind: 'humanoid',

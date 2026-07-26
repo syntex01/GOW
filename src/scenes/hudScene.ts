@@ -37,6 +37,7 @@ export default class HUDScene extends Phaser.Scene {
   private enemyXpBar!: Bar
 
   private unitCards: { button: Button; def: UnitDef }[] = []
+  private laneRows: { box: Phaser.GameObjects.Rectangle; mine: Phaser.GameObjects.Text; theirs: Phaser.GameObjects.Text }[] = []
   private turretButtons: Button[] = []
   private evolveButton!: Button
   private abilityButton!: Button
@@ -81,12 +82,16 @@ export default class HUDScene extends Phaser.Scene {
       .setAlpha(0)
       .setDepth(1400)
 
+    this.buildLanePicker()
+
     gameEvents.on('hud:flash', this.showToast, this)
     gameEvents.on('match:paused', this.handlePause, this)
+    gameEvents.on('hud:lane', this.refreshLanes, this)
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       gameEvents.off('hud:flash', this.showToast, this)
       gameEvents.off('match:paused', this.handlePause, this)
+      gameEvents.off('hud:lane', this.refreshLanes, this)
       this.tooltip.destroy()
       this.pauseModal?.destroy()
       this.tutorial?.destroy()
@@ -492,6 +497,67 @@ export default class HUDScene extends Phaser.Scene {
 
   // ─────────────────────────────── Per-frame ───────────────────────────────
 
+  /**
+   * The lane picker: three files, the active one lit.
+   *
+   * Placement is the only decision this game asks for, so its control earns a
+   * permanent place on the screen: click a row, press Z/X/C, or click the path
+   * itself in the world. The counts alongside are the board state — how many
+   * pieces of each side walk each file — because a chess player is always
+   * counting the file before committing to it.
+   */
+  private buildLanePicker(): void {
+    const x = 12
+    const y0 = BAR_Y - 96
+    const names = ['FAR', 'MID', 'NEAR']
+    this.laneRows = []
+    for (let lane = 0; lane < 3; lane += 1) {
+      const y = y0 + lane * 28
+      const box = this.add
+        .rectangle(x, y, 148, 24, UI.panel, 0.85)
+        .setOrigin(0, 0)
+        .setStrokeStyle(1, UI.panelEdge)
+        .setDepth(900)
+        .setInteractive({ useHandCursor: true })
+      box.on('pointerup', () => {
+        this.battle.localLane = lane
+        audio.play('ui_click', 0.35)
+        this.refreshLanes()
+      })
+      const name = label(this, x + 8, y + 5, `${['Z', 'X', 'C'][lane]} · ${names[lane]}`, {
+        size: 11,
+        bold: true,
+        color: UI.textDim
+      }).setDepth(901)
+      const mine = label(this, x + 88, y + 5, '', { size: 11, color: UI.good }).setDepth(901)
+      const theirs = label(this, x + 116, y + 5, '', { size: 11, color: UI.bad }).setDepth(901)
+      void name
+      this.laneRows.push({ box, mine, theirs })
+    }
+    this.refreshLanes()
+  }
+
+  private refreshLanes(): void {
+    if (this.laneRows.length === 0) return
+    const bf = this.battle?.battlefield
+    for (let lane = 0; lane < 3; lane += 1) {
+      const row = this.laneRows[lane]
+      const active = this.battle.localLane === lane
+      row.box.setStrokeStyle(active ? 2 : 1, active ? UI.gold : UI.panelEdge)
+      row.box.setFillStyle(active ? 0x1d2740 : UI.panel, active ? 0.95 : 0.7)
+      if (!bf) continue
+      let mine = 0
+      let theirs = 0
+      for (const u of bf.units) {
+        if (!u.alive || u.layer === 'air' || u.lane !== lane) continue
+        if (u.faction === this.battle.localFaction) mine += 1
+        else theirs += 1
+      }
+      row.mine.setText(String(mine))
+      row.theirs.setText(String(theirs))
+    }
+  }
+
   override update(_time: number, delta: number): void {
     const bf = this.battle?.battlefield
     if (!bf) return
@@ -513,6 +579,7 @@ export default class HUDScene extends Phaser.Scene {
       this.rebuildRoster()
     }
 
+    this.refreshLanes()
     this.goldText.setText(formatNumber(player.gold))
     this.incomeText.setText(`+${player.incomePerSecond.toFixed(0)}/s`)
     this.ageText.setText(ageDef(player.age).name).setColor(hex(AGE_ACCENT[player.age]))

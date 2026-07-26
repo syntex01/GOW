@@ -38,6 +38,8 @@ export default class BattleScene extends Phaser.Scene {
   modalOpen = false
   speedIndex = 0
   wave = 1
+  /** The lane the next built unit will walk — the whole of placement. */
+  localLane = 1
 
   private background!: Environment
   private debris!: DebrisLayer
@@ -206,6 +208,7 @@ export default class BattleScene extends Phaser.Scene {
     this.wave = 1
     this.waveTimer = 0
     this.cameraFocus = 0
+    this.localLane = 1
     this.dragging = false
     this.dragStartX = 0
     this.dragCameraX = 0
@@ -389,6 +392,14 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-SPACE', () => this.tryAbility())
     keyboard.on('keydown-U', () => this.tryEconomy())
     keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
+    // The whole of placement: pick the lane the next piece will walk.
+    keyboard.on('keydown-Z', () => this.setLane(0))
+    keyboard.on('keydown-X', () => this.setLane(1))
+    keyboard.on('keydown-C', () => this.setLane(2))
+    keyboard.on('keydown-TAB', (event: KeyboardEvent) => {
+      event.preventDefault()
+      this.setLane((this.localLane + 1) % 3)
+    })
     keyboard.on('keydown-BACKSPACE', () => {
       if (this.localArmy.queue.length === 0) return
       this.dispatch({ t: 'cancel' })
@@ -406,7 +417,14 @@ export default class BattleScene extends Phaser.Scene {
       this.dragStartX = pointer.x
       this.dragCameraX = this.cameras.main.scrollX
     })
-    this.input.on(Phaser.Input.Events.POINTER_UP, () => {
+    this.input.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+      // A click on one of the paths — not a drag, not the HUD — is a lane
+      // order, the same gesture as pointing at a file on a board.
+      const moved = Math.abs(pointer.x - this.dragStartX) > 6
+      if (!moved && pointer.y < this.cameras.main.height - 120) {
+        const dy = pointer.y - GROUND_Y
+        if (dy > -70 && dy < 72) this.setLane(dy < -22 ? 0 : dy < 22 ? 1 : 2)
+      }
       this.dragging = false
     })
     this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
@@ -417,6 +435,13 @@ export default class BattleScene extends Phaser.Scene {
         this.manualCameraUntil = this.time.now + 2600
       }
     })
+  }
+
+  private setLane(lane: number): void {
+    if (lane === this.localLane) return
+    this.localLane = lane
+    audio.play('ui_click', 0.35)
+    gameEvents.emit('hud:lane', lane)
   }
 
   /**
@@ -438,7 +463,7 @@ export default class BattleScene extends Phaser.Scene {
       gameEvents.emit('hud:flash', { message: reason, tone: 'warn' })
       return
     }
-    this.dispatch({ t: 'unit', id: def.id })
+    this.dispatch({ t: 'unit', id: def.id, lane: this.localLane })
     audio.play('ui_click', 0.4)
   }
 

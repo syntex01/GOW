@@ -1,7 +1,7 @@
 import type { Faction } from '../sim/types'
 
 /** Wire protocol version — peers refuse to connect across a mismatch. */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing
@@ -10,7 +10,7 @@ export const PROTOCOL_VERSION = 1
  * shipping game state.
  */
 export type Command =
-  | { t: 'unit'; id: string }
+  | { t: 'unit'; id: string; lane: number }
   | { t: 'evolve' }
   | { t: 'ability' }
   | { t: 'econ' }

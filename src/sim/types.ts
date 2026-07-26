@@ -33,6 +33,20 @@ export function damageMultiplier(damage: DamageType, armor: ArmorType): number {
   return DAMAGE_MATRIX[damage][armor]
 }
 
+/**
+ * The lanes.
+ *
+ * Three parallel tracks across the field, drawn in depth on the ground plane.
+ * The design is chess: choosing a piece's lane is the *only* placement
+ * decision a commander makes, every piece then follows fixed rules, and the
+ * game lives in what emerges when those rules meet. Each lane runs the full
+ * one-dimensional combat simulation — frontage, press, blocking — unchanged,
+ * which is also what keeps every measured balance number valid per lane.
+ */
+export const LANE_COUNT = 3
+/** Vertical offset of each lane's ground line from the base ground line. */
+export const LANE_Y = [-44, 0, 44] as const
+
 /** A minimal 2D vector used throughout the simulation. */
 export interface Vec2 {
   x: number

@@ -11,7 +11,7 @@ import type { Rng } from '../core/rng'
 import type PhysicsWorld from './physics'
 import { ballisticReach } from './projectile'
 import type { TechId } from '../data/tech'
-import { ADVANCE_DIR, damageMultiplier, type ArmorType, type Damageable, type DamageType, type Faction, type Layer } from './types'
+import { ADVANCE_DIR, LANE_Y, damageMultiplier, type ArmorType, type Damageable, type DamageType, type Faction, type Layer } from './types'
 
 export type UnitState = 'advance' | 'engage' | 'dead'
 
@@ -33,6 +33,8 @@ export interface UnitWorld {
   scavenge?: (unit: Unit) => void
   /** Front of a side's own fortress — as far back as anything will give ground. */
   homeX: (faction: Faction) => number
+  /** A blocked flanker wants to move itself to a clear adjacent lane. */
+  requestFlank?: (unit: Unit) => void
 }
 
 /** Subtle warm grade applied to hostile units on top of their own palette. */
@@ -71,6 +73,11 @@ export default class Unit implements Damageable {
 
   x: number
   y: number
+  /** Which of the three tracks this soldier walks. Fixed at spawn — unless
+   * the soldier is a flanker, whose own rule may move it once blocked. */
+  lane = 1
+  /** The ground line of this soldier's lane, in world pixels. */
+  groundLine: number
   hp: number
   maxHp: number
   alive = true
@@ -95,6 +102,15 @@ export default class Unit implements Damageable {
   vy = 0
   private airborne = false
   private stagger = 0
+  /** Move this soldier to another lane. Only the battlefield calls this. */
+  setLane(lane: number): void {
+    this.lane = Math.max(0, Math.min(LANE_Y.length - 1, lane))
+    this.groundLine = this.world.groundY + LANE_Y[this.lane]
+    if (this.layer === 'ground' && !this.airborne) this.y = this.groundLine
+    this.blockedMs = 0
+    this.world.vfx.footDust(this.x, this.groundLine)
+  }
+
   /** Stage this soldier on the path and sort it among its neighbours. */
   setStage(offset: number): void {
     this.stageY = offset
@@ -105,6 +121,10 @@ export default class Unit implements Damageable {
   private holdMs = 0
   /** Recent shoves, each one making the next one count for less. */
   private knockStacks = 0
+  /** How long this soldier has been pressed against its own line, in ms. */
+  private blockedMs = 0
+  /** Set by targeting when the current shot crosses into an adjacent lane. */
+  crossLaneShot = false
   /** Weight of the ranks pressing in behind this one. Set by the battlefield. */
   press = 1
   /** Position in this match's spawn order. Set by the battlefield. */
@@ -226,7 +246,8 @@ export default class Unit implements Damageable {
     faction: Faction,
     x: number,
     world: UnitWorld,
-    spawnJitter?: number
+    spawnJitter?: number,
+    lane = 1
   ) {
     this.scene = scene
     this.def = def
@@ -242,10 +263,12 @@ export default class Unit implements Damageable {
     this.centerOffsetY = -def.height * 0.5
 
     this.x = x
+    this.lane = Math.max(0, Math.min(LANE_Y.length - 1, lane))
+    this.groundLine = world.groundY + LANE_Y[this.lane]
     // Air lane jitter is gameplay-affecting (it changes engagement range),
     // so it comes from the caller's deterministic stream, not the shared
     // cosmetic one.
-    this.y = def.layer === 'air' ? world.airY + (spawnJitter ?? 0) : world.groundY
+    this.y = def.layer === 'air' ? world.airY + (spawnJitter ?? 0) : this.groundLine
 
     this.scaleFactor = 1 / RES
     this.container = scene.add.container(this.x, this.y)
@@ -253,7 +276,7 @@ export default class Unit implements Damageable {
 
 
     this.shadow = scene.add
-      .image(this.x, world.groundY + 2, 'fx:shadow')
+      .image(this.x, this.groundLine + 2, 'fx:shadow')
       .setDepth(60)
       .setAlpha(def.layer === 'air' ? 0.22 : 0.4)
       .setDisplaySize(def.height * 0.9, def.height * 0.26)
@@ -261,7 +284,7 @@ export default class Unit implements Damageable {
     // A faction-coloured ring on the ground: the fastest read of whose side a
     // soldier is on, even in a crowded melee.
     this.teamRing = scene.add
-      .image(this.x, world.groundY + 1, 'fx:soft')
+      .image(this.x, this.groundLine + 1, 'fx:soft')
       .setDepth(61)
       .setTint(FACTION_COLOR[faction])
       .setAlpha(0.62)
@@ -647,7 +670,8 @@ export default class Unit implements Damageable {
           color: part.tintTopLeft ?? 0xffffff,
           faction: this.faction,
           // Only flesh bleeds, and the bigger pieces bleed for longer.
-          bleed: mechanical ? 0 : heavy ? 1400 : 700
+          bleed: mechanical ? 0 : heavy ? 1400 : 700,
+          floor: this.groundLine
         }
       )
     }
@@ -661,7 +685,7 @@ export default class Unit implements Damageable {
         this.centerY,
         away * rand.range(40, 320) + rand.spread(140),
         -rand.range(60, 300),
-        { size: rand.range(0.5, 1.1) }
+        { size: rand.range(0.5, 1.1), floor: this.groundLine }
       )
     }
     if (mechanical) this.world.vfx.scrap(this.x, this.centerY, 1.2)
@@ -692,7 +716,7 @@ export default class Unit implements Damageable {
         this.centerY,
         away * rand.range(20, 150) + rand.spread(90),
         -rand.range(40, 210),
-        { size: rand.range(0.5, 1) }
+        { size: rand.range(0.5, 1), floor: this.groundLine }
       )
     }
     this.world.vfx.gore(this.x, this.centerY, 1)
@@ -789,11 +813,11 @@ export default class Unit implements Damageable {
       this.vy += GRAVITY * dt
       this.y += this.vy * dt
       this.vx -= this.vx * AIR_DRAG * dt
-      if (this.y >= this.world.groundY) {
-        this.y = this.world.groundY
+      if (this.y >= this.groundLine) {
+        this.y = this.groundLine
         this.airborne = false
         if (Math.abs(this.vy) > 200) {
-          this.world.vfx.footDust(this.x, this.world.groundY)
+          this.world.vfx.footDust(this.x, this.groundLine)
           this.world.vfx.impact(this.x, this.world.groundY - 6, 0xbfae8a, 0.6, false)
         }
         this.vy = 0
@@ -870,11 +894,18 @@ export default class Unit implements Damageable {
       const limit = blockerX - this.dir * (this.radius + QUEUE_GAP)
       if ((this.dir === 1 && nextX > limit) || (this.dir === -1 && nextX < limit)) {
         this.x = limit
+        // The knight's move. A flanker does not wait in a queue: blocked long
+        // enough, it asks the field for a clear adjacent lane and takes it.
+        // The rule is fixed and the clock is simulation time, so both peers
+        // watch the same soldier make the same decision at the same tick.
+        this.blockedMs += dt * 1000
+        if (this.def.flanker && this.blockedMs > 1500) this.world.requestFlank?.(this)
         return
       }
     }
     this.x = nextX
     this.stepPhase += Math.abs(step)
+    this.blockedMs = 0
   }
 
   private tryAttack(target: Damageable, dtMs: number): void {
@@ -953,9 +984,9 @@ export default class Unit implements Damageable {
     // Facing: flip the whole container.
     this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
     this.container.setPosition(this.x, this.y + this.stageY)
-    this.shadow.setPosition(this.x, this.world.groundY + this.stageY + 2)
+    this.shadow.setPosition(this.x, this.groundLine + this.stageY + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
-    this.teamRing.setPosition(this.x, this.world.groundY + this.stageY + 1)
+    this.teamRing.setPosition(this.x, this.groundLine + this.stageY + 1)
 
     if (this.swing > 0) this.swing = Math.max(0, this.swing - dtMs / (this.def.attackMs * 0.42))
 
@@ -1209,9 +1240,9 @@ export default class Unit implements Damageable {
 
     this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
     this.container.setPosition(this.x, this.y + this.stageY)
-    this.shadow.setPosition(this.x, this.world.groundY + this.stageY + 2)
+    this.shadow.setPosition(this.x, this.groundLine + this.stageY + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
-    this.teamRing.setPosition(this.x, this.world.groundY + this.stageY + 1)
+    this.teamRing.setPosition(this.x, this.groundLine + this.stageY + 1)
 
     // How far the unit actually got since the last frame. Everything about
     // which clip plays, and how fast, comes from this rather than from what the

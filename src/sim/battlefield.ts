@@ -18,7 +18,7 @@ import { BASE_H, BASE_W } from '../gfx/propArt'
 import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
 import Unit, { type UnitWorld } from './unit'
-import { ADVANCE_DIR, OPPOSITE, type Damageable, type DamageType, type Faction } from './types'
+import { ADVANCE_DIR, LANE_COUNT, OPPOSITE, type Damageable, type DamageType, type Faction } from './types'
 
 export interface BattlefieldConfig {
   worldWidth: number
@@ -213,6 +213,7 @@ export default class Battlefield {
       goreAt: x => this.goreAt(x),
       scavenge: unit => this.scavenge(unit),
       onDeathCharge: unit => this.detonateCorpse(unit),
+      requestFlank: unit => this.handleFlank(unit),
       homeX: faction => {
         const base = this.baseFor(faction)
         return base.x + ADVANCE_DIR[faction] * base.radius
@@ -520,6 +521,7 @@ export default class Battlefield {
     faction: Faction
     kind: 'fire' | 'plague' | 'spore'
     spread: number
+    lane: number
   }[] = []
 
   /** Lays down a patch of hostile ground. */
@@ -530,10 +532,12 @@ export default class Battlefield {
     dps: number,
     faction: Faction,
     kind: 'fire' | 'plague' | 'spore',
-    spread = 0
+    spread = 0,
+    lane = -1
   ): void {
     if (this.zones.length > 60) this.zones.shift()
-    this.zones.push({ x, radius, ttl, dps, faction, kind, spread })
+    // lane -1 burns every lane — the shape of an ability rather than a death.
+    this.zones.push({ x, radius, ttl, dps, faction, kind, spread, lane })
   }
 
   private updateZones(dtMs: number): void {
@@ -550,6 +554,7 @@ export default class Battlefield {
         if (!u.alive || u.faction === zone.faction) continue
         if (Math.abs(u.x - zone.x) > zone.radius) continue
         if (u.layer === 'air') continue
+        if (zone.lane >= 0 && u.lane !== zone.lane) continue
         this.applyDamage(null, u, { amount: zone.dps * dt, type: zone.kind === 'fire' ? 'explosive' : 'energy', knockback: 0 })
         // Deep Roots turns blighted ground into a bog for anyone else.
         if (zone.kind === 'spore' && this.armyFor(zone.faction).hasTech('deep_roots')) u.mire(220)
@@ -683,6 +688,7 @@ export default class Battlefield {
     for (const u of this.units) {
       if (!u.alive) continue
       mix(u.id)
+      mix(u.lane)
       mix(u.x * 10)
       mix(u.y * 10)
       mix(u.hp * 10)
@@ -719,14 +725,14 @@ export default class Battlefield {
     const before = army.gold
     const { ready } = army.tick(dtMs)
     this.statsFor(army.faction).goldEarned += Math.max(0, army.gold - before)
-    for (const def of ready) {
+    for (const entry of ready) {
       // Blood Pact bought the time with the fortress's own health. It is a
       // real cost: rushing the whole match will kill you without a shot fired.
       if (army.instantBuild) {
         const base = this.baseFor(army.faction)
-        base.hp = Math.max(1, base.hp - def.buildMs * 0.045)
+        base.hp = Math.max(1, base.hp - entry.def.buildMs * 0.045)
       }
-      this.spawnUnit(army.faction, def)
+      this.spawnUnit(army.faction, entry.def, undefined, entry.lane)
     }
   }
 
@@ -753,13 +759,51 @@ export default class Battlefield {
       army.deeds.baseHeld = Math.min(army.deeds.baseHeld, (base.hp / base.maxHp) * 100)
     }
 
-    this.applyAuras(playerUnits, enemyUnits)
+    // Each lane runs the whole one-dimensional fight — frontage, press,
+    // blocking — on its own. The lanes only touch through the fixed cross-lane
+    // rules in pickTarget, which is the entire chess of it.
+    const split = (flat: Unit[]): { lanes: Unit[][]; air: Unit[] } => {
+      const lanes: Unit[][] = Array.from({ length: LANE_COUNT }, () => [])
+      const air: Unit[] = []
+      for (const u of flat) (u.layer === 'air' ? air : lanes[u.lane]).push(u)
+      return { lanes, air }
+    }
+    const player = split(playerUnits)
+    const enemy = split(enemyUnits)
 
-    const playerTargets: Damageable[] = [...enemyUnits, this.enemyBase]
-    const enemyTargets: Damageable[] = [...playerUnits, this.playerBase]
+    for (let lane = 0; lane < LANE_COUNT; lane += 1) {
+      this.applyAuras(player.lanes[lane], enemy.lanes[lane])
+      this.stepSide(player.lanes[lane], enemy.lanes, enemy.air, this.enemyBase, dtMs)
+      this.stepSide(enemy.lanes[lane], player.lanes, player.air, this.playerBase, dtMs)
+    }
+    // Air rides above the lanes: it queues against nothing and sees everything.
+    this.stepSide(player.air, enemy.lanes, enemy.air, this.enemyBase, dtMs)
+    this.stepSide(enemy.air, player.lanes, player.air, this.playerBase, dtMs)
+  }
 
-    this.stepSide(playerUnits, playerTargets, dtMs)
-    this.stepSide(enemyUnits, enemyTargets, dtMs)
+  /**
+   * The knight's move. A blocked flanker asked for a way around: give it the
+   * adjacent lane with the fewest enemies, provided nothing hostile stands in
+   * that lane within the stretch it is about to cross. Fixed rule, fixed
+   * numbers, simulation state only — both peers move the same piece.
+   */
+  private handleFlank = (unit: Unit): void => {
+    const options: { lane: number; enemies: number }[] = []
+    for (const lane of [unit.lane - 1, unit.lane + 1]) {
+      if (lane < 0 || lane >= LANE_COUNT) continue
+      let ahead = 0
+      let total = 0
+      for (const u of this.units) {
+        if (!u.alive || u.faction === unit.faction || u.layer === 'air' || u.lane !== lane) continue
+        total += 1
+        const dx = (u.x - unit.x) * unit.dir
+        if (dx > -20 && dx < 260) ahead += 1
+      }
+      if (ahead === 0) options.push({ lane, enemies: total })
+    }
+    if (options.length === 0) return
+    options.sort((a, b) => a.enemies - b.enemies || a.lane - b.lane)
+    unit.setLane(options[0].lane)
   }
 
   /**
@@ -783,7 +827,13 @@ export default class Battlefield {
     }
   }
 
-  private stepSide(units: Unit[], targets: Damageable[], dtMs: number): void {
+  private stepSide(
+    units: Unit[],
+    enemyLanes: Unit[][],
+    enemyAir: Unit[],
+    enemyBase: Base,
+    dtMs: number
+  ): void {
     const dir = units.length > 0 ? ADVANCE_DIR[units[0].faction] : 1
     // Walk the sorted list from the front so each unit knows who is ahead of it.
     const order = dir === 1 ? [...units].reverse() : units
@@ -803,7 +853,7 @@ export default class Battlefield {
       }
       unit.press = 1 + support * PRESS_BONUS
       const blocker = unit.layer === 'air' ? null : aheadX
-      const target = this.pickTarget(unit, targets)
+      const target = this.pickTarget(unit, enemyLanes, enemyAir, enemyBase)
       unit.update(dtMs, blocker, target)
       if (unit.layer === 'ground' && unit.alive) {
         aheadX = unit.x - dir * (unit.radius + 2)
@@ -811,38 +861,90 @@ export default class Battlefield {
     }
   }
 
-  private pickTarget(unit: Unit, candidates: Damageable[]): Damageable | null {
-    const inRange: { target: Damageable; dist: number }[] = []
-    for (const c of candidates) {
-      if (!unit.canTarget(c)) continue
-      const dist = unit.distanceTo(c)
-      if (dist > unit.reach || dist < unit.minReach) continue
-      inRange.push({ target: c, dist })
-    }
-    if (inRange.length > 0) {
-      inRange.sort((a, b) => a.dist - b.dist)
-      // Shooters spread their fire across the front of the enemy formation
-      // instead of every one of them deleting the same man. Massed fire that
-      // all lands on the nearest target kills the front rank faster than the
-      // rank behind can step up, so a melee line never gets anybody into
-      // contact and its squad size counts for nothing. Which of the front few
-      // a soldier picks comes from its own id, so it is spread but not random,
-      // and both peers pick the same one.
-      const spread = unit.def.attack.kind === 'melee' ? 1 : Math.min(FIRE_SPREAD, inRange.length)
-      return inRange[unit.seq % spread].target
+  /**
+   * The rulebook. Each role sees the board its own fixed way, and everything a
+   * commander can exploit follows from these five lines of vision:
+   *
+   *  - melee and tanks fight in their own lane, full stop;
+   *  - shooters fight their own lane first, and only when it is empty do they
+   *    fire into an adjacent lane, at a moiety of their damage;
+   *  - siege bombards whichever lane is thickest, all three in reach;
+   *  - aircraft ignore lanes in both directions;
+   *  - the fortress stands at the end of every lane.
+   */
+  private pickTarget(unit: Unit, enemyLanes: Unit[][], enemyAir: Unit[], enemyBase: Base): Damageable | null {
+    unit.crossLaneShot = false
+    const attack = unit.def.attack
+    const melee = attack.kind === 'melee'
+    const flying = unit.layer === 'air'
+    const siege = unit.def.role === 'siege'
+
+    const gather = (list: readonly Damageable[], out: { target: Damageable; dist: number }[]): void => {
+      for (const c of list) {
+        if (!unit.canTarget(c)) continue
+        const dist = unit.distanceTo(c)
+        if (dist > unit.reach || dist < unit.minReach) continue
+        out.push({ target: c, dist })
+      }
     }
 
-    // Nothing in range: keep the nearest enemy as a facing/aim reference.
+    const pickFrom = (pool: { target: Damageable; dist: number }[]): Damageable => {
+      pool.sort((a, b) => a.dist - b.dist)
+      // Shooters spread their fire across the front of the enemy formation
+      // instead of every one of them deleting the same man; which of the
+      // front few a soldier picks comes from its spawn order, so it is
+      // spread but not random, and both peers pick the same one.
+      const spread = melee ? 1 : Math.min(FIRE_SPREAD, pool.length)
+      return pool[unit.seq % spread].target
+    }
+
+    const own: { target: Damageable; dist: number }[] = []
+    if (siege || flying) {
+      // Bombardment: the thickest lane in reach eats the shell.
+      let best: { target: Damageable; dist: number }[] = []
+      for (let lane = 0; lane < LANE_COUNT; lane += 1) {
+        const pool: { target: Damageable; dist: number }[] = []
+        gather(enemyLanes[lane], pool)
+        if (pool.length > best.length || (pool.length === best.length && lane === unit.lane && pool.length > 0)) {
+          if (pool.length > 0) best = pool
+        }
+      }
+      gather(enemyAir, best)
+      gather([enemyBase], best)
+      if (best.length > 0) return pickFrom(best)
+    } else {
+      gather(enemyLanes[unit.lane], own)
+      if (!melee) gather(enemyAir, own)
+      gather([enemyBase], own)
+      if (own.length > 0) return pickFrom(own)
+      if (!melee) {
+        // Spill into the lane next door, at a price. A gun line can help its
+        // neighbour, but it can never hold two lanes for the cost of one.
+        const spill: { target: Damageable; dist: number }[] = []
+        for (const lane of [unit.lane - 1, unit.lane + 1]) {
+          if (lane >= 0 && lane < LANE_COUNT) gather(enemyLanes[lane], spill)
+        }
+        if (spill.length > 0) {
+          unit.crossLaneShot = true
+          return pickFrom(spill)
+        }
+      }
+    }
+
+    // Nothing in range: keep the nearest enemy anywhere as an aim reference.
     let nearest: Damageable | null = null
     let nearestDist = Infinity
-    for (const c of candidates) {
-      if (!unit.canTarget(c)) continue
+    const consider = (c: Damageable): void => {
+      if (!unit.canTarget(c)) return
       const dist = unit.distanceTo(c)
       if (dist < nearestDist) {
         nearestDist = dist
         nearest = c
       }
     }
+    for (const laneUnits of enemyLanes) for (const c of laneUnits) consider(c)
+    for (const c of enemyAir) consider(c)
+    consider(enemyBase)
     unit.target = nearest
     return null
   }
@@ -972,7 +1074,7 @@ export default class Battlefield {
     }
   }
 
-  spawnUnit(faction: Faction, def: UnitDef, atX?: number): Unit {
+  spawnUnit(faction: Faction, def: UnitDef, atX?: number, lane = 1): Unit {
     // Doctrine morphs derive defs at runtime, so the sprite for this one may
     // not have been drawn yet. Cosmetic only — it cannot move the hash.
     ensureUnitArt(this.scene, def)
@@ -980,7 +1082,7 @@ export default class Battlefield {
     const dir = ADVANCE_DIR[faction]
     const spawnX = atX ?? base.x + dir * (base.radius + 30)
 
-    const unit = new Unit(this.scene, def, faction, spawnX, this.world, this.rng.spread(26))
+    const unit = new Unit(this.scene, def, faction, spawnX, this.world, this.rng.spread(26), lane)
     const army = this.armyFor(faction)
     unit.hp *= army.modifiers.unitHp
     unit.maxHp *= army.modifiers.unitHp
@@ -1002,7 +1104,7 @@ export default class Battlefield {
     this.spawnSeq += 1
     // Stand the soldier somewhere on the width of the battle path.
     // Deterministic from spawn order, so both peers stage every man alike.
-    unit.setStage(unit.layer === 'ground' ? ((unit.seq * 2654435761) >>> 0) % 29 : 0)
+    unit.setStage(unit.layer === 'ground' ? ((unit.seq * 2654435761) >>> 0) % 13 : 0)
     const stats = this.statsFor(faction)
     stats.unitsBuilt += 1
     stats.goldSpent += def.cost
@@ -1041,7 +1143,13 @@ export default class Battlefield {
   private handleUnitFire = (unit: Unit, target: Damageable): void => {
     const attack = unit.def.attack
     const army = this.armyFor(unit.faction)
-    const damage = unit.def.damage * unit.damageMult * army.modifiers.unitDamage * this.escalation
+    const damage =
+      unit.def.damage *
+      unit.damageMult *
+      army.modifiers.unitDamage *
+      this.escalation *
+      // Half strength across a lane boundary — supporting fire, not coverage.
+      (unit.crossLaneShot ? 0.5 : 1)
     const sfx = WEAPON_SFX[unit.def.visual.weapon] ?? 'melee_light'
 
     if (attack.kind === 'melee') {
@@ -1059,7 +1167,7 @@ export default class Battlefield {
         bonusVs: unit.def.bonusVs
       }
       if (attack.splash && attack.splash > 0) {
-        this.applySplash(target.x, target.y + target.centerOffsetY, attack.splash, unit.faction, event, unit)
+        this.applySplash(target.x, target.y + target.centerOffsetY, attack.splash, unit.faction, event, unit, unit.lane)
       } else {
         this.applyDamage(unit, target, event)
       }
@@ -1148,6 +1256,9 @@ export default class Battlefield {
       u => u.alive && u.faction === unit.faction && u !== unit && Math.abs(u.x - unit.x) <= attack.radius
     )
     const wounded = allies.filter(u => u.hp < u.maxHp)
+    // Full strength in the healer's own lane, half across the boundary — the
+    // same shape as spill fire, so support placement is a real decision too.
+    const share = (u: Unit): number => (u.layer === 'air' || u.lane === unit.lane ? 1 : 0.5)
     if (wounded.length === 0) return
 
     audio.play('heal', 0.35)
@@ -1157,7 +1268,7 @@ export default class Battlefield {
     wounded
       .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)
       .slice(0, 3)
-      .forEach(ally => ally.heal(attack.amount))
+      .forEach(ally => ally.heal(attack.amount * share(ally)))
     unit.markHealPulse()
   }
 
@@ -1192,11 +1303,11 @@ export default class Battlefield {
 
     // Carnage — the killer poisons the ground where the body fell.
     if (killer.hasTech('plague_wind')) {
-      this.addZone(unit.x, 70, 6000, 26, winner, 'plague')
+      this.addZone(unit.x, 70, 6000, 26, winner, 'plague', 0, unit.lane)
     }
     // Cinder Host doctrine, and Incendiary before it: bodies burn where they land.
     if (killer.ascendedTo === 'cinder_host' || (killer.hasTech('incendiary') && killer.hasTech('ashfall'))) {
-      this.addZone(unit.x, 60, 5200, 40, winner, 'fire', killer.hasTech('ashfall') ? 16 : 0)
+      this.addZone(unit.x, 60, 5200, 40, winner, 'fire', killer.hasTech('ashfall') ? 16 : 0, unit.lane)
     }
     // Blight — the dead burst, and their own side's ground spreads.
     if (owner.hasTech('spore_cloud')) {
@@ -1362,11 +1473,14 @@ export default class Battlefield {
     radius: number,
     faction: Faction,
     event: DamageEvent,
-    attacker: Damageable | null = null
+    attacker: Damageable | null = null,
+    laneLock?: number
   ): void {
     const targets: Damageable[] = [...this.units, this.playerBase, this.enemyBase]
     for (const t of targets) {
       if (!t.alive || t.faction === faction) continue
+      // A swung weapon sweeps the swinger's own file. Shells do not care.
+      if (laneLock !== undefined && t instanceof Unit && t.layer === 'ground' && t.lane !== laneLock) continue
       const dx = t.x - x
       const dy = t.y + t.centerOffsetY - y
       const dist = Math.sqrt(dx * dx + dy * dy) - t.radius
@@ -1429,8 +1543,8 @@ export default class Battlefield {
 
   // ───────────────────────────── Player actions ─────────────────────────────
 
-  queueUnit(faction: Faction, unitId: string): boolean {
-    return this.armyFor(faction).enqueue(unitId)
+  queueUnit(faction: Faction, unitId: string, lane = 1): boolean {
+    return this.armyFor(faction).enqueue(unitId, lane)
   }
 
   evolve(faction: Faction): boolean {

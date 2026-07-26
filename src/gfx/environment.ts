@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { save } from '../core/save'
 import { AGE_THEMES, type AgeTheme } from './palette'
 import Pix, { ditherAt, mix, pixelNoise, ramp, tone, type PixelCanvas, type Ramp } from './pixel'
+import { LANE_Y } from '../sim/types'
 
 /**
  * The world behind the battle.
@@ -1580,16 +1581,23 @@ export function envFloorPix(age: number, worldW: number, above: number, below: n
   /** How large a mark drawn on this row should be, by foreshortening. */
   const rowScale = (y: number): number => 0.4 + 1.5 * Math.pow(y / h, 1.15)
 
-  // The path straddles the feet line. Everything asks this before drawing.
-  const PATH_TOP = hA - 10
-  const PATH_BOT = hA + 48
+  // Three worn paths, one per lane, straddling each lane's feet line. The
+  // lanes are the game now, so the board draws its own files: a commander
+  // reads where a piece will walk the same way a chess player reads a rank.
+  const PATH_HALF = 14
+  const centres = LANE_Y.map(off => hA + off + 7)
   const pathAt = (x: number, y: number): number => {
-    const edge = 5 + noise(x >> 2, 991) * 4
-    if (y < PATH_TOP - edge || y > PATH_BOT + edge) return 0
-    if (y >= PATH_TOP && y <= PATH_BOT) return 1
-    const d = y < PATH_TOP ? PATH_TOP - y : y - PATH_BOT
-    return Math.max(0, 1 - d / edge)
+    let best = 0
+    for (const c of centres) {
+      const edge = 4 + noise(x >> 2, 991 + c) * 3
+      const d = Math.abs(y - c)
+      if (d <= PATH_HALF) return 1
+      if (d <= PATH_HALF + edge) best = Math.max(best, 1 - (d - PATH_HALF) / edge)
+    }
+    return best
   }
+  const PATH_TOP = centres[0] - PATH_HALF
+  const PATH_BOT = centres[centres.length - 1] + PATH_HALF
 
   // Base field. Recession lives in the mottle frequency: far rows sample the
   // noise coarsely-in-x so the texture compresses toward the horizon exactly
@@ -1654,22 +1662,24 @@ export function envFloorPix(age: number, worldW: number, above: number, below: n
     for (let k = -r; k <= r; k += 1) if (ditherAt(x + k, y + 1, 0.5)) p.set(x + k, y + ry, deep[0])
   }
 
-  // The road itself: ruts worn along it, and the litter of use.
-  for (let line = 0; line < 3; line += 1) {
-    const cy = hA + 4 + line * 15
+  // Each road worn by use: a rut along it, and the litter of armies.
+  for (let lane = 0; lane < centres.length; lane += 1) {
+    const cy = centres[lane]
     for (let x = 0; x < w; x += 1) {
-      const y = cy + Math.round(Math.sin(x / (40 + line * 13) + line * 2.1) * 2 + noise(x >> 3, line + 300) * 2)
-      if (noise(x >> 1, line + 310) < 0.3) continue
+      const y = cy + Math.round(Math.sin(x / (40 + lane * 13) + lane * 2.1) * 2 + noise(x >> 3, lane + 300) * 2)
+      if (noise(x >> 1, lane + 310) < 0.3) continue
       p.set(x, y, dirt[0])
-      if (noise(x, line + 320) > 0.8) p.set(x, y - 1, dirt[4])
+      if (noise(x, lane + 320) > 0.8) p.set(x, y - 1, dirt[4])
+    }
+    const LITTER = Math.round(w * 0.012)
+    for (let i = 0; i < LITTER; i += 1) {
+      const x = Math.round(rnd() * w)
+      const y = cy - PATH_HALF + 3 + Math.round(rnd() * (PATH_HALF * 2 - 6))
+      p.set(x, y, rnd() < 0.5 ? deep[0] : soil[4])
     }
   }
-  const LITTER = Math.round(w * 0.03)
-  for (let i = 0; i < LITTER; i += 1) {
-    const x = Math.round(rnd() * w)
-    const y = PATH_TOP + 4 + Math.round(rnd() * (PATH_BOT - PATH_TOP - 8))
-    p.set(x, y, rnd() < 0.5 ? deep[0] : soil[4])
-  }
+  void PATH_TOP
+  void PATH_BOT
 
   // Water where the weather makes it, cracks where it does not — field only.
   if (wet) {

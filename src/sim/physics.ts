@@ -45,6 +45,11 @@ export interface Body {
   restitution: number
   /** Sliding friction applied while resting on the ground. */
   friction: number
+  /**
+   * The ground line this body falls to. Lanes put soldiers on three
+   * different lines, and a man's remains land on the line he stood on.
+   */
+  floor?: number
   /** Air resistance coefficient. */
   drag: number
   /** Milliseconds left before the body is removed. Infinity for permanent. */
@@ -272,16 +277,17 @@ export default class PhysicsWorld {
   }
 
   private collideGround(b: Body): void {
-    if (b.y < this.groundY) return
+    const floor = b.floor ?? this.groundY
+    if (b.y < floor) return
     const impactSpeed = Math.abs(b.vy)
-    b.y = this.groundY
+    b.y = floor
 
     if (impactSpeed > REST_SPEED) {
       // Bounce, losing energy to restitution, and scrub sideways speed.
       b.vy = -impactSpeed * b.restitution
       b.vx *= 1 - b.friction * 0.5
       b.spin *= 0.6
-      this.callbacks.onStain(b, b.x, this.groundY, impactSpeed, false)
+      this.callbacks.onStain(b, b.x, floor, impactSpeed, false)
       if (b.kind === 'blood') b.dead = true
     } else {
       b.vy = 0
@@ -291,7 +297,7 @@ export default class PhysicsWorld {
         b.vx = 0
         b.spin = 0
         b.settled = true
-        this.callbacks.onStain(b, b.x, this.groundY, impactSpeed, false)
+        this.callbacks.onStain(b, b.x, floor, impactSpeed, false)
         this.callbacks.onSettle(b)
         if (b.kind === 'blood') b.dead = true
         else this.trimSettled()

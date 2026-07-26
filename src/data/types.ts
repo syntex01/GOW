@@ -133,6 +133,11 @@ export interface UnitDef {
   aura?: { damageReduction: number; radius: number }
   /** Multiplier applied when this unit attacks the listed armour classes. */
   bonusVs?: Partial<Record<ArmorType, number>>
+  /**
+   * A flanker blocked behind its own line will move itself to a clear
+   * adjacent lane rather than wait. Fixed rule, no input — the knight's move.
+   */
+  flanker?: boolean
   /** Can this unit shoot air targets? Ground melee cannot. */
   hitsAir?: boolean
   /** Chance of a 2x hit. */
