@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { ballisticReach } from './projectile'
+import { turretBarrelPivot } from '../gfx/textureFactory'
 import { audio } from '../core/audio'
 import { rng } from '../core/rng'
 import type { TurretDef } from '../data/types'
@@ -162,7 +163,7 @@ export default class Base implements Damageable {
 
     slot.barrelSprite = this.scene.add
       .image(wx, wy - 8, `turret:${def.id}:barrel`)
-      .setOrigin(0.08, 0.5)
+      .setOrigin(...turretBarrelPivot(def.id))
       .setDepth(44)
       .setScale(1 / RES)
     slot.baseSprite = this.scene.add

@@ -189,19 +189,22 @@ function wheel(p: Pix, cx: number, cy: number, rr: number, r: Ramp, hub: Ramp): 
   // The gaps between spokes stay *filled* rather than punched through. Erasing
   // them looks correct in isolation and then the outline post-pass wraps every
   // spoke in black and the wheel turns into a smudge.
+  // A thirteen-pixel wheel cannot hold six spokes: they and the hub between
+  // them fill the whole plate and it goes back to being a grey disc. Lightening
+  // holes in a solid plate is what actually resolves at this size.
+  // Dark tyre, a dark gap ring, then a *light* plate: the tyre and the plate
+  // have to sit at opposite ends of the ramp or the whole wheel averages into
+  // one grey disc and the shape stops reading at all.
   p.ellipse(cx, cy, rr, rr, r[1])
   for (let a = -2.3; a < 0.3; a += 0.05) {
-    p.set(Math.round(cx + Math.cos(a) * (rr - 0.6)), Math.round(cy + Math.sin(a) * (rr - 0.6)), r[3])
+    p.set(Math.round(cx + Math.cos(a) * (rr - 0.5)), Math.round(cy + Math.sin(a) * (rr - 0.5)), r[3])
   }
-  // Interior dark, spokes bright: the other way round and the whole wheel
-  // averages out to one grey disc the moment it is shown at game scale.
-  p.ellipse(cx + 0.3, cy - 0.3, rr - 2, rr - 2, r[0])
-  p.ellipseFrame(cx, cy, rr - 2, rr - 2, r[3])
-  for (let i = 0; i < 6; i += 1) {
-    const a = i * (Math.PI / 3) + 0.25
-    p.line(cx, cy, cx + Math.cos(a) * (rr - 2), cy + Math.sin(a) * (rr - 2), r[4])
-  }
-  orb(p, cx, cy, 1.8, 1.8, hub)
+  p.ellipse(cx + 0.3, cy - 0.3, rr - 1.8, rr - 1.8, r[0])
+  p.ellipse(cx + 0.3, cy - 0.3, rr - 2.6, rr - 2.6, r[3])
+  // No spokes and no lightening holes. A plate this small has room for one
+  // concentric ring and a hub, and that is already enough to read as a wheel.
+  p.ellipse(cx + 0.9, cy - 0.9, rr - 4.4, rr - 4.4, r[4])
+  orb(p, cx, cy, 1.6, 1.6, hub)
 }
 
 /** A dithered energy halo, for anything that is meant to be radiating. */
@@ -241,9 +244,9 @@ type BaseDraw = (p: Pix, id: Ramp) => void
 /** A woven basket slung in a timber tripod, river rock stacked at its feet. */
 const slingPost: BaseDraw = (p, id) => {
   // Splayed tripod, meeting in a lashed head above the throwing arm.
-  member(p, 19, 14, 19, 29, 2, TIMBER_DARK)
-  member(p, 18, 14, 6, FOOT, 3, TIMBER)
-  member(p, 18, 14, 30, FOOT, 3, TIMBER)
+  member(p, 19, 11, 19, 29, 2, TIMBER_DARK)
+  member(p, 18, 11, 6, FOOT, 3, TIMBER)
+  member(p, 18, 11, 30, FOOT, 3, TIMBER)
   member(p, 10, 27, 26, 27, 2, TIMBER_DARK)
 
   // The basket: a woven bowl with a rounded belly, not a slatted box. The
@@ -272,8 +275,7 @@ const slingPost: BaseDraw = (p, id) => {
   orb(p, 12, 17, 2.6, 2, ROCK)
   orb(p, 17, 16, 2.8, 2.2, STONE)
   // Lashed tripod head.
-  lashing(p, 15, 12, 7)
-  lashing(p, 14, 15, 9)
+  lashing(p, 15, 14, 7)
 
   // A spare pile of river rock at the foot of the near leg.
   orb(p, 4, 29, 3.4, 2.4, ROCK)
@@ -541,15 +543,16 @@ const howitzer: BaseDraw = (p, id) => {
   p.line(0, 25, 5, 28, IRON[4])
   for (let x = 0; x < 10; x += 2) p.fill(x, 29 + (x % 4 === 0 ? 1 : 0), 2, 1, DIRT[1])
 
-  // The wheel: the single most recognisable shape in the whole set.
-  wheel(p, 13, 24, 6.5, DARKMETAL, STEEL)
+  // The wheel: the single most recognisable shape in the whole set. It gets the
+  // brightest material on the sprite, because a dark wheel on a dark carriage
+  // is just a dark smudge.
+  wheel(p, 13, 23, 7, STEEL, BRASS)
 
   // Cradle carrying the trunnion, riding up and to the right of the axle.
   box(p, 16, 15, 13, 7, id)
   rivetRow(p, 17, 16, 11, 4, id)
   p.fill(16, 15, 13, 1, id[4])
   p.fill(16, 21, 13, 1, id[0])
-  member(p, 14, 24, 19, 21, 3, COMPOSITE)
   orb(p, CX, MOUNT_Y, 2.6, 2.6, STEEL)
   // Recoil guard on the lit side.
   p.poly([[29, 16], [33, 18], [33, 26], [29, 23]], COMPOSITE[2])

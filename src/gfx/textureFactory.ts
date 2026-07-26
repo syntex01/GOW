@@ -25,12 +25,12 @@ import {
   drawSky,
   drawSplatBrushes,
   drawSunDisc,
-  drawTurret,
   drawVignette
 } from './propArt'
 import { buildShadowCanvas, buildUnitArt, RES, RigMetrics } from './unitArt'
 import { buildArchetype, type ArchetypeBuild } from './archetypes'
 import { drawFortress } from './fortresses'
+import { drawTurretHi } from './turretArt'
 import { evaluate, partRotation, samplePose } from './rig'
 
 const PROJECTILE_IDS: ProjectileId[] = [
@@ -64,6 +64,13 @@ export interface UnitArtInfo {
 }
 
 const unitArtInfo = new Map<string, UnitArtInfo>()
+
+const turretBarrelPivots = new Map<string, [number, number]>()
+
+/** Where a turret's barrel sprite should be anchored, in 0..1 texture space. */
+export function turretBarrelPivot(id: string): [number, number] {
+  return turretBarrelPivots.get(id) ?? [0.08, 0.5]
+}
 
 export function getUnitArt(id: string): UnitArtInfo {
   const info = unitArtInfo.get(id)
@@ -330,9 +337,13 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
     label: 'Mounting defences',
     run: () => {
       for (const turret of TURRETS) {
-        const art = drawTurret(turret.color, turret.barrel, turret.age)
+        const art = drawTurretHi(turret)
         addCanvas(scene, `turret:${turret.id}:base`, art.base)
         addCanvas(scene, `turret:${turret.id}:barrel`, art.barrel)
+        // Each barrel rotates about its own trunnion rather than a shared
+        // guess, so a mortar tube and a railgun sled can pivot where they
+        // actually would.
+        turretBarrelPivots.set(turret.id, art.barrelPivot)
       }
     }
   })
