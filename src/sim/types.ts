@@ -22,11 +22,11 @@ export type Layer = 'ground' | 'air'
  * structures but is poor against nimble light units, energy ignores armor.
  */
 export const DAMAGE_MATRIX: Record<DamageType, Record<ArmorType, number>> = {
-  blunt: { unarmored: 1.0, light: 0.9, heavy: 1.35, structure: 0.75, air: 0.6 },
-  pierce: { unarmored: 1.35, light: 1.15, heavy: 0.7, structure: 0.5, air: 1.2 },
-  slash: { unarmored: 1.25, light: 1.0, heavy: 0.8, structure: 0.6, air: 0.8 },
-  explosive: { unarmored: 1.1, light: 0.8, heavy: 1.15, structure: 1.6, air: 0.9 },
-  energy: { unarmored: 1.0, light: 1.1, heavy: 1.1, structure: 1.0, air: 1.25 }
+  blunt: { unarmored: 1.0, light: 0.8, heavy: 1.45, structure: 0.75, air: 0.45 },
+  pierce: { unarmored: 1.4, light: 1.15, heavy: 0.6, structure: 0.5, air: 1.35 },
+  slash: { unarmored: 1.3, light: 1.0, heavy: 0.7, structure: 0.6, air: 0.7 },
+  explosive: { unarmored: 1.1, light: 0.7, heavy: 1.2, structure: 1.7, air: 0.55 },
+  energy: { unarmored: 1.0, light: 1.1, heavy: 1.05, structure: 1.0, air: 1.3 }
 }
 
 export function damageMultiplier(damage: DamageType, armor: ArmorType): number {

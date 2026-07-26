@@ -83,7 +83,9 @@ export default class MenuScene extends Phaser.Scene {
         // The parade never fights, so it gets a physics world of its own that
         // nothing ever steps.
         physics: this.paradePhysics,
-        rng
+        rng,
+        // Nothing on the parade ever has to give ground.
+        homeX: () => -1e6
       })
       this.parade.push(unit)
     }

@@ -119,6 +119,12 @@ export interface UnitDef {
   pop: number
   height: number
   attack: AttackSpec
+  /**
+   * Closest a target may stand before this weapon cannot be brought to bear.
+   * A crew that has let something inside its minimum range stops shooting and
+   * gives ground, which is what makes a siege engine worth charging.
+   */
+  minRange?: number
   /** Multiplier applied when this unit attacks the listed armour classes. */
   bonusVs?: Partial<Record<ArmorType, number>>
   /** Can this unit shoot air targets? Ground melee cannot. */

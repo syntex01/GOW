@@ -31,6 +31,8 @@ export interface UnitWorld {
   goreAt?: (x: number) => number
   /** A unit wants to eat the remains around it, for Bonepickers. */
   scavenge?: (unit: Unit) => void
+  /** Front of a side's own fortress — as far back as anything will give ground. */
+  homeX: (faction: Faction) => number
 }
 
 /** Subtle warm grade applied to hostile units on top of their own palette. */
@@ -44,6 +46,18 @@ const GROUND_FRICTION = 6.5
 const AIR_DRAG = 1.2
 /** Minimum gap kept between friendly units so columns queue up instead of stacking. */
 const QUEUE_GAP = 6
+/** How much slack counts as "closed up behind the rank ahead". */
+const CLOSE_SLACK = 8
+/**
+ * How long a unit keeps firing after the rank ahead of it steps away. Without
+ * it a shuffling front line makes every archer behind it stutter between one
+ * step and one arrow, and nobody ever finishes a draw.
+ */
+const HOLD_MS = 600
+/** Knockback impulse below which a hit hurts but does not interrupt. */
+const STAGGER_FLOOR = 60
+/** How fast knockback resistance bleeds off, in stacks per second. */
+const KNOCK_RECOVERY = 1.6
 
 let nextId = 1
 
@@ -81,6 +95,10 @@ export default class Unit implements Damageable {
   vy = 0
   private airborne = false
   private stagger = 0
+  /** Grace left on the licence to shoot from formation. See formedUp(). */
+  private holdMs = 0
+  /** Recent shoves, each one making the next one count for less. */
+  private knockStacks = 0
 
   private attackCooldown = 0
   private swing = 0
@@ -451,6 +469,15 @@ export default class Unit implements Damageable {
     return Math.min(wanted, ballisticReach(attack.speed, attack.gravity))
   }
 
+  /**
+   * Closest a target may stand before this weapon cannot be brought to bear.
+   * Research that extends reach opens the dead zone up by the same proportion:
+   * a longer throw is a longer minimum arc, not a free upgrade.
+   */
+  get minReach(): number {
+    return (this.def.minRange ?? 0) * this.rangeMult
+  }
+
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {
     if (!this.alive) return
     const mult = damageMultiplier(type, this.armor)
@@ -475,13 +502,22 @@ export default class Unit implements Damageable {
     this.world.vfx.damageNumber(this.x, this.centerY - this.def.height * 0.35, reduced, mult > 1.15 ? 0xffd166 : 0xffffff, mult > 1.3)
 
     if (knockback > 0) {
-      const impulse = (knockback / Math.max(0.4, this.def.mass)) * 1.6
+      // Diminishing returns. Massed light fire used to pin a line in place
+      // forever: every pebble set the stagger timer and added its own shove, so
+      // a front rank under fire from twenty slingers spent most of each second
+      // unable to act and was pushed back as fast as it could walk. That, and
+      // not the damage, is what made long range with knockback strictly the
+      // best thing to buy. Each shove now counts for less than the last, and
+      // the stacks bleed off over about a second of not being hit.
+      const impulse = (knockback / Math.max(0.4, this.def.mass)) * 1.6 / (1 + this.knockStacks)
+      this.knockStacks = Math.min(6, this.knockStacks + 1)
       this.vx += -this.dir * impulse
       if (impulse > 150 && this.layer === 'ground') {
         this.vy = -Math.min(560, impulse * 1.5)
         this.airborne = true
       }
-      this.stagger = Math.min(420, impulse * 1.4)
+      // Only a blow heavy enough to actually shift a soldier interrupts it.
+      if (impulse > STAGGER_FLOOR) this.stagger = Math.max(this.stagger, Math.min(420, impulse * 1.4))
     }
 
     if (this.hp <= 0) this.kill(source)
@@ -703,6 +739,7 @@ export default class Unit implements Damageable {
     if (this.flashTimer > 0) this.flashTimer -= dtMs
     if (this.healPulseTimer > 0) this.healPulseTimer -= dtMs
     if (this.stagger > 0) this.stagger -= dtMs
+    if (this.knockStacks > 0) this.knockStacks = Math.max(0, this.knockStacks - (dtMs / 1000) * KNOCK_RECOVERY)
     if (this.attackCooldown > 0) this.attackCooldown -= dtMs
     if (this.miredFor > 0) this.miredFor -= dtMs
     if (this.disabledFor > 0) {
@@ -752,16 +789,59 @@ export default class Unit implements Damageable {
     this.target = nearest
     const staggered = this.stagger > 0
 
-    if (nearest && this.distanceTo(nearest) <= this.reach) {
+    if (this.holdMs > 0) this.holdMs -= dtMs
+    if (nearest && this.distanceTo(nearest) <= this.reach && this.formedUp(blockerX)) {
       this.state = 'engage'
       if (!staggered) this.tryAttack(nearest, dtMs)
     } else {
       this.state = 'advance'
-      if (!staggered) this.advance(dt, blockerX)
+      if (!staggered) {
+        if (this.overrun()) this.giveGround(dt)
+        else this.advance(dt, blockerX)
+      }
     }
 
     this.handleBurst(dtMs)
     this.updateVisual(dtMs)
+  }
+
+  /**
+   * Whether this unit has taken up its place in the line and may open fire.
+   *
+   * A unit at the front stops at its own reach and shoots, which is what makes
+   * a bow worth carrying. A unit with a friendly rank ahead of it does not: it
+   * closes right up behind that rank first, so archers stand behind the shield
+   * wall instead of loosing arrows into its back from the far edge of their
+   * range. Once it is formed up it keeps shooting for a moment after the rank
+   * ahead steps off, so a front line shuffling forward does not reduce every
+   * archer behind it to one step, one arrow, one step.
+   */
+  private formedUp(blockerX: number | null): boolean {
+    if (blockerX === null) return true
+    const limit = blockerX - this.dir * (this.radius + QUEUE_GAP)
+    if ((limit - this.x) * this.dir <= CLOSE_SLACK) {
+      this.holdMs = HOLD_MS
+      return true
+    }
+    return this.holdMs > 0
+  }
+
+  /** Something has got inside the arc this weapon can be brought to bear in. */
+  private overrun(): boolean {
+    return this.minReach > 0 && this.target !== null && this.distanceTo(this.target) < this.minReach
+  }
+
+  /**
+   * A crew whose engine has been charged backs away rather than standing there
+   * cranking a windlass at a swordsman. It gives ground slowly and never past
+   * its own fortress, so a charge that reaches the artillery is rewarded with
+   * a rout instead of a stalemate.
+   */
+  private giveGround(dt: number): void {
+    const step = this.def.speed * this.speedMult * 0.55 * dt * this.dir
+    const wall = this.world.homeX(this.faction) + this.dir * this.radius
+    this.x = this.dir === 1 ? Math.max(wall, this.x - step) : Math.min(wall, this.x - step)
+    this.stepPhase += Math.abs(step)
   }
 
   private advance(dt: number, blockerX: number | null): void {

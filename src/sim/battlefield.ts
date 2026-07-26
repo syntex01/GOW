@@ -196,7 +196,11 @@ export default class Battlefield {
       rng: this.rng,
       goreAt: x => this.goreAt(x),
       scavenge: unit => this.scavenge(unit),
-      onDeathCharge: unit => this.detonateCorpse(unit)
+      onDeathCharge: unit => this.detonateCorpse(unit),
+      homeX: faction => {
+        const base = this.baseFor(faction)
+        return base.x + ADVANCE_DIR[faction] * base.radius
+      }
     }
 
     const margin = 150
@@ -766,7 +770,7 @@ export default class Battlefield {
     for (const c of candidates) {
       if (!unit.canTarget(c)) continue
       const dist = unit.distanceTo(c)
-      if (dist > unit.reach) continue
+      if (dist > unit.reach || dist < unit.minReach) continue
       if (dist < bestDist) {
         bestDist = dist
         best = c
@@ -1064,11 +1068,11 @@ export default class Battlefield {
 
     audio.play('heal', 0.35)
     this.vfx.healPulse(unit.x, unit.centerY, attack.radius)
-    // Two targets per pulse: enough to matter, not enough that a pair of
-    // healers makes the front line unkillable.
+    // Three targets per pulse: enough that a healer pays for the body it costs
+    // you, not so many that a pair of them makes the front line unkillable.
     wounded
       .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)
-      .slice(0, 2)
+      .slice(0, 3)
       .forEach(ally => ally.heal(attack.amount))
     unit.markHealPulse()
   }
