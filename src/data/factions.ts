@@ -500,7 +500,8 @@ export const FACTION_UNITS: UnitDef[] = [
     xp: 250,
     pop: 2,
     height: 78,
-    attack: { kind: 'aura', damageReduction: 0.3, radius: 210 },
+    attack: { kind: 'melee', knockback: 160, splash: 88 },
+    aura: { damageReduction: 0.3, radius: 210 },
     description: 'Nobody in its shadow is entirely their own idea any more.',
     visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true })
   },

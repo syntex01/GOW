@@ -420,7 +420,9 @@ export default class TechTree {
             ? `needs ${formatNumber(node.cost - Math.floor(this.army.gold))}g more`
             : state === 'age'
               ? `locked until age ${node.age + 1}`
-              : 'prerequisites not met'
+              : state === 'demand' && node.demand
+                ? `${node.demand.label} — ${formatNumber(Math.floor(this.army.deeds[node.demand.metric]))}/${formatNumber(node.demand.amount)}`
+                : 'prerequisites not met'
 
     this.detailName.setText(node.name).setColor(
       hex(node.kind === 'ascension' && node.becomes ? FACTIONS_BY_ID[node.becomes].accent : BRANCH_ACCENT[node.branch])
@@ -486,6 +488,19 @@ export default class TechTree {
           view.box.setFillStyle(UI.panel, 0.9).setStrokeStyle(1, accent)
           view.name.setColor(hex(UI.text)).setAlpha(0.7)
           view.tag.setText(`age ${view.node.age + 1}`).setColor(hex(UI.warn))
+          break
+        case 'demand':
+          // Bought with deeds, not gold. Show the tally, because a demand you
+          // cannot see your progress toward is just an arbitrary wall.
+          view.box.setFillStyle(UI.panel, 0.9).setStrokeStyle(1, accent)
+          view.name.setColor(hex(UI.text)).setAlpha(0.85)
+          view.tag
+            .setText(
+              view.node.demand
+                ? `${Math.floor(this.army.deeds[view.node.demand.metric])}/${view.node.demand.amount} · earn it`
+                : 'earn it'
+            )
+            .setColor(hex(UI.gold))
           break
         default:
           view.box.setFillStyle(0x0a101c, 0.85).setStrokeStyle(1, UI.panelEdge)

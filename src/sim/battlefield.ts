@@ -81,6 +81,12 @@ const PRESS_BONUS = 0.5
 /** Ranks beyond this are too far back to lean on anything. */
 const MAX_PRESS = 4
 
+/** The protective field a unit projects, from either place it can be declared. */
+function auraOf(def: UnitDef): { damageReduction: number; radius: number } | null {
+  if (def.aura) return def.aura
+  return def.attack.kind === 'aura' ? def.attack : null
+}
+
 function emptyStats(): MatchStats {
   return {
     unitsBuilt: 0,
@@ -554,6 +560,12 @@ export default class Battlefield {
 
   /** Set by the scene so it can paint what the simulation decided happened. */
   onStain?: (body: Body, x: number, y: number, speed: number, onWall: boolean) => void
+  /**
+   * A soldier has fallen and stayed down. The scene lays it into the heap
+   * where it landed, so the ground a battle has been fought over slowly turns
+   * into a rampart of the men who fought it.
+   */
+  onCorpse?: (unit: Unit) => void
   onSettle?: (body: Body) => void
 
   /**
@@ -729,6 +741,15 @@ export default class Battlefield {
 
     this.player.population = playerUnits.reduce((n, u) => n + u.def.pop, 0)
     this.enemy.population = enemyUnits.reduce((n, u) => n + u.def.pop, 0)
+    // Deeds only ever go one way, so that a demand once met stays met.
+    for (const [army, count, base] of [
+      [this.player, playerUnits.length, this.playerBase],
+      [this.enemy, enemyUnits.length, this.enemyBase]
+    ] as const) {
+      army.deeds.peakArmy = Math.max(army.deeds.peakArmy, count)
+      army.deeds.goldEarned = this.statsFor(army.faction).goldEarned
+      army.deeds.baseHeld = Math.min(army.deeds.baseHeld, (base.hp / base.maxHp) * 100)
+    }
 
     this.applyAuras(playerUnits, enemyUnits)
 
@@ -739,16 +760,20 @@ export default class Battlefield {
     this.stepSide(enemyUnits, enemyTargets, dtMs)
   }
 
-  /** Aegis-style auras grant nearby allies flat damage reduction. */
+  /**
+   * Aegis-style auras grant nearby allies flat damage reduction. A unit may
+   * carry one as a property and still fight; the older form, where the aura
+   * occupied the attack slot, is still honoured.
+   */
   private applyAuras(playerUnits: Unit[], enemyUnits: Unit[]): void {
     for (const group of [playerUnits, enemyUnits]) {
-      const emitters = group.filter(u => u.def.attack.kind === 'aura')
+      const emitters = group.filter(u => auraOf(u.def) !== null)
       for (const u of group) {
         let best = 0
         for (const e of emitters) {
-          const attack = e.def.attack
-          if (attack.kind !== 'aura') continue
-          if (Math.abs(e.x - u.x) <= attack.radius) best = Math.max(best, attack.damageReduction)
+          const aura = auraOf(e.def)
+          if (!aura) continue
+          if (Math.abs(e.x - u.x) <= aura.radius) best = Math.max(best, aura.damageReduction)
         }
         u.auraShield = best
         u.setAuraVisual(best > 0)
@@ -970,6 +995,7 @@ export default class Battlefield {
     const stats = this.statsFor(faction)
     stats.unitsBuilt += 1
     stats.goldSpent += def.cost
+    army.deeds.built += 1
     audio.play('spawn', 0.3)
     return unit
   }
@@ -995,7 +1021,10 @@ export default class Battlefield {
   private reachableShove(unit: Unit, target: Damageable): number {
     const speed = unit.def.speed * unit.speedMult * this.armyFor(unit.faction).modifiers.unitSpeed
     const mass = target instanceof Unit ? Math.max(0.4, target.def.mass) : 6
-    return (speed * mass) / 1.6
+    // A quarter of what the attacker could chase down, not all of it. Shoving a
+    // target the full distance you can walk means re-closing after every blow,
+    // and the attack uptime that costs is most of what a melee unit has.
+    return (speed * mass * 0.28) / 1.6
   }
 
   private handleUnitFire = (unit: Unit, target: Damageable): void => {
@@ -1131,9 +1160,12 @@ export default class Battlefield {
     this.statsFor(winner).kills += 1
     this.statsFor(winner).goldEarned += unit.def.bounty
     this.statsFor(unit.faction).unitsLost += 1
+    this.armyFor(winner).deeds.kills += 1
+    this.armyFor(unit.faction).deeds.losses += 1
     this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.4, `+${unit.def.bounty}`, '#f2c14e')
     audio.play('coin', 0.25)
     this.onUnitKilled?.(winner)
+    this.onCorpse?.(unit)
     this.applyDeathDoctrines(unit, winner)
   }
 

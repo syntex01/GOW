@@ -5,7 +5,7 @@ import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
-import { TECHS_BY_ID, type TechId } from '../data/tech'
+import { TECHS_BY_ID, type DeedKey, type TechId } from '../data/tech'
 
 /** How many cards the command bar can show. */
 const MAX_ROSTER = 9
@@ -64,6 +64,20 @@ export default class Army {
 
   /** Purchased in-match economy upgrades, each level adds income. */
   incomeLevel = 0
+  /**
+   * What this army has actually done this match. The nodes that decide what an
+   * army becomes are gated on it, so the deep research is earned rather than
+   * simply afforded. `baseHeld` is the lowest the fortress has ever been, as a
+   * percentage, so a demand on it reads "never let it fall below".
+   */
+  readonly deeds: Record<DeedKey, number> = {
+    kills: 0,
+    losses: 0,
+    goldEarned: 0,
+    built: 0,
+    peakArmy: 0,
+    baseHeld: 100
+  }
 
   /**
    * Researched behaviours. A Set rather than flags because the simulation asks
@@ -147,7 +161,7 @@ export default class Army {
   }
 
   /** Whether this army could research a node right now, and why not if not. */
-  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'gold' {
+  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'gold' | 'demand' {
     const node = TECHS_BY_ID[id]
     if (!node) return 'locked'
     if (this.techs.has(id)) return 'owned'
@@ -155,6 +169,7 @@ export default class Army {
     if (node.kind === 'ascension' && this.ascendedTo) return 'locked'
     if (!node.requires.every(r => this.techs.has(r))) return 'locked'
     if (this.age < node.age) return 'age'
+    if (node.demand && this.deeds[node.demand.metric] < node.demand.amount) return 'demand'
     if (this.gold < node.cost) return 'gold'
     return 'ready'
   }

@@ -125,6 +125,12 @@ export interface UnitDef {
    * gives ground, which is what makes a siege engine worth charging.
    */
   minRange?: number
+  /**
+   * A protective field this unit projects over nearby allies. It is a property
+   * rather than an attack: a bodyguard that cannot swing at anything is a trap,
+   * and the roster had two of them.
+   */
+  aura?: { damageReduction: number; radius: number }
   /** Multiplier applied when this unit attacks the listed armour classes. */
   bonusVs?: Partial<Record<ArmorType, number>>
   /** Can this unit shoot air targets? Ground melee cannot. */

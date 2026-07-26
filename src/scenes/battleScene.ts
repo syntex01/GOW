@@ -146,6 +146,19 @@ export default class BattleScene extends Phaser.Scene {
       )
     }
 
+    this.battlefield.onCorpse = unit => {
+      const machine = unit.def.visual.kind !== 'humanoid' && unit.def.visual.kind !== 'rider'
+      this.debris.addCorpse(
+        unit.x,
+        GROUND_Y,
+        unit.faction === 'player' ? 1 : -1,
+        unit.def.height,
+        machine,
+        machine ? unit.def.visual.metal : unit.def.visual.cloth,
+        unit.id
+      )
+    }
+
     this.battlefield.onMatchEnd = victory => this.finish(victory)
     this.battlefield.onAgeAdvanced = (faction, age) => this.handleAgeAdvanced(faction, age)
     this.battlefield.onAbilityUsed = (faction, abilityId) => {
@@ -483,6 +496,11 @@ export default class BattleScene extends Phaser.Scene {
       gameEvents.emit('hud:flash', { message: `${node.name} unlocks in a later age`, tone: 'warn' })
       return false
     }
+    if (state === 'demand' && node.demand) {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message: `${node.name}: ${node.demand.label}`, tone: 'warn' })
+      return false
+    }
     if (state === 'gold') {
       audio.play('ui_denied', 0.5)
       gameEvents.emit('hud:flash', { message: `${node.name} costs ${node.cost} gold`, tone: 'warn' })
@@ -552,7 +570,7 @@ export default class BattleScene extends Phaser.Scene {
   override update(_time: number, delta: number): void {
     const cam = this.cameras.main
     this.background.update(delta, cam.scrollX)
-    this.splatter.beginFrame()
+    this.splatter.beginFrame(delta)
     this.debris.render(this.battlefield.physics)
     // Composite lighting from whatever registered a light this frame.
     this.lighting.render(cam.worldView.x, cam.worldView.y)

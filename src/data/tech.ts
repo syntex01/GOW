@@ -46,6 +46,22 @@ export type TechKind =
 /** Node identifiers are plain strings — the network is data, and it grows. */
 export type TechId = string
 
+/** What a demand counts. All of them only ever go one way. */
+export type DeedKey = 'kills' | 'losses' | 'goldEarned' | 'built' | 'peakArmy' | 'baseHeld'
+
+/**
+ * A deed that has to be done before a node will open, on top of its parents
+ * and its price. The nodes that decide what an army *is* are earned in the
+ * field: you cannot simply save up for your own identity, and a commander who
+ * wants a particular ascension has to play toward it from the first minute.
+ */
+export interface TechDemand {
+  metric: DeedKey
+  amount: number
+  /** Shown on the locked node, phrased as the deed. */
+  label: string
+}
+
 export interface TechNode {
   id: TechId
   name: string
@@ -69,6 +85,8 @@ export interface TechNode {
   becomes?: FactionId
   /** For `stat` nodes: which army modifier it multiplies, and by how much. */
   stat?: { key: StatKey; mult: number }
+  /** A deed that must be done first. Reserved for the nodes that define a creed. */
+  demand?: TechDemand
 }
 
 /** The army modifiers stat research can move. */
@@ -531,6 +549,7 @@ export const TECHS: TechNode[] = [
     age: 4,
     cost: 3800,
     requires: ['overpressure', 'cluster'],
+    demand: { metric: 'kills', amount: 40, label: 'Kill 40' },
     effect: 'Your shots pass through the first body they hit and carry on into the next.'
   },
   {
@@ -642,6 +661,7 @@ export const TECHS: TechNode[] = [
     age: 4,
     cost: 4200,
     requires: ['corpse_wall', 'bone_harvest'],
+    demand: { metric: 'losses', amount: 25, label: 'Lose 25 of your own' },
     effect: 'Your half of the field raises what has fallen on it. Enough remains, and they get up again.'
   },
   {
@@ -707,6 +727,7 @@ export const TECHS: TechNode[] = [
     cost: 6000,
     requires: ['necropolis', 'flenser_rite'],
     becomes: 'nekrotics',
+    demand: { metric: 'losses', amount: 60, label: 'Lose 60 of your own — the dead are the point' },
     effect: 'Stop burying your dead. Your roster becomes the Nekrotics, and every soldier you lose gets up once, on its own.'
   },
   {
@@ -720,6 +741,7 @@ export const TECHS: TechNode[] = [
     cost: 6000,
     requires: ['penetrator', 'ashfall'],
     becomes: 'cinder_host',
+    demand: { metric: 'kills', amount: 90, label: 'Kill 90' },
     effect: 'Burn it all to keep warm. Your roster becomes the Cinder Host, and everything you kill sets fire to where it fell.'
   },
   {
@@ -733,6 +755,7 @@ export const TECHS: TechNode[] = [
     cost: 6000,
     requires: ['emp', 'autoforge', 'aegis'],
     becomes: 'cyborgs',
+    demand: { metric: 'built', amount: 55, label: 'Build 55 units — the foundry never stops' },
     effect: 'Finish the edit. Your roster becomes the Cyborgs: everything repairs itself, and nothing you field can be shut down.'
   },
   {
@@ -746,6 +769,7 @@ export const TECHS: TechNode[] = [
     cost: 6000,
     requires: ['ninth_seal'],
     becomes: 'dark_circle',
+    demand: { metric: 'baseHeld', amount: 65, label: 'Never let your fortress fall below 65%' },
     effect: 'Take your seat. Your roster becomes the Dark Circle: every death feeds you, and the sky stays dark.'
   },
   {
@@ -759,6 +783,7 @@ export const TECHS: TechNode[] = [
     cost: 6000,
     requires: ['titan_seed'],
     becomes: 'hollow_bloom',
+    demand: { metric: 'peakArmy', amount: 16, label: 'Have 16 units on the field at once' },
     effect: 'Let it through. Your roster becomes the Hollow Bloom: your soldiers root where they stand and feed on the ground they have poisoned.'
   }
 ]
