@@ -1011,8 +1011,8 @@ function layoutFor(v: UnitVisual): VehicleLayout {
 }
 
 /**
- * The vehicle skeleton — 6 bones for a gun carriage, 11 for a wheeled hull,
- * 13 for a tracked one.
+ * The vehicle skeleton — 6 bones for a gun carriage, 8 for a wheeled hull,
+ * 12 for a tracked one.
  *
  * The chain that matters is turret → barrelMount → barrel. `barrelMount` is a
  * pure pivot rotated so its own x axis runs down the bore; a child's offset is
@@ -1985,37 +1985,35 @@ function drawFuselage(v: UnitVisual, kit: Kit, height: number): PartArt {
   p.line(cx + LEN * 0.17, roof + H * 0.15, cx + LEN * 0.19, cy + H * 0.02, kit.glass[1])
   p.set(Math.round(cx + LEN * 0.24), Math.round(roof + H * 0.34), kit.glass[4])
 
-  {
-    // Engine deck and gearbox fairing, then the mast the disc sits on.
-    box(p, cx - LEN * 0.14, roof - Math.round(H * 0.22), Math.max(4, Math.round(LEN * 0.2)), Math.max(3, Math.round(H * 0.3)), d)
-    louvres(p, cx - Math.round(LEN * 0.12), roof - Math.round(H * 0.16), LEN * 0.08, H * 0.2, d)
-    const mastX = cx + Math.round(LEN * 0.02)
-    p.fill(mastX, roof - Math.round(H * 0.62), Math.max(2, Math.round(LEN * 0.05)), Math.round(H * 0.66), r[2])
-    p.fill(mastX, roof - Math.round(H * 0.62), 1, Math.round(H * 0.66), r[3])
-    orb(p, mastX + 1, roof - H * 0.2, LEN * 0.05, H * 0.18, r)
+  // Engine deck and gearbox fairing, then the mast the disc sits on.
+  box(p, cx - LEN * 0.14, roof - Math.round(H * 0.22), Math.max(4, Math.round(LEN * 0.2)), Math.max(3, Math.round(H * 0.3)), d)
+  louvres(p, cx - Math.round(LEN * 0.12), roof - Math.round(H * 0.16), LEN * 0.08, H * 0.2, d)
+  const mastX = cx + Math.round(LEN * 0.02)
+  p.fill(mastX, roof - Math.round(H * 0.62), Math.max(2, Math.round(LEN * 0.05)), Math.round(H * 0.66), r[2])
+  p.fill(mastX, roof - Math.round(H * 0.62), 1, Math.round(H * 0.66), r[3])
+  orb(p, mastX + 1, roof - H * 0.2, LEN * 0.05, H * 0.18, r)
 
-    // Stub wing and a rocket pod under it.
-    p.poly(
-      [
-        [cx - LEN * 0.14, cy + H * 0.3],
-        [cx + LEN * 0.12, cy + H * 0.32],
-        [cx + LEN * 0.04, belly + H * 0.1],
-        [cx - LEN * 0.22, belly + H * 0.08]
-      ],
-      d[2]
-    )
-    const podW = Math.max(4, Math.round(LEN * 0.18))
-    box(p, cx - LEN * 0.16, belly + Math.round(H * 0.1), podW, Math.max(3, Math.round(H * 0.24)), d)
-    p.fill(cx - Math.round(LEN * 0.16), belly + Math.round(H * 0.1), podW, 1, d[3])
-    for (let i = 0; i < 3; i += 1) p.set(Math.round(cx - LEN * 0.16 + podW - 1), Math.round(belly + H * 0.14 + i), a[3])
+  // Stub wing and a rocket pod under it.
+  p.poly(
+    [
+      [cx - LEN * 0.14, cy + H * 0.3],
+      [cx + LEN * 0.12, cy + H * 0.32],
+      [cx + LEN * 0.04, belly + H * 0.1],
+      [cx - LEN * 0.22, belly + H * 0.08]
+    ],
+    d[2]
+  )
+  const podW = Math.max(4, Math.round(LEN * 0.18))
+  box(p, cx - LEN * 0.16, belly + Math.round(H * 0.1), podW, Math.max(3, Math.round(H * 0.24)), d)
+  p.fill(cx - Math.round(LEN * 0.16), belly + Math.round(H * 0.1), podW, 1, d[3])
+  for (let i = 0; i < 3; i += 1) p.set(Math.round(cx - LEN * 0.16 + podW - 1), Math.round(belly + H * 0.14 + i), a[3])
 
-    // Skids: two struts and a rail. They are what keep the belly line honest.
-    const skidY = belly + Math.round(H * 0.62)
-    p.fill(cx - Math.round(LEN * 0.24), skidY, Math.round(LEN * 0.56), 1, d[1])
-    p.fill(cx - Math.round(LEN * 0.16), belly, 1, skidY - belly, d[1])
-    p.fill(cx + Math.round(LEN * 0.2), belly, 1, skidY - belly, d[1])
-    p.set(Math.round(cx + LEN * 0.32), skidY, d[1])
-  }
+  // Skids: two struts and a rail. They are what keep the belly line honest.
+  const skidY = belly + Math.round(H * 0.62)
+  p.fill(cx - Math.round(LEN * 0.24), skidY, Math.round(LEN * 0.56), 1, d[1])
+  p.fill(cx - Math.round(LEN * 0.16), belly, 1, skidY - belly, d[1])
+  p.fill(cx + Math.round(LEN * 0.2), belly, 1, skidY - belly, d[1])
+  p.set(Math.round(cx + LEN * 0.32), skidY, d[1])
 
   // Exhaust glow aft of the cabin, and a nav light on the nose.
   emissive(p, cx - LEN * 0.2, cy - H * 0.12, LEN * 0.04, H * 0.12, a)
