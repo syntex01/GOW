@@ -42,6 +42,15 @@ const PUBLIC_STUN = [
 ]
 
 export default class Peer {
+  /**
+   * True when the last code produced carried no public address.
+   *
+   * Such a code can only ever connect two machines on the same network. The
+   * player has to be told that up front, because the alternative is a failure
+   * several minutes later that looks like they mistyped something.
+   */
+  codeIsLanOnly = false
+
   private pc: RTCPeerConnection | null = null
   private channel: RTCDataChannel | null = null
   private options: PeerOptions
@@ -147,7 +156,7 @@ export default class Peer {
 
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
-    await waitForIceGathering(pc)
+    this.codeIsLanOnly = !(await waitForIceGathering(pc)).public
     this.setState('awaiting-answer')
     return encodeCode(pc.localDescription?.sdp ?? '', 'O')
   }
@@ -162,7 +171,7 @@ export default class Peer {
     await pc.setRemoteDescription({ type: 'offer', sdp })
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-    await waitForIceGathering(pc)
+    this.codeIsLanOnly = !(await waitForIceGathering(pc)).public
     this.setState('connecting')
     return encodeCode(pc.localDescription?.sdp ?? '', 'A')
   }
@@ -209,23 +218,57 @@ export default class Peer {
   }
 }
 
-/** Resolves when the peer connection has finished collecting ICE candidates. */
-function waitForIceGathering(pc: RTCPeerConnection): Promise<void> {
-  if (pc.iceGatheringState === 'complete') return Promise.resolve()
-  return new Promise(resolve => {
-    // Gathering can stall behind an unreachable STUN server; cap the wait so
-    // the player always gets a usable code.
-    const timer = window.setTimeout(finish, 4000)
-    function finish() {
-      window.clearTimeout(timer)
+/**
+ * Waits for ICE candidates, and knows the difference between "done" and
+ * "gave up".
+ *
+ * This is the reason connections were failing across the internet with a
+ * message that blamed the codes. The old wait capped at four seconds and then
+ * shipped whatever it had. A STUN round trip on a slow or distant network
+ * routinely takes longer than that, so the code went out carrying only *host*
+ * candidates — the machine's own LAN addresses. Two players on one network, or
+ * both peers in one browser as the test harness runs them, connect fine on
+ * those. Two players on different networks never can: there is no route to a
+ * 192.168.x.x address from the outside.
+ *
+ * So the wait now ends on the first useful thing rather than on a fixed clock:
+ * as soon as a public (server-reflexive or relayed) candidate has arrived it
+ * lingers briefly to pick up siblings and then returns. Failing that it waits
+ * considerably longer than before, and reports honestly that it never got one.
+ */
+async function waitForIceGathering(pc: RTCPeerConnection): Promise<{ public: boolean }> {
+  const hasPublic = () => /typ (srflx|relay)/.test(pc.localDescription?.sdp ?? '')
+  if (pc.iceGatheringState === 'complete') return { public: hasPublic() }
+
+  await new Promise<void>(resolve => {
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(hardCap)
+      window.clearTimeout(linger)
       pc.removeEventListener('icegatheringstatechange', onChange)
+      pc.removeEventListener('icecandidate', onCandidate)
       resolve()
     }
-    function onChange() {
-      if (pc.iceGatheringState === 'complete') finish()
+    // A public candidate is what actually makes the code work, so once one
+    // lands there is little reason to keep waiting — just long enough to
+    // collect the handful that usually arrive together.
+    let linger = 0
+    const onCandidate = () => {
+      if (linger || !hasPublic()) return
+      linger = window.setTimeout(done, 600)
     }
+    const onChange = () => {
+      if (pc.iceGatheringState === 'complete') done()
+    }
+    // Generous, because the alternative is a code that cannot work at all.
+    const hardCap = window.setTimeout(done, 12000)
     pc.addEventListener('icegatheringstatechange', onChange)
+    pc.addEventListener('icecandidate', onCandidate)
   })
+
+  return { public: hasPublic() }
 }
 
 // ───────────────────────────── Connection codes ─────────────────────────────

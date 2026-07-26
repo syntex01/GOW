@@ -252,6 +252,7 @@ export default class MultiplayerScene extends Phaser.Scene {
       const width = cam.width - 180
 
       this.setStatus('Send step 1 to your opponent, then paste their reply into step 2.')
+      this.warnIfLanOnly()
       const step2 = this.codeField(x, 160, width, 'STEP 1 — SEND THIS CODE TO YOUR OPPONENT', code) + 28
       const readReply = this.pasteField(x, step2, width - 130, 'STEP 2 — PASTE THEIR REPLY CODE')
 
@@ -314,6 +315,7 @@ export default class MultiplayerScene extends Phaser.Scene {
       const cam = this.cameras.main
       this.setStatus('Send this reply back to the host. The battle starts as soon as they connect.')
       this.codeField(90, 190, cam.width - 180, 'STEP 2 — SEND THIS REPLY CODE BACK', reply)
+      this.warnIfLanOnly()
     } catch (err) {
       this.stage = 'error'
       this.setStatus(`That code was not accepted: ${describe(err)}`, UI.bad)
@@ -321,6 +323,22 @@ export default class MultiplayerScene extends Phaser.Scene {
   }
 
   // ───────────────────────────── Peer events ─────────────────────────────
+
+  /**
+   * Warns when a freshly made code carries no public address.
+   *
+   * Without this the player copies a code that physically cannot work off
+   * their own network, sends it to a friend, and both of them wait for a
+   * failure that looks like a typo.
+   */
+  private warnIfLanOnly(): void {
+    if (this.lanOnly || !this.peer?.codeIsLanOnly) return
+    this.setStatus(
+      'Heads up: this code contains no public address, so it will only connect ' +
+        'players on the same network. Your network may be blocking STUN.',
+      UI.warn
+    )
+  }
 
   private handlePeerState(state: PeerState, detail?: string): void {
     if (state === 'open') {
@@ -338,7 +356,15 @@ export default class MultiplayerScene extends Phaser.Scene {
       }
     } else if (state === 'failed') {
       this.stage = 'error'
-      this.setStatus(`Connection failed${detail ? `: ${detail}` : ''}. Check the codes and try again.`, UI.bad)
+      // Do not blame the codes. By the time a connection *fails* the codes
+      // have already been parsed and accepted — what failed is the network
+      // path between the two players, and telling them to re-check their
+      // typing sends them off to solve the wrong problem.
+      this.setStatus(
+        `Could not reach the other player${detail ? `: ${detail}` : ''}. ` +
+          'Both of you may be behind networks that block direct connections — try LAN mode on the same network.',
+        UI.bad
+      )
     } else if (state === 'closed' && !this.started) {
       this.setStatus('Connection closed.', UI.warn)
     }
