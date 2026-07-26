@@ -403,6 +403,66 @@ shared `core` nodes that belong to no creed, the AI walks the requirement graph
 backwards from its goal (`lineageFor`) rather than filtering by branch, and
 spends surplus gold on the cheapest available stat node while it waits.
 
+## The backdrop, and why it is measured in one place
+
+Every parallax layer is a TileSprite, and a TileSprite tiles in *both* axes.
+That is the trap. If a band's art is shorter than the band, the band repeats it
+and the same ridge crest appears twice up the screen; if it is narrower than the
+viewport, a hard vertical seam runs down the picture where the tile wraps. Both
+were happening, because the sizes were being chosen independently in
+`gfx/textureFactory.ts` and in `gfx/background.ts` and did not agree — the far
+ridge was authored 1024x260 into a band 1280x472, so it wrapped once
+horizontally and nearly twice vertically.
+
+`gfx/backdropGeom.ts` is now the only place those numbers exist, and both sides
+import it. Each band's art is authored at *exactly* its own height, and every
+layer is authored wider than any viewport plus the furthest that layer can
+scroll, so neither wrap is ever on screen.
+
+Two more things in the same area were wrong and are worth recording:
+
+- `tilePositionX` counts **texture** pixels, and every layer is drawn at a tile
+  scale of two. Assigning the raw camera offset therefore slid the ground at
+  twice the camera's speed, so the floor crawled out from under the feet of the
+  units standing on it. It is scaled by `RES` now.
+- The ground haze was a Graphics rectangle filled with an alpha gradient from
+  0.13 to 0. A gradient like that has a *hard* edge at the top, where alpha goes
+  from nothing to something in one row — it drew a straight line across the
+  whole screen a hundred pixels above the ground. It is a dithered texture now
+  (`drawFogBand`), faded in at both edges, like everything else in the scene.
+
+## Ballistics
+
+Arcing weapons aim with a real solver, and it is worth being precise about what
+it does, because the previous one was wrong in two ways at once.
+
+The textbook launch-angle solution is written for maths axes, where y points up.
+Screen axes point y **down**. Feeding a screen-space `dy` into the maths-space
+formula and returning the answer unchanged gives a *downward* angle for a target
+on the same level: a slinger aiming at someone two hundred pixels away threw the
+stone eighteen degrees into the dirt. It landed at the feet of the front line —
+which is exactly where friendly troops are standing, and exactly what it looked
+like.
+
+The second error was `Math.atan`, whose range is a half turn wide, so every
+answer it gives points right. Everything shooting left — the entire enemy army —
+fired backwards over its own fortress.
+
+`ballisticAngle` now mirrors leftward shots, solves in maths axes, converts back,
+and then **corrects the answer against a real integration of the trajectory**,
+drag included, using three secant steps. The analytic solution assumes a vacuum
+and these projectiles are dragged, so a vacuum solution always falls short. The
+solver is deterministic — fixed step, fixed iteration count, no clock and no
+randomness — so two peers in lockstep aim identically.
+
+That exposed the other half of the problem: eight weapons had a declared `range`
+their muzzle speed could not physically throw. A catapult asked for 500 and could
+manage 279; a mortar asked for 620 and could manage 339. Those shots did not fall
+a little short, they fell *enormously* short, every single time. Their muzzle
+speeds were raised to cover their stated range with headroom, and both units and
+turrets now clamp their engagement range to `ballisticReach()`, so a future data
+edit cannot quietly bring it back.
+
 ## Lockstep multiplayer
 
 Multiplayer is deterministic lockstep over a direct WebRTC data channel. Neither

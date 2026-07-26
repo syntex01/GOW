@@ -937,6 +937,39 @@ function drawProp(p: Pix, kind: string, x: number, groundY: number, size: number
   }
 }
 
+/**
+ * The haze that seats the battlefield against the hills behind it.
+ *
+ * This used to be a Graphics rectangle filled with an alpha gradient, and it
+ * was the most obvious flaw on the screen: a gradient from 0.13 down to 0 has
+ * a *hard* edge at the top, where the alpha jumps from nothing to something in
+ * a single row. That drew a straight horizontal line right across the picture,
+ * a hundred pixels above the ground, and turned the whole band into a visible
+ * rectangle laid over the art.
+ *
+ * Dithered instead, and faded in at both edges, so there is no row anywhere
+ * that steps — and it matches the rest of the scene, which is all dithered.
+ */
+export function drawFogBand(age: number, width: number, height: number): Canvas2D {
+  const theme = AGE_THEMES[Math.max(0, Math.min(AGE_THEMES.length - 1, age))]
+  const w = Math.round(width * RES)
+  const h = Math.round(height * RES)
+  const p = new Pix(w, h)
+  const near = theme.fog
+  const far = mix(theme.fog, theme.sky[2], 0.4)
+  for (let y = 0; y < h; y += 1) {
+    const t = h > 1 ? y / (h - 1) : 0
+    // Thickest a third of the way down and gone at both edges, so the band
+    // has no boundary for the eye to catch on.
+    const density = Math.pow(Math.sin(t * Math.PI), 0.85) * 0.62
+    const colour = t < 0.45 ? far : near
+    for (let x = 0; x < w; x += 1) {
+      if (ditherAt(x, y, density)) p.set(x, y, colour)
+    }
+  }
+  return done(p)
+}
+
 /** The near silhouette strip that scrolls fastest, framing the battlefield. */
 export function drawForeground(age: number, width: number, height: number): Canvas2D {
   const theme = AGE_THEMES[Math.max(0, Math.min(AGE_THEMES.length - 1, age))]

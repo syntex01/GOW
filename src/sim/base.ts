@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { ballisticReach } from './projectile'
 import { audio } from '../core/audio'
 import { rng } from '../core/rng'
 import type { TurretDef } from '../data/types'
@@ -280,7 +281,14 @@ export default class Base implements Damageable {
       if (!c.alive || c.faction === this.faction) continue
       if (c.layer === 'air' && !def.hitsAir) continue
       const dist = Math.abs(c.x - this.x)
-      if (dist > def.range) continue
+      // Same clamp as the units: a turret must not open up on something its
+      // ammunition cannot physically reach, or every shell lands short.
+      const attack = def.attack
+      const throwable =
+        attack.kind === 'projectile' && attack.gravity > 0
+          ? Math.min(def.range, ballisticReach(attack.speed, attack.gravity))
+          : def.range
+      if (dist > throwable) continue
       if (dist < bestDist) {
         bestDist = dist
         best = c

@@ -3,6 +3,14 @@ import { save } from '../core/save'
 import { AGE_THEMES } from './palette'
 import { css, shade } from './painter'
 import { RES } from './pixel'
+import {
+  FOG_BAND_HEIGHT,
+  FOREGROUND_DROP,
+  FOREGROUND_HEIGHT,
+  GROUND_HEIGHT,
+  RIDGE_FOOT,
+  RIDGE_HEIGHTS
+} from './backdropGeom'
 
 const RIDGE_SCROLL = [0.1, 0.24, 0.45]
 
@@ -21,7 +29,7 @@ export default class Background {
   private clouds: Phaser.GameObjects.Image[] = []
   private ridges: Phaser.GameObjects.TileSprite[] = []
   private ground!: Phaser.GameObjects.TileSprite
-  private groundShade!: Phaser.GameObjects.Graphics
+  private groundShade!: Phaser.GameObjects.TileSprite
   private foreground!: Phaser.GameObjects.TileSprite
   private motes?: Phaser.GameObjects.Particles.ParticleEmitter
   private weather?: Phaser.GameObjects.Particles.ParticleEmitter
@@ -55,7 +63,9 @@ export default class Background {
       .image(w * 0.72, h * 0.2, 'sky:sun')
       .setScrollFactor(0.02)
       .setDepth(-990)
-      .setScale(1.4)
+      // Matches the resting value of the shimmer in update(), so the sun does
+      // not visibly snap to a smaller size on the first frame of a match.
+      .setScale(0.86)
       .setBlendMode(Phaser.BlendModes.ADD)
 
     // Deliberately faint: clouds add depth, but at high alpha they flatten the
@@ -73,11 +83,14 @@ export default class Background {
     // Every band reaches down to the ground line. Staggering their bottoms
     // instead leaves a horizontal seam across the screen wherever one band
     // ends and the one in front of it has not started yet.
-    const crests = [81, 173, 265]
+    //
+    // The height comes from the shared geometry rather than being computed
+    // here: the art is authored at exactly this height, and a band even one
+    // pixel taller than its art tiles it and draws the same crest twice.
     for (let i = 0; i < 3; i += 1) {
-      const bottom = this.groundY + 8
+      const bottom = this.groundY + RIDGE_FOOT
       const ridge = this.scene.add
-        .tileSprite(0, bottom, w, bottom - crests[i], 'ridge:0:0')
+        .tileSprite(0, bottom, w, RIDGE_HEIGHTS[i], 'ridge:0:0')
         .setOrigin(0, 1)
         .setScrollFactor(0)
         .setDepth(-970 + i)
@@ -86,18 +99,24 @@ export default class Background {
     }
 
     this.ground = this.scene.add
-      .tileSprite(0, this.groundY, w, h - this.groundY + 40, 'ground:0')
+      .tileSprite(0, this.groundY, w, GROUND_HEIGHT, 'ground:0')
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-900)
     this.ground.setTileScale(1 / RES, 1 / RES)
 
-    this.groundShade = this.scene.add.graphics().setScrollFactor(0).setDepth(-899)
+    // A dithered haze band rather than an alpha gradient: see drawFogBand.
+    this.groundShade = this.scene.add
+      .tileSprite(0, this.groundY, w, FOG_BAND_HEIGHT, 'fog:0')
+      .setOrigin(0, 1)
+      .setScrollFactor(0)
+      .setDepth(-899)
+    this.groundShade.setTileScale(1 / RES, 1 / RES)
 
     // Sits in front of everything except the vignette, and scrolls faster than
     // the world so it reads as being very close to the camera.
     this.foreground = this.scene.add
-      .tileSprite(0, this.groundY + 62, w, 110, 'fg:0')
+      .tileSprite(0, this.groundY + FOREGROUND_DROP, w, FOREGROUND_HEIGHT, 'fg:0')
       .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(760)
@@ -157,9 +176,7 @@ export default class Background {
     this.motes?.setParticleTint(shade(theme.fog, 0.25))
 
     // Ground fog band so units read against the floor.
-    this.groundShade.clear()
-    this.groundShade.fillGradientStyle(theme.fog, theme.fog, theme.fog, theme.fog, 0.13, 0.13, 0, 0)
-    this.groundShade.fillRect(0, this.groundY - 90, w, 90)
+    this.groundShade.setTexture(`fog:${clamped}`)
 
     this.applyWeather(theme.weather)
   }
@@ -246,18 +263,29 @@ export default class Background {
     if (this.destroyed) return
     this.time += delta
 
+    // tilePositionX counts *texture* pixels, and every layer is drawn at a tile
+    // scale of two, so a raw camera offset slides the art at twice the camera's
+    // speed. Scaling by RES is what makes the ground sit still under the feet
+    // of the units standing on it.
     this.ridges.forEach((ridge, i) => {
-      ridge.tilePositionX = scrollX * RIDGE_SCROLL[i]
+      ridge.tilePositionX = scrollX * RIDGE_SCROLL[i] * RES
     })
-    this.ground.tilePositionX = scrollX
+    this.ground.tilePositionX = scrollX * RES
+    // Travels with the nearest ridge band, which is what it is sitting in.
+    this.groundShade.tilePositionX = scrollX * RIDGE_SCROLL[2] * RES
     // Faster than 1:1 — the closer something is, the more it slides.
-    this.foreground.tilePositionX = scrollX * 1.35
+    this.foreground.tilePositionX = scrollX * 1.35 * RES
 
     const w = this.scene.cameras.main.width
     this.clouds.forEach((cloud, i) => {
       cloud.x -= (4 + i * 2.4) * (delta / 1000)
-      const drawX = cloud.x - scrollX * 0.06
-      if (drawX < -260) cloud.x += w + 520
+      // Phaser already applies the scroll factor when it draws, so the wrap
+      // test has to be done on where the cloud actually *appears*, and the
+      // reset has to move it by a whole screen in the same space. Mixing the
+      // two is what used to bunch the clouds into a corner.
+      const screenX = cloud.x - scrollX * 0.06
+      if (screenX < -300) cloud.x += w + 600
+      else if (screenX > w + 300) cloud.x -= w + 600
     })
 
     // A gentle heat shimmer on the sun.

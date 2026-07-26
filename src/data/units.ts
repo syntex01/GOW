@@ -402,7 +402,7 @@ export const UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'boulder',
-      speed: 400,
+      speed: 590,
       gravity: 520,
       spread: 0.02,
       knockback: 260,
@@ -564,7 +564,7 @@ export const UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'grenade',
-      speed: 340,
+      speed: 480,
       gravity: 640,
       spread: 0.04,
       knockback: 190,
@@ -907,7 +907,7 @@ export const UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'mortar',
-      speed: 480,
+      speed: 720,
       gravity: 620,
       spread: 0.03,
       knockback: 240,

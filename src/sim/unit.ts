@@ -8,6 +8,7 @@ import { FACTION_COLOR } from '../gfx/palette'
 import type Vfx from '../gfx/vfx'
 import type { Rng } from '../core/rng'
 import type PhysicsWorld from './physics'
+import { ballisticReach } from './projectile'
 import type { TechId } from '../data/tech'
 import { ADVANCE_DIR, damageMultiplier, type ArmorType, type Damageable, type DamageType, type Faction, type Layer } from './types'
 
@@ -396,9 +397,20 @@ export default class Unit implements Damageable {
     return true
   }
 
-  /** Weapon reach after research. Everything that asks "can I hit it" uses this. */
+  /**
+   * Weapon reach after research. Everything that asks "can I hit it" uses this.
+   *
+   * Clamped to what the weapon can physically throw. A lobbed shot aimed past
+   * its own maximum range does not fall a little short — it falls *hugely*
+   * short, landing in the middle of the friendly front line, which is what the
+   * catapults and mortars were doing before their muzzle speeds were fixed.
+   * Keeping the clamp here means a future data edit cannot bring that back.
+   */
   get reach(): number {
-    return this.def.range * this.rangeMult
+    const wanted = this.def.range * this.rangeMult
+    const attack = this.def.attack
+    if (attack.kind !== 'projectile' || attack.gravity <= 0) return wanted
+    return Math.min(wanted, ballisticReach(attack.speed, attack.gravity))
   }
 
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {

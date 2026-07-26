@@ -4,11 +4,19 @@ import type { ProjectileId, UnitDef } from '../data/types'
 import { UNITS } from '../data/units'
 import { FACTION_UNITS } from '../data/factions'
 import { AGE_THEMES, UI } from './palette'
+import {
+  FOG_BAND_HEIGHT,
+  FOREGROUND_HEIGHT,
+  GROUND_HEIGHT,
+  LAYER_WIDTH,
+  RIDGE_HEIGHTS
+} from './backdropGeom'
 import { Canvas2D, makeCanvas } from './painter'
 import Pix, { ramp } from './pixel'
 import {
   drawBase,
   drawCloud,
+  drawFogBand,
   drawForeground,
   drawGround,
   drawParticles,
@@ -296,11 +304,20 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
     label: 'Shaping the world',
     run: () => {
       for (let age = 0; age < AGE_THEMES.length; age += 1) {
-        addCanvas(scene, `ground:${age}`, drawGround(age, 768, 120))
-        addCanvas(scene, `ridge:${age}:0`, drawRidge(age, 0, 1024, 260))
-        addCanvas(scene, `ridge:${age}:1`, drawRidge(age, 1, 1024, 230))
-        addCanvas(scene, `ridge:${age}:2`, drawRidge(age, 2, 1024, 200))
-        addCanvas(scene, `fg:${age}`, drawForeground(age, 1024, 150))
+        // Sizes come from the shared backdrop geometry, not from numbers picked
+        // here: the background sizes its bands from the same constants, and a
+        // band whose art is shorter than itself tiles the art and draws the
+        // same ridge crest twice up the screen.
+        addCanvas(scene, `ground:${age}`, drawGround(age, LAYER_WIDTH, GROUND_HEIGHT))
+        for (let band = 0; band < RIDGE_HEIGHTS.length; band += 1) {
+          addCanvas(
+            scene,
+            `ridge:${age}:${band}`,
+            drawRidge(age, band as 0 | 1 | 2, LAYER_WIDTH, RIDGE_HEIGHTS[band])
+          )
+        }
+        addCanvas(scene, `fg:${age}`, drawForeground(age, LAYER_WIDTH, FOREGROUND_HEIGHT))
+        addCanvas(scene, `fog:${age}`, drawFogBand(age, LAYER_WIDTH, FOG_BAND_HEIGHT))
         addCanvas(scene, `sky:${age}`, drawSky(age, 1280, 720))
       }
       addCanvas(scene, 'sky:cloud', drawCloud(0xffffff))

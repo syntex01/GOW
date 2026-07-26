@@ -235,7 +235,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'mortar',
-      speed: 420,
+      speed: 620,
       gravity: 620,
       spread: 0.05,
       knockback: 280,
@@ -676,7 +676,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'bomb',
-      speed: 320,
+      speed: 480,
       gravity: 700,
       spread: 0.07,
       knockback: 220,
@@ -819,7 +819,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'boulder',
-      speed: 480,
+      speed: 590,
       gravity: 520,
       spread: 0.04,
       knockback: 380,

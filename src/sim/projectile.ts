@@ -329,14 +329,165 @@ function segmentHit(
 }
 
 /**
- * Solves the launch angle needed for a ballistic shot to land on a target.
- * Falls back to a flat 45° lob when the target is out of reach.
+ * Solves the launch angle a ballistic shot needs to land on its target.
+ *
+ * This was wrong in two ways at once, and between them they are why arcing
+ * weapons spent their time throwing stones into the dirt.
+ *
+ * The textbook solution is written for maths axes, where y points up. Screen
+ * axes point y *down*. Feeding a screen-space `dy` into the maths-space formula
+ * and returning the result unchanged gave a *downward* angle for a target on
+ * the same level: a slinger aiming at someone two hundred pixels away threw the
+ * stone eighteen degrees into the ground, and it landed at the feet of the
+ * front line — which is exactly where friendly troops are standing.
+ *
+ * The second error was `Math.atan`, whose range is a half turn wide. Every
+ * answer it gives points to the right. Anything shooting left — which is the
+ * whole enemy army — fired backwards over its own fortress.
+ *
+ * So: mirror leftward shots, convert into maths axes to solve, convert the
+ * answer back. Then hand it to the drag correction below, because the analytic
+ * solution assumes a vacuum and the projectiles do not fly in one.
+ */
+function vacuumAngle(dx: number, dy: number, speed: number, gravity: number): number {
+  const dir = dx < 0 ? -1 : 1
+  const x = Math.max(1e-3, Math.abs(dx))
+  // Into maths axes: a target *above* the muzzle has a positive height here.
+  const y = -dy
+  const s2 = speed * speed
+  const root = s2 * s2 - gravity * (gravity * x * x + 2 * y * s2)
+  // Out of reach at this muzzle speed. Forty-five degrees is the throw that
+  // carries furthest, so the shot at least falls as close as it can.
+  const theta = root < 0 ? Math.PI / 4 : Math.atan((s2 - Math.sqrt(root)) / (gravity * x))
+  // Back into screen axes, mirrored for a shot travelling left.
+  return dir > 0 ? -theta : Math.PI + theta
+}
+
+/**
+ * Per-second velocity damping applied to anything that arcs.
+ *
+ * Must match the drag the projectile itself integrates, or the aim solver is
+ * solving a different problem from the one the shot flies.
+ */
+export const PROJECTILE_DRAG = DRAG_COEFFICIENT
+
+/** Fixed integration step for the aim solver. Small enough to be accurate,
+ *  fixed so that two machines in lockstep always get the same answer. */
+const SOLVER_STEP = 1 / 60
+
+/**
+ * Height error of a shot fired at `angle`, at the moment it reaches the
+ * target's horizontal distance. Positive means the shot passed below it.
+ *
+ * Integrated exactly the way `update()` integrates, drag included, so what the
+ * solver predicts is what the projectile actually does.
+ */
+function missBy(angle: number, dx: number, dy: number, speed: number, gravity: number): number {
+  let x = 0
+  let y = 0
+  let vx = Math.cos(angle) * speed
+  let vy = Math.sin(angle) * speed
+  const goal = Math.abs(dx)
+  const sign = dx < 0 ? -1 : 1
+  // Six seconds is longer than any shot in the game stays up.
+  for (let step = 0; step < 360; step += 1) {
+    const prevX = x
+    const prevY = y
+    vy += gravity * SOLVER_STEP
+    if (gravity > 0) {
+      const scale = Math.max(0, 1 - PROJECTILE_DRAG * SOLVER_STEP)
+      vx *= scale
+      vy *= scale
+    }
+    x += vx * SOLVER_STEP
+    y += vy * SOLVER_STEP
+    const travelled = sign * x
+    if (travelled >= goal) {
+      // Interpolate to the exact crossing so the error is smooth in the angle,
+      // which is what lets the secant step below converge.
+      const prevTravelled = sign * prevX
+      const span = travelled - prevTravelled
+      const t = span > 1e-6 ? (goal - prevTravelled) / span : 0
+      return prevY + (y - prevY) * t - dy
+    }
+    // Fell short: it is already on its way down and below the target.
+    if (vy > 0 && y > dy + 4000) break
+  }
+  return y - dy
+}
+
+/**
+ * Launch angle for a shot that has to travel `dx, dy` at `speed`.
+ *
+ * Starts from the vacuum solution and then corrects it against a real
+ * integration of the trajectory, because these projectiles are dragged and a
+ * vacuum solution always falls short. Two secant steps take a lob that was
+ * landing tens of pixels early to within a pixel or two, which is well inside
+ * the weapon's own spread.
+ *
+ * Deterministic: fixed step, fixed iteration count, no clock and no randomness.
  */
 export function ballisticAngle(dx: number, dy: number, speed: number, gravity: number): number {
   if (gravity <= 0) return Math.atan2(dy, dx)
-  const s2 = speed * speed
-  const root = s2 * s2 - gravity * (gravity * dx * dx + 2 * dy * s2)
-  if (root < 0) return Math.atan2(dy, dx) - 0.5
-  // Low-arc solution keeps shots readable and fast.
-  return Math.atan((s2 - Math.sqrt(root)) / (gravity * dx))
+
+  let a0 = vacuumAngle(dx, dy, speed, gravity)
+  let e0 = missBy(a0, dx, dy, speed, gravity)
+  if (Math.abs(e0) < 0.5) return a0
+
+  // Nudge upward — the sign of "up" flips with the direction of travel, since a
+  // leftward shot lives on the far side of the half turn.
+  const up = dx < 0 ? 0.06 : -0.06
+  let a1 = a0 + up
+  let e1 = missBy(a1, dx, dy, speed, gravity)
+
+  for (let i = 0; i < 3; i += 1) {
+    const spread = e1 - e0
+    if (Math.abs(spread) < 1e-6) break
+    const next = a1 - e1 * ((a1 - a0) / spread)
+    if (!Number.isFinite(next)) break
+    a0 = a1
+    e0 = e1
+    a1 = next
+    e1 = missBy(a1, dx, dy, speed, gravity)
+    if (Math.abs(e1) < 0.5) break
+  }
+  return Math.abs(e1) < Math.abs(e0) ? a1 : a0
+}
+
+/**
+ * How far a weapon can actually throw, drag included.
+ *
+ * Used to keep a unit from opening fire on something its ammunition cannot
+ * reach — the shot would land short every time, in among its own front line.
+ */
+const reachMemo = new Map<string, number>()
+
+export function ballisticReach(speed: number, gravity: number): number {
+  if (gravity <= 0) return Infinity
+  // Asked once per target check, per unit, per frame. The answer only depends
+  // on the two numbers, so it is worth remembering.
+  const key = `${speed}|${gravity}`
+  const cached = reachMemo.get(key)
+  if (cached !== undefined) return cached
+  const value = computeReach(speed, gravity)
+  reachMemo.set(key, value)
+  return value
+}
+
+function computeReach(speed: number, gravity: number): number {
+  let x = 0
+  let y = 0
+  const angle = -Math.PI / 4
+  let vx = Math.cos(angle) * speed
+  let vy = Math.sin(angle) * speed
+  for (let step = 0; step < 600; step += 1) {
+    vy += gravity * SOLVER_STEP
+    const scale = Math.max(0, 1 - PROJECTILE_DRAG * SOLVER_STEP)
+    vx *= scale
+    vy *= scale
+    x += vx * SOLVER_STEP
+    y += vy * SOLVER_STEP
+    if (y >= 0 && step > 2) break
+  }
+  return x
 }

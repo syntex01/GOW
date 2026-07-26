@@ -42,7 +42,7 @@ export const TURRETS: TurretDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'boulder',
-      speed: 300,
+      speed: 480,
       gravity: 700,
       spread: 0.02,
       knockback: 220,
@@ -135,7 +135,7 @@ export const TURRETS: TurretDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'mortar',
-      speed: 500,
+      speed: 720,
       gravity: 620,
       spread: 0.03,
       knockback: 250,
