@@ -150,6 +150,8 @@ export default class Battlefield {
    * is ever allowed to read.
    */
   readonly goreMap: Float32Array
+  /** Spawn counter for this match, so nothing depends on a global id. */
+  private spawnSeq = 0
   private readonly goreBucketWidth: number
 
   speedScale = 1
@@ -827,7 +829,7 @@ export default class Battlefield {
       // a soldier picks comes from its own id, so it is spread but not random,
       // and both peers pick the same one.
       const spread = unit.def.attack.kind === 'melee' ? 1 : Math.min(FIRE_SPREAD, inRange.length)
-      return inRange[unit.id % spread].target
+      return inRange[unit.seq % spread].target
     }
 
     // Nothing in range: keep the nearest enemy as a facing/aim reference.
@@ -992,6 +994,12 @@ export default class Battlefield {
     unit.onDeath = this.handleUnitDeath
 
     this.units.push(unit)
+    // Spawn order within *this* match, not the global counter. The menu parade
+    // builds units too, so a peer that lingered on the menu would carry a
+    // different id for the same soldier — and anything keyed on that id would
+    // then diverge across the wire.
+    unit.seq = this.spawnSeq
+    this.spawnSeq += 1
     const stats = this.statsFor(faction)
     stats.unitsBuilt += 1
     stats.goldSpent += def.cost

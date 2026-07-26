@@ -101,6 +101,8 @@ export default class Unit implements Damageable {
   private knockStacks = 0
   /** Weight of the ranks pressing in behind this one. Set by the battlefield. */
   press = 1
+  /** Position in this match's spawn order. Set by the battlefield. */
+  seq = 0
 
   private attackCooldown = 0
   private swing = 0
