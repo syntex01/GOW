@@ -30,6 +30,7 @@ import {
   drawVignette
 } from './propArt'
 import { buildShadowCanvas, buildUnitArt, RES, RigMetrics } from './unitArt'
+import { buildArchetype, type ArchetypeBuild } from './archetypes'
 
 const PROJECTILE_IDS: ProjectileId[] = [
   'stone',
@@ -53,6 +54,12 @@ export interface UnitArtInfo {
   metrics: RigMetrics
   origins: Record<string, [number, number]>
   parts: string[]
+  /**
+   * Present when this unit is drawn by a body-plan archetype rather than the
+   * original flat part set. The battle scene checks for it and drives the
+   * skeleton instead of hand-positioning parts.
+   */
+  rig?: ArchetypeBuild
 }
 
 const unitArtInfo = new Map<string, UnitArtInfo>()
@@ -245,17 +252,7 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
   for (const unit of [...UNITS, ...FACTION_UNITS]) {
     steps.push({
       label: `Training ${unit.name}`,
-      run: () => {
-        const art = buildUnitArt(unit.visual, unit.height)
-        for (const [part, canvas] of Object.entries(art.parts)) {
-          addCanvas(scene, unitPartKey(unit.id, part), canvas)
-        }
-        unitArtInfo.set(unit.id, {
-          metrics: art.metrics,
-          origins: art.origins,
-          parts: Object.keys(art.parts)
-        })
-      }
+      run: () => registerUnitArt(scene, unit)
     })
   }
 
@@ -361,6 +358,37 @@ export function texturesReady(): boolean {
 }
 
 /**
+ * Draws one unit's parts and registers them.
+ *
+ * Archetype-driven units and legacy units go through the same door, so the
+ * load-time pass and the lazy morph path can never drift apart.
+ */
+function registerUnitArt(scene: Phaser.Scene, def: UnitDef): void {
+  const rig = buildArchetype(def.visual, def.height)
+  if (rig) {
+    for (const [part, art] of Object.entries(rig.parts)) {
+      addCanvas(scene, unitPartKey(def.id, part), art.canvas)
+    }
+    unitArtInfo.set(def.id, {
+      metrics: buildUnitArt(def.visual, def.height).metrics,
+      origins: Object.fromEntries(Object.entries(rig.parts).map(([k, a]) => [k, a.origin])),
+      parts: Object.keys(rig.parts),
+      rig
+    })
+    return
+  }
+  const art = buildUnitArt(def.visual, def.height)
+  for (const [part, canvas] of Object.entries(art.parts)) {
+    addCanvas(scene, unitPartKey(def.id, part), canvas)
+  }
+  unitArtInfo.set(def.id, {
+    metrics: art.metrics,
+    origins: art.origins,
+    parts: Object.keys(art.parts)
+  })
+}
+
+/**
  * Builds art for a unit that was not in the authored roster.
  *
  * Doctrine morphs derive new defs at runtime — a Clubman five doctrines deep
@@ -373,10 +401,6 @@ export function texturesReady(): boolean {
  */
 export function ensureUnitArt(scene: Phaser.Scene, def: UnitDef): void {
   if (unitArtInfo.has(def.id)) return
-  const art = buildUnitArt(def.visual, def.height)
-  for (const [part, canvas] of Object.entries(art.parts)) {
-    addCanvas(scene, unitPartKey(def.id, part), canvas)
-  }
-  unitArtInfo.set(def.id, { metrics: art.metrics, origins: art.origins, parts: Object.keys(art.parts) })
+  registerUnitArt(scene, def)
   buildUnitIcon(scene, def.id)
 }

@@ -4,6 +4,7 @@ import { rng } from '../core/rng'
 import type { UnitDef } from '../data/types'
 import { getUnitArt, unitPartKey } from '../gfx/textureFactory'
 import { RES } from '../gfx/unitArt'
+import { blendPoses, evaluate, partRotation, samplePose, type Additive, type Pose } from '../gfx/rig'
 import { FACTION_COLOR } from '../gfx/palette'
 import type Vfx from '../gfx/vfx'
 import type { Rng } from '../core/rng'
@@ -101,6 +102,17 @@ export default class Unit implements Damageable {
    * what is underfoot. 1 on clean ground, up to 1.45 on a killing field — so
    * the tech rewards fighting where the fighting has already been.
    */
+  /**
+   * Where the archetype rig is in its current clip, and what it is fading out
+   * of. Cross-fading matters more than it sounds: snapping from a walk pose to
+   * an attack pose on the frame a unit comes into range is the single most
+   * obvious way to make a rig look like a puppet.
+   */
+  private clipPhase = 0
+  private prevPose: Pose | null = null
+  private blendLeft = 0
+  private lastClip = ''
+
   private frenzy = 1
   private scavengeTimer = 0
 
@@ -246,6 +258,16 @@ export default class Unit implements Damageable {
     const m = art.metrics
     const R = RES
     const kind = this.def.visual.kind
+
+    // Archetype-driven units get their parts straight from the skeleton, in
+    // bone depth order, and nothing here needs to know what body plan it is.
+    if (art.rig) {
+      const ordered = [...art.rig.skeleton]
+        .filter(b => b.part && art.parts.includes(b.part))
+        .sort((a, b) => a.depth - b.depth)
+      for (const b of ordered) this.addPart(b.part as string, b.depth)
+      return
+    }
 
     if (kind === 'vehicle') {
       this.addPart('track', 0)
@@ -806,6 +828,13 @@ export default class Unit implements Damageable {
     const moving = this.state === 'advance' && this.stagger <= 0
     const kind = this.def.visual.kind
 
+    if (art.rig) {
+      this.updateRig(dtMs, art.rig, moving)
+      this.updateHpBar()
+      this.applyTints()
+      return
+    }
+
     // Facing: flip the whole container.
     this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
     this.container.setPosition(this.x, this.y)
@@ -1050,6 +1079,94 @@ export default class Unit implements Damageable {
     // "that one has been here a while".
     this.scaleFactor *= 1.02
     this.world.vfx.floatingLabel(this.x, this.centerY - this.def.height * 0.5, 'PROMOTED', colour)
+  }
+
+  /**
+   * Drives an archetype rig for one frame.
+   *
+   * Clip selection, phase, cross-fade, additive layers, forward kinematics,
+   * then the transforms onto the Phaser images. Everything the old
+   * per-body-plan animation code did by hand, done once for every body plan.
+   */
+  private updateRig(dtMs: number, rig: NonNullable<ReturnType<typeof getUnitArt>['rig']>, moving: boolean): void {
+    const R = RES
+    const height = this.def.height
+
+    this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
+    this.container.setPosition(this.x, this.y)
+    this.shadow.setPosition(this.x, this.world.groundY + 2)
+    this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
+    this.teamRing.setPosition(this.x, this.world.groundY + 1)
+
+    // Which clip, and how fast. A walk is paced by how far the unit actually
+    // travels rather than by the clock, so a fast unit takes quick steps and a
+    // slow one plods — the feet stop skating either way.
+    const attacking = this.swing > 0
+    const name: 'idle' | 'walk' | 'attack' = attacking ? 'attack' : moving ? 'walk' : 'idle'
+    const clip = rig.clips[name]
+
+    if (name !== this.lastClip) {
+      // Freeze the pose we are leaving and fade out of it.
+      const from = rig.clips[this.lastClip as 'idle' | 'walk' | 'attack']
+      this.prevPose = from ? samplePose(from, this.clipPhase) : null
+      this.blendLeft = 110
+      this.clipPhase = 0
+      this.lastClip = name
+    }
+
+    if (name === 'walk') {
+      // One clip cycle per two strides, tied to distance covered.
+      const strideLength = Math.max(10, height * 0.62)
+      this.clipPhase += (Math.abs(this.def.speed * this.speedMult * this.frenzy) * (dtMs / 1000)) / (strideLength * 2)
+    } else if (name === 'attack') {
+      // The clip runs across the swing, so the contact pose lands with the hit.
+      this.clipPhase = 1 - this.swing
+    } else {
+      this.clipPhase += dtMs / clip.duration
+    }
+    if (clip.loop) this.clipPhase %= 1
+    else this.clipPhase = Math.min(1, this.clipPhase)
+
+    let pose = samplePose(clip, this.clipPhase)
+    if (this.blendLeft > 0 && this.prevPose) {
+      this.blendLeft = Math.max(0, this.blendLeft - dtMs)
+      pose = blendPoses(this.prevPose, pose, 1 - this.blendLeft / 110)
+    }
+
+    // Additive layers. Aim is expressed relative to level, so a unit shooting
+    // at something above it raises its arms without any clip knowing about it.
+    const aim = this.aimAngle()
+    const ranged = this.def.attack.kind !== 'melee'
+    const additive: Additive = {
+      aim: ranged ? aim * this.dir : 0,
+      recoil: attacking && ranged ? this.swing : 0,
+      breathe: Math.sin(this.animTime / 620),
+      lean: moving ? 0.5 : 0,
+      flinch: this.flashTimer > 0 ? this.flashTimer / 140 : 0
+    }
+
+    const transforms = evaluate(rig.skeleton, pose, additive)
+
+    for (const b of rig.skeleton) {
+      if (!b.part) continue
+      const img = this.parts[b.part]
+      if (!img) continue
+      const t = transforms[b.name]
+      if (!t) continue
+      img.setPosition(t.x * height * R, t.y * height * R)
+      img.setRotation(partRotation(t.angle, t.orient))
+    }
+
+    // Footfall dust on the two contact poses of the walk cycle.
+    if (moving && this.layer === 'ground') {
+      const phase = Math.floor(this.clipPhase * 2)
+      if (phase !== this.lastStepPhase) {
+        this.lastStepPhase = phase
+        this.world.vfx.footDust(this.x - this.dir * this.radius * 0.4, this.world.groundY)
+      }
+    }
+
+    if (this.swing > 0) this.swing = Math.max(0, this.swing - dtMs / (this.def.attackMs * 0.42))
   }
 
   private updateHpBar(): void {

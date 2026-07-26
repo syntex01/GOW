@@ -127,7 +127,7 @@ function shaft(p: Pix, x0: number, y0: number, x1: number, y1: number, width: nu
 
 // ─────────────────────────────── Head ───────────────────────────────
 
-function drawHead(v: UnitVisual, m: RigMetrics): Canvas2D {
+export function drawHead(v: UnitVisual, m: RigMetrics): Canvas2D {
   const r = Math.max(2, m.headR * RES)
   const skin = ramp(v.skin)
   const cloth = ramp(v.cloth)
@@ -253,7 +253,7 @@ function drawHead(v: UnitVisual, m: RigMetrics): Canvas2D {
 
 // ─────────────────────────────── Torso ───────────────────────────────
 
-function drawTorso(v: UnitVisual, m: RigMetrics): Canvas2D {
+export function drawTorso(v: UnitVisual, m: RigMetrics): Canvas2D {
   const w = Math.max(4, m.bodyW * RES)
   const h = Math.max(5, m.torsoH * RES)
   const p = part(w * 2.4, h * 1.5)
@@ -496,7 +496,7 @@ export interface WeaponArt {
   grip: [number, number]
 }
 
-function drawWeapon(kind: WeaponVisual, v: UnitVisual, m: RigMetrics): WeaponArt | null {
+export function drawWeapon(kind: WeaponVisual, v: UnitVisual, m: RigMetrics): WeaponArt | null {
   if (kind === 'none' || kind === 'fist') return null
 
   const s = m.height * RES
@@ -710,7 +710,7 @@ function drawWeapon(kind: WeaponVisual, v: UnitVisual, m: RigMetrics): WeaponArt
 
 // ─────────────────────────────── Shields & capes ───────────────────────────────
 
-function drawShield(kind: NonNullable<UnitVisual['shield']>, v: UnitVisual, m: RigMetrics): Canvas2D | null {
+export function drawShield(kind: NonNullable<UnitVisual['shield']>, v: UnitVisual, m: RigMetrics): Canvas2D | null {
   if (kind === 'none') return null
   const s = m.height * RES
   const wood = ramp(0x8a6237)
@@ -790,7 +790,7 @@ function drawShield(kind: NonNullable<UnitVisual['shield']>, v: UnitVisual, m: R
   }
 }
 
-function drawCape(v: UnitVisual, m: RigMetrics): Canvas2D {
+export function drawCape(v: UnitVisual, m: RigMetrics): Canvas2D {
   const w = Math.max(3, m.bodyW * RES * 0.95)
   const h = Math.max(5, m.torsoH * RES * 1.5)
   const p = part(w * 1.6, h * 1.15)
@@ -1085,7 +1085,7 @@ function drawRotor(v: UnitVisual, m: RigMetrics, span: number): Canvas2D {
   return finish(p, 0x30353f)
 }
 
-function drawMount(v: UnitVisual, m: RigMetrics): { body: Canvas2D; leg: Canvas2D } {
+export function drawMount(v: UnitVisual, m: RigMetrics): { body: Canvas2D; leg: Canvas2D } {
   // Roughly 1.7 long to 1 deep. Any longer and the animal reads as a dachshund.
   const bodyW = Math.max(8, m.height * 0.78 * RES)
   const bodyH = Math.max(5, m.height * 0.42 * RES)
