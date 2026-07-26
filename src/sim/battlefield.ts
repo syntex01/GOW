@@ -1122,7 +1122,7 @@ export default class Battlefield {
         }
         continue
       }
-      if (sp !== 'enthrall' && sp !== 'entangle' && sp !== 'fabricate') continue
+      if (sp !== 'enthrall' && sp !== 'entangle' && sp !== 'fabricate' && sp !== 'summoner') continue
       u.pulseTimer -= dtMs
       if (u.pulseTimer > 0) continue
       if (sp === 'enthrall') {
@@ -1148,15 +1148,20 @@ export default class Battlefield {
         }
         if (caught > 0) this.vfx.impact(u.x, u.centerY, 0x8fd694, 1.2, false)
       } else {
-        // Fabricate: the Drone Host prints escorts while it has room to.
-        u.pulseTimer = 7000
-        const def = FACTION_UNITS_BY_ID['cy_gnat']
+        // The printing specials: the Drone Host fabricates gnats, the
+        // Archmage calls in the shades it is owed. Same clockwork, very
+        // different debts.
+        const plan = sp === 'fabricate'
+          ? { id: 'cy_gnat', cap: 3, everyMs: 7000, glow: 0x8fe8ff }
+          : { id: 'dc_shade', cap: 4, everyMs: 9000, glow: 0xb46bff }
+        u.pulseTimer = plan.everyMs
+        const def = FACTION_UNITS_BY_ID[plan.id]
         if (!def) continue
-        const gnats = this.units.filter(g => g.alive && g.faction === u.faction && g.def.id === 'cy_gnat').length
-        if (gnats >= 3) continue
+        const owned = this.units.filter(g => g.alive && g.faction === u.faction && g.def.id === plan.id).length
+        if (owned >= plan.cap) continue
         const printed = this.spawnUnit(u.faction, def, u.x + ADVANCE_DIR[u.faction] * 30, u.lane)
         printed.risen = true
-        this.vfx.impact(printed.x, printed.y, 0x8fe8ff, 1, false)
+        this.vfx.impact(printed.x, printed.y, plan.glow, 1, false)
       }
     }
   }
@@ -1595,7 +1600,7 @@ export default class Battlefield {
         this.addZone(p.x, 46, 3500, 18, p.faction, 'plague', 0, lane)
         break
       case 'spore_shot':
-        this.addZone(p.x, 44, 5000, 10, p.faction, 'spore', 0, lane)
+        this.addZone(p.x, 36, 3500, 6, p.faction, 'spore', 0, lane)
         break
       case 'seed_shot':
         // The Titan Bloom's fruit sometimes takes root where it bursts.

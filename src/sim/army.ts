@@ -8,7 +8,7 @@ import type { Faction } from './types'
 import { TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
 /** How many cards the command bar can show. */
-const MAX_ROSTER = 10
+const MAX_ROSTER = 11
 
 /** Base units and faction units together, since research can unlock either. */
 const ALL_UNITS_BY_ID: Record<string, UnitDef> = {

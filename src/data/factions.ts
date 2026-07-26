@@ -138,7 +138,7 @@ export const FACTION_UNITS: UnitDef[] = [
     age: 2,
     role: 'melee',
     layer: 'ground',
-    cost: 640,
+    cost: 560,
     buildMs: 3400,
     hp: 1250,
     armor: 'light',
@@ -183,7 +183,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 300, splash: 90 },
     regen: 22,
     description: 'A walking reliquary. When it finally falls, it falls as a rampart of bone.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'plate', weapon: 'club', helmet: 'great', chassis: 'legs', bulk: 1.5 })
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'club', helmet: 'horns', chassis: 'legs', bulk: 1.5 })
   },
   {
     id: 'nk_carrion',
@@ -197,7 +197,7 @@ export const FACTION_UNITS: UnitDef[] = [
     armor: 'unarmored',
     damage: 240,
     damageType: 'energy',
-    attackMs: 2300,
+    attackMs: 1800,
     range: 340,
     speed: 34,
     mass: 1.2,
@@ -250,7 +250,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 150
     },
     description: 'Siege that recruits: a quarter of what its shells kill stands back up a Husk.',
-    visual: look('nekrotics', { kind: 'vehicle', chassis: 'wheels', machine: 'catapult', bulk: 1.2 })
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'horns', chassis: 'legs', bulk: 1.5 })
   },
 
   // ───────────────────────────── Cyborgs ─────────────────────────────
@@ -318,8 +318,8 @@ export const FACTION_UNITS: UnitDef[] = [
     armor: 'light',
     damage: 260,
     damageType: 'pierce',
-    attackMs: 2000,
-    range: 620,
+    attackMs: 2400,
+    range: 300,
     speed: 32,
     mass: 1.6,
     bounty: 266,
@@ -349,7 +349,7 @@ export const FACTION_UNITS: UnitDef[] = [
     layer: 'ground',
     cost: 2800,
     buildMs: 6200,
-    hp: 6400,
+    hp: 8200,
     armor: 'heavy',
     damage: 380,
     damageType: 'energy',
@@ -440,6 +440,56 @@ export const FACTION_UNITS: UnitDef[] = [
 
   // ─────────────────────────── Dark Circle ───────────────────────────
   {
+    id: 'dc_shade',
+    name: 'Bound Shade',
+    age: 4,
+    role: 'melee',
+    layer: 'ground',
+    cost: 0,
+    buildMs: 1,
+    hp: 520,
+    armor: 'unarmored',
+    damage: 150,
+    damageType: 'energy',
+    attackMs: 900,
+    range: 42,
+    speed: 100,
+    mass: 0.8,
+    bounty: 25,
+    xp: 12,
+    pop: 0,
+    height: 60,
+    hidden: true,
+    attack: { kind: 'melee', knockback: 40 },
+    description: 'Not summoned so much as owed. It fights until the debt is called elsewhere.',
+    visual: look('dark_circle', { torso: 'robe', weapon: 'none', helmet: 'hood', cape: true })
+  },
+  {
+    id: 'dc_archmage',
+    name: 'Archmage of the Circle',
+    age: 4,
+    role: 'support',
+    layer: 'ground',
+    cost: 2800,
+    buildMs: 6000,
+    hp: 2600,
+    armor: 'unarmored',
+    damage: 300,
+    damageType: 'energy',
+    attackMs: 2400,
+    range: 380,
+    speed: 36,
+    mass: 3,
+    bounty: 1064,
+    xp: 926,
+    pop: 4,
+    height: 78,
+    special: 'summoner',
+    attack: { kind: 'projectile', projectile: 'plasmaball', speed: 700, gravity: 0, spread: 0.02, knockback: 120, splash: 90 },
+    description: 'Does not field an army. Owes one, and keeps calling the debt: shades, bound in fours.',
+    visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true, bulk: 1.2 })
+  },
+  {
     id: 'dc_acolyte',
     name: 'Acolyte',
     age: 1,
@@ -479,7 +529,7 @@ export const FACTION_UNITS: UnitDef[] = [
     damage: 200,
     damageType: 'energy',
     attackMs: 1900,
-    range: 400,
+    range: 340,
     speed: 34,
     mass: 1.1,
     bounty: 361,
@@ -508,7 +558,7 @@ export const FACTION_UNITS: UnitDef[] = [
     layer: 'ground',
     cost: 2300,
     buildMs: 5600,
-    hp: 5600,
+    hp: 7400,
     armor: 'heavy',
     damage: 380,
     damageType: 'blunt',
@@ -585,7 +635,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 200
     },
     description: 'Its shellfall carries dread — everything caught in the blast wades as if drowning.',
-    visual: look('dark_circle', { kind: 'mech', torso: 'robe', weapon: 'plasma', helmet: 'halo', chassis: 'legs', cape: true, bulk: 1.4 })
+    visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true, bulk: 1.5 })
   },
 
   // ─────────────────────────── Cinder Host ───────────────────────────
@@ -628,7 +678,7 @@ export const FACTION_UNITS: UnitDef[] = [
     armor: 'light',
     damage: 300,
     damageType: 'explosive',
-    attackMs: 2600,
+    attackMs: 2200,
     range: 240,
     speed: 40,
     mass: 1.6,
@@ -686,7 +736,7 @@ export const FACTION_UNITS: UnitDef[] = [
     buildMs: 5600,
     hp: 1600,
     armor: 'light',
-    damage: 680,
+    damage: 600,
     damageType: 'explosive',
     attackMs: 4300,
     range: 520,
@@ -784,10 +834,10 @@ export const FACTION_UNITS: UnitDef[] = [
     buildMs: 2100,
     hp: 330,
     armor: 'unarmored',
-    damage: 90,
+    damage: 62,
     damageType: 'pierce',
-    attackMs: 1350,
-    range: 380,
+    attackMs: 1600,
+    range: 250,
     speed: 32,
     mass: 1.3,
     bounty: 80,
@@ -804,7 +854,7 @@ export const FACTION_UNITS: UnitDef[] = [
       spread: 0.06,
       knockback: 60,
       splash: 60,
-      count: 3
+      count: 2
     },
     description: 'Flings seed-darts that sprout hostile ground wherever they strike.',
     visual: look('hollow_bloom', { torso: 'robe', weapon: 'bow', helmet: 'band' })
@@ -817,7 +867,7 @@ export const FACTION_UNITS: UnitDef[] = [
     layer: 'ground',
     cost: 2400,
     buildMs: 5800,
-    hp: 6000,
+    hp: 7800,
     armor: 'heavy',
     damage: 340,
     damageType: 'blunt',
@@ -871,7 +921,7 @@ export const FACTION_UNITS: UnitDef[] = [
     buildMs: 6400,
     hp: 2600,
     armor: 'light',
-    damage: 720,
+    damage: 640,
     damageType: 'explosive',
     attackMs: 4700,
     range: 500,
@@ -901,7 +951,7 @@ export const FACTION_UNITS: UnitDef[] = [
     age: 2,
     role: 'melee',
     layer: 'ground',
-    cost: 560,
+    cost: 470,
     buildMs: 3400,
     hp: 1000,
     armor: 'light',
@@ -959,7 +1009,7 @@ export const FACTION_UNITS: UnitDef[] = [
     armor: 'unarmored',
     damage: 190,
     damageType: 'pierce',
-    attackMs: 1400,
+    attackMs: 1050,
     range: 310,
     speed: 48,
     mass: 1.6,
@@ -975,13 +1025,13 @@ export const FACTION_UNITS: UnitDef[] = [
   },
   {
     id: 'nk_abattoir',
-    name: 'Abattoir Engine',
+    name: 'The Abattoir',
     age: 4,
     role: 'tank',
     layer: 'ground',
     cost: 2600,
     buildMs: 5800,
-    hp: 5600,
+    hp: 7200,
     armor: 'heavy',
     damage: 420,
     damageType: 'blunt',
@@ -995,7 +1045,7 @@ export const FACTION_UNITS: UnitDef[] = [
     height: 84,
     attack: { kind: 'melee', knockback: 520, splash: 120 },
     description: 'A rendering plant that lost patience. Its blows do not kill so much as relocate, violently.',
-    visual: look('nekrotics', { kind: 'vehicle', chassis: 'tracks', machine: 'catapult', bulk: 1.6 })
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'club', helmet: 'none', chassis: 'legs', bulk: 1.7 })
   },
   {
     id: 'nk_widow',
@@ -1022,7 +1072,7 @@ export const FACTION_UNITS: UnitDef[] = [
     hitsAir: true,
     attack: { kind: 'projectile', projectile: 'bolt', speed: 900, gravity: 0, spread: 0.05, knockback: 60 },
     description: 'The carnage answer to the sky: it feeds on what it strikes, and it strikes the weakest first.',
-    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'fur', bulk: 1.2 })
+    visual: look('nekrotics', { kind: 'aircraft', chassis: 'hover', torso: 'fur', bulk: 1.2 })
   },
   {
     id: 'ch_petardier',
@@ -1237,9 +1287,9 @@ export const FACTION_UNITS: UnitDef[] = [
     buildMs: 6400,
     hp: 2000,
     armor: 'heavy',
-    damage: 820,
+    damage: 760,
     damageType: 'pierce',
-    attackMs: 4800,
+    attackMs: 5200,
     range: 560,
     minRange: 220,
     speed: 18,
@@ -1379,7 +1429,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'gravity_well',
     attack: { kind: 'projectile', projectile: 'plasmaball', speed: 620, gravity: 0, spread: 0.02, knockback: 0, splash: 130 },
     description: 'Its blasts do not throw the enemy away. They gather them in, for the next one.',
-    visual: look('dark_circle', { torso: 'robe', weapon: 'plasma', helmet: 'halo', cape: true, bulk: 1.3 })
+    visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true, bulk: 1.3 })
   },
   {
     id: 'dc_pale_king',
@@ -1389,7 +1439,7 @@ export const FACTION_UNITS: UnitDef[] = [
     layer: 'ground',
     cost: 3000,
     buildMs: 6200,
-    hp: 4200,
+    hp: 5600,
     armor: 'heavy',
     damage: 430,
     damageType: 'slash',
@@ -1444,7 +1494,7 @@ export const FACTION_UNITS: UnitDef[] = [
     armor: 'unarmored',
     damage: 170,
     damageType: 'pierce',
-    attackMs: 1600,
+    attackMs: 1250,
     range: 300,
     speed: 46,
     mass: 1.8,
@@ -1532,7 +1582,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'spore_trail',
     attack: { kind: 'projectile', projectile: 'bomb', speed: 420, gravity: 700, spread: 0.08, knockback: 200, splash: 140 },
     description: 'A drifting gasbag that bombs the line and seeds the lane beneath itself as it goes.',
-    visual: look('hollow_bloom', { kind: 'aircraft', chassis: 'rotor', torso: 'fur', bulk: 1.6 })
+    visual: look('hollow_bloom', { kind: 'aircraft', chassis: 'hover', torso: 'fur', bulk: 1.6 })
   },
 ]
 
