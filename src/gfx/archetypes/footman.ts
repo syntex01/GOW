@@ -98,7 +98,16 @@ function materialsFor(v: UnitVisual): {
  * — a rig whose bones are out of order animates one frame behind itself, and
  * that is a miserable bug to find by eye.
  */
-function buildSkeleton(weaponRest: number): Skeleton {
+/**
+ * @param weaponRest  local angle of the weapon against a downward-pointing hand
+ * @param ranged      raises the weapon arm to firing height, so the aim layer
+ *                    tilts around level rather than around hanging straight
+ *                    down — without this a musketeer aims his musket at his
+ *                    own boots and the aim additive only makes it worse
+ */
+function buildSkeleton(weaponRest: number, ranged: boolean): Skeleton {
+  const armRest = ranged ? -1.28 : 0
+  const foreRest = ranged ? 0.42 : 0
   const s: Skeleton = [
     // Root sits at the hips and stays world-aligned, so the legs never inherit
     // the torso's lean.
@@ -138,16 +147,18 @@ function buildSkeleton(weaponRest: number): Skeleton {
       depth: 20
     }),
     bone('upperArmB', 'shoulderB', {
+      angle: ranged ? -0.95 : 0,
       length: P.upperArm,
       part: 'upperArmB',
       depth: 20,
-      weights: { aim: 0.25, recoil: 0.4 }
+      weights: { aim: 0.42, recoil: 0.4 }
     }),
     bone('foreArmB', 'upperArmB', {
+      angle: ranged ? 0.72 : 0,
       length: P.foreArm,
       part: 'foreArmB',
       depth: 21,
-      weights: { aim: 0.2, recoil: 0.6 }
+      weights: { aim: 0.34, recoil: 0.6 }
     }),
     bone('handB', 'foreArmB', { part: 'handB', depth: 22 }),
 
@@ -158,16 +169,18 @@ function buildSkeleton(weaponRest: number): Skeleton {
       depth: 50
     }),
     bone('upperArmF', 'shoulderF', {
+      angle: armRest,
       length: P.upperArm,
       part: 'upperArmF',
       depth: 50,
-      weights: { aim: 0.55, recoil: 0.7 }
+      weights: { aim: 0.6, recoil: 0.7 }
     }),
     bone('foreArmF', 'upperArmF', {
+      angle: foreRest,
       length: P.foreArm,
       part: 'foreArmF',
       depth: 51,
-      weights: { aim: 0.45, recoil: 1 }
+      weights: { aim: 0.4, recoil: 1 }
     }),
     bone('handF', 'foreArmF', { part: 'handF', depth: 52 }),
     // The weapon hangs off the hand, so it inherits every bit of arm motion
@@ -505,10 +518,14 @@ export const footmanArchetype: Archetype = {
   id: 'footman',
   claims: v => v.kind === 'humanoid',
   build(v: UnitVisual, height: number): ArchetypeBuild {
+    const ranged = RANGED_WEAPONS.has(v.weapon)
     const { parts } = buildParts(v, height)
     const clips: Record<ClipName, Clip> = { idle: IDLE, walk: WALK, attack: ATTACK }
     return {
-      skeleton: buildSkeleton(RANGED_WEAPONS.has(v.weapon) ? -Math.PI / 2 : -Math.PI * 0.82),
+      skeleton: buildSkeleton(
+        ranged ? -Math.PI / 2 : -Math.PI * 0.82,
+        ranged
+      ),
       parts,
       clips,
       height,

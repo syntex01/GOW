@@ -1141,7 +1141,9 @@ export default class Unit implements Damageable {
       aim: ranged ? aim * this.dir : 0,
       recoil: attacking && ranged ? this.swing : 0,
       breathe: Math.sin(this.animTime / 620),
-      lean: moving ? 0.5 : 0,
+      // A flat half-unit of lean on every walking soldier read as the whole
+      // army falling forward. Enough to show intent, not enough to topple.
+      lean: moving ? 0.26 : 0,
       flinch: this.flashTimer > 0 ? this.flashTimer / 140 : 0
     }
 
