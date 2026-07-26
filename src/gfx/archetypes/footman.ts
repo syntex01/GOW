@@ -13,7 +13,9 @@ import {
 } from '../anatomy'
 import { ramp, tone } from '../pixel'
 import { bone, validateSkeleton, type Clip, type Skeleton } from '../rig'
-import { drawCape, drawHead, drawShield, drawTorso, drawWeapon } from '../unitArt'
+import { drawCape, drawShield, drawTorso } from '../unitArt'
+import { drawHeadHi } from '../heads'
+import { drawWeaponHi } from '../weapons'
 import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
 
 /**
@@ -50,6 +52,33 @@ import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
 const RANGED_WEAPONS = new Set<UnitVisual['weapon']>([
   'sling', 'bow', 'musket', 'rifle', 'lmg', 'rpg', 'laser', 'railgun', 'plasma', 'grenade'
 ])
+
+/**
+ * How long each weapon is, as a fraction of the unit's height.
+ *
+ * This is equipment, not anatomy, so it lives with the body plan that carries
+ * it rather than with the weapon art. A lance has to out-reach a sabre or the
+ * silhouette lies about what the unit does.
+ */
+const WEAPON_LENGTH: Partial<Record<UnitVisual['weapon'], number>> = {
+  club: 0.42,
+  sword: 0.55,
+  saber: 0.55,
+  axe: 0.48,
+  spear: 0.95,
+  lance: 1.15,
+  staff: 0.9,
+  bow: 0.62,
+  sling: 0.34,
+  grenade: 0.16,
+  musket: 0.78,
+  rifle: 0.7,
+  lmg: 0.68,
+  rpg: 0.8,
+  laser: 0.6,
+  railgun: 0.85,
+  plasma: 0.66
+}
 
 // Proportions as fractions of the unit's height. Authored once, here, so that
 // a clubman and a titan are the same creature at different scales.
@@ -106,8 +135,16 @@ function materialsFor(v: UnitVisual): {
  *                    own boots and the aim additive only makes it worse
  */
 function buildSkeleton(weaponRest: number, ranged: boolean): Skeleton {
-  const armRest = ranged ? -1.28 : 0
-  const foreRest = ranged ? 0.42 : 0
+  // A melee soldier does not walk with its arm hanging and the blade tip in
+  // the dirt — it carries at the ready. Raising the rest pose is also what
+  // gives the attack clip somewhere to wind up *from*.
+  const armRest = ranged ? -1.28 : -0.5
+  const foreRest = ranged ? 0.42 : -0.22
+  // The weapon's restAngle is given in world terms — 0 is level, negative
+  // lifts the tip. The bone hangs off the hand, so it has to be converted out
+  // of the hand's frame or the weapon sits a quarter turn off.
+  const handRest = Math.PI / 2 + armRest + foreRest
+  const weaponLocal = weaponRest - handRest
   const s: Skeleton = [
     // Root sits at the hips and stays world-aligned, so the legs never inherit
     // the torso's lean.
@@ -147,14 +184,14 @@ function buildSkeleton(weaponRest: number, ranged: boolean): Skeleton {
       depth: 20
     }),
     bone('upperArmB', 'shoulderB', {
-      angle: ranged ? -0.95 : 0,
+      angle: ranged ? -0.95 : -0.18,
       length: P.upperArm,
       part: 'upperArmB',
       depth: 20,
       weights: { aim: 0.42, recoil: 0.4 }
     }),
     bone('foreArmB', 'upperArmB', {
-      angle: ranged ? 0.72 : 0,
+      angle: ranged ? 0.72 : 0.24,
       length: P.foreArm,
       part: 'foreArmB',
       depth: 21,
@@ -189,7 +226,7 @@ function buildSkeleton(weaponRest: number, ranged: boolean): Skeleton {
     // there: a melee weapon rides up and forward at rest, a ranged one levels
     // off along the line of fire.
     bone('weapon', 'handF', {
-      angle: weaponRest,
+      angle: weaponLocal,
       part: 'weapon',
       orient: 'right',
       depth: 53,
@@ -437,6 +474,8 @@ const ATTACK: Clip = {
 
 function buildParts(v: UnitVisual, height: number): {
   parts: Record<string, PartArt>
+  weaponRest: number
+  twoHanded: boolean
   metrics: { bodyW: number; torsoH: number; armLen: number; legLen: number; headR: number; height: number; hipY: number; shoulderY: number; neckY: number }
 } {
   const mats = materialsFor(v)
@@ -496,9 +535,12 @@ function buildParts(v: UnitVisual, height: number): {
   // hips. Anchor on the drawn edge instead.
   const chestCanvas = drawTorso(v, legacyMetrics)
   parts.chest = { canvas: chestCanvas, origin: [0.5, (chestCanvas.h - PAD) / chestCanvas.h] }
-  parts.head = { canvas: drawHead(v, legacyMetrics), origin: [0.5, 0.82] }
+  // The head library computes its own neck-join origin from the drawn geometry
+  // rather than the old hardcoded 0.82, which was tuned for one helmet and
+  // wrong for the ten others.
+  parts.head = drawHeadHi(v, px(P.headR))
 
-  const weapon = drawWeapon(v.weapon, v, legacyMetrics)
+  const weapon = drawWeaponHi(v.weapon, v, height * (WEAPON_LENGTH[v.weapon] ?? 0.55))
   if (weapon) {
     parts.weapon = {
       canvas: weapon.canvas,
@@ -511,7 +553,7 @@ function buildParts(v: UnitVisual, height: number): {
   }
   if (v.cape) parts.cape = { canvas: drawCape(v, legacyMetrics), origin: [0.5, 0.06] }
 
-  return { parts, metrics: legacyMetrics }
+  return { parts, metrics: legacyMetrics, weaponRest: weapon?.restAngle ?? 0, twoHanded: weapon?.twoHanded ?? false }
 }
 
 export const footmanArchetype: Archetype = {
@@ -519,13 +561,12 @@ export const footmanArchetype: Archetype = {
   claims: v => v.kind === 'humanoid',
   build(v: UnitVisual, height: number): ArchetypeBuild {
     const ranged = RANGED_WEAPONS.has(v.weapon)
-    const { parts } = buildParts(v, height)
+    const { parts, weaponRest, twoHanded } = buildParts(v, height)
     const clips: Record<ClipName, Clip> = { idle: IDLE, walk: WALK, attack: ATTACK }
     return {
-      skeleton: buildSkeleton(
-        ranged ? -Math.PI / 2 : -Math.PI * 0.82,
-        ranged
-      ),
+      // Two-handed weapons bring the off hand onto the haft, so the support
+      // arm comes across the body whether or not the weapon is aimed.
+      skeleton: buildSkeleton(weaponRest, ranged || twoHanded),
       parts,
       clips,
       height,
