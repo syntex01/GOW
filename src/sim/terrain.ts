@@ -42,11 +42,19 @@ export default class Terrain {
   private readonly relief: Float32Array[]
   /** Sim-time stamp of the last disturbance near each bucket, per lane. */
   private readonly disturbed: Float32Array[]
+  /**
+   * How haunted each bucket is, 0..1. The occult creed does not build mounds —
+   * it consumes the dead where they fall and leaves this behind instead:
+   * ground that remembers being fed, and makes whoever stands on it worse at
+   * their job. Simulation state like the relief, and hashed like it.
+   */
+  private readonly haunt: Float32Array[]
 
   constructor(private readonly worldWidth: number) {
     this.buckets = Math.ceil(worldWidth / RELIEF_BUCKET) + 1
     this.relief = Array.from({ length: LANE_COUNT }, () => new Float32Array(this.buckets))
     this.disturbed = Array.from({ length: LANE_COUNT }, () => new Float32Array(this.buckets))
+    this.haunt = Array.from({ length: LANE_COUNT }, () => new Float32Array(this.buckets))
   }
 
   private index(x: number): number {
@@ -109,22 +117,70 @@ export default class Terrain {
 
   /**
    * Peace, doing its slow work. Buckets left alone long enough ease back
-   * toward level ground at a rate set by the world's era — and a little
-   * neighbourly diffusion keeps healed ground from terracing.
+   * toward level ground at a rate set by the world's era — and, when a creed
+   * has laid claim to a stretch, by the creed: `healScale` returns a
+   * multiplier on the half-life for one bucket. Above 1 the ground clings to
+   * its scars (a carnage army's monuments, an ordnance army's no-man's-land),
+   * below 1 it is being actively repaired (engineering fill crews), and
+   * Infinity freezes it entirely (blight ground that is no longer ground).
    */
-  settle(dtMs: number, nowMs: number, era: number): void {
+  settle(
+    dtMs: number,
+    nowMs: number,
+    era: number,
+    healScale?: (lane: number, x: number, height: number) => number
+  ): void {
     const half = HEAL_HALFLIFE_MS[Math.max(0, Math.min(HEAL_HALFLIFE_MS.length - 1, era))]
-    const decay = Math.pow(0.5, dtMs / half)
+    const baseDecay = Math.pow(0.5, dtMs / half)
+    const hauntDecay = Math.pow(0.5, dtMs / (half * 1.5))
     for (let lane = 0; lane < LANE_COUNT; lane += 1) {
       const row = this.relief[lane]
       const marks = this.disturbed[lane]
+      const spirits = this.haunt[lane]
       for (let i = 0; i < this.buckets; i += 1) {
-        if (row[i] === 0) continue
         if (nowMs - marks[i] < PEACE_DELAY_MS) continue
-        row[i] *= decay
+        if (spirits[i] > 0) {
+          spirits[i] *= hauntDecay
+          if (spirits[i] < 0.03) spirits[i] = 0
+        }
+        if (row[i] === 0) continue
+        const scale = healScale ? healScale(lane, i * RELIEF_BUCKET, row[i]) : 1
+        if (scale === Infinity) continue
+        row[i] *= scale === 1 ? baseDecay : Math.pow(0.5, dtMs / (half * scale))
         if (Math.abs(row[i]) < 0.4) row[i] = 0
       }
     }
+  }
+
+  /** The occult ground takes another body. Intensity saturates at 1. */
+  addHaunt(x: number, lane: number, amount: number, nowMs: number): void {
+    const row = this.haunt[lane]
+    if (!row) return
+    const centre = this.index(x)
+    for (let k = -1; k <= 1; k += 1) {
+      const i = centre + k
+      if (i < 0 || i >= this.buckets) continue
+      row[i] = Math.min(1, row[i] + amount * (k === 0 ? 1 : 0.5))
+      this.disturbed[lane][i] = nowMs
+    }
+  }
+
+  /** How haunted the ground under a point is, 0..1. */
+  hauntAt(x: number, lane: number): number {
+    return this.haunt[lane]?.[this.index(x)] ?? 0
+  }
+
+  /**
+   * Drains up to `amount` of mound from a bucket and returns what was taken.
+   * The engineering creed's quarry crews eat the dead for parts with this.
+   */
+  quarry(lane: number, bucket: number, amount: number): number {
+    const row = this.relief[lane]
+    if (!row || bucket < 0 || bucket >= this.buckets || row[bucket] <= 0) return 0
+    const taken = Math.min(row[bucket], amount)
+    row[bucket] -= taken
+    if (row[bucket] < 0.4) row[bucket] = 0
+    return taken
   }
 
   /** True when a shot at this height flies into the face of a mound. */
@@ -151,13 +207,22 @@ export default class Terrain {
   hash(mix: (value: number) => void): void {
     for (let lane = 0; lane < LANE_COUNT; lane += 1) {
       const row = this.relief[lane]
-      for (let i = 0; i < this.buckets; i += 4) mix(Math.round(row[i] * 4))
+      const spirits = this.haunt[lane]
+      for (let i = 0; i < this.buckets; i += 4) {
+        mix(Math.round(row[i] * 4))
+        mix(Math.round(spirits[i] * 8))
+      }
     }
   }
 
   /** Read-only view for the renderer. */
   laneRelief(lane: number): Float32Array {
     return this.relief[lane]
+  }
+
+  /** Read-only view of the haunting for the renderer. */
+  laneHaunt(lane: number): Float32Array {
+    return this.haunt[lane]
   }
 
   get bucketCount(): number {
@@ -172,6 +237,7 @@ export default class Terrain {
     for (let lane = 0; lane < LANE_COUNT; lane += 1) {
       this.relief[lane].fill(0)
       this.disturbed[lane].fill(0)
+      this.haunt[lane].fill(0)
     }
   }
 }

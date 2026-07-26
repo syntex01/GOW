@@ -17,7 +17,7 @@ import Base, { type TurretSlot } from './base'
 import { BASE_H, BASE_W } from '../gfx/propArt'
 import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
-import Terrain from './terrain'
+import Terrain, { RELIEF_BUCKET } from './terrain'
 import Unit, { type UnitWorld } from './unit'
 import { ADVANCE_DIR, LANE_COUNT, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type TechBranchLean } from './types'
 
@@ -120,6 +120,28 @@ function mergeModifiers(patch?: Partial<ArmyModifiers>): ArmyModifiers {
   return merged
 }
 
+/** The furniture of the clean opening board. */
+export type PropKind = 'tree' | 'well' | 'cart' | 'boulder'
+
+/**
+ * Person-scaled field furniture. `blockH` is how high the thing stops a shot;
+ * `mass` is how much ground it becomes when it falls; `chunks` is how much of
+ * it goes flying when it does.
+ */
+export const PROP_SPECS: Record<
+  PropKind,
+  { hp: number; radius: number; blockH: number; mass: number; chunks: number; dust: number }
+> = {
+  // Taller than any soldier — a real tree, and real cover for a whole file.
+  tree: { hp: 340, radius: 12, blockH: 64, mass: 6, chunks: 5, dust: 0x7a6a44 },
+  // Chest-high stone; stops low shots, takes a while to knock apart.
+  well: { hp: 560, radius: 14, blockH: 32, mass: 8, chunks: 6, dust: 0xa8a8a0 },
+  // Shoulder-high wood; decent cover, comes apart fast.
+  cart: { hp: 380, radius: 20, blockH: 40, mass: 6, chunks: 6, dust: 0x9a7a4e },
+  // Waist-high granite; the most stubborn thing on the opening board.
+  boulder: { hp: 900, radius: 16, blockH: 28, mass: 10, chunks: 5, dust: 0x8a8a86 }
+}
+
 /**
  * Owns the whole battle: both armies, every unit and projectile, combat
  * resolution, special abilities, and the running match statistics.
@@ -160,13 +182,29 @@ export default class Battlefield {
   /** Bodies quietly becoming ground. */
   decomposing: { x: number; lane: number; mass: number; dueMs: number }[] = []
   /**
-   * What stood on the field before anyone fought over it. Trees and huts
-   * block shots in their lane until something knocks them down — the clean
-   * world the match opens with, and the first thing artillery erases.
+   * What stood on the field before anyone fought over it. Trees, wells,
+   * carts and boulders block shots in their lane until something knocks them
+   * down — the clean world the match opens with, and the first thing
+   * artillery erases. Everything is person-scaled: a tree towers over a
+   * soldier, a well comes up to his chest, a cart to his shoulder.
    */
-  readonly props: { x: number; lane: number; kind: 'tree' | 'hut'; hp: number; maxHp: number; radius: number; blockH: number; alive: boolean }[] = []
+  readonly props: { x: number; lane: number; kind: PropKind; hp: number; maxHp: number; radius: number; blockH: number; alive: boolean; diedAt: number }[] = []
   /** A prop changed (took damage or fell); the scene should repaint it. */
   onPropChanged?: (index: number) => void
+  /**
+   * The creeds' ground rules run on their own coarse clock — walking every
+   * relief bucket per sub-step would be waste, and none of these effects need
+   * sub-frame reaction time.
+   */
+  private creedClock = 0
+  /**
+   * Engineering's quarry ledger: mound mass eaten on the own half, banked
+   * until it is worth a whole coin. Part of the fingerprint because it turns
+   * into gold, and gold decides matches.
+   */
+  private quarryBank: Record<Faction, number> = { player: 0, enemy: 0 }
+  /** Blight's sprouting scan cursor, so zone growth staggers over frames. */
+  private bloomClock = 0
   /** Spawn counter for this match, so nothing depends on a global id. */
   private spawnSeq = 0
   private readonly goreBucketWidth: number
@@ -281,22 +319,26 @@ export default class Battlefield {
     this.goreBucketWidth = 16
     this.goreMap = new Float32Array(Math.ceil(config.worldWidth / this.goreBucketWidth) + 1)
     this.terrain = new Terrain(config.worldWidth)
-    // The clean opening board: a handful of trees and huts on the middle
-    // ground, dealt from the match seed so both peers stand the same world.
+    // The clean opening board: a handful of trees, wells, carts and boulders
+    // on the middle ground, dealt from the match seed so both peers stand the
+    // same world.
     const propCount = 5 + this.rng.int(0, 3)
     for (let i = 0; i < propCount; i += 1) {
       const x = config.worldWidth * (0.28 + this.rng.next() * 0.44)
       const lane = this.rng.int(0, LANE_COUNT - 1)
-      const tree = this.rng.next() < 0.7
+      const roll = this.rng.next()
+      const kind: PropKind = roll < 0.4 ? 'tree' : roll < 0.55 ? 'well' : roll < 0.75 ? 'cart' : 'boulder'
+      const spec = PROP_SPECS[kind]
       this.props.push({
         x,
         lane,
-        kind: tree ? 'tree' : 'hut',
-        hp: tree ? 320 : 760,
-        maxHp: tree ? 320 : 760,
-        radius: tree ? 10 : 20,
-        blockH: tree ? 42 : 34,
-        alive: true
+        kind,
+        hp: spec.hp,
+        maxHp: spec.hp,
+        radius: spec.radius,
+        blockH: spec.blockH,
+        alive: true,
+        diedAt: 0
       })
     }
 
@@ -433,11 +475,12 @@ export default class Battlefield {
     prop.hp -= amount
     if (prop.hp <= 0) {
       prop.alive = false
+      prop.diedAt = this.elapsedMs
       const ground = this.config.groundY + LANE_Y[prop.lane]
-      // What falls becomes ground: a stump's worth for a tree, a low ruin of
-      // rubble for a hut — the first scar tissue of the match.
-      this.terrain.addMass(prop.x, prop.lane, prop.kind === 'tree' ? 5 : 11, this.elapsedMs)
-      for (let i = 0; i < (prop.kind === 'tree' ? 4 : 7); i += 1) {
+      // What falls becomes ground: a stump's worth for a tree, a scatter of
+      // stone for a well — the first scar tissue of the match.
+      this.terrain.addMass(prop.x, prop.lane, PROP_SPECS[prop.kind].mass, this.elapsedMs)
+      for (let i = 0; i < PROP_SPECS[prop.kind].chunks; i += 1) {
         this.physics.spawn(
           'rubble',
           prop.x + this.rng.spread(prop.radius),
@@ -447,7 +490,7 @@ export default class Battlefield {
           { size: this.rng.range(0.5, 1), floor: ground }
         )
       }
-      this.vfx.impact(prop.x, ground - prop.blockH * 0.5, prop.kind === 'tree' ? 0x7a6a44 : 0xa89880, 1.4, false)
+      this.vfx.impact(prop.x, ground - prop.blockH * 0.5, PROP_SPECS[prop.kind].dust, 1.4, false)
     }
     this.onPropChanged?.(index)
   }
@@ -622,6 +665,21 @@ export default class Battlefield {
     let write = 0
     for (const zone of this.zones) {
       zone.ttl -= dtMs
+      // Fire beats growth: a spore zone overlapped by enemy fire burns off
+      // several times faster than it would fade. This is the counter-play
+      // between the burning creeds and the growing one, fought on the ground
+      // itself.
+      if (zone.kind === 'spore') {
+        for (const fire of this.zones) {
+          if (fire.kind !== 'fire' || fire.faction === zone.faction) continue
+          if (fire.ttl <= 0) continue
+          if (fire.lane !== -1 && zone.lane !== -1 && fire.lane !== zone.lane) continue
+          if (Math.abs(fire.x - zone.x) < fire.radius + zone.radius) {
+            zone.ttl -= dtMs * 3
+            break
+          }
+        }
+      }
       if (zone.ttl <= 0) continue
       // Ashfall and mycelium make their zones creep outward on their own.
       if (zone.spread > 0) zone.radius = Math.min(260, zone.radius + zone.spread * dt)
@@ -662,6 +720,7 @@ export default class Battlefield {
     if (bought) {
       const node = TECHS_BY_ID[id]
       this.statsFor(faction).goldSpent += node.cost
+      this.refreshLeans()
       this.onTechResearched?.(faction, id)
       if (node.becomes) this.onAscended?.(faction, node.becomes)
     }
@@ -774,6 +833,8 @@ export default class Battlefield {
     // the fingerprint alongside the debris and the stains.
     this.terrain.hash(mix)
     for (const prop of this.props) mix(prop.alive ? Math.round(prop.hp) : -1)
+    mix(Math.round(this.quarryBank.player * 100))
+    mix(Math.round(this.quarryBank.enemy * 100))
     mix(this.physics.hash())
     for (let i = 0; i < this.goreMap.length; i += 1) mix(Math.round(this.goreMap[i] * 20))
 
@@ -793,6 +854,7 @@ export default class Battlefield {
     this.updateUnits(dtMs)
     this.updateProjectiles(dtMs)
     this.updateGround(dtMs)
+    this.updateCreedGround(dtMs)
     this.updateTurrets(dtMs)
     // Debris advances on the same fixed sub-step as everything else, so a
     // corpse lands in the same place on both machines.
@@ -803,7 +865,8 @@ export default class Battlefield {
 
   /**
    * The ground's own turn: bodies due to decompose become height, and peace
-   * heals what war piled up — at the pace of whichever era the world is in.
+   * heals what war piled up — at the pace of whichever era the world is in,
+   * bent by whichever creeds have laid claim to each half.
    */
   private updateGround(dtMs: number): void {
     let write = 0
@@ -816,13 +879,190 @@ export default class Battlefield {
       }
     }
     this.decomposing.length = write
-    this.terrain.settle(dtMs, this.elapsedMs, this.era)
+    this.terrain.settle(dtMs, this.elapsedMs, this.era, this.creedHealScale)
     if (this.elapsedMs - this.lastViolenceMs > 15000) {
       const dry = Math.pow(0.5, dtMs / [20000, 40000, 90000, 200000, 480000][this.era])
       for (let i = 0; i < this.goreMap.length; i += 1) {
         if (this.goreMap[i] === 0) continue
         this.goreMap[i] *= dry
         if (this.goreMap[i] < 0.01) this.goreMap[i] = 0
+      }
+    }
+  }
+
+  /**
+   * How each creed bends the healing of one bucket of ground. This is where
+   * the five directions stop sharing a battlefield:
+   *
+   *  - Carnage will not give its mounds back — they are monuments.
+   *  - Ordnance craters bitten into the *enemy's* half stay bitten; broken
+   *    ground is the whole point of shelling it.
+   *  - Engineering fills craters on its own half several times faster —
+   *    repair crews — while its mounds barely need help (the quarry eats them).
+   *  - Blight ground under a live spore zone does not heal at all; it is not
+   *    ground any more.
+   */
+  private creedHealScale = (lane: number, x: number, height: number): number => {
+    const owner = this.halfOwner(x)
+    const foe = OPPOSITE[owner]
+    if (height > 0) {
+      if (this.leanCache[owner] === 'carnage') return 1 + 5 * this.leanPower[owner]
+      if (this.leanCache[owner] === 'blight' && this.leanPower[owner] > 0) {
+        for (const z of this.zones) {
+          if (z.kind !== 'spore' || z.faction !== owner) continue
+          if (z.lane !== -1 && z.lane !== lane) continue
+          if (Math.abs(z.x - x) < z.radius) return Infinity
+        }
+      }
+    } else if (height < 0) {
+      if (this.leanCache[owner] === 'engineering') return Math.max(0.15, 1 - 0.85 * this.leanPower[owner])
+      if (this.leanCache[foe] === 'ordnance') return 1 + 4 * this.leanPower[foe]
+    }
+    return 1
+  }
+
+  /**
+   * The creeds' standing claims on the field, run on a half-second clock.
+   *
+   * This is the system that makes the five research directions *play*
+   * differently rather than look differently. Each lean turns the living
+   * battlefield into a different machine:
+   *
+   *  - CARNAGE fights from the mounds its killing builds: soldiers standing
+   *    on the piled dead swing faster and hit harder.
+   *  - ORDNANCE turns its craters into no-man's-land: enemies caught in a
+   *    bowl wade, and its shells hit them harder down there.
+   *  - ENGINEERING refuses the grit entirely: mounds on its half are quarried
+   *    into gold, craters are filled, and its fallen trees and huts are
+   *    rebuilt. A clean half *is* its apocalypse.
+   *  - OCCULT consumes the dead before they can become ground (handled in the
+   *    death path) and curses where they fell: enemies standing on haunted
+   *    ground swing softer and walk slower.
+   *  - BLIGHT lets its mounds sprout: high ground on its half seeds spore
+   *    territory that heals its own (via Verdant Tide) and mires the enemy
+   *    (via Deep Roots), and holds the mound beneath it forever.
+   *
+   * Every number scales with `leanStrength`, so two nodes of dabbling buys a
+   * whisper of this and a full creed buys the machine.
+   */
+  private updateCreedGround(dtMs: number): void {
+    this.creedClock -= dtMs
+    if (this.creedClock > 0) return
+    const interval = 500
+    this.creedClock = interval
+    this.refreshLeans()
+
+    // Ground conditions on the soldiers themselves. Cleared and re-stamped
+    // each pass so stepping off the mound — or off the haunt — ends it.
+    for (const u of this.units) {
+      if (!u.alive) continue
+      u.groundFury = 0
+      u.dread = 0
+      if (u.layer !== 'ground') continue
+      const own = this.leanCache[u.faction]
+      const ownPower = this.leanPower[u.faction]
+      if (own === 'carnage' && ownPower > 0) {
+        const h = this.terrain.heightAt(u.x, u.lane)
+        if (h >= 4) u.groundFury = Math.min(1, (h - 3) / 12) * ownPower
+      }
+      const foe = OPPOSITE[u.faction]
+      const foeLean = this.leanCache[foe]
+      const foePower = this.leanPower[foe]
+      if (foeLean === 'occult' && foePower > 0) {
+        const haunt = this.terrain.hauntAt(u.x, u.lane)
+        if (haunt > 0.2) u.dread = Math.min(1, haunt) * foePower
+      }
+      if (foeLean === 'ordnance' && foePower > 0) {
+        // Broken ground is hard going: a soldier down in a bowl wades.
+        if (this.terrain.heightAt(u.x, u.lane) <= -6) u.mire(interval + 150)
+      }
+    }
+
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      const lean = this.leanCache[faction]
+      const power = this.leanPower[faction]
+      if (!lean || power <= 0) continue
+
+      if (lean === 'engineering') this.runQuarry(faction, power, interval)
+      if (lean === 'blight') this.runBloom(faction, power)
+    }
+  }
+
+  /**
+   * Engineering: quarry crews eat the mounds on their own half for parts.
+   * The dead are stock, the craters get filled by `creedHealScale`, and the
+   * furniture gets rebuilt — the only creed whose half gets *cleaner* as the
+   * war goes on, and gets paid for it.
+   */
+  private runQuarry(faction: Faction, power: number, intervalMs: number): void {
+    const mid = this.config.worldWidth / 2
+    const from = faction === 'player' ? 0 : Math.ceil(mid / RELIEF_BUCKET)
+    const to = faction === 'player' ? Math.floor(mid / RELIEF_BUCKET) : this.terrain.bucketCount
+    // Total bite per pass, spread across however many mounds exist.
+    let budget = 2.6 * power * (intervalMs / 1000)
+    for (let lane = 0; lane < LANE_COUNT && budget > 0; lane += 1) {
+      const row = this.terrain.laneRelief(lane)
+      for (let i = from; i < to && budget > 0; i += 1) {
+        if (row[i] <= 0.5) continue
+        const taken = this.terrain.quarry(lane, i, Math.min(budget, 1.2))
+        budget -= taken
+        this.quarryBank[faction] += taken * 3
+      }
+    }
+    if (this.quarryBank[faction] >= 6) {
+      const coins = Math.floor(this.quarryBank[faction])
+      this.quarryBank[faction] -= coins
+      this.armyFor(faction).gold += coins
+      this.statsFor(faction).goldEarned += coins
+      const x = faction === 'player' ? mid * 0.5 : mid * 1.5
+      this.vfx.floatingLabel(x, this.config.groundY - 40, `+${coins} salvage`, '#8fd0ff')
+    }
+
+    // Rebuild crews: a felled tree or hut on the own half is stood back up
+    // after half a minute, at partial strength. Cover is a renewable resource
+    // for exactly one creed.
+    for (let i = 0; i < this.props.length; i += 1) {
+      const prop = this.props[i]
+      if (prop.alive || this.halfOwner(prop.x) !== faction) continue
+      if (this.elapsedMs - prop.diedAt < 30000) continue
+      prop.alive = true
+      prop.hp = prop.maxHp * 0.6
+      this.vfx.impact(prop.x, this.config.groundY + LANE_Y[prop.lane] - prop.blockH * 0.5, 0x8fd0ff, 1.2, false)
+      this.onPropChanged?.(i)
+    }
+  }
+
+  /**
+   * Blight: mounds on the own half sprout. High ground made of the dead seeds
+   * a spore zone that stays as long as the mound feeds it — and the mound
+   * stays as long as the zone shades it. Territory, not terrain.
+   */
+  private runBloom(faction: Faction, power: number): void {
+    this.bloomClock -= 1
+    if (this.bloomClock > 0) return
+    this.bloomClock = 4 // every 4th creed pass: one sprout scan per 2 seconds
+    const mid = this.config.worldWidth / 2
+    const from = faction === 'player' ? 0 : Math.ceil(mid / RELIEF_BUCKET)
+    const to = faction === 'player' ? Math.floor(mid / RELIEF_BUCKET) : this.terrain.bucketCount
+    const spread = this.armyFor(faction).hasTech('mycelium') ? 7 : 0
+    let planted = 0
+    for (let lane = 0; lane < LANE_COUNT && planted < 2; lane += 1) {
+      const row = this.terrain.laneRelief(lane)
+      for (let i = from; i < to && planted < 2; i += 1) {
+        if (row[i] < 6) continue
+        const x = i * RELIEF_BUCKET
+        let covered = false
+        for (const z of this.zones) {
+          if (z.kind !== 'spore' || z.faction !== faction) continue
+          if (z.lane !== -1 && z.lane !== lane) continue
+          if (Math.abs(z.x - x) < z.radius) {
+            covered = true
+            break
+          }
+        }
+        if (covered) continue
+        this.addZone(x, 30 + 18 * power, 16000, 3 + 4 * power, faction, 'spore', spread, lane)
+        planted += 1
       }
     }
   }
@@ -853,6 +1093,42 @@ export default class Battlefield {
       }
     }
     return best
+  }
+
+  /**
+   * How deep the commitment to the lean runs, 0..1. Two nodes in a direction
+   * is a quarter-strength lean; five or more is the full creed. Every ground
+   * rule scales with this, which is what keeps the early game clean and makes
+   * the late game an expression of the road taken to it.
+   */
+  leanStrength(faction: Faction): number {
+    const lean = this.leanCache[faction]
+    if (!lean) return 0
+    let n = 0
+    for (const id of this.armyFor(faction).techs) {
+      if (TECHS_BY_ID[id]?.branch === lean) n += 1
+    }
+    return Math.min(1, Math.max(0, (n - 1) / 4))
+  }
+
+  /**
+   * The leans are read every sub-step by damage and death paths, so they are
+   * cached and refreshed only when research actually changes — recomputing a
+   * tally over the tech set inside applyDamage would be pure waste.
+   */
+  private leanCache: Record<Faction, TechBranchLean> = { player: null, enemy: null }
+  private leanPower: Record<Faction, number> = { player: 0, enemy: 0 }
+
+  private refreshLeans(): void {
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      this.leanCache[faction] = this.leanOf(faction)
+      this.leanPower[faction] = this.leanStrength(faction)
+    }
+  }
+
+  /** Which commander's half of the field a point lies on. */
+  halfOwner(x: number): Faction {
+    return x < this.config.worldWidth / 2 ? 'player' : 'enemy'
   }
 
   private tickArmy(army: Army, dtMs: number): void {
@@ -1367,7 +1643,11 @@ export default class Battlefield {
       this.escalation *
       // Full strength in your own file, half next door, a third two over —
       // supporting fire, never coverage of two lanes for the price of one.
-      CROSS_LANE_DAMAGE[unit.crossLaneShot]
+      CROSS_LANE_DAMAGE[unit.crossLaneShot] *
+      // The ground rules: a carnage soldier hits harder from its mound, and
+      // anyone hits softer from the occult's haunted ground.
+      (1 + 0.18 * unit.groundFury) *
+      (1 - 0.15 * unit.dread)
     const sfx = WEAPON_SFX[unit.def.visual.weapon] ?? 'melee_light'
 
     if (attack.kind === 'melee') {
@@ -1525,14 +1805,29 @@ export default class Battlefield {
     this.onCorpse?.(unit)
     // The body starts its way into the ground. Early-age dead are soil in
     // seconds; the late ages leave more mass and take far longer to settle.
+    // What the ground *does* with the body depends on whose half it fell on:
+    // a carnage half renders it down fast and keeps most of it — mounds are
+    // the point — while an occult half consumes it almost entirely, feeding
+    // the dark ability and leaving haunted ground where a mound would rise.
     if (unit.layer === 'ground') {
       const age = unit.def.age
-      this.decomposing.push({
-        x: unit.x,
-        lane: unit.lane,
-        mass: unit.def.height * (0.055 + age * 0.02) * (this.leanOf(OPPOSITE[unit.faction]) === 'carnage' ? 1.25 : 1),
-        dueMs: this.elapsedMs + [9000, 14000, 21000, 30000, 40000][age]
-      })
+      const half = this.halfOwner(unit.x)
+      const halfLean = this.leanCache[half]
+      const halfPower = this.leanPower[half]
+      let mass = unit.def.height * (0.055 + age * 0.02)
+      let delay = [9000, 14000, 21000, 30000, 40000][age]
+      if (halfLean === 'carnage') {
+        mass *= 1 + 0.6 * halfPower
+        delay *= 1 - 0.45 * halfPower
+      } else if (halfLean === 'occult' && halfPower > 0) {
+        mass *= 1 - 0.8 * halfPower
+        delay *= 0.5
+        const occult = this.armyFor(half)
+        occult.abilityCharge = Math.min(1, occult.abilityCharge + 0.02 + 0.02 * halfPower)
+        this.terrain.addHaunt(unit.x, unit.lane, 0.3 + 0.3 * halfPower, this.elapsedMs)
+        this.vfx.impact(unit.x, this.config.groundY + LANE_Y[unit.lane] - 16, 0xb46bff, 0.8, false)
+      }
+      this.decomposing.push({ x: unit.x, lane: unit.lane, mass, dueMs: this.elapsedMs + delay })
     }
     this.applyDeathDoctrines(unit, winner)
   }
@@ -1691,6 +1986,19 @@ export default class Battlefield {
     const crit = event.crit ? this.rng.chance(event.crit) : false
     if (crit) amount *= 2
 
+    // Ordnance ground rule: a soldier caught down in a crater bowl has no
+    // cover and nowhere to go, and the creed that dug the bowl knows it.
+    if (
+      attacker &&
+      event.type === 'explosive' &&
+      this.leanCache[attacker.faction] === 'ordnance' &&
+      target instanceof Unit &&
+      target.layer === 'ground' &&
+      this.terrain.heightAt(target.x, target.lane) <= -4
+    ) {
+      amount *= 1 + 0.25 * this.leanPower[attacker.faction]
+    }
+
     if (attacker) this.statsFor(attacker.faction).damageDealt += amount
     this.statsFor(target.faction).damageTaken += amount
 
@@ -1745,7 +2053,7 @@ export default class Battlefield {
     // stone age stays a field and the last age becomes the moon.
     if (event.type === 'explosive' && radius >= 70 && this.era >= 1 && laneLock === undefined) {
       const lane = this.laneAtY(y)
-      const deep = this.armyFor(faction) && this.leanOf(faction) === 'ordnance' ? 1.35 : 1
+      const deep = this.leanCache[faction] === 'ordnance' ? 1 + 0.5 * this.leanPower[faction] : 1
       const depth = Math.min(16, (radius * 0.08 + event.amount * 0.008) * (0.5 + this.era * 0.18) * deep)
       this.terrain.crater(x, lane, radius * 0.55, depth, this.elapsedMs)
     }

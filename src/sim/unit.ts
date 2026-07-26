@@ -235,6 +235,20 @@ export default class Unit implements Damageable {
   /** Aegis: how many friendly soldiers are shoulder to shoulder with this one. */
   linked = 0
 
+  /**
+   * Carnage ground rule: how much this soldier is feeding off the mound of
+   * the dead it stands on, 0..1. Set by the battlefield's creed pass; it makes
+   * the soldier swing faster and hit harder for exactly as long as it holds
+   * the high ground its own killing built.
+   */
+  groundFury = 0
+  /**
+   * Occult ground rule: how badly haunted the ground under this soldier is,
+   * 0..1. Set by the battlefield's creed pass on *enemies* of the occult side;
+   * a soldier fighting on fed ground swings softer and walks slower.
+   */
+  dread = 0
+
   private world: UnitWorld
   private scene: Phaser.Scene
   private container: Phaser.GameObjects.Container
@@ -822,6 +836,11 @@ export default class Unit implements Damageable {
       this.techs?.has('bloodlust') && this.layer === 'ground'
         ? 1 + Math.min(0.45, (this.world.goreAt?.(this.x) ?? 0) * 0.45)
         : 1
+    // The ground rules speak here too: a carnage soldier on its mound works
+    // faster; anyone standing on the occult's fed ground works slower. Both
+    // are capped and both end the moment the soldier steps off the ground
+    // that caused them.
+    this.frenzy *= (1 + this.groundFury * 0.28) * (1 - this.dread * 0.12)
     // Bonepickers feed on what is lying around them while they are hurt.
     if (this.techs?.has('bonepickers') && this.hp < this.maxHp * 0.92) {
       this.scavengeTimer -= dtMs
