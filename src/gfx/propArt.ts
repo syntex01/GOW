@@ -811,10 +811,38 @@ export function drawGround(age: number, width: number, height: number): Canvas2D
   // The floor darkens with depth, dithered so it never bands into stripes.
   // It has to stay clearly darker than the hills behind it, or the units lose
   // the ground under their feet.
+  //
+  // The gradient is deliberately steep near the top and slow lower down. An
+  // even ramp reads as a vertical wall of dither, because a real floor
+  // receding away from the eye compresses hard at the horizon and barely
+  // changes at all near the camera — that compression *is* the depth cue.
   for (let y = 0; y < h; y += 1) {
-    const t = Math.min(1, y / (h * 0.55))
+    const t = Math.pow(Math.min(1, y / (h * 0.62)), 0.55)
     for (let x = 0; x < w; x += 1) {
       p.set(x, y, ditherAt(x, y, t) ? deep[1] : soil[1])
+    }
+  }
+
+  // Ruts and drag marks running *across* the floor. Horizontal marks are the
+  // cheapest way to say "this plane is lying down" rather than standing up.
+  //
+  // Spread evenly rather than crowded toward the horizon. The texture is much
+  // taller than the sliver of floor the camera actually shows, so perspective
+  // spacing put a dozen marks into twenty-odd pixels and the ground came out
+  // looking like a barcode. Broken into short strokes with wide gaps, they read
+  // as scuffs; drawn as continuous lines at that density they read as corduroy.
+  const RUTS = 9
+  for (let i = 0; i < RUTS; i += 1) {
+    const t = (i + 0.5) / RUTS
+    const y = Math.round(t * h * 0.72) + 2
+    if (y >= h - 2) break
+    const len = Math.round(w * (0.06 + noise(i, 41) * 0.22))
+    const x0 = Math.round(noise(i, 42) * (w - len))
+    for (let x = x0; x < x0 + len; x += 1) {
+      // Long gaps: a rut is a few scuffed patches, not a drawn line.
+      if (noise(x >> 1, i + 60) < 0.62) continue
+      p.set(x, y, deep[1])
+      if (noise(x, i + 70) > 0.8) p.set(x, y - 1, soil[2])
     }
   }
 
@@ -858,11 +886,46 @@ export function drawRidge(age: number, depth: 0 | 1 | 2, width: number, height: 
   const w = Math.round(width * RES)
   const h = Math.round(height * RES)
   const p = new Pix(w, h)
-  // Aerial perspective: distance is carried almost entirely by how far each
-  // band's colour has been washed toward the haze at the horizon. Without it
-  // three bands of hills read as three stripes of paint.
-  const haze = [0.55, 0.3, 0.08][depth]
-  const base = mix(theme.ridges[depth], theme.sky[2], haze)
+  // Aerial perspective, enforced rather than hoped for.
+  //
+  // Each band used to be its own authored colour washed toward the horizon by a
+  // fixed amount, which meant the separation between bands was an accident of
+  // whichever three colours the theme happened to name. Measured across the
+  // five ages, four of them collapsed — and the Future age actually *inverted*,
+  // its nearest band coming out lighter than its middle one (luminance 44.4
+  // against 40.0), which reads as the hills being in front of each other in the
+  // wrong order.
+  //
+  // So all three bands are derived from the *near* rock colour, hazed toward
+  // the horizon by distance. Deriving them from one source makes the ordering
+  // structural: more haze is always closer to the sky, so the far band can
+  // never overtake the near one however the theme is repainted.
+  const haze = [0.62, 0.36, 0.1][depth]
+  const rock = theme.ridges[2]
+  let base = mix(rock, theme.sky[2], haze)
+  // Belt and braces: if a theme's rock and sky are close enough in value that
+  // hazing alone leaves the bands muddy, push the far ones toward the sky until
+  // there is a real step between them.
+  //
+  // Hazing alone is not enough on its own to guarantee this. The Future age's
+  // rock and sky sit at almost the same luminance, and mixing a colour toward
+  // another of equal value changes its hue without moving its value at all —
+  // so that age stayed collapsed however hard it was hazed. The separation is
+  // therefore enforced on *value* directly, which no palette can defeat.
+  const SEPARATION = 16
+  const lum = (c: number) => 0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)
+  const nearLum = lum(mix(rock, theme.sky[2], 0.1))
+  // Distance moves a band toward the sky's value. Where sky and rock are the
+  // same value there is no physical answer, so fall back to the painter's
+  // convention: distance lightens.
+  const towardSky = lum(theme.sky[2]) - nearLum
+  const direction = Math.abs(towardSky) < 8 ? 1 : Math.sign(towardSky)
+  const wanted = nearLum + (2 - depth) * SEPARATION * direction
+  // Fine steps and a tight tolerance: the residual on each band lands in the
+  // gap between bands, so a loose exit here shows up as a visibly smaller step.
+  for (let i = 0; i < 40 && Math.abs(lum(base) - wanted) > 2; i += 1) {
+    base = tone(base, lum(base) < wanted ? 0.028 : -0.028)
+  }
   const r = ramp(base, { contrast: 0.55 + depth * 0.35 })
   const shape = ridgeNoise(age * 53 + depth * 19, depth === 0 ? 3 : 4)
   const amplitude = h * (depth === 0 ? 0.3 : depth === 1 ? 0.42 : 0.52)
