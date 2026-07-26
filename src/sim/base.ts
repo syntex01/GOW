@@ -70,7 +70,9 @@ export default class Base implements Damageable {
       .setOrigin(0.5, 1)
       .setDepth(40)
       .setDisplaySize(BASE_W, BASE_H)
-    this.sprite.setFlipX(faction === 'enemy')
+    // Not flipped. The fortress is drawn per faction, so mirroring it only
+    // moves the key light to the upper left and puts that one building out of
+    // step with everything else on screen.
 
     for (let i = 0; i < TURRET_SLOTS; i += 1) {
       this.slots.push({ def: null, hp: 0, cooldown: 0, burstLeft: 0, burstTimer: 0, angle: 0, recoil: 0 })
@@ -85,7 +87,6 @@ export default class Base implements Damageable {
     this.age = age
     this.sprite.setTexture(`base:${age}:${this.faction}`)
     this.sprite.setDisplaySize(BASE_W, BASE_H)
-    this.sprite.setFlipX(this.faction === 'enemy')
     this.buildBrazier(age)
     // Rebuild turret visuals so they sit correctly on the new silhouette.
     this.slots.forEach((slot, i) => {

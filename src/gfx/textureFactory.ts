@@ -14,7 +14,6 @@ import {
 import { Canvas2D, makeCanvas } from './painter'
 import Pix, { ramp } from './pixel'
 import {
-  drawBase,
   drawCloud,
   drawFogBand,
   drawForeground,
@@ -31,6 +30,7 @@ import {
 } from './propArt'
 import { buildShadowCanvas, buildUnitArt, RES, RigMetrics } from './unitArt'
 import { buildArchetype, type ArchetypeBuild } from './archetypes'
+import { drawFortress } from './fortresses'
 import { evaluate, partRotation, samplePose } from './rig'
 
 const PROJECTILE_IDS: ProjectileId[] = [
@@ -320,8 +320,8 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
     label: 'Raising fortresses',
     run: () => {
       for (let age = 0; age < AGE_THEMES.length; age += 1) {
-        addCanvas(scene, `base:${age}:player`, drawBase(age, 'player'))
-        addCanvas(scene, `base:${age}:enemy`, drawBase(age, 'enemy'))
+        addCanvas(scene, `base:${age}:player`, drawFortress(age, 'player'))
+        addCanvas(scene, `base:${age}:enemy`, drawFortress(age, 'enemy'))
       }
     }
   })
