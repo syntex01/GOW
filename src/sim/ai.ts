@@ -120,11 +120,13 @@ export default class AiController {
     const base = this.bf.enemyBase
     this.pressure = 1 - base.hp / base.maxHp
 
-    if (this.considerAbility()) return
-    if (this.considerTech()) return
-    if (this.considerEvolve()) return
-    if (this.considerEconomy()) return
-    if (this.considerTurret()) return
+    // One strategic decision per reaction window — but the queue is never left
+    // idle for it. Returning after the first thing it did meant a commander who
+    // spent a moment on research also stopped building, and an opponent could
+    // out-produce it simply by never pausing. Measured against a plain
+    // reference build order, it lost every game at every setting.
+    this.considerAbility()
+    if (!this.considerTech() && !this.considerEvolve() && !this.considerEconomy()) this.considerTurret()
     this.considerUnit()
 
     void army
