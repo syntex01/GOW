@@ -6,9 +6,10 @@ import type { Faction } from '../sim/types'
  * change, not only its shape: v3 fixed same-tick command ordering; v4 made
  * every sim transcendental deterministic and stopped local difficulty
  * settings from configuring a networked match. Any of those, split across
- * two builds, connects fine and then silently forks the world.
+ * two builds, connects fine and then silently forks the world. v5 added the
+ * war-banner map-control rules and made four advertised techs real.
  */
-export const PROTOCOL_VERSION = 4
+export const PROTOCOL_VERSION = 5
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

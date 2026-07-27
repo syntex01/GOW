@@ -67,6 +67,7 @@ export default class BattleScene extends Phaser.Scene {
   /** A disconnect has been seen and is waiting out its grace window. */
   private leaving = false
   private matchSeed = 0
+  private bannerFlags: { pole: Phaser.GameObjects.Image; flag: Phaser.GameObjects.Image }[] = []
 
   /**
    * Which side this client commands. Always 'player' offline; the guest in a
@@ -167,6 +168,25 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     this.terrainLayer = new TerrainLayer(this, this.battlefield, GROUND_Y)
+
+    // War banners: the three map-control flags, drawn where the sim says
+    // they stand and recoloured every frame by who actually holds them.
+    if (!this.textures.exists('banner:pole')) {
+      const g = this.make.graphics({ x: 0, y: 0 }, false)
+      g.fillStyle(0x23262e, 1).fillRect(2, 0, 4, 58)
+      g.fillStyle(0x3a3f4d, 1).fillRect(3, 0, 2, 58)
+      g.fillStyle(0x14161c, 1).fillRect(0, 54, 8, 4)
+      g.generateTexture('banner:pole', 8, 58)
+      g.clear()
+      g.fillStyle(0xffffff, 1)
+      g.fillTriangle(0, 0, 26, 6, 0, 13)
+      g.generateTexture('banner:flag', 26, 14)
+      g.destroy()
+    }
+    this.bannerFlags = this.battlefield.banners.map(banner => ({
+      pole: this.add.image(banner.x, GROUND_Y + 4, 'banner:pole').setOrigin(0.5, 1).setDepth(58),
+      flag: this.add.image(banner.x + 3, GROUND_Y - 46, 'banner:flag').setOrigin(0, 0.5).setDepth(58)
+    }))
 
     this.battlefield.onCorpse = unit => {
       const machine = unit.def.visual.kind !== 'humanoid' && unit.def.visual.kind !== 'rider'
@@ -711,6 +731,15 @@ export default class BattleScene extends Phaser.Scene {
       this.spawnCreedMotes()
     }
     this.debris.render(this.battlefield.physics)
+    for (let i = 0; i < this.bannerFlags.length; i += 1) {
+      const banner = this.battlefield.banners[i]
+      const { flag } = this.bannerFlags[i]
+      const grip = Math.abs(banner.hold) / 100
+      flag.setTint(banner.hold >= 50 ? 0x63b3ff : banner.hold <= -50 ? 0xff5a52 : 0x8892a8)
+      flag.setAlpha(0.45 + 0.55 * grip)
+      flag.y = GROUND_Y - 34 - 14 * grip
+      flag.setFlipX(banner.hold < 0)
+    }
     // Composite lighting from whatever registered a light this frame.
     this.lighting.render(cam.worldView.x, cam.worldView.y)
     if (this.ended) return

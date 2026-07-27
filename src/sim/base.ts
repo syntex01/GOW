@@ -15,6 +15,8 @@ import { ADVANCE_DIR } from './types'
 
 export interface TurretSlot {
   def: TurretDef | null
+  /** What was mounted here when it was destroyed, for autoforge rebuilds. */
+  wreck?: { def: TurretDef; sinceMs: number }
   hp: number
   cooldown: number
   burstLeft: number
@@ -129,6 +131,7 @@ export default class Base implements Damageable {
     const def = TURRETS_BY_ID[turretId]
     if (!slot || !def) return false
     this.clearTurretSprites(slot)
+    slot.wreck = undefined
     slot.def = def
     slot.hp = def.hp
     slot.cooldown = 0
@@ -143,6 +146,7 @@ export default class Base implements Damageable {
     if (!slot?.def) return 0
     const refund = Math.round(slot.def.cost * 0.6 * (slot.hp / slot.def.hp))
     this.clearTurretSprites(slot)
+    slot.wreck = undefined
     slot.def = null
     slot.hp = 0
     return refund
@@ -331,6 +335,7 @@ export default class Base implements Damageable {
       if (slot.hp <= 0) {
         this.vfx.explosion(slot.baseSprite?.x ?? this.x, slot.baseSprite?.y ?? this.y, 80, 0xffa640)
         this.clearTurretSprites(slot)
+        slot.wreck = { def: slot.def, sinceMs: 0 }
         slot.def = null
         slot.hp = 0
       }

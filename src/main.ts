@@ -6,6 +6,7 @@ import { LEVELS_BY_ID, type GameMode } from './data/levels'
 import { morphedDef } from './data/morphs'
 import type { UnitDef } from './data/types'
 import { UNITS_BY_ID } from './data/units'
+import { TURRETS } from './data/turrets'
 import { FACTION_UNITS } from './data/factions'
 import BattleScene from './scenes/battleScene'
 import BootScene from './scenes/bootScene'
@@ -63,8 +64,10 @@ function start(): void {
     __gowFactionUnits: Record<string, UnitDef>
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
     __gowLog: typeof gameLog
+    __gowTurrets: string[]
   }
   debug.__gowLog = gameLog
+  debug.__gowTurrets = TURRETS.map(t => t.id)
   debug.__gowGame = game
   // Exposed so a smoke test can put a unit on the field without waiting out a
   // build queue in real time.

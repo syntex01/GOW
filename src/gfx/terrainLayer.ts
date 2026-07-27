@@ -298,9 +298,13 @@ export default class TerrainLayer {
     era: number,
     lean: TechBranchLean
   ): void {
-    const top = TerrainLayer.UP - Math.round(h)
+    // The sim's relief is in mass units; drawn 1:1 it reads as a smudge.
+    // Half again as tall on screen, with a lit crest-edge and a shadowed
+    // trailing edge, and a pile of dead finally LOOKS like a pile.
+    const hv = Math.min(TerrainLayer.UP - 3, Math.round(h * 1.5))
+    const top = TerrainLayer.UP - hv
     const wob = (i * 13) % 3
-    const body = Math.max(0, Math.round(h) - 4)
+    const body = Math.max(0, hv - 4)
 
     if (lean === 'carnage') {
       // A flesh mound: raw meat over old blood, ribs surfacing where it is
@@ -309,6 +313,10 @@ export default class TerrainLayer {
       ctx.fillRect(x, top + wob, RELIEF_BUCKET, 2)
       ctx.fillStyle = hex(mix(0x6e241e, soil[2], 0.18))
       ctx.fillRect(x, top + wob + 2, RELIEF_BUCKET, body)
+      ctx.fillStyle = hex(mix(0xc85a48, soil[4], 0.3))
+      ctx.fillRect(x, top + wob, 1, Math.max(2, Math.round(body * 0.6)))
+      ctx.fillStyle = hex(0x2e0d0a)
+      ctx.fillRect(x + RELIEF_BUCKET - 1, top + wob + 1, 1, Math.max(2, body))
       ctx.fillStyle = hex(mix(0x421611, soil[1], 0.22))
       ctx.fillRect(x, TerrainLayer.UP - 3, RELIEF_BUCKET, 3)
       if (h > 5) {
@@ -332,6 +340,10 @@ export default class TerrainLayer {
       ctx.fillRect(x, top + wob, RELIEF_BUCKET, 2)
       ctx.fillStyle = hex(mix(0x47803c, soil[2], 0.2))
       ctx.fillRect(x, top + wob + 2, RELIEF_BUCKET, body)
+      ctx.fillStyle = hex(mix(0xb8e0a0, soil[4], 0.3))
+      ctx.fillRect(x, top + wob, 1, Math.max(2, Math.round(body * 0.6)))
+      ctx.fillStyle = hex(0x16300f)
+      ctx.fillRect(x + RELIEF_BUCKET - 1, top + wob + 1, 1, Math.max(2, body))
       ctx.fillStyle = hex(mix(0x2c5426, soil[1], 0.25))
       ctx.fillRect(x, TerrainLayer.UP - 3, RELIEF_BUCKET, 3)
       if (h > 4 && (i * 7) % 3 !== 0) {
@@ -347,12 +359,12 @@ export default class TerrainLayer {
 
     if (lean === 'engineering') {
       // A mound being eaten by the quarry: terraced, staked, half gone.
-      ctx.fillStyle = hex(mix(0xa8b2c0, soil[3], 0.25))
+      ctx.fillStyle = hex(mix(0x7a8494, soil[3], 0.45))
       ctx.fillRect(x, top + wob, RELIEF_BUCKET, 2)
-      ctx.fillStyle = hex(mix(0x646e7c, soil[2], 0.25))
+      ctx.fillStyle = hex(mix(0x4a525e, soil[2], 0.4))
       ctx.fillRect(x, top + wob + 2, RELIEF_BUCKET, body)
       // Terrace cuts: hard horizontal steps no natural mound has.
-      ctx.fillStyle = hex(0x3a4048)
+      ctx.fillStyle = hex(0x2b3038)
       for (let step = top + wob + 3; step < TerrainLayer.UP - 2; step += 3) {
         ctx.fillRect(x, step, RELIEF_BUCKET, 1)
       }
@@ -376,15 +388,30 @@ export default class TerrainLayer {
     ctx.fillRect(x, top + wob, RELIEF_BUCKET, 2)
     ctx.fillStyle = hex(cast ? mix(soil[2], cast, 0.25) : soil[2])
     ctx.fillRect(x, top + wob + 2, RELIEF_BUCKET, body)
+    // Volume: the key light catches the left shoulder, the right falls off.
+    ctx.fillStyle = hex(tone(soil[4], 0.15))
+    ctx.fillRect(x, top + wob, 1, Math.max(2, Math.round(body * 0.6)))
+    ctx.fillStyle = hex(tone(soil[0], -0.2))
+    ctx.fillRect(x + RELIEF_BUCKET - 1, top + wob + 1, 1, Math.max(2, body))
     ctx.fillStyle = hex(soil[1])
     ctx.fillRect(x, TerrainLayer.UP - 3, RELIEF_BUCKET, 3)
     if (cast && era >= 2 && (i * 7) % 5 < 2) {
       ctx.fillStyle = hex(mix(cast, soil[3], 0.3))
       ctx.fillRect(x + (i % 3) * 2, top + wob, 2, 2)
     }
-    if ((i * 11) % 7 === 0 && h > 8) {
-      ctx.fillStyle = hex(tone(soil[4], 0.25))
-      ctx.fillRect(x + 3, top + wob + 3, 2, 1)
+    // The dead showing through: bone flecks from h>5, a skull crown on the
+    // tall ones. This is what the mounds are made of; show it.
+    if (h > 5 && (i * 11) % 3 !== 1) {
+      ctx.fillStyle = hex(0xcfc6ae)
+      ctx.fillRect(x + 1 + ((i * 5) % 4), top + wob + 2 + ((i * 3) % 3), 2, 1)
+      ctx.fillRect(x + 4 - (i % 2), top + wob + 5 + ((i * 7) % 2), 1, 2)
+    }
+    if (h > 9 && (i * 13) % 4 === 0) {
+      const sx = x + 2 + (i % 3)
+      ctx.fillStyle = hex(0xd8d0bc)
+      ctx.fillRect(sx, top + wob - 1, 3, 3)
+      ctx.fillStyle = hex(0x2a2018)
+      ctx.fillRect(sx + 1, top + wob, 1, 1)
     }
   }
 

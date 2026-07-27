@@ -211,8 +211,16 @@ export default class Army {
           list.push(...path)
         }
       } else if (this.age >= 1) {
+        // Doctrine soldiers DISPLACE the neutral core rather than piling on
+        // after it — otherwise the final slice keeps the standard troops and
+        // silently clips the very units the research just paid for.
+        const path: UnitDef[] = []
         for (const branch of ['carnage', 'ordnance', 'engineering', 'occult', 'blight']) {
-          if (this.branchDepth(branch) >= 2) list.push(...pathDefs(branch))
+          if (this.branchDepth(branch) >= 2) path.push(...pathDefs(branch))
+        }
+        if (path.length > 0) {
+          list = list.slice(0, Math.max(4, MAX_ROSTER - path.length))
+          list.push(...path)
         }
       }
       // Non-path research unlocks still land at the end of the bar.
@@ -269,6 +277,13 @@ export default class Army {
     // wave, it does not retrofit the one that is already dying.
     if (node.stat) {
       this.modifiers[node.stat.key] *= node.stat.mult
+    }
+    // Two of the core gates carry small effects of their own, so what the
+    // node says on the tin is never a lie. (Powder Discipline's harder
+    // blasts live in the battlefield's splash path.)
+    if (id === 'field_stripping') this.modifiers.bounty *= 1.1
+    if (id === 'old_rites') {
+      this.modifiers.abilityRate *= 1.1
     }
     if (node.unlocks) this.unlocked.add(node.unlocks)
     if (node.becomes) {

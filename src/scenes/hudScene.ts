@@ -15,7 +15,7 @@ import BattleScene from './battleScene'
 
 const BAR_Y = 600
 const CARD_Y = 612
-const CARD_W = 86
+const CARD_W = 72
 const CARD_H = 86
 
 /** Overlay scene: every readout and control the player interacts with. */
@@ -39,6 +39,7 @@ export default class HUDScene extends Phaser.Scene {
   private unitCards: { button: Button; def: UnitDef }[] = []
   private laneRows: { box: Phaser.GameObjects.Rectangle; mine: Phaser.GameObjects.Text; theirs: Phaser.GameObjects.Text }[] = []
   private turretButtons: Button[] = []
+  private bannerPips: Phaser.GameObjects.Rectangle[] = []
   private evolveButton!: Button
   private abilityButton!: Button
   private economyButton!: Button
@@ -68,6 +69,10 @@ export default class HUDScene extends Phaser.Scene {
     this.battle = this.scene.get('BattleScene') as BattleScene
     this.buildTopBar()
     this.buildBottomBar()
+    // Field control: one pip per war banner, under the match clock.
+    this.bannerPips = [0, 1, 2].map(i =>
+      this.add.rectangle(this.cameras.main.width / 2 - 26 + i * 26, 44, 16, 8, 0x39415a, 1).setStrokeStyle(1, 0x11141c).setDepth(2)
+    )
 
     this.tooltip = new Tooltip(this, 1500)
     this.toast = this.add
@@ -201,14 +206,14 @@ export default class HUDScene extends Phaser.Scene {
     const width = this.cameras.main.width
     this.add.existing(panel(this, 0, BAR_Y, width, 130, 'ui:glass').setDepth(0))
 
-    // Turret slots.
+    // Turret slots — a 2×2 grid, because eleven unit cards now own the
+    // bar's left flank and the old row of four no longer fits beside them.
     for (let i = 0; i < TURRET_SLOTS; i += 1) {
-      const button = new Button(this, 664 + i * 76, CARD_Y, {
-        width: 72,
-        height: CARD_H,
+      const button = new Button(this, 852 + (i % 2) * 60, CARD_Y + Math.floor(i / 2) * 45, {
+        width: 56,
+        height: 41,
         text: '+',
-        subtext: 'turret',
-        fontSize: 26,
+        fontSize: 16,
         accent: UI.warn,
         onClick: () => this.handleTurretSlot(i)
       })
@@ -216,48 +221,48 @@ export default class HUDScene extends Phaser.Scene {
       this.turretButtons.push(button)
     }
 
-    this.techButton = new Button(this, 900, CARD_Y, {
-      width: 84,
+    this.techButton = new Button(this, 980, CARD_Y, {
+      width: 70,
       height: CARD_H,
       text: 'TECH',
       subtext: 'research',
-      fontSize: 16,
+      fontSize: 13,
       accent: 0xb46bff,
       corner: 'R',
       onClick: () => this.toggleTechTree()
     })
     this.techButton.setDepth(2)
 
-    this.economyButton = new Button(this, 992, CARD_Y, {
-      width: 84,
+    this.economyButton = new Button(this, 1054, CARD_Y, {
+      width: 70,
       height: CARD_H,
       text: 'ECON',
       subtext: '—',
-      fontSize: 16,
+      fontSize: 13,
       accent: UI.gold,
       corner: 'U',
       onClick: () => this.battle.tryEconomy()
     })
     this.economyButton.setDepth(2)
 
-    this.evolveButton = new Button(this, 1084, CARD_Y, {
-      width: 128,
+    this.evolveButton = new Button(this, 1128, CARD_Y, {
+      width: 70,
       height: CARD_H,
       text: 'EVOLVE',
       subtext: '—',
-      fontSize: 19,
+      fontSize: 13,
       accent: UI.xp,
       corner: 'E',
       onClick: () => this.battle.tryEvolve()
     })
     this.evolveButton.setDepth(2)
 
-    this.abilityButton = new Button(this, 1216, CARD_Y, {
-      width: 140,
+    this.abilityButton = new Button(this, 1202, CARD_Y, {
+      width: 68,
       height: CARD_H,
       text: 'ABILITY',
       subtext: 'charging',
-      fontSize: 16,
+      fontSize: 12,
       accent: UI.accent,
       corner: 'Q / Space',
       onClick: () => this.battle.tryAbility()
@@ -275,7 +280,7 @@ export default class HUDScene extends Phaser.Scene {
     // Morphed units are derived, so their sprite and icon may not exist yet.
     roster.forEach(def => ensureUnitArt(this, def))
     roster.forEach((def, i) => {
-      const button = new Button(this, 12 + i * (CARD_W + 6), CARD_Y, {
+      const button = new Button(this, 10 + i * (CARD_W + 4), CARD_Y, {
         width: CARD_W,
         height: CARD_H,
         icon: `icon:${def.id}`,
@@ -284,7 +289,7 @@ export default class HUDScene extends Phaser.Scene {
         accent: ROLE_COLORS[def.role] ?? UI.panelEdge,
         corner: `${i + 1}`,
         onClick: () => this.battle.queueByIndex(i),
-        onHover: () => this.showUnitTooltip(def, 12 + i * (CARD_W + 6)),
+        onHover: () => this.showUnitTooltip(def, 10 + i * (CARD_W + 4)),
         onOut: () => this.tooltip.hide()
       })
       button.setDepth(2)
@@ -561,6 +566,10 @@ export default class HUDScene extends Phaser.Scene {
   override update(_time: number, delta: number): void {
     const bf = this.battle?.battlefield
     if (!bf) return
+    for (let i = 0; i < this.bannerPips.length; i += 1) {
+      const hold = bf.banners[i]?.hold ?? 0
+      this.bannerPips[i].setFillStyle(hold >= 50 ? 0x63b3ff : hold <= -50 ? 0xff5a52 : 0x39415a, 1)
+    }
     if (!this.battle.paused) this.tutorial?.update(delta)
     // Gold and ages move while the research screen is open, so what it says is
     // affordable has to keep up.

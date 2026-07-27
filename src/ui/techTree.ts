@@ -13,6 +13,8 @@ import {
 import { MORPH_LINES, MORPH_TECHS } from '../data/morphs'
 import { UNITS_BY_ID } from '../data/units'
 import { FACTION_UNITS } from '../data/factions'
+import { LEAN_RULES, TECH_MECHANICS } from '../data/techInfo'
+import type { UnitDef } from '../data/types'
 import { UI } from '../gfx/palette'
 import type Army from '../sim/army'
 import {
@@ -64,9 +66,17 @@ const KIND_BADGE: Record<TechNode['kind'], { color: number; label: string }> = {
   ascension: { color: 0xff9df0, label: 'ASCENSION' }
 }
 
-const ANY_UNIT_BY_ID: Record<string, { name: string; age: number }> = {
+const ANY_UNIT_BY_ID: Record<string, UnitDef> = {
   ...UNITS_BY_ID,
   ...Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
+}
+
+/** One line of card numbers for the unit a node fields. */
+function unitStatline(unitId: string): string | null {
+  const def = ANY_UNIT_BY_ID[unitId]
+  if (!def) return null
+  const squad = def.squad && def.squad > 1 ? ` ×${def.squad} per card` : ''
+  return `${def.name}: ${def.hp} hp · ${def.damage} dmg every ${(def.attackMs / 1000).toFixed(1)}s · range ${def.range} · ${def.cost}g${squad}`
 }
 
 /**
@@ -478,12 +488,25 @@ export default class TechTree {
         align: 'center'
       }).setOrigin(0.5, 0)
 
-      frame.on('pointerover', () => this.showDetail(node.id))
+      frame.on('pointerover', () => this.preview(node.id))
+      frame.on('pointerout', () => {
+        // Hover was only ever a preview: when the pointer leaves, the strip
+        // returns to the node the player actually clicked, so travelling
+        // across the board to the research button never loses the selection.
+        if (this.focused && this.focused !== node.id) this.fillStrip(this.focused)
+      })
       frame.on('pointerup', () => {
         // A pan that ends over a node is a pan, not a click.
         if (this.dragging) return
         audio.play('ui_click', 0.4)
+        const now = this.graph.scene.time.now
+        const isDouble = this.lastClickId === node.id && now - this.lastClickAt < 420
+        this.lastClickId = node.id
+        this.lastClickAt = now
         this.focus(node.id)
+        // Double-click is the fast lane: inspect once, confirm with the
+        // second click, no trip to the button required.
+        if (isDouble) this.tryBuyFocused()
       })
 
       this.graph.add([frame, icon, badge, name, tag])
@@ -684,9 +707,22 @@ export default class TechTree {
 
   // ─────────────────────────────── detail ────────────────────────────────
 
-  /** Click and hover land here: one node, described in full, ready to buy. */
+  private lastClickId: TechId | null = null
+  private lastClickAt = 0
+
+  /** Click: selects the node — marker, detail strip and research button. */
   private focus(id: TechId): void {
     this.showDetail(id)
+  }
+
+  /**
+   * Hover: describes the node in the strip WITHOUT stealing the selection.
+   * The research button and the gold ring stay with the clicked node.
+   */
+  private preview(id: TechId): void {
+    if (this.destroyed) return
+    this.liftNode(id)
+    this.fillStrip(id)
   }
 
   private drawMarker(): void {
@@ -741,22 +777,33 @@ export default class TechTree {
     }
   }
 
-  private showDetail(id: TechId): void {
-    if (this.destroyed) return
-    if (this.hovered !== id) {
-      for (const view of this.views) {
-        const lift = view.node.id === id ? 1.12 : 1
-        view.frame.setScale(view.frame.scaleX / (view.lift ?? 1) * lift)
-        view.icon.setScale(view.icon.scaleX / (view.lift ?? 1) * lift)
-        view.lift = lift
-      }
+  private liftNode(id: TechId): void {
+    if (this.hovered === id) return
+    for (const view of this.views) {
+      const lift = view.node.id === id ? 1.12 : 1
+      view.frame.setScale((view.frame.scaleX / (view.lift ?? 1)) * lift)
+      view.icon.setScale((view.icon.scaleX / (view.lift ?? 1)) * lift)
+      view.lift = lift
     }
     this.hovered = id
+  }
+
+  private showDetail(id: TechId): void {
+    if (this.destroyed) return
     const node = TECHS_BY_ID[id]
     if (!node) return
+    this.liftNode(id)
     this.focused = id
     this.drawMarker()
     this.updateBuyButton()
+    this.fillStrip(id)
+    this.drawEdges()
+  }
+
+  /** Text only — everything below the board that describes one node. */
+  private fillStrip(id: TechId): void {
+    const node = TECHS_BY_ID[id]
+    if (!node) return
     const state = this.army.techAvailability(id)
     const kind =
       node.kind === 'ascension'
@@ -786,7 +833,13 @@ export default class TechTree {
       `${kind}  ·  ring ${node.ring}  ·  ${formatNumber(node.cost)}g  ·  age ${node.age + 1}  ·  ${status}`
     )
     this.detailMeta.setColor(hex(state === 'owned' ? UI.good : state === 'ready' ? UI.gold : UI.textDim))
-    this.detailBody.setText(node.effect)
+    // Flavour first, then the rules in numbers. For a unit node the numbers
+    // are the unit's own card; for a stat node they derive from the node.
+    const mechanics =
+      TECH_MECHANICS[node.id] ??
+      (node.kind === 'unit' && node.unlocks ? unitStatline(node.unlocks) : null) ??
+      (node.branch !== 'core' ? LEAN_RULES[node.branch] : null)
+    this.detailBody.setText(mechanics ? `${node.effect}\n▸ ${mechanics}` : node.effect)
     this.detailAffects
       .setText(`AFFECTS: ${affectedUnits(node, this.army)}`)
       .setColor(hex(KIND_BADGE[node.kind].color))
@@ -800,7 +853,6 @@ export default class TechTree {
           : `still needs: ${missing.map(r => TECHS_BY_ID[r]?.name ?? r).join(', ')}`
     )
     this.detailReq.setColor(hex(missing.length === 0 ? UI.textDim : UI.warn))
-    this.drawEdges()
   }
 
   // ─────────────────────────────── refresh ───────────────────────────────

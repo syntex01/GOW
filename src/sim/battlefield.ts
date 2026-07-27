@@ -208,6 +208,20 @@ export default class Battlefield {
    * into gold, and gold decides matches.
    */
   private quarryBank: Record<Faction, number> = { player: 0, enemy: 0 }
+
+  /**
+   * War banners: three flags across the field, taken by standing near them
+   * with soldiers and held until the other side stands there instead. Each
+   * held banner pays its owner a share of their passive income — which is
+   * the anti-stall rule. An army that refuses to leave its walls is not
+   * "safe", it is donating up to +54% income to the player who walks out
+   * and takes the field.
+   */
+  readonly banners: { x: number; hold: number }[] = []
+  /** Banners currently paying each side, for the HUD. */
+  bannersOwned: Record<Faction, number> = { player: 0, enemy: 0 }
+  private bannerCarry: Record<Faction, number> = { player: 0, enemy: 0 }
+  private boneCarry: Record<Faction, number> = { player: 0, enemy: 0 }
   /** Blight's sprouting scan cursor, so zone growth staggers over frames. */
   private bloomClock = 0
   /** Spawn counter for this match, so nothing depends on a global id. */
@@ -258,6 +272,7 @@ export default class Battlefield {
     // peers must not inherit two different menu histories.
     resetUnitIds()
     this.rng = new Rng(config.seed ?? Date.now())
+    for (const at of [0.3, 0.5, 0.7]) this.banners.push({ x: config.worldWidth * at, hold: 0 })
 
     const playerMods = mergeModifiers(config.playerModifiers)
     const enemyMods = mergeModifiers(config.enemyModifiers)
@@ -531,6 +546,44 @@ export default class Battlefield {
       // Sappers: a melee soldier that has been stuck against the front line
       // for a few seconds goes under it and comes up on the far side. It turns
       // a grinding stalemate into a flanking problem for the other player.
+      // Bone Harvest: remains on your half pay out for as long as they lie
+      // there. The bodies are not consumed — bonepickers and corpse walls
+      // still get their material.
+      if (army.hasTech('bone_harvest')) {
+        let gibs = 0
+        for (const body of this.physics.bodies) {
+          if (body.kind === 'gib' && body.settled && this.halfOwner(body.x) === faction) gibs += 1
+          if (gibs >= 24) break
+        }
+        if (gibs > 0) {
+          const gained = gibs * 0.45 * (dtMs / 1000) + this.boneCarry[faction]
+          const whole = Math.floor(gained)
+          this.boneCarry[faction] = gained - whole
+          if (whole > 0) {
+            army.gold += whole
+            this.statsFor(faction).goldEarned += whole
+          }
+        } else {
+          this.boneCarry[faction] = 0
+        }
+      }
+
+      // Autoforge: a turret blown off the wall prints itself back after
+      // twenty seconds, at half strength, free of charge.
+      if (army.hasTech('autoforge')) {
+        const base = this.baseFor(faction)
+        base.slots.forEach((slot, slotIndex) => {
+          if (slot.def || !slot.wreck) return
+          slot.wreck.sinceMs += dtMs
+          if (slot.wreck.sinceMs < 20000) return
+          const wreckDef = slot.wreck.def
+          slot.wreck = undefined
+          base.buildTurret(slotIndex, wreckDef.id)
+          slot.hp = wreckDef.hp * 0.5
+          this.vfx.floatingLabel(base.x, base.y - 220, 'autoforged', '#8fd4ff')
+        })
+      }
+
       if (army.hasTech('sappers')) {
         for (const u of this.units) {
           if (u.faction !== faction || !u.alive) continue
@@ -844,6 +897,7 @@ export default class Battlefield {
     for (const prop of this.props) mix(prop.alive ? Math.round(prop.hp) : -1)
     mix(Math.round(this.quarryBank.player * 100))
     mix(Math.round(this.quarryBank.enemy * 100))
+    for (const banner of this.banners) mix(Math.round(banner.hold * 10))
     mix(this.physics.hash())
     for (let i = 0; i < this.goreMap.length; i += 1) mix(Math.round(this.goreMap[i] * 20))
 
@@ -862,6 +916,7 @@ export default class Battlefield {
 
     this.updateUnits(dtMs)
     this.updateProjectiles(dtMs)
+    this.updateBanners(dtMs)
     this.updateGround(dtMs)
     this.updateCreedGround(dtMs)
     this.updateUnitSpecials(dtMs)
@@ -878,6 +933,44 @@ export default class Battlefield {
    * heals what war piled up — at the pace of whichever era the world is in,
    * bent by whichever creeds have laid claim to each half.
    */
+  /** Flags flip by presence, pay by ownership, and hold their grip when
+   * nobody is near — map control persists until it is actually contested. */
+  private updateBanners(dtMs: number): void {
+    const dt = dtMs / 1000
+    const owned: Record<Faction, number> = { player: 0, enemy: 0 }
+    for (const banner of this.banners) {
+      let players = 0
+      let enemies = 0
+      for (const unit of this.units) {
+        if (!unit.alive || unit.layer === 'air') continue
+        const dx = unit.x - banner.x
+        if (dx > -130 && dx < 130) {
+          if (unit.faction === 'player') players += 1
+          else enemies += 1
+        }
+      }
+      if (players > 0 && enemies === 0) {
+        banner.hold = Math.min(100, banner.hold + 26 * dt * Math.min(3, players))
+      } else if (enemies > 0 && players === 0) {
+        banner.hold = Math.max(-100, banner.hold - 26 * dt * Math.min(3, enemies))
+      }
+      if (banner.hold >= 50) owned.player += 1
+      else if (banner.hold <= -50) owned.enemy += 1
+    }
+    this.bannersOwned = owned
+    for (const faction of ['player', 'enemy'] as const) {
+      if (owned[faction] === 0) {
+        this.bannerCarry[faction] = 0
+        continue
+      }
+      const army = this.armyFor(faction)
+      const gained = army.incomePerSecond * 0.18 * owned[faction] * dt + this.bannerCarry[faction]
+      const whole = Math.floor(gained)
+      this.bannerCarry[faction] = gained - whole
+      army.gold += whole
+    }
+  }
+
   private updateGround(dtMs: number): void {
     let write = 0
     for (const entry of this.decomposing) {
@@ -1677,7 +1770,10 @@ export default class Battlefield {
   private equipProjectile(p: Projectile): Projectile {
     const army = this.armyFor(p.faction)
     p.wind = this.physics.wind
-    if (army.hasTech('ricochet')) p.ricochets = 2
+    // Ricochet is for solid shot. A rocket does not skip off armour — it
+    // detonates on it — and letting explosive rounds deflect quietly turned
+    // this tech into a way to disarm your own launchers against structures.
+    if (army.hasTech('ricochet') && p.config.damageType !== 'explosive') p.ricochets = 2
     const shooterSpecial = p.config.owner instanceof Unit ? p.config.owner.def.special : undefined
     if (army.hasTech('penetrator') || shooterSpecial === 'penetrator_shot') p.penetration = 1
     if ((army.hasTech('cluster') || shooterSpecial === 'cluster_shot') && p.config.gravity > 0) {
@@ -1812,8 +1908,15 @@ export default class Battlefield {
       // Mobbing: a swarm dragging down something three times its price hits
       // a third harder — the many beat the one, and the answer to the many
       // is cleave, splash and bombardment, never a bigger single blade.
+      // Price is per SOLDIER: a squad card carries the whole squad's cost,
+      // and comparing card price to card price silently disarmed the bonus
+      // for exactly the chaff it exists for.
       const mob =
-        unit.def.conduct === 'swarm' && target instanceof Unit && target.def.cost >= unit.def.cost * 3 ? 1.3 : 1
+        unit.def.conduct === 'swarm' &&
+        target instanceof Unit &&
+        target.def.cost / (target.def.squad ?? 1) >= (unit.def.cost / (unit.def.squad ?? 1)) * 3
+          ? 1.6
+          : 1
       // Backstab: a flanker reaching a soldier whose attention is already
       // spent on someone else hits a quarter harder. This is the payoff the
       // knight's move is riding for — and why a screen that *turns* to face
@@ -2027,6 +2130,20 @@ export default class Battlefield {
     // Blight — the dead burst, and their own side's ground spreads.
     if (owner.hasTech('spore_cloud')) {
       this.addZone(unit.x, 72, 8000, 20, unit.faction, 'spore', owner.hasTech('mycelium') ? 10 : 0)
+    }
+    // Contagion: anything that dies standing in blight bursts as well,
+    // whichever side it fought for — the blight does not ask whose body it is.
+    for (const holderFaction of ['player', 'enemy'] as Faction[]) {
+      const holder = this.armyFor(holderFaction)
+      if (!holder.hasTech('contagion')) continue
+      const inBlight = this.zones.some(
+        z =>
+          z.faction === holderFaction &&
+          z.kind === 'spore' &&
+          Math.abs(z.x - unit.x) < z.radius &&
+          (z.lane === -1 || z.lane === unit.lane)
+      )
+      if (inBlight) this.addZone(unit.x, 54, 5000, 14, holderFaction, 'spore', 0, unit.lane)
     }
     // Occult — the ability feeds on death, and the enemy flinches at it.
     if (killer.hasTech('soul_tithe') || killer.ascendedTo === 'dark_circle') {
@@ -2345,6 +2462,13 @@ export default class Battlefield {
       this.terrain.crater(x, lane, radius * 0.55, depth, this.elapsedMs)
     }
 
+    // Incendiary: a blast big enough to crack the ground leaves it burning.
+    // Ashfall is the upgrade that spreads kill-fires; this rule is the
+    // node's own, and it works from the first shell.
+    if (radius >= 50 && this.armyFor(faction).hasTech('incendiary')) {
+      this.addZone(x, 40, 2600, 12, faction, 'fire', 0, this.laneAtY(y))
+    }
+
     // Whatever stood in the blast takes it too.
     for (let i = 0; i < this.props.length; i += 1) {
       const prop = this.props[i]
@@ -2356,7 +2480,9 @@ export default class Battlefield {
     // Overpressure turns a shove into a throw. The impulse is what does the
     // work — units leave the ground and come down somewhere else.
     const force = army.hasTech('overpressure') ? 3.4 : 1
-    this.physics.blast(x, y, radius * 1.6 * (force > 1 ? 1.35 : 1), (event.knockback * 1.5 + 220) * force)
+    // Powder Discipline: the same charge, packed properly, throws harder.
+    const packed = army.hasTech('powder_discipline') ? 1.15 : 1
+    this.physics.blast(x, y, radius * 1.6 * (force > 1 ? 1.35 : 1), (event.knockback * 1.5 + 220) * force * packed)
     if (force > 1) {
       for (const u of this.units) {
         if (!u.alive || u.faction === faction || u.layer !== 'ground') continue
