@@ -5,6 +5,7 @@ import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
+import { powi } from './dmath'
 import { TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
 /** How many cards the command bar can show. */
@@ -280,7 +281,7 @@ export default class Army {
 
   incomeUpgradeCost(): number | null {
     if (this.incomeLevel >= 5) return null
-    return Math.round(500 * Math.pow(2.15, this.incomeLevel) * (1 + this.age * 0.75))
+    return Math.round(500 * powi(2.15, this.incomeLevel) * (1 + this.age * 0.75))
   }
 
   buyIncomeUpgrade(): boolean {

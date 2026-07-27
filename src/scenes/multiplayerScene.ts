@@ -308,6 +308,7 @@ export default class MultiplayerScene extends Phaser.Scene {
             return
           }
           this.setStatus('Connecting…', UI.warn)
+          this.armConnectHint()
           peer.acceptAnswer(reply).catch(err => this.setStatus(String(err.message ?? err), UI.bad))
         }
       })
@@ -355,10 +356,30 @@ export default class MultiplayerScene extends Phaser.Scene {
       this.setStatus('Send this reply back to the host. The battle starts as soon as they connect.')
       this.codeField(90, 190, cam.width - 180, 'STEP 2 — SEND THIS REPLY CODE BACK', reply)
       this.warnIfLanOnly()
+      this.armConnectHint(45000)
     } catch (err) {
       this.stage = 'error'
       this.setStatus(`That code was not accepted: ${describe(err)}`, UI.bad)
     }
+  }
+
+  /**
+   * If the paste dance finished but no connection lands within `delayMs`,
+   * say what is actually happening. The codes were parsed and accepted — a
+   * silent eternal "Connecting…" reads as a bug, when the truth is that the
+   * network path between the players is being blocked and there are two
+   * concrete things to try.
+   */
+  private armConnectHint(delayMs = 20000): void {
+    this.time.delayedCall(delayMs, () => {
+      if (this.started || this.stage === 'error') return
+      this.setStatus(
+        'Still trying to reach the other player. The codes were fine — the network path is the hold-up. ' +
+          'On the same network: turn LAN MODE on and exchange fresh codes. Across the internet: ' +
+          'one of you hosting from a phone hotspot usually gets through.',
+        UI.warn
+      )
+    })
   }
 
   // ───────────────────────────── Peer events ─────────────────────────────

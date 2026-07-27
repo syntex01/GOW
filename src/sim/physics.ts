@@ -1,4 +1,5 @@
 import type { Rng } from '../core/rng'
+import { dlen } from './dmath'
 import type { Faction } from './types'
 
 /**
@@ -235,7 +236,7 @@ export default class PhysicsWorld {
       if (!b.settled) {
         // Quadratic drag, which is what makes a light gib flutter and a heavy
         // one drop like a stone from the same explosion.
-        const speed = Math.hypot(b.vx, b.vy)
+        const speed = dlen(b.vx, b.vy)
         if (speed > 0.01 && b.drag > 0) {
           const decel = b.drag * speed * dt
           const scale = Math.max(0, 1 - decel / Math.max(speed, 0.01))

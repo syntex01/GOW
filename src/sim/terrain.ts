@@ -1,4 +1,5 @@
 import { LANE_COUNT } from './types'
+import { halfLifeDecay } from './dmath'
 
 /**
  * The ground remembers.
@@ -131,8 +132,8 @@ export default class Terrain {
     healScale?: (lane: number, x: number, height: number) => number
   ): void {
     const half = HEAL_HALFLIFE_MS[Math.max(0, Math.min(HEAL_HALFLIFE_MS.length - 1, era))]
-    const baseDecay = Math.pow(0.5, dtMs / half)
-    const hauntDecay = Math.pow(0.5, dtMs / (half * 1.5))
+    const baseDecay = halfLifeDecay(dtMs, half)
+    const hauntDecay = halfLifeDecay(dtMs, half * 1.5)
     for (let lane = 0; lane < LANE_COUNT; lane += 1) {
       const row = this.relief[lane]
       const marks = this.disturbed[lane]
@@ -146,7 +147,7 @@ export default class Terrain {
         if (row[i] === 0) continue
         const scale = healScale ? healScale(lane, i * RELIEF_BUCKET, row[i]) : 1
         if (scale === Infinity) continue
-        row[i] *= scale === 1 ? baseDecay : Math.pow(0.5, dtMs / (half * scale))
+        row[i] *= scale === 1 ? baseDecay : halfLifeDecay(dtMs, half * scale)
         if (Math.abs(row[i]) < 0.4) row[i] = 0
       }
     }

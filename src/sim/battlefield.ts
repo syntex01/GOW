@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { audio, type SfxName } from '../core/audio'
 import type { MatchStats } from '../core/events'
 import { Rng } from '../core/rng'
+import { datan2, dcos, dsin, halfLifeDecay } from './dmath'
 import { ABILITIES_BY_ID } from '../data/abilities'
 import { ageDef } from '../data/ages'
 import { AGE_THEMES } from '../gfx/palette'
@@ -890,7 +891,7 @@ export default class Battlefield {
     this.decomposing.length = write
     this.terrain.settle(dtMs, this.elapsedMs, this.era, this.creedHealScale)
     if (this.elapsedMs - this.lastViolenceMs > 15000) {
-      const dry = Math.pow(0.5, dtMs / [20000, 40000, 90000, 200000, 480000][this.era])
+      const dry = halfLifeDecay(dtMs, [20000, 40000, 90000, 200000, 480000][this.era])
       for (let i = 0; i < this.goreMap.length; i += 1) {
         if (this.goreMap[i] === 0) continue
         this.goreMap[i] *= dry
@@ -1864,7 +1865,7 @@ export default class Battlefield {
       const angle =
         attack.gravity > 0
           ? ballisticAngle(dx, dy, attack.speed, attack.gravity)
-          : Math.atan2(dy, dx)
+          : datan2(dy, dx)
       const spread = this.rng.spread(attack.spread * this.accuracyPenalty(unit.faction))
       const finalAngle = angle + spread
 
@@ -1898,8 +1899,8 @@ export default class Battlefield {
             projectile: attack.projectile,
             x: muzzle.x,
             y: muzzle.y,
-            vx: Math.cos(finalAngle) * attack.speed,
-            vy: Math.sin(finalAngle) * attack.speed,
+            vx: dcos(finalAngle) * attack.speed,
+            vy: dsin(finalAngle) * attack.speed,
             gravity: attack.gravity,
             damage,
             damageType: unit.def.damageType,
@@ -2113,7 +2114,7 @@ export default class Battlefield {
 
     const dx = target.x - muzzle.x
     const dy = target.y + target.centerOffsetY - muzzle.y
-    const angle = attack.gravity > 0 ? ballisticAngle(dx, dy, attack.speed, attack.gravity) : Math.atan2(dy, dx)
+    const angle = attack.gravity > 0 ? ballisticAngle(dx, dy, attack.speed, attack.gravity) : datan2(dy, dx)
     const finalAngle = angle + this.rng.spread(attack.spread * this.accuracyPenalty(base.faction))
 
     audio.play(this.turretSfx(def), 0.4)
@@ -2127,8 +2128,8 @@ export default class Battlefield {
           projectile: attack.projectile,
           x: muzzle.x,
           y: muzzle.y,
-          vx: Math.cos(finalAngle) * attack.speed,
-          vy: Math.sin(finalAngle) * attack.speed,
+          vx: dcos(finalAngle) * attack.speed,
+          vy: dsin(finalAngle) * attack.speed,
           gravity: attack.gravity,
           damage: def.damage,
           damageType: def.damageType,
@@ -2374,7 +2375,7 @@ export default class Battlefield {
       for (let i = 0; i < count; i += 1) {
         const a = this.rng.range(-Math.PI, 0)
         const speed = this.rng.range(260, 620)
-        this.physics.spawn('shrapnel', x, y, Math.cos(a) * speed, Math.sin(a) * speed, {
+        this.physics.spawn('shrapnel', x, y, dcos(a) * speed, dsin(a) * speed, {
           faction,
           damage: Math.max(8, event.amount * 0.16),
           armTime: 40,
@@ -2527,10 +2528,10 @@ export default class Battlefield {
             {
               faction,
               projectile,
-              x: x - Math.cos(angle) * 200,
+              x: x - dcos(angle) * 200,
               y: startY,
-              vx: Math.cos(angle) * speed * 0.2,
-              vy: Math.sin(angle) * speed,
+              vx: dcos(angle) * speed * 0.2,
+              vy: dsin(angle) * speed,
               gravity: 500,
               damage,
               damageType: type,

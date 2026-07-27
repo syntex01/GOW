@@ -3,10 +3,12 @@ import type { Faction } from '../sim/types'
 /**
  * Wire protocol version — peers refuse to connect across a mismatch, at
  * paste time, in words. Bumped whenever the command stream's *semantics*
- * change, not only its shape: v3 fixed same-tick command ordering, so a v2
- * and a v3 build would connect fine and then silently split their worlds.
+ * change, not only its shape: v3 fixed same-tick command ordering; v4 made
+ * every sim transcendental deterministic and stopped local difficulty
+ * settings from configuring a networked match. Any of those, split across
+ * two builds, connects fine and then silently forks the world.
  */
-export const PROTOCOL_VERSION = 3
+export const PROTOCOL_VERSION = 4
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

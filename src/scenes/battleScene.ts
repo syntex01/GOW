@@ -112,12 +112,19 @@ export default class BattleScene extends Phaser.Scene {
         enemyStartAge: level?.enemyStartAge ?? 0,
         seed: this.matchSeed,
         playerModifiers: level?.playerModifiers,
-        enemyModifiers: {
-          income: profile.incomeMultiplier,
-          unitHp: profile.unitHpMultiplier,
-          unitDamage: profile.unitDamageMultiplier,
-          ...(level?.enemyModifiers ?? {})
-        }
+        // Difficulty handicaps are for the AI. In a networked match the
+        // opponent is a human — and worse, each peer would read its OWN local
+        // difficulty setting, hand the two simulations different modifiers,
+        // and desync the match within seconds of the first hash exchange.
+        // Online, both armies are vanilla, on both machines, always.
+        enemyModifiers: setup.netRole
+          ? {}
+          : {
+              income: profile.incomeMultiplier,
+              unitHp: profile.unitHpMultiplier,
+              unitDamage: profile.unitDamageMultiplier,
+              ...(level?.enemyModifiers ?? {})
+            }
       },
       this.vfx
     )

@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { RES } from '../gfx/pixel'
 import { rng } from '../core/rng'
+import { datan, datan2, dcos, dlen, dsin } from './dmath'
 import type { ProjectileId } from '../data/types'
 import type Vfx from '../gfx/vfx'
 import type { Damageable, DamageType, Faction } from './types'
@@ -123,15 +124,15 @@ export default class Projectile {
     // Homing: steer velocity toward the target's centre.
     const target = this.config.target
     if (this.config.homing && target && target.alive) {
-      const desired = Math.atan2(target.y + target.centerOffsetY - this.y, target.x - this.x)
-      let current = Math.atan2(this.vy, this.vx)
+      const desired = datan2(target.y + target.centerOffsetY - this.y, target.x - this.x)
+      let current = datan2(this.vy, this.vx)
       let diff = Phaser.Math.Angle.Wrap(desired - current)
       const maxTurn = this.config.homing * dt
       diff = Phaser.Math.Clamp(diff, -maxTurn, maxTurn)
       current += diff
       const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy)
-      this.vx = Math.cos(current) * speed
-      this.vy = Math.sin(current) * speed
+      this.vx = dcos(current) * speed
+      this.vy = dsin(current) * speed
     }
 
     this.vy += this.gravity * dt
@@ -140,7 +141,7 @@ export default class Projectile {
     // does not care about the breeze, a thrown boulder does — so drag scales
     // with the projectile's own gravity rather than being applied flat.
     if (this.gravity > 0) {
-      const speed = Math.hypot(this.vx, this.vy)
+      const speed = dlen(this.vx, this.vy)
       if (speed > 1) {
         const drag = DRAG_COEFFICIENT * speed * dt
         const scale = Math.max(0, 1 - drag / speed)
@@ -195,7 +196,7 @@ export default class Projectile {
       // it rather than stopping. The angle test is what makes it a skill —
       // long-range fire glances, point-blank fire does not.
       if (this.ricochets > 0 && (best.armor === 'heavy' || best.armor === 'structure')) {
-        const speed = Math.hypot(this.vx, this.vy)
+        const speed = dlen(this.vx, this.vy)
         const incidence = Math.abs(this.vy) / Math.max(1, speed)
         if (incidence < 0.42) {
           this.ricochets -= 1
@@ -362,7 +363,7 @@ function vacuumAngle(dx: number, dy: number, speed: number, gravity: number): nu
   const root = s2 * s2 - gravity * (gravity * x * x + 2 * y * s2)
   // Out of reach at this muzzle speed. Forty-five degrees is the throw that
   // carries furthest, so the shot at least falls as close as it can.
-  const theta = root < 0 ? Math.PI / 4 : Math.atan((s2 - Math.sqrt(root)) / (gravity * x))
+  const theta = root < 0 ? Math.PI / 4 : datan((s2 - Math.sqrt(root)) / (gravity * x))
   // Back into screen axes, mirrored for a shot travelling left.
   return dir > 0 ? -theta : Math.PI + theta
 }
@@ -389,8 +390,8 @@ const SOLVER_STEP = 1 / 60
 function missBy(angle: number, dx: number, dy: number, speed: number, gravity: number): number {
   let x = 0
   let y = 0
-  let vx = Math.cos(angle) * speed
-  let vy = Math.sin(angle) * speed
+  let vx = dcos(angle) * speed
+  let vy = dsin(angle) * speed
   const goal = Math.abs(dx)
   const sign = dx < 0 ? -1 : 1
   // Six seconds is longer than any shot in the game stays up.
@@ -432,7 +433,7 @@ function missBy(angle: number, dx: number, dy: number, speed: number, gravity: n
  * Deterministic: fixed step, fixed iteration count, no clock and no randomness.
  */
 export function ballisticAngle(dx: number, dy: number, speed: number, gravity: number): number {
-  if (gravity <= 0) return Math.atan2(dy, dx)
+  if (gravity <= 0) return datan2(dy, dx)
 
   let a0 = vacuumAngle(dx, dy, speed, gravity)
   let e0 = missBy(a0, dx, dy, speed, gravity)
@@ -482,8 +483,8 @@ function computeReach(speed: number, gravity: number): number {
   let x = 0
   let y = 0
   const angle = -Math.PI / 4
-  let vx = Math.cos(angle) * speed
-  let vy = Math.sin(angle) * speed
+  let vx = dcos(angle) * speed
+  let vy = dsin(angle) * speed
   for (let step = 0; step < 600; step += 1) {
     vy += gravity * SOLVER_STEP
     const scale = Math.max(0, 1 - PROJECTILE_DRAG * SOLVER_STEP)

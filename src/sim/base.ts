@@ -3,6 +3,7 @@ import { ballisticReach } from './projectile'
 import { turretBarrelPivot } from '../gfx/textureFactory'
 import { audio } from '../core/audio'
 import { rng } from '../core/rng'
+import { datan2, dcos, dsin } from './dmath'
 import type { TurretDef } from '../data/types'
 import { TURRETS_BY_ID, TURRET_SLOTS } from '../data/turrets'
 import { FACTION_COLOR, UI } from '../gfx/palette'
@@ -181,8 +182,8 @@ export default class Base implements Damageable {
     const wx = this.x + ox * this.dir
     const wy = this.y + oy - 8
     return {
-      x: wx + Math.cos(slot.angle) * barrelLen * this.dir,
-      y: wy + Math.sin(slot.angle) * barrelLen
+      x: wx + dcos(slot.angle) * barrelLen * this.dir,
+      y: wy + dsin(slot.angle) * barrelLen
     }
   }
 
@@ -214,7 +215,7 @@ export default class Base implements Damageable {
       const muzzleBase = this.turretMuzzle(index)
       const dx = (target.x - muzzleBase.x) * this.dir
       const dy = target.y + target.centerOffsetY - muzzleBase.y
-      let desired = Math.atan2(dy, Math.max(24, dx))
+      let desired = datan2(dy, Math.max(24, dx))
       const attack = slot.def.attack
       if (attack.kind === 'projectile' && attack.gravity > 0) {
         const range = Math.max(60, Math.abs(dx))
@@ -270,7 +271,7 @@ export default class Base implements Damageable {
     const wy = this.y + oy - 8
     const recoilPush = slot.recoil * 7
     slot.barrelSprite
-      .setPosition(wx - Math.cos(slot.angle) * recoilPush * this.dir, wy - Math.sin(slot.angle) * recoilPush)
+      .setPosition(wx - dcos(slot.angle) * recoilPush * this.dir, wy - dsin(slot.angle) * recoilPush)
       .setRotation(slot.angle * this.dir)
       .setFlipX(this.faction === 'enemy')
     slot.baseSprite?.setPosition(wx, this.y + oy)
