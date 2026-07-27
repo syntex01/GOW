@@ -68,6 +68,27 @@ export default class BattleScene extends Phaser.Scene {
   private leaving = false
   private matchSeed = 0
   private bannerFlags: { pole: Phaser.GameObjects.Image; flag: Phaser.GameObjects.Image }[] = []
+  private bannerLayoutKey = ''
+
+  /** The sim re-lays the field's prizes as the war ages; the art follows. */
+  private rebuildBannerFlags(): void {
+    for (const entry of this.bannerFlags) {
+      entry.pole.destroy()
+      entry.flag.destroy()
+    }
+    this.bannerFlags = this.battlefield.banners.map(banner => {
+      const laneY = GROUND_Y + LANE_Y[banner.lane]
+      const depth = 79 + LANE_Y[banner.lane] * 0.05
+      return {
+        pole: this.add.image(banner.x, laneY + 4, 'banner:pole').setOrigin(0.5, 1).setDepth(depth),
+        flag: this.add
+          .image(banner.x + 3, laneY - 46, `banner:flag:${banner.kind}`)
+          .setOrigin(0, 0.5)
+          .setDepth(depth)
+      }
+    })
+    this.bannerLayoutKey = this.battlefield.banners.map(b => `${b.x}:${b.lane}:${b.kind}`).join('|')
+  }
 
   /**
    * Which side this client commands. Always 'player' offline; the guest in a
@@ -169,8 +190,11 @@ export default class BattleScene extends Phaser.Scene {
 
     this.terrainLayer = new TerrainLayer(this, this.battlefield, GROUND_Y)
 
-    // War banners: the three map-control flags, drawn where the sim says
-    // they stand and recoloured every frame by who actually holds them.
+    // War banners: the map-control flags. Their number, lanes and KINDS come
+    // from the sim (they grow with the war), so the sprites rebuild whenever
+    // the layout changes. The pennant's shape says what the prize is: a
+    // rectangle pays gold, a pennant pays evolution, a swallowtail feeds the
+    // commander's ability.
     if (!this.textures.exists('banner:pole')) {
       const g = this.make.graphics({ x: 0, y: 0 }, false)
       g.fillStyle(0x23262e, 1).fillRect(2, 0, 4, 58)
@@ -178,15 +202,20 @@ export default class BattleScene extends Phaser.Scene {
       g.fillStyle(0x14161c, 1).fillRect(0, 54, 8, 4)
       g.generateTexture('banner:pole', 8, 58)
       g.clear()
+      g.fillStyle(0xffffff, 1).fillRect(0, 0, 24, 13)
+      g.fillStyle(0x000000, 0.25).fillRect(0, 11, 24, 2)
+      g.generateTexture('banner:flag:gold', 24, 14)
+      g.clear()
+      g.fillStyle(0xffffff, 1).fillTriangle(0, 0, 26, 6, 0, 13)
+      g.generateTexture('banner:flag:xp', 26, 14)
+      g.clear()
       g.fillStyle(0xffffff, 1)
-      g.fillTriangle(0, 0, 26, 6, 0, 13)
-      g.generateTexture('banner:flag', 26, 14)
+      g.fillRect(0, 0, 24, 14)
+      g.fillTriangle(24, 0, 14, 7, 24, 14)
+      g.generateTexture('banner:flag:ability', 24, 14)
       g.destroy()
     }
-    this.bannerFlags = this.battlefield.banners.map(banner => ({
-      pole: this.add.image(banner.x, GROUND_Y + 4, 'banner:pole').setOrigin(0.5, 1).setDepth(58),
-      flag: this.add.image(banner.x + 3, GROUND_Y - 46, 'banner:flag').setOrigin(0, 0.5).setDepth(58)
-    }))
+    this.rebuildBannerFlags()
 
     this.battlefield.onCorpse = unit => {
       const machine = unit.def.visual.kind !== 'humanoid' && unit.def.visual.kind !== 'rider'
@@ -731,13 +760,16 @@ export default class BattleScene extends Phaser.Scene {
       this.spawnCreedMotes()
     }
     this.debris.render(this.battlefield.physics)
+    const layoutKey = this.battlefield.banners.map(b => `${b.x}:${b.lane}:${b.kind}`).join('|')
+    if (layoutKey !== this.bannerLayoutKey) this.rebuildBannerFlags()
     for (let i = 0; i < this.bannerFlags.length; i += 1) {
       const banner = this.battlefield.banners[i]
       const { flag } = this.bannerFlags[i]
       const grip = Math.abs(banner.hold) / 100
+      const laneY = GROUND_Y + LANE_Y[banner.lane]
       flag.setTint(banner.hold >= 50 ? 0x63b3ff : banner.hold <= -50 ? 0xff5a52 : 0x8892a8)
       flag.setAlpha(0.45 + 0.55 * grip)
-      flag.y = GROUND_Y - 34 - 14 * grip
+      flag.y = laneY - 34 - 14 * grip
       flag.setFlipX(banner.hold < 0)
     }
     // Composite lighting from whatever registered a light this frame.

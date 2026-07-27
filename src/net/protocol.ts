@@ -7,9 +7,11 @@ import type { Faction } from '../sim/types'
  * every sim transcendental deterministic and stopped local difficulty
  * settings from configuring a networked match. Any of those, split across
  * two builds, connects fine and then silently forks the world. v5 added the
- * war-banner map-control rules and made four advertised techs real.
+ * war-banner map-control rules and made four advertised techs real. v6 made
+ * banners lane-bound, era-evolving and kind-typed, and added the doctrine
+ * counter pentagon.
  */
-export const PROTOCOL_VERSION = 5
+export const PROTOCOL_VERSION = 6
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

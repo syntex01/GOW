@@ -83,14 +83,23 @@ export const TECH_MECHANICS: Record<TechId, string> = {
 }
 
 /**
- * What a node does for your creed LEAN, shown for branch nodes. Two nodes in
- * one branch is a lean; the ground rules scale 25% per node from there and
- * cap at five. The rules themselves, per creed:
+ * Each creed's identity, shown on its branch nodes: the MAIN THREAT it
+ * builds, the threat it COUNTERS, and the creed that counters IT. The five
+ * form a pentagon — build your threat, and if the enemy's threat is the one
+ * that eats yours, buy two nodes of the creed that eats theirs as an
+ * auxiliary. Two nodes in one branch is a lean; every rule below scales 25%
+ * per node and caps at five. Held war banners also carry the lean's
+ * signature (rally / spotting / salvage / tithe / feeding).
  */
 export const LEAN_RULES: Record<string, string> = {
-  carnage: 'Carnage lean: corpses on your half rot into mounds faster and bigger; standing on 4px+ of dead ground grants Fury (up to +28% speed and +18% damage at full lean).',
-  ordnance: 'Ordnance lean: your blasts crater the ground deeper; enemies caught in craters are slowed, and your explosive hits on cratered ground deal up to +25%.',
-  engineering: 'Engineering lean: work crews quarry your half’s rubble mounds into gold (3g per mass point) and rebuild dead props after 30s.',
-  occult: 'Occult lean: bodies falling on your half are consumed — less mound, +2–4% ability charge each, and the ground becomes haunted, sapping enemy speed and damage (up to −12%/−15%).',
-  blight: 'Blight lean: your half’s burial mounds sprout hostile spore blooms (up to 48px, 7 damage/s) every 2s, and blighted mounds never settle.'
+  carnage:
+    'CARNAGE — threat: the meat engine (mounds rise fast, Fury on dead ground up to +28% speed/+18% damage, corpses become soldiers). COUNTERS BLIGHT: your troops take up to −35% from hostile ground zones. WEAK TO ORDNANCE: fire burns your corpse fuel. Held banners rally the garrison (+12% attack rate).',
+  ordnance:
+    'ORDNANCE — threat: the barrage (deeper craters, +25% explosive damage into bowls, crater-mired enemies). COUNTERS CARNAGE: your fire zones consume settled remains up to 3× faster — no fuel, no meat engine. WEAK TO ENGINEERING: braced plate shrugs blasts. Held banners are spotting posts (+10% reach nearby).',
+  engineering:
+    'ENGINEERING — threat: the unbreakable line (quarry pays 3g per mass point, props rebuilt, self-repair). COUNTERS ORDNANCE: your units take up to −22% explosive damage. WEAK TO OCCULT: hexes seep through steel. Held gold banners pay +50%.',
+  occult:
+    'THE OCCULT — threat: the tithe (deaths feed your ability, haunted ground saps enemies up to −12% speed/−15% damage). COUNTERS ENGINEERING: your damage vs heavy and structure armour +22%. WEAK TO BLIGHT: rot does not fear the dark. Every held banner also tithes ability charge.',
+  blight:
+    'BLIGHT — threat: the creeping map (mounds sprout hostile blooms, blighted ground never settles). COUNTERS THE OCCULT: hostile mire, hex and terror on your troops run 45% shorter. WEAK TO CARNAGE: meat wades through your gardens. Garrisons at held banners feed (+1.2% hp/s).'
 }

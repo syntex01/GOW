@@ -151,6 +151,40 @@ export const PROP_SPECS: Record<
  * Owns the whole battle: both armies, every unit and projectile, combat
  * resolution, special abilities, and the running match statistics.
  */
+/** What a banner pays when held. */
+export type BannerKind = 'gold' | 'xp' | 'ability'
+
+/**
+ * The field's prizes, era by era. One mid-lane scrum flag for the stone age;
+ * by the final age five objectives stagger across every lane, and the two
+ * richest sit nearest the fortresses that want them least contested.
+ */
+const BANNER_ERAS: { at: number; lane: number; kind: BannerKind }[][] = [
+  [{ at: 0.5, lane: 2, kind: 'gold' }],
+  [
+    { at: 0.38, lane: 1, kind: 'gold' },
+    { at: 0.62, lane: 3, kind: 'xp' }
+  ],
+  [
+    { at: 0.3, lane: 0, kind: 'gold' },
+    { at: 0.5, lane: 2, kind: 'xp' },
+    { at: 0.7, lane: 4, kind: 'gold' }
+  ],
+  [
+    { at: 0.26, lane: 3, kind: 'gold' },
+    { at: 0.42, lane: 1, kind: 'xp' },
+    { at: 0.58, lane: 2, kind: 'ability' },
+    { at: 0.74, lane: 0, kind: 'gold' }
+  ],
+  [
+    { at: 0.24, lane: 0, kind: 'gold' },
+    { at: 0.38, lane: 3, kind: 'xp' },
+    { at: 0.5, lane: 2, kind: 'ability' },
+    { at: 0.62, lane: 1, kind: 'xp' },
+    { at: 0.76, lane: 4, kind: 'gold' }
+  ]
+]
+
 export default class Battlefield {
   readonly scene: Phaser.Scene
   readonly config: BattlefieldConfig
@@ -210,17 +244,22 @@ export default class Battlefield {
   private quarryBank: Record<Faction, number> = { player: 0, enemy: 0 }
 
   /**
-   * War banners: three flags across the field, taken by standing near them
-   * with soldiers and held until the other side stands there instead. Each
-   * held banner pays its owner a share of their passive income — which is
-   * the anti-stall rule. An army that refuses to leave its walls is not
-   * "safe", it is donating up to +54% income to the player who walks out
-   * and takes the field.
+   * War banners — the field's prizes, and the anti-stall rule.
+   *
+   * A banner lives in ONE LANE: only soldiers walking that lane can flip it,
+   * so map control is played with the same placement decision as everything
+   * else. The set of banners GROWS WITH THE WAR — one scrum flag in the
+   * stone age, five staggered objectives by the end — and they are not all
+   * gold: beacons pay evolution XP and reliquaries feed the commander's
+   * ability. A holder's creed lean adds its own signature on top (see
+   * updateBanners). An army that refuses to leave its walls is donating all
+   * of it to the player who walks out and takes the field.
    */
-  readonly banners: { x: number; hold: number }[] = []
+  readonly banners: { x: number; lane: number; kind: BannerKind; hold: number }[] = []
   /** Banners currently paying each side, for the HUD. */
   bannersOwned: Record<Faction, number> = { player: 0, enemy: 0 }
   private bannerCarry: Record<Faction, number> = { player: 0, enemy: 0 }
+  private bannerEra = -1
   private boneCarry: Record<Faction, number> = { player: 0, enemy: 0 }
   /** Blight's sprouting scan cursor, so zone growth staggers over frames. */
   private bloomClock = 0
@@ -272,7 +311,6 @@ export default class Battlefield {
     // peers must not inherit two different menu histories.
     resetUnitIds()
     this.rng = new Rng(config.seed ?? Date.now())
-    for (const at of [0.3, 0.5, 0.7]) this.banners.push({ x: config.worldWidth * at, hold: 0 })
 
     const playerMods = mergeModifiers(config.playerModifiers)
     const enemyMods = mergeModifiers(config.enemyModifiers)
@@ -280,6 +318,7 @@ export default class Battlefield {
     this.player = new Army('player', config.startingGold, playerMods)
     this.enemy = new Army('enemy', config.startingGold, enemyMods)
     this.enemy.age = Math.max(0, Math.min(4, config.enemyStartAge ?? 0))
+    this.relayoutBanners()
 
     // The physics world is created below; the unit world holds the same one.
     this.world = {
@@ -703,6 +742,8 @@ export default class Battlefield {
     kind: 'fire' | 'plague' | 'spore'
     spread: number
     lane: number
+    /** Accumulator for fire consuming the settled dead inside it. */
+    burn?: number
   }[] = []
 
   /** Lays down a patch of hostile ground. */
@@ -746,12 +787,36 @@ export default class Battlefield {
       // Ashfall and mycelium make their zones creep outward on their own.
       if (zone.spread > 0) zone.radius = Math.min(260, zone.radius + zone.spread * dt)
 
+      // ORDNANCE COUNTERS CARNAGE: fire eats the dead. A burning zone
+      // consumes the settled remains inside it — the fuel that bonepickers,
+      // corpse walls, necropolis and the harvest all run on — and an
+      // ordnance lean stokes the rate.
+      if (zone.kind === 'fire') {
+        zone.burn = (zone.burn ?? 0) + dtMs
+        const stoke = this.leanCache[zone.faction] === 'ordnance' ? 1 + 2 * this.leanPower[zone.faction] : 1
+        if (zone.burn >= 800 / stoke) {
+          zone.burn = 0
+          for (let bi = 0; bi < this.physics.bodies.length; bi += 1) {
+            const body = this.physics.bodies[bi]
+            if (body.kind !== 'gib' || !body.settled) continue
+            if (Math.abs(body.x - zone.x) > zone.radius) continue
+            this.physics.bodies.splice(bi, 1)
+            this.vfx.impact(body.x, this.config.groundY - 6, 0xff9a40, 0.5, false)
+            break
+          }
+        }
+      }
+
       for (const u of this.units) {
         if (!u.alive || u.faction === zone.faction) continue
         if (Math.abs(u.x - zone.x) > zone.radius) continue
         if (u.layer === 'air') continue
         if (zone.lane >= 0 && u.lane !== zone.lane) continue
-        this.applyDamage(null, u, { amount: zone.dps * dt, type: zone.kind === 'fire' ? 'explosive' : 'energy', knockback: 0 })
+        // CARNAGE COUNTERS BLIGHT: meat that is already half rot barely
+        // notices the garden. Carnage-lean soldiers wade through zones.
+        const zoneResist =
+          this.leanCache[u.faction] === 'carnage' ? 1 - 0.35 * this.leanPower[u.faction] : 1
+        this.applyDamage(null, u, { amount: zone.dps * dt * zoneResist, type: zone.kind === 'fire' ? 'explosive' : 'energy', knockback: 0 })
         // Deep Roots turns blighted ground into a bog for anyone else.
         if (zone.kind === 'spore' && this.armyFor(zone.faction).hasTech('deep_roots')) u.mire(220)
       }
@@ -897,7 +962,10 @@ export default class Battlefield {
     for (const prop of this.props) mix(prop.alive ? Math.round(prop.hp) : -1)
     mix(Math.round(this.quarryBank.player * 100))
     mix(Math.round(this.quarryBank.enemy * 100))
-    for (const banner of this.banners) mix(Math.round(banner.hold * 10))
+    for (const banner of this.banners) {
+      mix(Math.round(banner.hold * 10))
+      mix(banner.lane * 8 + (banner.kind === 'gold' ? 0 : banner.kind === 'xp' ? 1 : 2))
+    }
     mix(this.physics.hash())
     for (let i = 0; i < this.goreMap.length; i += 1) mix(Math.round(this.goreMap[i] * 20))
 
@@ -933,16 +1001,53 @@ export default class Battlefield {
    * heals what war piled up — at the pace of whichever era the world is in,
    * bent by whichever creeds have laid claim to each half.
    */
-  /** Flags flip by presence, pay by ownership, and hold their grip when
-   * nobody is near — map control persists until it is actually contested. */
+  /** The war decides how many prizes the field holds and what they pay. */
+  private relayoutBanners(): void {
+    const era = Math.max(0, Math.min(BANNER_ERAS.length - 1, this.era))
+    if (era === this.bannerEra) return
+    const old = this.banners.slice()
+    this.banners.length = 0
+    for (const spec of BANNER_ERAS[era]) {
+      const x = this.config.worldWidth * spec.at
+      // A flag already flying near this spot keeps its allegiance across the
+      // age — armies do not forget who holds a hill just because the war grew.
+      let hold = 0
+      let bestD = 260
+      for (const prev of old) {
+        const d = Math.abs(prev.x - x)
+        if (d < bestD) {
+          bestD = d
+          hold = prev.hold
+        }
+      }
+      this.banners.push({ x, lane: spec.lane, kind: spec.kind, hold })
+    }
+    this.bannerEra = era
+  }
+
+  /**
+   * Flags flip by presence IN THEIR LANE, pay by ownership, and keep their
+   * grip when nobody is near — map control persists until contested. What a
+   * held banner pays depends on its kind, and the holder's creed lean adds
+   * its signature: carnage rallies the garrison's fury, ordnance uses the
+   * flag as a spotting post, engineering strips the prize for more gold,
+   * occult tithes every flag to the dark, and blight lets the garrison feed.
+   */
   private updateBanners(dtMs: number): void {
+    this.relayoutBanners()
     const dt = dtMs / 1000
     const owned: Record<Faction, number> = { player: 0, enemy: 0 }
+    for (const unit of this.units) {
+      unit.bannerZeal = 0
+      unit.bannerReach = 0
+    }
+    const era = this.bannerEra
+    const goldShare = [0.22, 0.17, 0.14, 0.12, 0.1][era] ?? 0.1
     for (const banner of this.banners) {
       let players = 0
       let enemies = 0
       for (const unit of this.units) {
-        if (!unit.alive || unit.layer === 'air') continue
+        if (!unit.alive || unit.layer === 'air' || unit.lane !== banner.lane) continue
         const dx = unit.x - banner.x
         if (dx > -130 && dx < 130) {
           if (unit.faction === 'player') players += 1
@@ -954,20 +1059,42 @@ export default class Battlefield {
       } else if (enemies > 0 && players === 0) {
         banner.hold = Math.max(-100, banner.hold - 26 * dt * Math.min(3, enemies))
       }
-      if (banner.hold >= 50) owned.player += 1
-      else if (banner.hold <= -50) owned.enemy += 1
+      const holder: Faction | null = banner.hold >= 50 ? 'player' : banner.hold <= -50 ? 'enemy' : null
+      if (!holder) continue
+      owned[holder] += 1
+      const army = this.armyFor(holder)
+      const lean = this.leanCache[holder]
+      const power = this.leanPower[holder]
+      // The prize itself.
+      if (banner.kind === 'gold') {
+        const boost = lean === 'engineering' ? 1 + 0.5 * power : 1
+        this.bannerCarry[holder] += army.incomePerSecond * goldShare * boost * dt
+      } else if (banner.kind === 'xp') {
+        army.xp += army.xpToAdvance * 0.008 * dt
+      } else {
+        army.abilityCharge = Math.min(1, army.abilityCharge + 0.0045 * dt)
+      }
+      // The creed's signature on a held flag.
+      if (lean === 'occult' && power > 0) {
+        army.abilityCharge = Math.min(1, army.abilityCharge + 0.0075 * power * dt)
+      }
+      if ((lean === 'carnage' || lean === 'ordnance' || lean === 'blight') && power > 0) {
+        for (const unit of this.units) {
+          if (!unit.alive || unit.faction !== holder || unit.lane !== banner.lane) continue
+          if (Math.abs(unit.x - banner.x) > 170) continue
+          if (lean === 'carnage') unit.bannerZeal = Math.max(unit.bannerZeal, 0.12 * power)
+          else if (lean === 'ordnance') unit.bannerReach = Math.max(unit.bannerReach, 0.1 * power)
+          else unit.heal(unit.maxHp * 0.012 * power * dt)
+        }
+      }
     }
     this.bannersOwned = owned
     for (const faction of ['player', 'enemy'] as const) {
-      if (owned[faction] === 0) {
-        this.bannerCarry[faction] = 0
-        continue
+      const whole = Math.floor(this.bannerCarry[faction])
+      if (whole > 0) {
+        this.bannerCarry[faction] -= whole
+        this.armyFor(faction).gold += whole
       }
-      const army = this.armyFor(faction)
-      const gained = army.incomePerSecond * 0.18 * owned[faction] * dt + this.bannerCarry[faction]
-      const whole = Math.floor(gained)
-      this.bannerCarry[faction] = gained - whole
-      army.gold += whole
     }
   }
 
@@ -1064,6 +1191,9 @@ export default class Battlefield {
       if (u.layer !== 'ground') continue
       const own = this.leanCache[u.faction]
       const ownPower = this.leanPower[u.faction]
+      // BLIGHT COUNTERS OCCULT: rot does not fear the dark. A blight-lean
+      // army shrugs off control — hostile mire, hex and terror run short.
+      u.wardScale = own === 'blight' && ownPower > 0 ? 1 - 0.45 * ownPower : 1
       if (own === 'carnage' && ownPower > 0) {
         const h = this.terrain.heightAt(u.x, u.lane)
         if (h >= 4) u.groundFury = Math.min(1, (h - 3) / 12) * ownPower
@@ -1191,7 +1321,7 @@ export default class Battlefield {
           u.pulseTimer = 600
           for (const e of this.units) {
             if (!e.alive || e.faction === u.faction) continue
-            if (Math.abs(e.x - u.x) <= 170) e.terrorFor = 800
+            if (Math.abs(e.x - u.x) <= 170) e.terrorFor = 800 * e.wardScale
           }
         }
         continue
@@ -2334,7 +2464,23 @@ export default class Battlefield {
       amount *= 2
     }
     if (attacker instanceof Unit && attacker.def.special === 'hex_shot' && target instanceof Unit) {
-      target.hexedFor = 4000
+      target.hexedFor = 4000 * target.wardScale
+    }
+
+    // OCCULT COUNTERS ENGINEERING: hexes seep through steel. Occult-lean
+    // damage finds the flaw in heavy plate and structure alike.
+    if (
+      attacker &&
+      target instanceof Unit &&
+      (target.armor === 'heavy' || target.armor === 'structure') &&
+      this.leanCache[attacker.faction] === 'occult'
+    ) {
+      amount *= 1 + 0.22 * this.leanPower[attacker.faction]
+    }
+    // ENGINEERING COUNTERS ORDNANCE: fortification discipline. Blast waves
+    // find braced plate and packed earth where flesh would have been.
+    if (event.type === 'explosive' && target instanceof Unit && this.leanCache[target.faction] === 'engineering') {
+      amount *= 1 - 0.22 * this.leanPower[target.faction]
     }
 
     // Ordnance ground rule: a soldier caught down in a crater bowl has no

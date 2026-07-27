@@ -130,6 +130,11 @@ export default class Unit implements Damageable {
   /** Smoothed visual ride over the terrain relief — lift in px, lean in rad. */
   private visualLift = 0
   private visualTilt = 0
+  /** Banner garrison stamps, re-applied by the sim every tick. */
+  bannerZeal = 0
+  bannerReach = 0
+  /** Blight ward: scales hostile control durations (mire, hex, terror). */
+  wardScale = 1
   hp: number
   maxHp: number
   alive = true
@@ -648,7 +653,7 @@ export default class Unit implements Damageable {
    */
   get reach(): number {
     const planted = this.def.special === 'siege_mode' ? 1 + 0.4 * (this.rooting / 4000) : 1
-    const wanted = this.def.range * this.rangeMult * this.highGround * planted
+    const wanted = this.def.range * this.rangeMult * this.highGround * planted * (1 + this.bannerReach)
     const attack = this.def.attack
     if (attack.kind !== 'projectile' || attack.gravity <= 0) return wanted
     return Math.min(wanted, ballisticReach(attack.speed, attack.gravity))
@@ -714,7 +719,7 @@ export default class Unit implements Damageable {
 
   /** Bogs this unit down — it can still fight, it just cannot get anywhere. */
   mire(ms: number): void {
-    this.miredFor = Math.max(this.miredFor, ms)
+    this.miredFor = Math.max(this.miredFor, ms * this.wardScale)
   }
 
   /** Shuts this unit down for a while. It cannot move, turn or shoot. */
@@ -979,6 +984,8 @@ export default class Unit implements Damageable {
     // are capped and both end the moment the soldier steps off the ground
     // that caused them.
     this.frenzy *= (1 + this.groundFury * 0.28) * (1 - this.dread * 0.12) * (this.terrorFor > 0 ? 0.85 : 1)
+    // The carnage banner rally: fury for the garrison holding the flag.
+    this.frenzy *= 1 + this.bannerZeal
     // Bonepickers feed on what is lying around them while they are hurt.
     if (this.techs?.has('bonepickers') && this.hp < this.maxHp * 0.92) {
       this.scavengeTimer -= dtMs

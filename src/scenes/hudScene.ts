@@ -69,10 +69,6 @@ export default class HUDScene extends Phaser.Scene {
     this.battle = this.scene.get('BattleScene') as BattleScene
     this.buildTopBar()
     this.buildBottomBar()
-    // Field control: one pip per war banner, under the match clock.
-    this.bannerPips = [0, 1, 2].map(i =>
-      this.add.rectangle(this.cameras.main.width / 2 - 26 + i * 26, 44, 16, 8, 0x39415a, 1).setStrokeStyle(1, 0x11141c).setDepth(2)
-    )
 
     this.tooltip = new Tooltip(this, 1500)
     this.toast = this.add
@@ -566,6 +562,16 @@ export default class HUDScene extends Phaser.Scene {
   override update(_time: number, delta: number): void {
     const bf = this.battle?.battlefield
     if (!bf) return
+    if (this.bannerPips.length !== bf.banners.length) {
+      this.bannerPips.forEach(p => p.destroy())
+      const n = bf.banners.length
+      this.bannerPips = bf.banners.map((_, i) =>
+        this.add
+          .rectangle(this.cameras.main.width / 2 + (i - (n - 1) / 2) * 26, 44, 16, 8, 0x39415a, 1)
+          .setStrokeStyle(1, 0x11141c)
+          .setDepth(2)
+      )
+    }
     for (let i = 0; i < this.bannerPips.length; i += 1) {
       const hold = bf.banners[i]?.hold ?? 0
       this.bannerPips[i].setFillStyle(hold >= 50 ? 0x63b3ff : hold <= -50 ? 0xff5a52 : 0x39415a, 1)
