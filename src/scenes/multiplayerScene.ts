@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { audio } from '../core/audio'
+import { gameLog } from '../core/log'
 import { rng } from '../core/rng'
 import { save } from '../core/save'
 import { session } from '../core/session'
@@ -75,6 +76,14 @@ export default class MultiplayerScene extends Phaser.Scene {
       corner: 'Esc',
       onClick: () => this.leave()
     })
+    this.addButton(cam.width - 296, 22, {
+      width: 132,
+      height: 48,
+      text: 'SAVE LOG',
+      fontSize: 15,
+      accent: UI.panelEdge,
+      onClick: () => gameLog.download()
+    })
 
     this.input.keyboard?.on('keydown-ESC', () => this.leave())
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup())
@@ -104,6 +113,7 @@ export default class MultiplayerScene extends Phaser.Scene {
   }
 
   private setStatus(message: string, color: number = UI.textDim): void {
+    gameLog.log('lobby', message)
     this.statusText.setText(message).setColor(`#${color.toString(16).padStart(6, '0')}`)
   }
 
@@ -257,7 +267,8 @@ export default class MultiplayerScene extends Phaser.Scene {
         cx,
         432,
         'Both players must be running the same version of GOW.\n' +
-          'The host commands the left fortress, the joiner the right.',
+          'The host commands the left fortress, the joiner the right.\n' +
+          'Trouble connecting or staying in sync? SAVE LOG (or F9 in battle) writes a debug log to send in.',
         { size: 14, align: 'center', color: UI.textDim }
       )
     )
@@ -438,6 +449,7 @@ export default class MultiplayerScene extends Phaser.Scene {
       return
     }
     {
+      gameLog.log('net', `hello received: their protocol v${message.v}, mine v${PROTOCOL_VERSION}, seed ${message.seed}`)
       if (message.v !== PROTOCOL_VERSION) {
         this.stage = 'error'
         this.setStatus('Version mismatch — both players need the same build of GOW.', UI.bad)

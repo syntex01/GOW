@@ -1,4 +1,5 @@
 import type Battlefield from '../sim/battlefield'
+import { gameLog } from '../core/log'
 import type { Faction } from '../sim/types'
 import {
   HASH_INTERVAL_TICKS,
@@ -98,6 +99,7 @@ export default class LockstepDriver {
     this.bf = bf
     this.localFaction = localFaction
     this.callbacks = callbacks
+    gameLog.log('sync', `lockstep started: local side=${localFaction}, input delay=${INPUT_DELAY_TICKS} ticks, fingerprint every ${HASH_INTERVAL_TICKS} ticks`)
     // Seed the pipeline. The opening ticks are committed empty on both sides
     // because no command can have been issued yet — but they still have to be
     // *sent*, or each peer sits waiting for the other's tick 0 forever.
@@ -137,7 +139,11 @@ export default class LockstepDriver {
     this.localHashes.delete(tick)
     if (mine !== theirs && !this.desynced) {
       this.desynced = true
+      gameLog.log('sync', `DESYNC at tick ${tick}: my hash=${mine}, theirs=${theirs}`)
+      gameLog.persist()
       this.callbacks.onDesync(tick, mine, theirs)
+    } else if (mine === theirs) {
+      gameLog.log('sync', `fingerprints agree at tick ${tick}`)
     }
   }
 
@@ -173,10 +179,13 @@ export default class LockstepDriver {
         this.stallMs += deltaMs
         if (!this.stalled && this.stallMs > 600) {
           this.stalled = true
+          gameLog.log('sync', `stalled at tick ${this.tick}: waiting for the other player's input`)
           this.callbacks.onStall(true)
         }
         if (this.stallMs > STALL_TIMEOUT_MS) {
           this.finished = true
+          gameLog.log('sync', `gave up at tick ${this.tick}: no input from the other player for ${STALL_TIMEOUT_MS / 1000}s`)
+          gameLog.persist()
           this.callbacks.onLost()
         }
         return executed
@@ -185,6 +194,7 @@ export default class LockstepDriver {
       if (this.stalled) {
         this.stalled = false
         this.stallMs = 0
+        gameLog.log('sync', `recovered at tick ${this.tick}`)
         this.callbacks.onStall(false)
       }
       this.stallMs = 0
@@ -216,7 +226,9 @@ export default class LockstepDriver {
     this.bf.stepFixed(TICK_SUBSTEPS)
 
     if (this.tick % HASH_INTERVAL_TICKS === 0) {
-      this.localHashes.set(this.tick, this.bf.stateHash())
+      const hash = this.bf.stateHash()
+      gameLog.log('hash', `t=${this.tick} v=${hash} units=${this.bf.units.length} pGold=${Math.floor(this.bf.player.gold)} eGold=${Math.floor(this.bf.enemy.gold)}`)
+      this.localHashes.set(this.tick, hash)
       // Never let unmatched fingerprints accumulate forever.
       if (this.localHashes.size > 16) {
         const oldest = this.localHashes.keys().next().value

@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { audio } from '../core/audio'
+import { gameLog } from '../core/log'
 import { gameEvents } from '../core/events'
 import { ACHIEVEMENTS, save } from '../core/save'
 import { session } from '../core/session'
@@ -137,6 +138,7 @@ export default class BattleScene extends Phaser.Scene {
       }
     }
 
+    gameLog.log('match', `battle starting: mode=${setup.mode} netRole=${setup.netRole ?? 'solo'} seed=${this.matchSeed} difficulty=${setup.netRole ? 'ignored (networked)' : setup.difficulty} pop cap age0=${this.battlefield.player.populationCap}`)
     // A networked match has two humans; nobody is driving the AI.
     if (!setup.netRole) {
       this.ai = new AiController(this.battlefield, profile, (this.matchSeed ^ 0x9e3779b9) >>> 0)
@@ -291,6 +293,9 @@ export default class BattleScene extends Phaser.Scene {
 
   private handleDesync(tick: number, mine: number, theirs: number): void {
     console.warn(`[gow] desync at tick ${tick}: ${mine} vs ${theirs}`)
+    const bf = this.battlefield
+    gameLog.log('sync', `desync context: units=${bf.units.length} projectiles=${bf.projectiles.length} pGold=${Math.floor(bf.player.gold)} eGold=${Math.floor(bf.enemy.gold)} pAge=${bf.player.age} eAge=${bf.enemy.age} pTechs=[${[...bf.player.techs].join(',')}] eTechs=[${[...bf.enemy.techs].join(',')}]`)
+    gameLog.persist()
     gameEvents.emit('hud:flash', {
       message: 'Simulations diverged — match ended',
       tone: 'warn'
@@ -412,6 +417,8 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-SPACE', () => this.tryAbility())
     keyboard.on('keydown-U', () => this.tryEconomy())
     keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
+    // The black box, on demand: F9 downloads this session's debug log.
+    keyboard.on('keydown-F9', () => gameLog.download())
     // The whole of placement: pick the file the next piece will walk.
     const LANE_KEYS = ['Z', 'X', 'C', 'V', 'B']
     LANE_KEYS.forEach((key, lane) => keyboard.on(`keydown-${key}`, () => this.setLane(lane)))

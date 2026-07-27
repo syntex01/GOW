@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { gameLog } from './core/log'
 import type { Difficulty } from './core/save'
 import { session } from './core/session'
 import { LEVELS_BY_ID, type GameMode } from './data/levels'
@@ -61,7 +62,9 @@ function start(): void {
     __gowUnits: typeof UNITS_BY_ID
     __gowFactionUnits: Record<string, UnitDef>
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
+    __gowLog: typeof gameLog
   }
+  debug.__gowLog = gameLog
   debug.__gowGame = game
   // Exposed so a smoke test can put a unit on the field without waiting out a
   // build queue in real time.

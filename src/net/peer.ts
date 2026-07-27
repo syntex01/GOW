@@ -1,4 +1,5 @@
 import { PROTOCOL_VERSION, type NetMessage } from './protocol'
+import { gameLog } from '../core/log'
 
 /**
  * A serverless peer link.
@@ -100,16 +101,33 @@ export default class Peer {
   private setState(state: PeerState, detail?: string): void {
     if (this.currentState === state) return
     this.currentState = state
+    gameLog.log('net', `peer state: ${state}${detail ? ` (${detail})` : ''}`)
     this.options.onStateChange(state, detail)
   }
 
   private createConnection(): RTCPeerConnection {
+    gameLog.log('net', `peer connection created (${this.options.lanOnly ? 'LAN only, no ICE servers' : 'internet: STUN + TURN relay'})`)
     const pc = new RTCPeerConnection({
       iceServers: this.options.lanOnly ? [] : [{ urls: PUBLIC_STUN }, ...PUBLIC_TURN],
       iceCandidatePoolSize: 2
     })
+    // Candidate types are THE connectivity diagnosis: host-only means no
+    // route off this network; srflx means STUN worked; relay means TURN is
+    // reachable. Addresses are deliberately not logged.
+    pc.onicecandidate = event => {
+      if (!event.candidate) {
+        gameLog.log('net', 'ICE gathering complete')
+        return
+      }
+      const c = event.candidate.candidate
+      const type = /typ (\w+)/.exec(c)?.[1] ?? '?'
+      const proto = /udp|tcp/i.exec(c)?.[0] ?? '?'
+      gameLog.log('net', `ICE candidate gathered: ${type}/${proto.toLowerCase()}`)
+    }
+    pc.oniceconnectionstatechange = () => gameLog.log('net', `ICE state: ${pc.iceConnectionState}`)
     pc.onconnectionstatechange = () => {
       const s = pc.connectionState
+      gameLog.log('net', `connection state: ${s}`)
       if (s === 'failed') {
         this.clearGrace()
         this.setState('failed', 'connection failed')
@@ -151,6 +169,7 @@ export default class Peer {
     this.channel = channel
     channel.binaryType = 'arraybuffer'
     channel.onopen = () => {
+      gameLog.log('net', 'data channel open')
       this.setState('open')
       for (const queued of this.outbox) channel.send(queued)
       this.outbox.length = 0
@@ -182,6 +201,7 @@ export default class Peer {
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
     this.codeIsLanOnly = !(await waitForIceGathering(pc)).public
+    gameLog.log('net', `host code built (v${PROTOCOL_VERSION}, ${this.codeIsLanOnly ? 'NO public address — LAN reach only' : 'carries a public address'})`)
     this.setState('awaiting-answer')
     return encodeCode(pc.localDescription?.sdp ?? '', 'O')
   }
@@ -197,6 +217,7 @@ export default class Peer {
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
     this.codeIsLanOnly = !(await waitForIceGathering(pc)).public
+    gameLog.log('net', `reply code built (v${PROTOCOL_VERSION}, ${this.codeIsLanOnly ? 'NO public address — LAN reach only' : 'carries a public address'})`)
     this.setState('connecting')
     return encodeCode(pc.localDescription?.sdp ?? '', 'A')
   }
@@ -316,6 +337,7 @@ function encodeCode(sdp: string, kind: 'O' | 'A'): string {
 
 function decodeCode(code: string, expected: 'O' | 'A'): string {
   const trimmed = code.trim().replace(/\s+/g, '')
+  gameLog.log('net', `decoding pasted code: ${trimmed.slice(0, 8)}… (${trimmed.length} chars, expecting ${expected === 'O' ? 'host' : 'reply'} code)`)
   // The generation-1 format carried no version. Anyone still producing it is
   // by definition on an older build, which is exactly what to tell the player.
   if (/^GOW[OA]1:/.test(trimmed)) {
