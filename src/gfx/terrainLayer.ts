@@ -305,6 +305,10 @@ export default class TerrainLayer {
     const top = TerrainLayer.UP - hv
     const wob = (i * 13) % 3
     const body = Math.max(0, hv - 4)
+    // A dark rim above the crest: the silhouette line that makes the pile
+    // read as a SHAPE against ground drawn from the same soil family.
+    ctx.fillStyle = hex(tone(soil[0], -0.4))
+    ctx.fillRect(x, top + wob - 1, RELIEF_BUCKET, 1)
 
     if (lean === 'carnage') {
       // A flesh mound: raw meat over old blood, ribs surfacing where it is
@@ -384,7 +388,7 @@ export default class TerrainLayer {
     // once it is old enough — and, for ordnance/occult halves without their
     // own mound style, a faint cast of that creed's colour.
     const cast = lean === 'ordnance' ? 0x2c2622 : lean === 'occult' ? 0x4c3a66 : null
-    ctx.fillStyle = hex(cast ? mix(soil[3], cast, 0.25) : soil[3])
+    ctx.fillStyle = hex(cast ? mix(tone(soil[3], 0.2), cast, 0.25) : tone(soil[3], 0.2))
     ctx.fillRect(x, top + wob, RELIEF_BUCKET, 2)
     ctx.fillStyle = hex(cast ? mix(soil[2], cast, 0.25) : soil[2])
     ctx.fillRect(x, top + wob + 2, RELIEF_BUCKET, body)

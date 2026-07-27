@@ -127,6 +127,9 @@ export default class Unit implements Damageable {
   lane = 2
   /** The ground line of this soldier's lane, in world pixels. */
   groundLine: number
+  /** Smoothed visual ride over the terrain relief — lift in px, lean in rad. */
+  private visualLift = 0
+  private visualTilt = 0
   hp: number
   maxHp: number
   alive = true
@@ -601,6 +604,31 @@ export default class Unit implements Damageable {
    * higher. Positioning rule, open to both sides, and its counter is built
    * into the world: shell the mound away, quarry it, or fight on the flat.
    */
+  /**
+   * The visual ride over the relief. The drawn ground is 1.5× the sim's mound
+   * height (and 1:1 for craters), so the feet track THE PICTURE, not the sim
+   * numbers — anything else buries soldiers to the shins in their own dead.
+   * Lift and lean are smoothed so the 8px relief buckets read as a slope
+   * being climbed rather than a staircase being teleported up.
+   */
+  private updateGroundRide(dtMs: number): void {
+    if (this.layer !== 'ground') {
+      this.visualLift = 0
+      this.visualTilt = 0
+      return
+    }
+    const surface = (x: number): number => {
+      const h = this.world.reliefAt?.(x, this.lane) ?? 0
+      return h > 0 ? Math.min(27, h * 1.5) : Math.max(-12, h)
+    }
+    const lift = surface(this.x)
+    const slope = (surface(this.x + 14) - surface(this.x - 14)) / 28
+    const tilt = Math.max(-0.16, Math.min(0.16, -Math.atan(slope) * 0.55))
+    const blend = Math.min(1, dtMs / 110)
+    this.visualLift += (lift - this.visualLift) * blend
+    this.visualTilt += (tilt - this.visualTilt) * blend
+  }
+
   get highGround(): number {
     if (this.layer !== 'ground') return 1
     const attack = this.def.attack
@@ -937,7 +965,7 @@ export default class Unit implements Damageable {
       // A disabled machine still falls, still gets shot, and still slides —
       // it just stops deciding things.
       this.x += this.vx * dt
-      this.container.setPosition(this.x, this.y + this.stageY)
+      this.container.setPosition(this.x, this.y + this.stageY - this.visualLift)
       return
     }
     if (this.def.regen) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
@@ -1143,11 +1171,13 @@ export default class Unit implements Damageable {
 
     // Facing: flip the whole container.
     this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
-    this.container.setPosition(this.x, this.y + this.stageY)
-    this.shadow.setPosition(this.x, this.groundLine + this.stageY + 2)
+    this.updateGroundRide(dtMs)
+    this.container.setPosition(this.x, this.y + this.stageY - this.visualLift)
+    this.container.setRotation(this.visualTilt * this.dir)
+    this.shadow.setPosition(this.x, this.groundLine + this.stageY - this.visualLift + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
-    this.teamRing.setPosition(this.x, this.groundLine + this.stageY + 1)
-    this.conductMark?.setPosition(this.x + this.dir * (this.radius + 7), this.groundLine + this.stageY + 1)
+    this.teamRing.setPosition(this.x, this.groundLine + this.stageY - this.visualLift + 1)
+    this.conductMark?.setPosition(this.x + this.dir * (this.radius + 7), this.groundLine + this.stageY - this.visualLift + 1)
 
     if (this.swing > 0) this.swing = Math.max(0, this.swing - dtMs / (this.def.attackMs * 0.42))
 
@@ -1407,8 +1437,10 @@ export default class Unit implements Damageable {
     // A soldier stands on whatever the war has made of the ground: up on the
     // mounds, down into the craters. Purely visual — ballistics and reach stay
     // on the flat sim line, so the balance measurements keep their meaning.
-    const relief = this.layer === 'ground' ? Math.max(-12, Math.min(20, this.world.reliefAt?.(this.x, this.lane) ?? 0)) : 0
+    this.updateGroundRide(dtMs)
+    const relief = this.visualLift
     this.container.setPosition(this.x, this.y + this.stageY - relief)
+    this.container.setRotation(this.visualTilt * this.dir)
     this.shadow.setPosition(this.x, this.groundLine + this.stageY - relief + 2)
     this.shadow.setAlpha(this.layer === 'air' ? 0.18 : 0.4)
     this.teamRing.setPosition(this.x, this.groundLine + this.stageY - relief + 1)
