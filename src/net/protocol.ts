@@ -9,9 +9,11 @@ import type { Faction } from '../sim/types'
  * two builds, connects fine and then silently forks the world. v5 added the
  * war-banner map-control rules and made four advertised techs real. v6 made
  * banners lane-bound, era-evolving and kind-typed, and added the doctrine
- * counter pentagon.
+ * counter pentagon. v7 replaced the pentagon's stat rules with physical
+ * counters: mound cover, banishment, hex-unmaking, cleansing ground,
+ * field hygiene, quarry denial and thrall denial.
  */
-export const PROTOCOL_VERSION = 6
+export const PROTOCOL_VERSION = 7
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

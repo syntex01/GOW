@@ -807,16 +807,31 @@ export default class Battlefield {
         }
       }
 
+      // THE GARDEN CLEANSES: your own soldiers standing in your blight shed
+      // hostile control — mire, hex and terror drain three times as fast.
+      // The blight answers the occult by being somewhere to stand.
+      if (zone.kind === 'spore') {
+        for (const u of this.units) {
+          if (!u.alive || u.faction !== zone.faction || u.layer === 'air') continue
+          if (Math.abs(u.x - zone.x) > zone.radius) continue
+          if (zone.lane >= 0 && u.lane !== zone.lane) continue
+          u.cleansing = true
+        }
+      }
+      // FIELD HYGIENE: engineering work crews smother hostile ground-fires
+      // and cut back hostile growth on their own half. Slowly for spores,
+      // briskly for fire — sand and shovels beat flame before fungus.
+      if (this.leanCache[this.halfOwner(zone.x)] === 'engineering' && zone.faction !== this.halfOwner(zone.x)) {
+        const crews = this.leanPower[this.halfOwner(zone.x)]
+        if (zone.kind === 'fire') zone.ttl -= dtMs * 1.5 * crews
+        else if (zone.kind === 'spore') zone.ttl -= dtMs * 0.75 * crews
+      }
       for (const u of this.units) {
         if (!u.alive || u.faction === zone.faction) continue
         if (Math.abs(u.x - zone.x) > zone.radius) continue
         if (u.layer === 'air') continue
         if (zone.lane >= 0 && u.lane !== zone.lane) continue
-        // CARNAGE COUNTERS BLIGHT: meat that is already half rot barely
-        // notices the garden. Carnage-lean soldiers wade through zones.
-        const zoneResist =
-          this.leanCache[u.faction] === 'carnage' ? 1 - 0.35 * this.leanPower[u.faction] : 1
-        this.applyDamage(null, u, { amount: zone.dps * dt * zoneResist, type: zone.kind === 'fire' ? 'explosive' : 'energy', knockback: 0 })
+        this.applyDamage(null, u, { amount: zone.dps * dt, type: zone.kind === 'fire' ? 'explosive' : 'energy', knockback: 0 })
         // Deep Roots turns blighted ground into a bog for anyone else.
         if (zone.kind === 'spore' && this.armyFor(zone.faction).hasTech('deep_roots')) u.mire(220)
       }
@@ -1191,9 +1206,7 @@ export default class Battlefield {
       if (u.layer !== 'ground') continue
       const own = this.leanCache[u.faction]
       const ownPower = this.leanPower[u.faction]
-      // BLIGHT COUNTERS OCCULT: rot does not fear the dark. A blight-lean
-      // army shrugs off control — hostile mire, hex and terror run short.
-      u.wardScale = own === 'blight' && ownPower > 0 ? 1 - 0.45 * ownPower : 1
+
       if (own === 'carnage' && ownPower > 0) {
         const h = this.terrain.heightAt(u.x, u.lane)
         if (h >= 4) u.groundFury = Math.min(1, (h - 3) / 12) * ownPower
@@ -1201,7 +1214,7 @@ export default class Battlefield {
       const foe = OPPOSITE[u.faction]
       const foeLean = this.leanCache[foe]
       const foePower = this.leanPower[foe]
-      if (foeLean === 'occult' && foePower > 0) {
+      if (foeLean === 'occult' && foePower > 0 && !this.isMachine(u)) {
         const haunt = this.terrain.hauntAt(u.x, u.lane)
         if (haunt > 0.2) u.dread = Math.min(1, haunt) * foePower
       }
@@ -1237,6 +1250,13 @@ export default class Battlefield {
       const row = this.terrain.laneRelief(lane)
       for (let i = from; i < to && budget > 0; i += 1) {
         if (row[i] <= 0.5) continue
+        // Blight denies the quarry: crews will not dig ground the enemy's
+        // growth has claimed. Burn it or fight over it first.
+        const bx = i * RELIEF_BUCKET
+        const overgrown = this.zones.some(
+          z => z.kind === 'spore' && z.faction !== faction && (z.lane === -1 || z.lane === lane) && Math.abs(z.x - bx) < z.radius
+        )
+        if (overgrown) continue
         const taken = this.terrain.quarry(lane, i, Math.min(budget, 1.2))
         budget -= taken
         this.quarryBank[faction] += taken * 3
@@ -1321,7 +1341,8 @@ export default class Battlefield {
           u.pulseTimer = 600
           for (const e of this.units) {
             if (!e.alive || e.faction === u.faction) continue
-            if (Math.abs(e.x - u.x) <= 170) e.terrorFor = 800 * e.wardScale
+            // Fearless steel: a machine has no heart for terror to grip.
+            if (Math.abs(e.x - u.x) <= 170 && !this.isMachine(e)) e.terrorFor = 800
           }
         }
         continue
@@ -1794,6 +1815,14 @@ export default class Battlefield {
         break
       }
       if (struckProp) continue
+      {
+        // Mounds are cover: shots collide with the piled dead. Only serious
+        // relief (12+) blocks — a shin-high hump never eats a musket ball.
+        const shotLane = p.config.lane ?? this.laneAtY(p.y)
+        const rise = this.terrain.heightAt(p.x, shotLane)
+        // 1.5×: the wall the shot hits is the wall the player SEES drawn.
+        p.setMoundRise(rise >= 12 ? rise * 1.5 : 0)
+      }
       const result = p.update(dtMs, candidates)
       if (result.hit) {
         this.resolveProjectileHit(p, result.hit)
@@ -2236,6 +2265,26 @@ export default class Battlefield {
       }
       this.decomposing.push({ x: unit.x, lane: unit.lane, mass, dueMs: this.elapsedMs + delay })
     }
+    // THE BANISHMENT: a congregation of the occult (a lean) takes the soul
+    // as its tithe — a body it killed cannot rise again, for anyone, and it
+    // comes apart into half the usable remains.
+    if (this.leanCache[winner] === 'occult') {
+      unit.banished = true
+      this.vfx.impact(unit.x, unit.centerY, 0xb46bff, 0.7, false)
+    }
+    // DROWN THE GARDEN: a carnage-lean kill inside hostile blight splatters
+    // enough blood to scald the growth back. Fight IN the zones to clear them.
+    if (this.leanCache[winner] === 'carnage') {
+      for (const zone of this.zones) {
+        if (zone.kind !== 'spore' || zone.faction === winner) continue
+        if (zone.lane >= 0 && zone.lane !== unit.lane) continue
+        if (Math.abs(zone.x - unit.x) > zone.radius) continue
+        zone.radius -= 16
+        if (zone.radius < 16) zone.ttl = 0
+        this.vfx.impact(unit.x, this.config.groundY + LANE_Y[unit.lane] - 10, 0xa03830, 0.8, false)
+        break
+      }
+    }
     this.applyDeathDoctrines(unit, winner, killer)
   }
 
@@ -2293,13 +2342,15 @@ export default class Battlefield {
       }
     }
     // Occult — some of what you kill gets back up on your side.
-    if (killer.hasTech('mind_thrall') && this.rng.chance(0.22)) {
+    // You cannot puppet what lies in six pieces: a butchered army's dead
+    // are torn too thoroughly for the thrall-rite to take.
+    if (killer.hasTech('mind_thrall') && !owner.hasTech('butchery') && this.rng.chance(0.22)) {
       const risen = this.spawnUnit(winner, unit.def, unit.x)
       risen.hp = risen.maxHp * 0.4
       this.vfx.impact(unit.x, groundY - 24, 0xb46bff, 1.3, false)
     }
     // Nekrotic doctrine — your own fallen get up once, on their own.
-    if (owner.ascendedTo === 'nekrotics' && !unit.risen) {
+    if (owner.ascendedTo === 'nekrotics' && !unit.risen && !unit.banished) {
       const risen = this.spawnUnit(unit.faction, unit.def, unit.x)
       risen.hp = risen.maxHp * 0.45
       risen.risen = true
@@ -2309,8 +2360,8 @@ export default class Battlefield {
     // ── The units' own signature deaths ──
     switch (unit.def.special) {
       case 'gravebound':
-        // A Husk is only mostly dead, once.
-        if (!unit.risen && this.rng.chance(0.25)) {
+        // A Husk is only mostly dead, once — unless the soul was tithed.
+        if (!unit.risen && !unit.banished && this.rng.chance(0.25)) {
           const back = this.spawnUnit(unit.faction, unit.def, unit.x, unit.lane)
           back.hp = back.maxHp * 0.45
           back.risen = true
@@ -2464,23 +2515,7 @@ export default class Battlefield {
       amount *= 2
     }
     if (attacker instanceof Unit && attacker.def.special === 'hex_shot' && target instanceof Unit) {
-      target.hexedFor = 4000 * target.wardScale
-    }
-
-    // OCCULT COUNTERS ENGINEERING: hexes seep through steel. Occult-lean
-    // damage finds the flaw in heavy plate and structure alike.
-    if (
-      attacker &&
-      target instanceof Unit &&
-      (target.armor === 'heavy' || target.armor === 'structure') &&
-      this.leanCache[attacker.faction] === 'occult'
-    ) {
-      amount *= 1 + 0.22 * this.leanPower[attacker.faction]
-    }
-    // ENGINEERING COUNTERS ORDNANCE: fortification discipline. Blast waves
-    // find braced plate and packed earth where flesh would have been.
-    if (event.type === 'explosive' && target instanceof Unit && this.leanCache[target.faction] === 'engineering') {
-      amount *= 1 - 0.22 * this.leanPower[target.faction]
+      target.hexedFor = 4000
     }
 
     // Ordnance ground rule: a soldier caught down in a crater bowl has no

@@ -19,14 +19,14 @@ export const TECH_MECHANICS: Record<TechId, string> = {
   old_rites: 'Commander ability charges 10% faster. Opens the occult line.',
 
   // ── carnage ──
-  butchery: 'Every kill dismembers. Bodies always come apart into usable remains.',
+  butchery: 'Every kill dismembers — maximum usable remains for walls, pickers and the harvest. Side effect: your dead are too torn apart for Mind Thrall to puppet.',
   bonepickers: 'A wounded soldier (below 92% hp) eats one nearby corpse piece every 0.5s, healing 6% of max hp + 8. Consumes the remains.',
   bone_harvest: 'Remains lying on your half pay 0.45 gold/s each (up to 24 at once). The bodies are not consumed.',
   bloodlust: 'Blood-soaked ground grants up to +45% attack and move speed. Gore builds where things die messily.',
   flenser_rite: 'Unlocks the Flenser.',
   plague_wind: 'Every enemy you kill leaves a plague cloud: 70px, 26 damage/s, for 6s, in that lane.',
   necropolis: 'Every 4s, 12 corpse pieces on your half assemble into a free soldier of your age at 50% hp.',
-  corpse_wall: 'Settled remains and wreckage physically block enemy shots. Enough dead becomes cover.',
+  corpse_wall: 'Settled remains and wreckage physically block enemy shots — and tall burial mounds (12+) stop flat fire for everyone. The dead are fortification.',
 
   // ── ordnance ──
   ricochet: 'Solid (non-explosive) shots that strike heavy or structure armour at a shallow angle deflect and fly on to hit something else (up to 2 skips, full damage).',
@@ -53,8 +53,8 @@ export const TECH_MECHANICS: Record<TechId, string> = {
   soul_tithe: 'Every enemy death anywhere feeds your ability +5% charge.',
   evil_eye: 'When you kill something, every enemy within 130px is slowed to 35% speed for 0.7s.',
   sacrament: 'When one of yours falls, every ally within 170px heals 9% of max hp.',
-  hexer_pact: 'Unlocks the Hexer.',
-  mind_thrall: '22% of everything you kill stands back up on YOUR side at 40% hp.',
+  hexer_pact: 'Unlocks the Hexer. A hexed unit takes +25% and, while marked, its plating, Aegis sharing, roots and barriers ALL stop working.',
+  mind_thrall: '22% of everything you kill stands back up on YOUR side at 40% hp. Fails against armies with Butchery — their dead are in too many pieces.',
   black_sun: 'Enemy fire scatters: their projectile spread ×3.2, on units and turrets alike.',
   ninth_seal: 'Unlocks the Ninth Sign.',
 
@@ -83,23 +83,21 @@ export const TECH_MECHANICS: Record<TechId, string> = {
 }
 
 /**
- * Each creed's identity, shown on its branch nodes: the MAIN THREAT it
- * builds, the threat it COUNTERS, and the creed that counters IT. The five
- * form a pentagon — build your threat, and if the enemy's threat is the one
- * that eats yours, buy two nodes of the creed that eats theirs as an
- * auxiliary. Two nodes in one branch is a lean; every rule below scales 25%
- * per node and caps at five. Held war banners also carry the lean's
- * signature (rally / spotting / salvage / tithe / feeding).
+ * Each creed's identity, shown on its branch nodes: the TWO THREATS it
+ * builds, and the counters — none of them stat modifiers, all of them
+ * things that physically happen on the field. Answers vary in strength:
+ * fire annihilates a corpse economy but only trims a spore one; a hex
+ * unmakes a fortress line entirely but does nothing to a swarm.
  */
 export const LEAN_RULES: Record<string, string> = {
   carnage:
-    'CARNAGE — threat: the meat engine (mounds rise fast, Fury on dead ground up to +28% speed/+18% damage, corpses become soldiers). COUNTERS BLIGHT: your troops take up to −35% from hostile ground zones. WEAK TO ORDNANCE: fire burns your corpse fuel. Held banners rally the garrison (+12% attack rate).',
+    'CARNAGE builds two threats. THE MEAT ENGINE: Butchery, Bone Harvest, Bonepickers and Necropolis turn every corpse into fuel — gold, healing, fresh soldiers. THE FLESH WALL: Corpse Wall makes the piled dead stop enemy shots, and tall burial mounds physically block flat fire for whoever stands behind them. Its answers: kills by its soldiers inside hostile blight scald the growth back (drown the garden). Broken by: FIRE — burning ground consumes the remains; and THE BANISHMENT — an occult congregation\u2019s victims never rise.',
   ordnance:
-    'ORDNANCE — threat: the barrage (deeper craters, +25% explosive damage into bowls, crater-mired enemies). COUNTERS CARNAGE: your fire zones consume settled remains up to 3× faster — no fuel, no meat engine. WEAK TO ENGINEERING: braced plate shrugs blasts. Held banners are spotting posts (+10% reach nearby).',
+    'ORDNANCE builds two threats. THE BARRAGE: Shrapnel, Cluster and Overpressure turn every shell into an area. THE FIRESTORM: Incendiary and Ashfall leave the ground itself burning and spreading. Its answers: fire consumes settled remains (starving the meat engine) and burns spore fields off at triple speed. Broken by: THE FLESH WALL — corpse cover and tall mounds physically eat flat shots; and engineering\u2019s work crews, who smother fires on their own half.',
   engineering:
-    'ENGINEERING — threat: the unbreakable line (quarry pays 3g per mass point, props rebuilt, self-repair). COUNTERS ORDNANCE: your units take up to −22% explosive damage. WEAK TO OCCULT: hexes seep through steel. Held gold banners pay +50%.',
+    'ENGINEERING builds two threats. THE IRON LINE: Aegis formations, plated machines, Nanite repair and rooted positions that simply do not die. THE MACHINE ECONOMY: Salvage, the quarry and Autoforge convert the war\u2019s wreckage into money and rebuilt guns. Its answers: crews smother hostile fire and growth on their own half, and machines feel no terror and no dread. Broken by: THE HEX — a marked unit\u2019s plating, formation-sharing, roots and barriers all stop working while the mark burns; and swarms, which mob anything expensive.',
   occult:
-    'THE OCCULT — threat: the tithe (deaths feed your ability, haunted ground saps enemies up to −12% speed/−15% damage). COUNTERS ENGINEERING: your damage vs heavy and structure armour +22%. WEAK TO BLIGHT: rot does not fear the dark. Every held banner also tithes ability charge.',
+    'THE OCCULT builds two threats. THE TITHE: every death feeds the commander\u2019s ability; Evil Eye, terror and Black Sun break enemy cohesion. THE STOLEN DEAD: Mind Thrall raises a fifth of everything killed on your side, and THE BANISHMENT denies the enemy their own dead entirely. Broken by: THE GARDEN — soldiers standing in their own blight shed hexes, mire and terror three times as fast; machines, which cannot be terrified; and Butchery — you cannot puppet what lies in six pieces.',
   blight:
-    'BLIGHT — threat: the creeping map (mounds sprout hostile blooms, blighted ground never settles). COUNTERS THE OCCULT: hostile mire, hex and terror on your troops run 45% shorter. WEAK TO CARNAGE: meat wades through your gardens. Garrisons at held banners feed (+1.2% hp/s).'
+    'BLIGHT builds two threats. THE CREEPING MAP: Spore Cloud, Mycelium and Deep Roots make ground itself hostile and slowly everywhere. THE ROOTED GARDEN: Rooted, Verdant Tide and regrowing soldiers hold what the spores take — and standing in your own growth purges hostile control. Its answers: growth denies the enemy quarry its ground. Broken by: FIRE, which burns zones off at triple speed; carnage kills inside the garden, which scald it back; and engineering crews cutting growth on their half.'
 }

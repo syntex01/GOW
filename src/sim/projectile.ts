@@ -85,6 +85,18 @@ export default class Projectile {
   private scene: Phaser.Scene
   private vfx: Vfx
   private groundY: number
+  /** How far the burial mounds rise above the flat line where this shot now flies. */
+  private moundRise = 0
+  /** Where the shot was born — the mound under the muzzle never blocks it. */
+  private readonly bornX: number
+
+  /** THE FLESH WALL RULE: a tall mound is real cover. The battlefield sets
+   * this every step from the relief under the shot, so flat fire slams into
+   * the piled dead and lobbed shells burst on the crest instead of sailing
+   * through a hill that is visibly there. */
+  setMoundRise(height: number): void {
+    this.moundRise = height
+  }
   private life = 0
   private trailTimer = 0
   private trailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
@@ -99,6 +111,7 @@ export default class Projectile {
     this.vy = config.vy
     this.gravity = config.gravity
     this.groundY = groundY
+    this.bornX = config.x
     this.vfx = vfx
 
     this.sprite = scene.add
@@ -219,8 +232,9 @@ export default class Projectile {
       return { hit: best, done: true }
     }
 
-    if (this.y >= this.groundY) {
-      this.y = this.groundY
+    const wallRise = Math.abs(this.x - this.bornX) > 40 ? this.moundRise : 0
+    if (this.y >= this.groundY - wallRise) {
+      this.y = this.groundY - wallRise
       this.detonate(true)
       return { hit: null, done: true }
     }

@@ -133,8 +133,10 @@ export default class Unit implements Damageable {
   /** Banner garrison stamps, re-applied by the sim every tick. */
   bannerZeal = 0
   bannerReach = 0
-  /** Blight ward: scales hostile control durations (mire, hex, terror). */
-  wardScale = 1
+  /** The occult took this one's soul as it died: it cannot rise again. */
+  banished = false
+  /** Standing in own blight: hostile control drains three times as fast. */
+  cleansing = false
   hp: number
   maxHp: number
   alive = true
@@ -671,14 +673,19 @@ export default class Unit implements Damageable {
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {
     if (!this.alive) return
     let mult = damageMultiplier(type, this.armor)
+    // THE HEX UNMAKES EVERY WARD: while the mark burns, plating does not
+    // glance, formations do not share, roots do not hold and barriers do not
+    // barrier. This is how the occult opens an engineering line — not by
+    // hitting harder, but by making the engineering stop being true.
+    const hexed = this.hexedFor > 0
     // Plating: purpose-built against small arms — pierce and slash glance off.
-    if (this.def.special === 'plating' && (type === 'pierce' || type === 'slash')) mult *= 0.75
+    if (!hexed && this.def.special === 'plating' && (type === 'pierce' || type === 'slash')) mult *= 0.75
     // Aegis: a soldier in formation takes a share, not the whole blow. Break
     // the formation and the protection goes with it.
-    const shared = this.linked > 0 ? 1 - Math.min(0.4, this.linked * 0.14) : 1
+    const shared = !hexed && this.linked > 0 ? 1 - Math.min(0.4, this.linked * 0.14) : 1
     // Rooted: a soldier that has not moved is dug in, and it shows.
-    const dugIn = 1 - Math.min(0.35, (this.rooting / 4000) * 0.35)
-    const reduced = (amount * mult * (1 - this.auraShield) * shared * dugIn) / this.toughness
+    const dugIn = hexed ? 1 : 1 - Math.min(0.35, (this.rooting / 4000) * 0.35)
+    const reduced = (amount * mult * (1 - (hexed ? 0 : this.auraShield)) * shared * dugIn) / this.toughness
     const before = this.hp
     this.hp -= reduced
     this.lastHitType = type
@@ -719,7 +726,7 @@ export default class Unit implements Damageable {
 
   /** Bogs this unit down — it can still fight, it just cannot get anywhere. */
   mire(ms: number): void {
-    this.miredFor = Math.max(this.miredFor, ms * this.wardScale)
+    this.miredFor = Math.max(this.miredFor, ms)
   }
 
   /** Shuts this unit down for a while. It cannot move, turn or shoot. */
@@ -872,7 +879,9 @@ export default class Unit implements Damageable {
     const physics = this.world.physics
     const rand = this.world.rng
     const away = this.lastHitDir || -this.dir
-    const drops = Math.max(3, Math.round(8 * [0.35, 0.55, 0.8, 1, 1.2][this.def.age]))
+    let drops = Math.max(3, Math.round(8 * [0.35, 0.55, 0.8, 1, 1.2][this.def.age]))
+    // A banished body is mostly gone before it lands.
+    if (this.banished) drops = Math.max(1, Math.round(drops * 0.5))
     for (let i = 0; i < drops; i += 1) {
       physics.spawn(
         'blood',
@@ -948,10 +957,13 @@ export default class Unit implements Damageable {
     if (this.stagger > 0) this.stagger -= dtMs
     if (this.knockStacks > 0) this.knockStacks = Math.max(0, this.knockStacks - (dtMs / 1000) * KNOCK_RECOVERY)
     if (this.attackCooldown > 0) this.attackCooldown -= dtMs
-    if (this.miredFor > 0) this.miredFor -= dtMs
+    // The garden cleanses: own blight underfoot burns hostile control off.
+    const purge = this.cleansing ? 3 : 1
+    this.cleansing = false
+    if (this.miredFor > 0) this.miredFor -= dtMs * purge
     if (this.cursedFor > 0) this.cursedFor -= dtMs
-    if (this.hexedFor > 0) this.hexedFor -= dtMs
-    if (this.terrorFor > 0) this.terrorFor -= dtMs
+    if (this.hexedFor > 0) this.hexedFor -= dtMs * purge
+    if (this.terrorFor > 0) this.terrorFor -= dtMs * purge
     if (this.poisonFor > 0) {
       this.poisonFor -= dtMs
       this.hp -= this.poisonDps * (dtMs / 1000)
