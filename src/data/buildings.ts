@@ -1,3 +1,4 @@
+import { AGES } from './ages'
 import type { TechId } from './tech'
 
 /**
@@ -185,9 +186,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'silo',
     color: 0xd8b45a,
     tiers: [
-      { cost: 700, hp: 1400, effect: '+18% income' },
-      { cost: 1600, hp: 2600, effect: '+38% income' },
-      { cost: 3200, hp: 4200, effect: '+60% income, and the first 20% of any siege is absorbed' }
+      { cost: 400, hp: 5200, effect: '+18% income' },
+      { cost: 850, hp: 8000, effect: '+38% income' },
+      { cost: 1350, hp: 12000, effect: '+60% income, and the first 20% of any siege is absorbed' }
     ]
   },
   {
@@ -199,9 +200,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'yard',
     color: 0xa8703c,
     tiers: [
-      { cost: 700, hp: 1300, effect: '−12% build time' },
-      { cost: 1600, hp: 2400, effect: '−22% build time, and soldiers march out 120px advanced' },
-      { cost: 3200, hp: 3900, effect: '−30% build time, and the first of each pair arrives with +15% health' }
+      { cost: 400, hp: 4600, effect: '−12% build time' },
+      { cost: 850, hp: 7200, effect: '−22% build time, and soldiers march out 120px advanced' },
+      { cost: 1350, hp: 10800, effect: '−30% build time, and the first of each pair arrives with +15% health' }
     ]
   },
   {
@@ -213,9 +214,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'spire',
     color: 0x9a7bd4,
     tiers: [
-      { cost: 700, hp: 1100, effect: 'research costs −8%' },
-      { cost: 1600, hp: 2100, effect: 'research −15%, ability charges 12% faster' },
-      { cost: 3200, hp: 3400, effect: 'research −22%, and you can read the enemy commander’s creed' }
+      { cost: 380, hp: 4000, effect: 'research costs −8%' },
+      { cost: 820, hp: 6400, effect: 'research −15%, ability charges 12% faster' },
+      { cost: 1300, hp: 9600, effect: 'research −22%, and you can read the enemy commander’s creed' }
     ]
   },
   {
@@ -227,9 +228,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'forge',
     color: 0xc06a3a,
     tiers: [
-      { cost: 700, hp: 1500, effect: 'the fortress mends 0.4%/s while nothing is hitting it' },
-      { cost: 1600, hp: 2800, effect: '+ turret range +12%' },
-      { cost: 3200, hp: 4400, effect: '+ a fourth turret slot on the wall' }
+      { cost: 420, hp: 5400, effect: 'the fortress mends 0.4%/s while nothing is hitting it' },
+      { cost: 880, hp: 8400, effect: '+ turret range +12%' },
+      { cost: 1400, hp: 12400, effect: '+ a fourth turret slot on the wall' }
     ]
   }
 ]
@@ -253,7 +254,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'The harvest, rendered down properly instead of left where it fell.',
     shape: 'kiln',
     color: 0x8fd6a4,
-    tiers: [{ cost: 1800, hp: 2600, effect: 'Remains on your half pay 0.9 gold/s each instead of 0.45. Razed: they pay nothing at all for 30s.' }]
+    tiers: [{ cost: 1000, hp: 8200, effect: 'Remains on your half pay 0.9 gold/s each instead of 0.45. Razed: they pay nothing at all for 30s.' }]
   },
   {
     id: 'resurrection_vat',
@@ -265,7 +266,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'It is quicker if you keep the pieces warm.',
     shape: 'vat',
     color: 0x7fd6a0,
-    tiers: [{ cost: 2600, hp: 3000, effect: 'The dead rise every 2.4s instead of 4s, and stand at 65% health instead of 50%.' }]
+    tiers: [{ cost: 1420, hp: 9000, effect: 'The dead rise every 2.4s instead of 4s, and stand at 65% health instead of 50%.' }]
   },
   // ── ordnance ──
   {
@@ -278,7 +279,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'Everything you will ever fire, in one building, on your own ground.',
     shape: 'magazine',
     color: 0xff8a3a,
-    tiers: [{ cost: 2000, hp: 1900, effect: '+18% splash radius on everything you fire. DETONATES when destroyed, cratering your own flank.' }]
+    tiers: [{ cost: 1120, hp: 6600, effect: '+18% splash radius on everything you fire. DETONATES when destroyed, cratering your own flank.' }]
   },
   {
     id: 'signal_tower',
@@ -290,7 +291,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'Someone up there can see the whole field and is shouting corrections.',
     shape: 'mast',
     color: 0xffa04a,
-    tiers: [{ cost: 2200, hp: 2200, effect: 'Plunging fire reaches ANY lane instead of two over.' }]
+    tiers: [{ cost: 1220, hp: 7400, effect: 'Plunging fire reaches ANY lane instead of two over.' }]
   },
   // ── engineering ──
   {
@@ -303,7 +304,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'Crews who do not care whose half the wreckage landed on.',
     shape: 'pit',
     color: 0x5ce1ff,
-    tiers: [{ cost: 2000, hp: 2800, effect: 'Wreckage pays you wherever it lands, not only on your own half.' }]
+    tiers: [{ cost: 1120, hp: 8600, effect: 'Wreckage pays you wherever it lands, not only on your own half.' }]
   },
   {
     id: 'assembly_line',
@@ -315,7 +316,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'The turret was being rebuilt before it finished falling over.',
     shape: 'line',
     color: 0x7fe8ff,
-    tiers: [{ cost: 2600, hp: 3200, effect: 'Destroyed turrets rebuild INSTANTLY, and come back one age higher where a better model exists.' }]
+    tiers: [{ cost: 1420, hp: 9400, effect: 'Destroyed turrets rebuild INSTANTLY, and come back one age higher where a better model exists.' }]
   },
   // ── occult ──
   {
@@ -328,7 +329,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'Nine seats, eight of them occupied, and a very good view of the field.',
     shape: 'chapel',
     color: 0xb46bff,
-    tiers: [{ cost: 2000, hp: 2000, effect: 'Every enemy death anywhere feeds your ability +8% instead of +5%.' }]
+    tiers: [{ cost: 1120, hp: 7000, effect: 'Every enemy death anywhere feeds your ability +8% instead of +5%.' }]
   },
   {
     id: 'thrall_pit',
@@ -340,7 +341,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'Somewhere to keep them until they stop arguing.',
     shape: 'thrall',
     color: 0xc98bff,
-    tiers: [{ cost: 2400, hp: 2600, effect: 'Raised thralls cost no population at all.' }]
+    tiers: [{ cost: 1340, hp: 8200, effect: 'Raised thralls cost no population at all.' }]
   },
   // ── blight ──
   {
@@ -353,7 +354,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'It does not need anything to die first. It would simply prefer it.',
     shape: 'bed',
     color: 0xd98ec4,
-    tiers: [{ cost: 2000, hp: 2400, effect: 'Blight grows outward from the bed on its own — your half turns hostile without a single kill to seed it.' }]
+    tiers: [{ cost: 1120, hp: 7800, effect: 'Blight grows outward from the bed on its own — your half turns hostile without a single kill to seed it.' }]
   },
   {
     id: 'heart_root',
@@ -365,7 +366,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     blurb: 'The part of it that is thinking.',
     shape: 'root',
     color: 0xe8a4d4,
-    tiers: [{ cost: 2600, hp: 3400, effect: 'Your soldiers dig in twice as fast, and your blight mends your own buildings.' }]
+    tiers: [{ cost: 1420, hp: 9800, effect: 'Your soldiers dig in twice as fast, and your blight mends your own buildings.' }]
   }
 ]
 
@@ -387,9 +388,9 @@ export const DEFENCE_BUILDINGS: BuildingDef[] = [
     shape: 'redoubt',
     color: 0x9aa6b8,
     tiers: [
-      { cost: 800, hp: 2000, effect: 'Fires on anything in its file within 300px for 60 damage a shot.' },
-      { cost: 1700, hp: 3400, effect: '95 damage, and it reaches the file either side of its own.' },
-      { cost: 3300, hp: 5200, effect: '150 damage, splash, and it shoots at aircraft.' }
+      { cost: 460, hp: 6800, effect: 'Fires on anything in its file within 300px for 60 damage a shot.' },
+      { cost: 940, hp: 10400, effect: '95 damage, and it reaches the file either side of its own.' },
+      { cost: 1800, hp: 15200, effect: '150 damage, splash, and it shoots at aircraft.' }
     ]
   },
   {
@@ -401,9 +402,9 @@ export const DEFENCE_BUILDINGS: BuildingDef[] = [
     shape: 'palisade',
     color: 0x7c6a52,
     tiers: [
-      { cost: 500, hp: 4200, effect: 'Blocks its file. Nothing advances past it until it is down.' },
-      { cost: 1100, hp: 7600, effect: 'Blocks its file, and the file either side of it.' },
-      { cost: 2200, hp: 12000, effect: 'Blocks three files, and mends 0.5%/s between assaults.' }
+      { cost: 300, hp: 11000, effect: 'Blocks its file. Nothing advances past it until it is down.' },
+      { cost: 620, hp: 17000, effect: 'Blocks its file, and the file either side of it.' },
+      { cost: 1220, hp: 26000, effect: 'Blocks three files, and mends 0.5%/s between assaults.' }
     ]
   }
 ]
@@ -422,9 +423,32 @@ export const BUILDING_ORDER: string[] = ALL_BUILDINGS.map(b => b.id)
  * economy upgrade is (`Army.incomeUpgradeCost`). Later ages are richer, so a
  * flat price would make the outworks free by the Modern age.
  */
+/**
+ * What a building costs, at the age you are raising it in.
+ *
+ * Costs used to scale linearly (+28% an age) while income scales roughly 1.7x
+ * an age, and the result was an economy building whose payback ran BACKWARDS:
+ * a granary took 333 seconds to earn itself back at the first age and 87 at
+ * the last. It was unaffordable exactly when a commander needs economy and
+ * nearly free once they no longer do.
+ *
+ * Prices ride the income curve instead. A granary is the same decision — about
+ * two and a bit minutes of income — whenever you make it, and the tier costs
+ * below are quoted in first-age gold.
+ */
 export function buildingCost(def: BuildingDef, tier: number, age: number): number {
   const step = def.tiers[Math.max(0, Math.min(def.tiers.length - 1, tier))]
-  return Math.round(step.cost * (1 + age * 0.28))
+  return Math.round(step.cost * ageIncomeScale(age))
+}
+
+/**
+ * How much richer an age is than the first one. Everything a commander can
+ * spend gold on is quoted against this, so a price means the same thing at
+ * every point in a match.
+ */
+export function ageIncomeScale(age: number): number {
+  const scale = AGES[Math.max(0, Math.min(AGES.length - 1, age))].income / AGES[0].income
+  return scale
 }
 
 /** Rebuilding is cheaper than raising, but it is never free. */

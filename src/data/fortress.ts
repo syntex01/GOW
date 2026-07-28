@@ -1,3 +1,4 @@
+import { ageIncomeScale } from './buildings'
 /**
  * What a commander can do to the seat itself.
  *
@@ -41,14 +42,14 @@ export const FORTRESS_TRACKS: FortressTrack[] = [
     blurb: 'Stone, and less of a front to hold.',
     color: 0x9fb4d6,
     levels: [
-      { cost: 900, effect: '+25% fortress health.' },
+      { cost: 400, effect: '+25% fortress health.' },
       {
-        cost: 2100,
+        cost: 660,
         effect:
           '+55% fortress health, and attackers in the flanking gate files take 22 damage a second from murder holes while they are in reach of the wall.'
       },
       {
-        cost: 4400,
+        cost: 1150,
         effect:
           '+90% fortress health, and ONLY the middle file can reach your gate at all — whatever generation your seat is.'
       }
@@ -61,11 +62,11 @@ export const FORTRESS_TRACKS: FortressTrack[] = [
     color: 0xffb347,
     levels: [
       {
-        cost: 800,
+        cost: 380,
         effect: '+45% turret health, and turrets mend 1.2% a second while nothing is in reach of them.'
       },
       {
-        cost: 1900,
+        cost: 700,
         effect: '+95% turret health, and your fortress’s wounds no longer slow its guns.'
       }
     ]
@@ -76,9 +77,9 @@ export const FORTRESS_TRACKS: FortressTrack[] = [
     blurb: 'Stores an enemy standing in your yard cannot get at.',
     color: 0xd8b45a,
     levels: [
-      { cost: 750, effect: 'A siege can cut at most 55% of your income instead of 70%.' },
+      { cost: 340, effect: 'A siege can cut at most 55% of your income instead of 70%.' },
       {
-        cost: 1800,
+        cost: 620,
         effect: 'At most 45%, and a building razed on your ground refunds half what it cost to raise.'
       }
     ]
@@ -90,14 +91,17 @@ export const TRACKS_BY_ID: Record<FortressTrackId, FortressTrack> = Object.fromE
 ) as Record<FortressTrackId, FortressTrack>
 
 /**
- * Later ages pay more for the same stone, on the same curve the economy
- * upgrade uses — otherwise a commander who banks through to the last age buys
- * the whole fortress out of pocket change.
+ * What a level of stone costs, at the age you are laying it in.
+ *
+ * Priced against the age's income like everything else a commander can buy,
+ * and quoted below in first-age gold. On the old linear curve the three
+ * ramparts came to 23,680 gold by the last age — three minutes of total
+ * income for one track, which is not a decision, it is a wall you never reach.
  */
 export function trackCost(track: FortressTrack, level: number, age: number): number {
   const base = track.levels[level]?.cost
   if (base === undefined) return 0
-  return Math.round(base * (1 + age * 0.55))
+  return Math.round(base * ageIncomeScale(age))
 }
 
 /**

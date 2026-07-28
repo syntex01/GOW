@@ -3,6 +3,7 @@ import type { Difficulty } from '../core/save'
 import { MAX_AGE } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { turretsForAge } from '../data/turrets'
+import { BUILDINGS_BY_ID, DOCTRINE_BUILDINGS, buildingCost } from '../data/buildings'
 import type Battlefield from './battlefield'
 import type { ArmorType } from './types'
 import { TECHS, TECH_BRANCHES, ascensionFor, lineageFor, type TechBranch, type TechNode } from '../data/tech'
@@ -203,17 +204,71 @@ export default class AiController {
     return this.bf.evolve('enemy')
   }
 
+  /**
+   * Develops the yard.
+   *
+   * This used to buy a flat income upgrade, which no longer exists — the
+   * Granary is the economy now, and an AI that could not build one would have
+   * left the whole outworks system as something only the player interacts
+   * with. It builds the way a person does: economy first, then whatever its
+   * creed has opened, and it repairs what has been burned before it expands.
+   */
   private considerEconomy(): boolean {
     const army = this.bf.enemy
-    const cost = army.incomeUpgradeCost()
-    if (cost === null) return false
     // Never invest while there is nothing on the field to hold the line —
     // greed with an empty lane loses the game outright.
     const ownUnits = this.bf.units.filter(u => u.alive && u.faction === 'enemy').length
     if (ownUnits < 3) return false
-    const wantsEconomy = army.gold > cost * 1.9 && this.pressure < 0.4 && army.incomeLevel < 3
-    if (!wantsEconomy) return false
-    return army.buyIncomeUpgrade()
+    if (this.pressure >= 0.4) return false
+    const seat = this.bf.activeSeat('enemy')
+
+    // Rubble first. A razed granary is a hole in the income that costs less to
+    // fill than a new plot does to open.
+    for (let i = 0; i < seat.plots.length; i += 1) {
+      const plot = seat.plots[i]
+      if (plot.alive || plot.underConstruction || !plot.def) continue
+      if (this.bf.buildOnPlot('enemy', i, plot.def.id)) return true
+    }
+
+    // Then the ladder: raise what is missing, lift what is low. The order is
+    // the order a commander cares about them in.
+    const wishlist = ['granary', 'muster', 'forge', 'reliquary']
+    for (const id of wishlist) {
+      const def = BUILDINGS_BY_ID[id]
+      if (!def) continue
+      const standing = seat.plots.findIndex(p => p.alive && p.def?.id === id)
+      const empty = seat.plots.findIndex(p => p.empty && seat.accepts(p.plot, def))
+      const target = standing >= 0 ? standing : empty
+      if (target < 0) continue
+      const plot = seat.plots[target]
+      const tier = plot.alive && plot.def ? plot.tier + 1 : 0
+      if (tier >= def.tiers.length) continue
+      // Only spend from a comfortable surplus, so it never builds itself out
+      // of an army it needed this second.
+      if (army.gold < buildingCost(def, tier, army.age) * 1.9) continue
+      if (this.bf.buildOnPlot('enemy', target, id)) return true
+    }
+
+    // Doctrine buildings once the node is owned — these are the pieces that
+    // make an AI of one creed play differently from an AI of another.
+    for (const def of DOCTRINE_BUILDINGS) {
+      if (!def.requires || !army.techs.has(def.requires)) continue
+      if (this.bf.hasBuilding('enemy', def.id)) continue
+      const empty = seat.plots.findIndex(p => p.empty && seat.accepts(p.plot, def))
+      if (empty < 0) continue
+      if (army.gold < buildingCost(def, 0, army.age) * 1.7) continue
+      if (this.bf.buildOnPlot('enemy', empty, def.id)) return true
+    }
+
+    // And stone, when it is being leaned on and has money to spare.
+    if (this.pressure > 0.2) {
+      for (const track of ['ramparts', 'cellars', 'barbican'] as const) {
+        const cost = army.trackCost(track)
+        if (cost === null || army.gold < cost * 2.2) continue
+        if (this.bf.buyTrack('enemy', track)) return true
+      }
+    }
+    return false
   }
 
   private considerTurret(): boolean {

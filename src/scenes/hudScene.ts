@@ -243,7 +243,7 @@ export default class HUDScene extends Phaser.Scene {
       subtext: '—',
       fontSize: 13,
       accent: UI.gold,
-      corner: 'B',
+      corner: 'U',
       onClick: () => this.toggleBasePanel()
     })
     this.economyButton.setDepth(2)

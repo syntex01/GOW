@@ -495,7 +495,6 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-SPACE', () => this.tryAbility())
     keyboard.on('keydown-U', () => gameEvents.emit('hud:base', undefined))
     keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
-    keyboard.on('keydown-B', () => gameEvents.emit('hud:base', undefined))
     // The black box, on demand: F9 downloads this session's debug log.
     keyboard.on('keydown-F9', () => gameLog.download())
     // The whole of placement: pick the file the next piece will walk.
