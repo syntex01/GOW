@@ -1345,7 +1345,11 @@ export const UNITS: UnitDef[] = [
     bounty: 1180,
     xp: 1040,
     pop: 5,
-    height: 125,
+    height: 250,
+    // The top of the elite curve is a minute of income and is meant to read
+    // as a different KIND of object, not a bigger soldier. Three files wide,
+    // and tall enough that the men beside it come up to its knee.
+    laneSpan: 3,
     regen: 24,
     hitsAir: true,
     attack: {

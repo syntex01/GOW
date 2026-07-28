@@ -625,7 +625,11 @@ export const FACTION_UNITS: UnitDef[] = [
     bounty: 1292,
     xp: 1124,
     pop: 4,
-    height: 116,
+    height: 225,
+    // The top of the elite curve is a minute of income and is meant to read
+    // as a different KIND of object, not a bigger soldier. Three files wide,
+    // and tall enough that the men beside it come up to its knee.
+    laneSpan: 3,
     hitsAir: true,
     special: 'dread_wave',
     attack: {
@@ -933,7 +937,11 @@ export const FACTION_UNITS: UnitDef[] = [
     bounty: 1216,
     xp: 1058,
     pop: 4,
-    height: 132,
+    height: 240,
+    // The top of the elite curve is a minute of income and is meant to read
+    // as a different KIND of object, not a bigger soldier. Three files wide,
+    // and tall enough that the men beside it come up to its knee.
+    laneSpan: 3,
     regen: 60,
     special: 'seed_shot',
     attack: {
@@ -1045,7 +1053,11 @@ export const FACTION_UNITS: UnitDef[] = [
     bounty: 988,
     xp: 860,
     pop: 3,
-    height: 84,
+    height: 210,
+    // The top of the elite curve is a minute of income and is meant to read
+    // as a different KIND of object, not a bigger soldier. Three files wide,
+    // and tall enough that the men beside it come up to its knee.
+    laneSpan: 3,
     attack: { kind: 'melee', knockback: 520, splash: 120 },
     description: 'A rendering plant that lost patience. Its blows do not kill so much as relocate, violently.',
     visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'club', helmet: 'none', chassis: 'legs', bulk: 1.7 })
@@ -1174,7 +1186,11 @@ export const FACTION_UNITS: UnitDef[] = [
     bounty: 1026,
     xp: 893,
     pop: 3,
-    height: 86,
+    height: 215,
+    // The top of the elite curve is a minute of income and is meant to read
+    // as a different KIND of object, not a bigger soldier. Three files wide,
+    // and tall enough that the men beside it come up to its knee.
+    laneSpan: 3,
     special: 'suppress',
     attack: { kind: 'projectile', projectile: 'rocket', speed: 640, gravity: 240, spread: 0.09, knockback: 160, splash: 90, count: 4 },
     description: 'Four tubes on legs. The barrage is not meant to kill a line so much as stop it answering.',
@@ -1326,7 +1342,11 @@ export const FACTION_UNITS: UnitDef[] = [
     bounty: 1672,
     xp: 1455,
     pop: 5,
-    height: 100,
+    height: 235,
+    // The top of the elite curve is a minute of income and is meant to read
+    // as a different KIND of object, not a bigger soldier. Three files wide,
+    // and tall enough that the men beside it come up to its knee.
+    laneSpan: 3,
     special: 'siege_mode',
     attack: { kind: 'projectile', projectile: 'plasmaball', speed: 900, gravity: 0, spread: 0.02, knockback: 180, splash: 70 },
     description: 'The quality argument, concluded. The longer it plants, the further its light reaches.',

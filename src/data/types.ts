@@ -118,6 +118,17 @@ export interface UnitDef {
   xp: number
   pop: number
   height: number
+  /**
+   * How many files this thing physically stands across, centred on its own.
+   *
+   * One for everything a person can carry a weapon in. Three for the war
+   * machines at the top of the elite curve, which cost a minute of income
+   * each and are meant to read as a different KIND of object rather than a
+   * bigger soldier: they are stepped once, in the file they are centred on,
+   * but everything in the files they straddle can see them and be seen by
+   * them, at full strength rather than at the cross-file penalty.
+   */
+  laneSpan?: number
   attack: AttackSpec
   /**
    * Closest a target may stand before this weapon cannot be brought to bear.

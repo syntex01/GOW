@@ -1693,7 +1693,11 @@ export default class Battlefield {
    */
   canReachGate(unit: Unit): boolean {
     if (unit.layer === 'air') return true
-    return this.gateLanesFor(OPPOSITE[unit.faction]).has(unit.lane)
+    // A machine wide enough to straddle files reaches the gate if ANY part of
+    // it stands in a gate file. It cannot be walked up a flank and be safe
+    // from the wall while its own shoulder is against it.
+    const gates = this.gateLanesFor(OPPOSITE[unit.faction])
+    return unit.lanes.some(l => gates.has(l))
   }
 
   /**
@@ -2272,23 +2276,36 @@ export default class Battlefield {
     // Each lane runs the whole one-dimensional fight — frontage, press,
     // blocking — on its own. The lanes only touch through the fixed cross-lane
     // rules in pickTarget, which is the entire chess of it.
-    const split = (flat: Unit[]): { lanes: Unit[][]; air: Unit[] } => {
+    //
+    // Two projections, not one. `lanes` holds each soldier exactly once, in the
+    // file it is centred on, and is what gets STEPPED — a war machine three
+    // files wide must not take three turns. `seen` holds it in every file it
+    // physically occupies, and is what the enemy targets against.
+    const split = (flat: Unit[]): { lanes: Unit[][]; seen: Unit[][]; air: Unit[] } => {
       const lanes: Unit[][] = Array.from({ length: LANE_COUNT }, () => [])
+      const seen: Unit[][] = Array.from({ length: LANE_COUNT }, () => [])
       const air: Unit[] = []
-      for (const u of flat) (u.layer === 'air' ? air : lanes[u.lane]).push(u)
-      return { lanes, air }
+      for (const u of flat) {
+        if (u.layer === 'air') {
+          air.push(u)
+          continue
+        }
+        lanes[u.lane].push(u)
+        for (const l of u.lanes) seen[l].push(u)
+      }
+      return { lanes, seen, air }
     }
     const player = split(playerUnits)
     const enemy = split(enemyUnits)
 
     for (let lane = 0; lane < LANE_COUNT; lane += 1) {
-      this.applyAuras(player.lanes[lane], enemy.lanes[lane])
-      this.stepSide(player.lanes[lane], enemy.lanes, enemy.air, this.enemyBase, dtMs)
-      this.stepSide(enemy.lanes[lane], player.lanes, player.air, this.playerBase, dtMs)
+      this.applyAuras(player.seen[lane], enemy.seen[lane])
+      this.stepSide(player.lanes[lane], enemy.seen, enemy.air, this.enemyBase, dtMs)
+      this.stepSide(enemy.lanes[lane], player.seen, player.air, this.playerBase, dtMs)
     }
     // Air rides above the lanes: it queues against nothing and sees everything.
-    this.stepSide(player.air, enemy.lanes, enemy.air, this.enemyBase, dtMs)
-    this.stepSide(enemy.air, player.lanes, player.air, this.playerBase, dtMs)
+    this.stepSide(player.air, enemy.seen, enemy.air, this.enemyBase, dtMs)
+    this.stepSide(enemy.air, player.seen, player.air, this.playerBase, dtMs)
   }
 
   /**
@@ -2367,7 +2384,7 @@ export default class Battlefield {
       if (unit.def.flanker) {
         // An open file ahead is a road: raiders ride it a third faster.
         let clear = true
-        for (const foe of enemyLanes[unit.lane]) {
+        for (const foe of unit.lanes.flatMap(l => enemyLanes[l])) {
           const dx = (foe.x - unit.x) * dir
           if (dx > -40 && dx < 360) {
             clear = false
@@ -2461,8 +2478,12 @@ export default class Battlefield {
     const flying = unit.layer === 'air'
     const siege = unit.def.role === 'siege'
 
+    const seen = new Set<Damageable>()
     const gather = (list: readonly Damageable[], out: { target: Damageable; dist: number }[]): void => {
       for (const c of list) {
+        // A machine wide enough to straddle files appears in each of them.
+        if (seen.has(c)) continue
+        seen.add(c)
         if (!unit.canTarget(c)) continue
         const dist = unit.distanceTo(c)
         if (dist > unit.reach || dist < unit.minReach) continue
@@ -2513,17 +2534,24 @@ export default class Battlefield {
       // Bombardment still cannot shell a fortress from the yard: a siege engine
       // standing in a flank file is looking at granaries, not at the gate.
       if (this.canReachGate(unit)) gather([enemyBase], best)
-      gather(this.derelictBlockers(OPPOSITE[unit.faction], unit.lane), best)
-      gather(this.standingBuildings(OPPOSITE[unit.faction], unit.lane), best)
+      for (const l of unit.lanes) {
+        gather(this.derelictBlockers(OPPOSITE[unit.faction], l), best)
+        gather(this.standingBuildings(OPPOSITE[unit.faction], l), best)
+      }
       if (best.length > 0) return pickFrom(best)
     } else {
-      gather(enemyLanes[unit.lane], own)
+      // It reaches into every file it stands in, and at FULL strength — the
+      // cross-file penalty is for a gun line helping its neighbour, not for a
+      // machine whose own shoulder is in the next lane.
+      for (const l of unit.lanes) gather(enemyLanes[l], own)
       if (!melee) gather(enemyAir, own)
       // The gate is only reachable from the middle three files, at ANY range.
       // Everything else in the yard is a building, and only from the flanks.
       if (this.canReachGate(unit)) gather([enemyBase], own)
-      gather(this.derelictBlockers(OPPOSITE[unit.faction], unit.lane), own)
-      gather(this.standingBuildings(OPPOSITE[unit.faction], unit.lane), own)
+      for (const l of unit.lanes) {
+        gather(this.derelictBlockers(OPPOSITE[unit.faction], l), own)
+        gather(this.standingBuildings(OPPOSITE[unit.faction], l), own)
+      }
       if (own.length > 0) return pickFrom(own)
       if (!melee) {
         // Spill into the lane next door, at a price. A gun line can help its
@@ -3517,7 +3545,7 @@ export default class Battlefield {
       const t = targets[seq]
       if (!t.alive || t.faction === faction) continue
       // A swung weapon sweeps the swinger's own file. Shells do not care.
-      if (laneLock !== undefined && t instanceof Unit && t.layer === 'ground' && t.lane !== laneLock) continue
+      if (laneLock !== undefined && t instanceof Unit && t.layer === 'ground' && !t.lanes.includes(laneLock)) continue
       const dx = t.x - x
       const dy = t.y + t.centerOffsetY - y
       const dist = Math.sqrt(dx * dx + dy * dy) - t.radius

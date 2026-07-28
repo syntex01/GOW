@@ -133,6 +133,21 @@ const KNOCK_SPEED_CAP = 0.75
 /** What fraction of its march a staggered soldier keeps while closing. */
 const STAGGER_ADVANCE = 0.55
 
+/**
+ * The files a thing of the given width occupies, centred on `lane` and clipped
+ * to the board. A machine pushed against the edge of the field genuinely covers
+ * fewer files — it does not wrap around, and it does not slide inward.
+ */
+export function spannedLanes(lane: number, span: number): number[] {
+  if (span <= 1) return [lane]
+  const half = Math.floor(span / 2)
+  const out: number[] = []
+  for (let l = lane - half; l <= lane + half; l += 1) {
+    if (l >= 0 && l < LANE_Y.length) out.push(l)
+  }
+  return out
+}
+
 let nextId = 1
 
 /**
@@ -159,6 +174,24 @@ export default class Unit implements Damageable {
   /** Which of the five files this soldier walks. Fixed at spawn — unless
    * the soldier is a flanker, whose own rule may move it once blocked. */
   lane = 2
+  /**
+   * Every file this unit occupies. One entry for a soldier; three for a war
+   * machine wide enough to stand across its neighbours. Kept as a list rather
+   * than derived on the fly because it is read in the inner targeting loop.
+   */
+  lanes: number[] = [2]
+  /**
+   * A machine wide enough to straddle files is reachable from any of them, at
+   * whatever height its attacker happens to stand.
+   *
+   * Same rule as a fortress, and for the same reason: a Titan is 250 pixels
+   * tall, so its centre of mass sits 125 above the ground line, and measuring
+   * to it would put a swordsman in the next file 130 pixels away against a
+   * reach of 40. He would walk forever and never swing at a thing he is
+   * standing underneath. Which files may hit it is a RULE — `lanes` — not an
+   * accident of how tall the art turned out.
+   */
+  readonly flatContact: boolean
   /** The ground line of this soldier's lane, in world pixels. */
   groundLine: number
   /** Smoothed visual ride over the terrain relief — lift in px, lean in rad. */
@@ -202,6 +235,7 @@ export default class Unit implements Damageable {
   /** Move this soldier to another lane. Only the battlefield calls this. */
   setLane(lane: number): void {
     this.lane = Math.max(0, Math.min(LANE_Y.length - 1, lane))
+    this.lanes = spannedLanes(this.lane, this.def.laneSpan ?? 1)
     this.groundLine = this.world.groundY + LANE_Y[this.lane]
     if (this.layer === 'ground' && !this.airborne) this.y = this.groundLine
     this.blockedMs = 0
@@ -425,6 +459,8 @@ export default class Unit implements Damageable {
 
     this.x = x
     this.lane = Math.max(0, Math.min(LANE_Y.length - 1, lane))
+    this.lanes = spannedLanes(this.lane, def.laneSpan ?? 1)
+    this.flatContact = (def.laneSpan ?? 1) > 1
     this.groundLine = world.groundY + LANE_Y[this.lane]
     // Air lane jitter is gameplay-affecting (it changes engagement range),
     // so it comes from the caller's deterministic stream, not the shared
