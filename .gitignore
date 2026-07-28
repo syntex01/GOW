@@ -4,3 +4,12 @@
 *.log
 .DS_Store
 /release
+
+# Android — the Capacitor project is checked in (it carries the manifest, the
+# activity and the icons), but nothing Gradle or the SDK generates is.
+/android/build
+/android/app/build
+/android/.gradle
+/android/capacitor-cordova-android-plugins
+/android/local.properties
+/android/app/src/main/assets/public

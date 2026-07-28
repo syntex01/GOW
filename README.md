@@ -44,6 +44,40 @@ WebRTC peer connection multiplayer opens directly to the other player, which
 does not go through the request filter. Nothing phones home, and there is no
 account, telemetry or licence check to fail years from now.
 
+### Android app
+
+```bash
+npm run android:sync      # build the bundle and copy it into the Android project
+npm run android:apk       # debug APK in android/app/build/outputs/apk/debug/
+npm run android:release    # unsigned release APK (sign it yourself before shipping)
+```
+
+Needs a JDK (21 is what this was built against) and an Android SDK with
+`platforms;android-35` and `build-tools;35.0.0`. Point `ANDROID_HOME` at it, or
+write `sdk.dir=/path/to/sdk` into `android/local.properties`.
+
+It is the same bundle the browser and the desktop app run, wrapped by Capacitor
+and loaded from the APK's own assets — there is no network fetch and no
+difference in the simulation. What the Android project adds is the handful of
+things a phone does by default that a battlefield cannot live with:
+
+- **Landscape, locked.** The board is a wide side view; portrait would show a
+  fifth of it. The activity handles its own configuration changes, so rotating
+  the phone never reloads the WebView and drops a match on the floor.
+- **No system bars.** They sit over the command row, which is where every button
+  in the game is. They are hidden on start and re-hidden whenever focus returns,
+  and set to come back on a deliberate swipe rather than on any touch.
+- **The screen stays awake.** A match can sit quiet for a minute while two
+  economies build up.
+- **Back means back, not quit.** The default closes the app outright, so a stray
+  thumb throws away a match. Back is delivered to the game as Escape, which
+  already closes the research tree, closes the outworks and opens the pause menu.
+
+Everything in the game is reachable with a thumb: unit cards, the file picker,
+the turret slots, TECH, BASE, EVOLVE and ABILITY are all buttons, and the board
+pans by dragging. The 16:9 layout letterboxes on a 19.5:9 screen rather than
+cropping, so no part of the HUD is ever off the edge.
+
 ## How it plays
 
 You and an AI commander face each other across a single lane. Gold arrives

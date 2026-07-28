@@ -1,0 +1,13 @@
+{
+  "appId": "com.gow.game",
+  "appName": "GOW",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
