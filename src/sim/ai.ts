@@ -176,25 +176,25 @@ export default class AiController {
     // The road to an ascension runs through shared `core` nodes that belong to
     // no creed, so the AI follows the requirement graph rather than a branch
     // filter — otherwise it stalls at the root and never researches anything.
+    // Research is no longer bought with gold, so there is nothing to hold back
+    // for the army: a node it can afford is a node it should take. What used to
+    // be a spending decision is now purely a question of what is unlocked.
     for (const node of this.path) {
       if (army.techAvailability(node.id) !== 'ready') continue
-      // Leave enough behind to keep building; a teched-up army of nobody loses.
-      if (army.gold - node.cost < 400) return false
       this.bf.buyTech('enemy', node.id)
       return true
     }
 
-    // Nothing on the critical path is affordable or unlocked yet. Surplus gold
-    // goes into whatever plain upgrade is cheapest, the same way a human tops
-    // up while waiting for an age.
-    if (army.gold < 2500) return false
+    // Nothing on the critical path is open yet. Banked research goes into
+    // whatever plain upgrade is cheapest rather than sitting idle — the same
+    // way a human tops up while waiting for an age.
     let best: TechNode | null = null
     for (const node of TECHS) {
       if (node.kind !== 'stat') continue
       if (army.techAvailability(node.id) !== 'ready') continue
       if (!best || node.cost < best.cost) best = node
     }
-    if (!best || army.gold - best.cost < 800) return false
+    if (!best) return false
     this.bf.buyTech('enemy', best.id)
     return true
   }
@@ -250,7 +250,10 @@ export default class AiController {
 
     // Then the ladder: raise what is missing, lift what is low. The order is
     // the order a commander cares about them in.
-    const wishlist = ['granary', 'muster', 'forge', 'reliquary']
+    // Reliquary second, not last. Research accrues at a rate only this
+    // building sets, so an AI that leaves it to the end spends the whole match
+    // primitive no matter how rich it gets.
+    const wishlist = ['granary', 'reliquary', 'muster', 'forge']
     for (const id of wishlist) {
       const def = BUILDINGS_BY_ID[id]
       if (!def) continue

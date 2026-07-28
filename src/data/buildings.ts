@@ -160,6 +160,32 @@ export const MUSTER_ADVANCE = 0.5
  * be alive at once. Slow, capped, and — because it can only ever make what it
  * knew how to make — quietly obsolete by the time there are four of them.
  */
+/**
+ * Research, and what it is worth.
+ *
+ * Nodes keep their authored `cost` — it is a good relative ranking and there is
+ * no reason to re-author sixty numbers — but that cost is now read as GOLD-
+ * EQUIVALENT and converted into research points.
+ *
+ * The conversion is NOT linear, and that is the whole point. A straight divide
+ * made an ascension cost fifteen times a root node, which at a full research
+ * yard is eighteen seconds — a formality, not a commitment. Depth has to cost
+ * more than breadth, so the price also climbs with the node's RING. At 1.35 per
+ * ring an ascension lands around four minutes of a three-hall yard while a root
+ * node is half a minute of a single one, which is the pacing the tree was
+ * always pretending to have while actually being purchasable in one lump.
+ *
+ * The base rate exists so a commander who never raises a Reliquary is merely
+ * slow. Being locked out of the tree entirely is not a strategy, it is a dead
+ * end, and dead ends make a game smaller.
+ */
+export const RESEARCH_PER_GOLD = 5
+export const RESEARCH_RING_STEP = 1.35
+export const BASE_RESEARCH_RATE = 1
+
+/** Research points a second, by the best Reliquary standing. -1 means none. */
+export const RELIQUARY_RESEARCH = [2.2, 4.6, 9]
+
 export const DERELICT_SPAWN_MS = 13000
 export const DERELICT_MAX_ALIVE = 3
 

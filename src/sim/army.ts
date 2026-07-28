@@ -6,6 +6,7 @@ import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
 import { powi } from './dmath'
+import { BASE_RESEARCH_RATE, RESEARCH_PER_GOLD, RESEARCH_RING_STEP } from '../data/buildings'
 import { TRACKS_BY_ID, trackCost, type FortressTrackId } from '../data/fortress'
 import { OATHS, TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
@@ -148,6 +149,25 @@ export default class Army {
   yardIncome = 1
   yardBuildSpeed = 1
   researchDiscount = 1
+
+  /**
+   * Research points, and the rate they arrive at.
+   *
+   * Research used to be bought with gold, which meant a commander who leaned
+   * all the way into economy could simply buy the whole tree — the deepest
+   * nodes in the game were a purchase decision rather than a commitment. Now
+   * knowledge accrues on its own clock, at a rate only Reliquaries raise, and
+   * gold cannot touch it. Pour everything into income and you end up RICH AND
+   * PRIMITIVE, which is a position the game did not previously allow.
+   *
+   * The base rate is deliberately non-zero: a player who never builds a
+   * Reliquary is slow, not frozen out.
+   */
+  research = 0
+  researchRate = BASE_RESEARCH_RATE
+  /** Total ever earned, so the UI can show progress rather than just a balance. */
+  researchEarned = 0
+  private researchCarry = 0
 
   /** Income before the siege takes its cut — what the yard *could* produce. */
   get grossIncomePerSecond(): number {
@@ -293,7 +313,7 @@ export default class Army {
   }
 
   /** Whether this army could research a node right now, and why not if not. */
-  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'gold' | 'demand' | 'sworn' {
+  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'research' | 'demand' | 'sworn' {
     const node = TECHS_BY_ID[id]
     if (!node) return 'locked'
     if (this.techs.has(id)) return 'owned'
@@ -306,7 +326,7 @@ export default class Army {
     if (node.requiresAny && !node.requiresAny.some(r => this.techs.has(r))) return 'locked'
     if (this.age < node.age) return 'age'
     if (node.demand && this.deeds[node.demand.metric] < node.demand.amount) return 'demand'
-    if (this.gold < node.cost) return 'gold'
+    if (this.research < this.researchCost(id)) return 'research'
     return 'ready'
   }
 
@@ -314,7 +334,7 @@ export default class Army {
   buyTech(id: TechId): boolean {
     if (this.techAvailability(id) !== 'ready') return false
     const node = TECHS_BY_ID[id]
-    this.gold -= Math.round(node.cost * this.researchDiscount)
+    this.research -= this.researchCost(id)
     this.techs.add(id)
     // Stat research compounds into the army's modifiers. Units already on the
     // field keep the numbers they were built with — research equips the next
@@ -353,6 +373,29 @@ export default class Army {
     this.gold -= cost
     this.tracks[id] += 1
     return true
+  }
+
+  /**
+   * Advances the research clock. Fractional points are carried rather than
+   * rounded away, so a slow trickle still adds up to whole nodes and the rate
+   * means exactly what it says.
+   */
+  tickResearch(dtMs: number): void {
+    const gained = this.researchRate * (dtMs / 1000) + this.researchCarry
+    const whole = Math.floor(gained)
+    this.researchCarry = gained - whole
+    if (whole > 0) {
+      this.research += whole
+      this.researchEarned += whole
+    }
+  }
+
+  /** What a node costs in research points. See RESEARCH_PER_GOLD. */
+  researchCost(id: TechId): number {
+    const node = TECHS_BY_ID[id]
+    if (!node) return 0
+    const depth = powi(RESEARCH_RING_STEP, Math.max(0, node.ring))
+    return Math.max(1, Math.round((node.cost / RESEARCH_PER_GOLD) * depth * this.researchDiscount))
   }
 
   incomeUpgradeCost(): number | null {

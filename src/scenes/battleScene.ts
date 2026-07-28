@@ -677,9 +677,13 @@ export default class BattleScene extends Phaser.Scene {
       gameEvents.emit('hud:flash', { message: `${node.name}: ${node.demand.label}`, tone: 'warn' })
       return false
     }
-    if (state === 'gold') {
+    if (state === 'research') {
+      const need = army.researchCost(id) - Math.floor(army.research)
       audio.play('ui_denied', 0.5)
-      gameEvents.emit('hud:flash', { message: `${node.name} costs ${node.cost} gold`, tone: 'warn' })
+      gameEvents.emit('hud:flash', {
+        message: `${node.name} needs ${need} more research — raise a Reliquary`,
+        tone: 'warn'
+      })
       return false
     }
     this.dispatch({ t: 'tech', id })

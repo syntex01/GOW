@@ -813,11 +813,11 @@ export default class TechTree {
         break
       case 'ready':
         this.buyBtn
-          .setText(node.kind === 'ascension' ? 'ASCEND' : `RESEARCH · ${formatNumber(node.cost)}g`)
+          .setText(node.kind === 'ascension' ? 'ASCEND' : `RESEARCH · ${formatNumber(this.army.researchCost(node.id))} RP`)
           .setEnabled(true)
         break
-      case 'gold':
-        this.buyBtn.setText(`NEEDS ${formatNumber(node.cost)}g`).setEnabled(false)
+      case 'research':
+        this.buyBtn.setText(`NEEDS ${formatNumber(this.army.researchCost(node.id))} RP`).setEnabled(false)
         break
       case 'age':
         this.buyBtn.setText(`AGE ${node.age + 1} FIRST`).setEnabled(false)
@@ -875,8 +875,8 @@ export default class TechTree {
         ? 'researched'
         : state === 'ready'
           ? 'ready to research'
-          : state === 'gold'
-            ? `needs ${formatNumber(node.cost - Math.floor(this.army.gold))}g more`
+          : state === 'research'
+            ? `needs ${formatNumber(this.army.researchCost(node.id) - Math.floor(this.army.research))} more research`
             : state === 'age'
               ? `locked until age ${node.age + 1}`
               : state === 'demand' && node.demand
@@ -962,13 +962,15 @@ export default class TechTree {
             .setText(
               view.node.kind === 'ascension'
                 ? 'ASCEND — one only'
-                : `${formatNumber(view.node.cost)}g`
+                : `${formatNumber(this.army.researchCost(view.node.id))} RP`
             )
             .setColor(hex(UI.gold))
           break
-        case 'gold':
+        case 'research':
           view.name.setColor(hex(UI.text)).setAlpha(0.8)
-          view.tag.setText(`${formatNumber(view.node.cost)}g · short`).setColor(hex(UI.warn))
+          view.tag
+            .setText(`${formatNumber(this.army.researchCost(view.node.id))} RP · short`)
+            .setColor(hex(UI.warn))
           break
         case 'age':
           view.name.setColor(hex(UI.text)).setAlpha(0.7)

@@ -26,7 +26,9 @@ import Base, { type TurretSlot } from './base'
 import Building from './building'
 import Seat from './seat'
 import {
+  BASE_RESEARCH_RATE,
   BUILDINGS_BY_ID,
+  RELIQUARY_RESEARCH,
   REBUILD_FRACTION,
   SEAT_PLOTS,
   MUSTER_ADVANCE,
@@ -1089,6 +1091,8 @@ export default class Battlefield {
       mix(army.age)
       mix(army.queue.length)
       mix(army.incomeLevel)
+      // Research is a resource now, so it forks a networked match if it drifts.
+      mix(army.research)
       // Fortress tracks change wall health, gate width, siege ceiling and gun
       // rate — all sim, all divergent if the two peers disagree.
       mix(army.tracks.ramparts * 100 + army.tracks.barbican * 10 + army.tracks.cellars)
@@ -2100,6 +2104,7 @@ export default class Battlefield {
     army.yardIncome = this.yardIncome(faction)
     army.yardBuildSpeed = this.yardBuildSpeed(faction)
     army.researchDiscount = this.yardResearchDiscount(faction)
+    army.researchRate = this.yardResearchRate(faction)
     // The doctrine buildings are asked about from inside per-unit and per-kill
     // paths, so "is it standing?" has to be a set lookup rather than a scan of
     // every plot of every seat. Rebuilt here, which is every mutation that can
@@ -2138,6 +2143,22 @@ export default class Battlefield {
     return tier < 0 ? 1 : [1 / 0.88, 1 / 0.78, 1 / 0.7][tier]
   }
 
+  /**
+   * Research points a second. Reliquaries STACK — two tier-2s beat one tier-3 —
+   * which is the knob an Engineering commander abuses and the reason its yard
+   * looks nothing like anybody else's.
+   */
+  yardResearchRate(faction: Faction): number {
+    let rate = BASE_RESEARCH_RATE
+    for (const seat of this.seats[faction]) {
+      for (const plot of seat.plots) {
+        if (!plot.alive || plot.def?.id !== 'reliquary') continue
+        rate += RELIQUARY_RESEARCH[Math.min(RELIQUARY_RESEARCH.length - 1, plot.tier)]
+      }
+    }
+    return rate
+  }
+
   yardResearchDiscount(faction: Faction): number {
     const tier = this.yardBonus(faction, 'reliquary')
     return tier < 0 ? 1 : [0.92, 0.85, 0.78][tier]
@@ -2163,6 +2184,7 @@ export default class Battlefield {
     // The yard's multipliers are handed to the army for exactly this tick, so
     // a granary that burns stops paying the instant it falls.
     this.refreshYard(army.faction)
+    army.tickResearch(dtMs)
     const { ready } = army.tick(dtMs)
     this.statsFor(army.faction).goldEarned += Math.max(0, army.gold - before)
     for (const entry of ready) {
