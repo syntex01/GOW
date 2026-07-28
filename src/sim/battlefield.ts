@@ -5,6 +5,14 @@ import { Rng } from '../core/rng'
 import { datan2, dcos, dsin, halfLifeDecay } from './dmath'
 import { ABILITIES_BY_ID } from '../data/abilities'
 import { AGES, ageDef } from '../data/ages'
+import {
+  BARBICAN_HP,
+  CELLAR_SIEGE_CAP,
+  MURDER_HOLE_DPS,
+  RAMPART_HP,
+  RAMPART_LANES,
+  type FortressTrackId
+} from '../data/fortress'
 import { AGE_THEMES } from '../gfx/palette'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
@@ -343,6 +351,12 @@ export default class Battlefield {
   private bannerCarry: Record<Faction, number> = { player: 0, enemy: 0 }
   private bannerEra = -1
   private boneCarry: Record<Faction, number> = { player: 0, enemy: 0 }
+  /**
+   * How long the remains stay worthless after a Bone Kiln comes down. Losing a
+   * doctrine building has to be felt, not merely noted — for half a minute the
+   * bodies on your ground are just bodies.
+   */
+  private kilnShock: Record<Faction, number> = { player: 0, enemy: 0 }
   private bannerFx = 0
   /** Blight's sprouting scan cursor, so zone growth staggers over frames. */
   private bloomClock = 0
@@ -570,9 +584,12 @@ export default class Battlefield {
     if (body.kind !== 'scrap' && body.kind !== 'shrapnel') return
     for (const faction of ['player', 'enemy'] as Faction[]) {
       if (!this.armyFor(faction).hasTech('salvage')) continue
-      // Only what falls on your own half is yours to strip.
-      const ownHalf = faction === 'player' ? body.x < this.config.worldWidth / 2 : body.x >= this.config.worldWidth / 2
-      if (!ownHalf) continue
+      // Only what falls on your own half is yours to strip — unless the Scrap
+      // Quarry is standing, which sends crews out across the whole field. Half
+      // ownership follows the live midfield, not the world's, so a commander
+      // who has receded is not quietly stripping ground they no longer hold.
+      const ownHalf = this.halfOwner(body.x) === faction
+      if (!ownHalf && !this.hasBuilding(faction, 'scrap_quarry')) continue
       const value = Math.round(12 + body.size * 18)
       this.armyFor(faction).gold += value
       this.statsFor(faction).goldEarned += value
@@ -662,8 +679,13 @@ export default class Battlefield {
           if (body.kind === 'gib' && body.settled && this.halfOwner(body.x) === faction) gibs += 1
           if (gibs >= 24) break
         }
-        if (gibs > 0) {
-          const gained = gibs * 0.45 * (dtMs / 1000) + this.boneCarry[faction]
+        // The Bone Kiln renders what the harvest only collects. Burn it and
+        // the remains stop paying at all for half a minute — the cost of a
+        // doctrine building is that losing it turns the rule off loudly.
+        const kilnRate = this.kilnShock[faction] > 0 ? 0 : this.hasBuilding(faction, 'bone_kiln') ? 0.9 : 0.45
+        if (this.kilnShock[faction] > 0) this.kilnShock[faction] -= dtMs
+        if (gibs > 0 && kilnRate > 0) {
+          const gained = gibs * kilnRate * (dtMs / 1000) + this.boneCarry[faction]
           const whole = Math.floor(gained)
           this.boneCarry[faction] = gained - whole
           if (whole > 0) {
@@ -682,11 +704,12 @@ export default class Battlefield {
         base.slots.forEach((slot, slotIndex) => {
           if (slot.def || !slot.wreck) return
           slot.wreck.sinceMs += dtMs
-          if (slot.wreck.sinceMs < 20000) return
+          // The Assembly Line does not wait twenty seconds for a print.
+          if (slot.wreck.sinceMs < (this.hasBuilding(faction, 'assembly_line') ? 0 : 20000)) return
           const wreckDef = slot.wreck.def
           slot.wreck = undefined
           base.buildTurret(slotIndex, wreckDef.id)
-          slot.hp = wreckDef.hp * 0.5
+          slot.hp = wreckDef.hp * base.turretHpMult * (this.hasBuilding(faction, 'assembly_line') ? 1 : 0.5)
           this.vfx.floatingLabel(base.x, base.y - 220, 'autoforged', '#8fd4ff')
         })
       }
@@ -751,7 +774,7 @@ export default class Battlefield {
       if (army.hasTech('necropolis')) {
         this.necroTimer[faction] -= dtMs
         if (this.necroTimer[faction] <= 0) {
-          this.necroTimer[faction] = 4000
+          this.necroTimer[faction] = this.hasBuilding(faction, 'resurrection_vat') ? 2400 : 4000
           this.tryRaiseDead(faction)
         }
       }
@@ -962,7 +985,9 @@ export default class Battlefield {
         if (zone.lane >= 0 && u.lane !== zone.lane) continue
         this.applyDamage(null, u, { amount: zone.dps * dt, type: zone.kind === 'fire' ? 'explosive' : 'energy', knockback: 0 })
         // Deep Roots turns blighted ground into a bog for anyone else.
-        if (zone.kind === 'spore' && this.armyFor(zone.faction).hasTech('deep_roots')) u.mire(220)
+        if (zone.kind === 'spore' && this.armyFor(zone.faction).hasTech('deep_roots')) {
+          u.mire(this.hasBuilding(zone.faction, 'heart_root') ? 440 : 220)
+        }
       }
       this.zones[write] = zone
       write += 1
@@ -1083,6 +1108,9 @@ export default class Battlefield {
       mix(army.age)
       mix(army.queue.length)
       mix(army.incomeLevel)
+      // Fortress tracks change wall health, gate width, siege ceiling and gun
+      // rate — all sim, all divergent if the two peers disagree.
+      mix(army.tracks.ramparts * 100 + army.tracks.barbican * 10 + army.tracks.cellars)
       // Owned behaviours change how the simulation runs, so they are part of
       // the fingerprint — packed as a bitmask over a stable order.
       let techBits = 0
@@ -1135,6 +1163,7 @@ export default class Battlefield {
     // The siege is read BEFORE income is paid, so a wall full of enemies costs
     // you this tick's gold rather than last tick's.
     this.updateSiege()
+    this.updateMurderHoles(dtMs)
     this.tickArmy(this.player, dtMs)
     this.tickArmy(this.enemy, dtMs)
 
@@ -1475,7 +1504,11 @@ export default class Battlefield {
     const mid = this.config.worldWidth / 2
     const from = faction === 'player' ? 0 : Math.ceil(mid / RELIEF_BUCKET)
     const to = faction === 'player' ? Math.floor(mid / RELIEF_BUCKET) : this.terrain.bucketCount
-    const spread = this.armyFor(faction).hasTech('mycelium') ? 7 : 0
+    // The Spore Bed grows outward on its own: your half turns hostile without
+    // a single body to seed it, which is the difference between a creed that
+    // needs a fight to work and one that simply owns ground.
+    const bed = this.hasBuilding(faction, 'spore_bed')
+    const spread = this.armyFor(faction).hasTech('mycelium') ? (bed ? 12 : 7) : bed ? 6 : 0
     let planted = 0
     for (let lane = 0; lane < LANE_COUNT && planted < 2; lane += 1) {
       const row = this.terrain.laneRelief(lane)
@@ -1672,7 +1705,35 @@ export default class Battlefield {
    * why receding is not simply better than standing.
    */
   gateLanesFor(defender: Faction): ReadonlySet<number> {
-    return this.activeSeat(defender).gateLanes
+    const wide = this.activeSeat(defender).gateLanes
+    // Ramparts are the answer to the price of depth. Each generation opens
+    // another file onto the gate; the third rampart closes them all again
+    // except the road itself, whatever seat you are sitting in.
+    if (this.armyFor(defender).tracks.ramparts < RAMPART_LANES.length - 1) return wide
+    const narrow = new Set<number>()
+    for (const lane of wide) if (RAMPART_LANES[RAMPART_LANES.length - 1].has(lane)) narrow.add(lane)
+    return narrow.size > 0 ? narrow : new Set([2])
+  }
+
+  /**
+   * Murder holes. Attackers who spread out around the walls instead of coming
+   * up the road bleed for it, once the second rampart is up. The middle file is
+   * exempt on purpose: this punishes enveloping a fortress, not attacking it.
+   */
+  private updateMurderHoles(dtMs: number): void {
+    for (const defender of ['player', 'enemy'] as Faction[]) {
+      if (this.armyFor(defender).tracks.ramparts < 2) continue
+      const seat = this.activeSeat(defender)
+      if (!seat.alive) continue
+      const reach = Battlefield.SIEGE_REACH * 0.55
+      const attacker = OPPOSITE[defender]
+      for (const unit of this.units) {
+        if (!unit.alive || unit.faction !== attacker) continue
+        if (unit.lane === 2 || !seat.gateLanes.has(unit.lane)) continue
+        if (Math.abs(unit.x - seat.x) > reach) continue
+        unit.takeDamage((MURDER_HOLE_DPS * dtMs) / 1000, 'pierce')
+      }
+    }
   }
 
   /** The buildings of one side that a soldier in this file could hit. */
@@ -1752,8 +1813,6 @@ export default class Battlefield {
   private static readonly SIEGE_REACH = 300
   /** Supply cut per point of enemy population standing in the yard. */
   private static readonly SIEGE_PER_POP = 0.07
-  /** However bad it gets, something still comes in. */
-  private static readonly SIEGE_MAX = 0.7
 
   /**
    * Besieged supply.
@@ -1778,10 +1837,16 @@ export default class Battlefield {
         if (unit.x < this.playerBase.x + reach) onPlayer += unit.def.pop
       } else if (unit.x > this.enemyBase.x - reach) onEnemy += unit.def.pop
     }
-    const cut = (pop: number): number =>
-      pop <= 0 ? 0 : Math.min(Battlefield.SIEGE_MAX, pop * Battlefield.SIEGE_PER_POP)
-    this.player.siege = cut(onPlayer)
-    this.enemy.siege = cut(onEnemy)
+    // Deep cellars are stores an enemy standing in the yard cannot get at, so
+    // they lower the ceiling on how much of your supply a siege can take. They
+    // never stop the bleeding — a besieged commander is always poorer.
+    const cut = (pop: number, faction: Faction): number => {
+      if (pop <= 0) return 0
+      const level = Math.min(CELLAR_SIEGE_CAP.length - 1, this.armyFor(faction).tracks.cellars)
+      return Math.min(CELLAR_SIEGE_CAP[level], pop * Battlefield.SIEGE_PER_POP)
+    }
+    this.player.siege = cut(onPlayer, 'player')
+    this.enemy.siege = cut(onEnemy, 'enemy')
   }
 
   /**
@@ -1853,7 +1918,8 @@ export default class Battlefield {
   private foundSeat(faction: Faction, generation: number, x: number, baseHpMult: number): Seat {
     const previous = this.seats[faction][this.seats[faction].length - 1]
     if (previous) previous.derelict = true
-    const hp = ageDef(generation).baseHp * baseHpMult
+    const rampart = RAMPART_HP[Math.min(RAMPART_HP.length - 1, this.armyFor(faction).tracks.ramparts)]
+    const hp = ageDef(generation).baseHp * baseHpMult * rampart
     const base = new Base(this.scene, faction, x, this.config.groundY, hp, this.vfx)
     base.setAge(generation, hp)
     base.onTurretFire = this.handleTurretFire
@@ -1868,7 +1934,16 @@ export default class Battlefield {
         spec.lane,
         this.vfx
       )
-      building.onRazed = () => {
+      building.onRazed = razed => {
+        this.onBuildingRazed(faction, razed)
+        // Deep cellars mean the stores under a burning building are dug out
+        // rather than lost with it. Half the money back does not make losing a
+        // granary good — it makes rebuilding one affordable, which is the
+        // difference between a setback and a spiral.
+        const army = this.armyFor(faction)
+        if (army.tracks.cellars >= 2 && razed.def) {
+          army.gold += Math.round(buildingCost(razed.def, razed.tier, army.age) * 0.5)
+        }
         this.refreshYard(faction)
         this.onSeatChanged?.(faction)
       }
@@ -1942,6 +2017,32 @@ export default class Battlefield {
     army.yardIncome = this.yardIncome(faction)
     army.yardBuildSpeed = this.yardBuildSpeed(faction)
     army.researchDiscount = this.yardResearchDiscount(faction)
+    // The doctrine buildings are asked about from inside per-unit and per-kill
+    // paths, so "is it standing?" has to be a set lookup rather than a scan of
+    // every plot of every seat. Rebuilt here, which is every mutation that can
+    // change the answer — raising, razing, burning, ageing up.
+    const standing = this.standing[faction]
+    standing.clear()
+    for (const seat of this.seats[faction]) {
+      for (const plot of seat.plots) {
+        if (plot.alive && plot.def) standing.add(plot.def.id)
+      }
+    }
+  }
+
+  /** What each side has standing, by building id. Maintained by refreshYard. */
+  private readonly standing: Record<Faction, Set<string>> = { player: new Set(), enemy: new Set() }
+
+  /**
+   * Whether a commander has this building up and unburned anywhere.
+   *
+   * Doctrine buildings are all-or-nothing — one tier, and the rule they change
+   * is either in force or it is not. That is deliberate: they are strong and
+   * creed-specific, so an opponent who reads your creed knows precisely which
+   * plot to burn, and burning it must visibly turn something off.
+   */
+  hasBuilding(faction: Faction, id: string): boolean {
+    return this.standing[faction].has(id)
   }
 
   yardIncome(faction: Faction): number {
@@ -2009,8 +2110,9 @@ export default class Battlefield {
     playerUnits.sort((a, b) => a.x - b.x)
     enemyUnits.sort((a, b) => a.x - b.x)
 
-    this.player.population = playerUnits.reduce((n, u) => n + u.def.pop, 0)
-    this.enemy.population = enemyUnits.reduce((n, u) => n + u.def.pop, 0)
+    const upkeep = (n: number, u: Unit): number => n + (u.freeUpkeep ? 0 : u.def.pop)
+    this.player.population = playerUnits.reduce(upkeep, 0)
+    this.enemy.population = enemyUnits.reduce(upkeep, 0)
     // Deeds only ever go one way, so that a demand once met stays met.
     for (const [army, count, base] of [
       [this.player, playerUnits.length, this.playerBase],
@@ -2250,7 +2352,13 @@ export default class Battlefield {
         // strength — bought, not given, and the price never disappears.
         if (unit.techs?.has('plunging_volleys')) {
           const plunge: { target: Damageable; dist: number }[] = []
-          for (const lane of [unit.lane - 2, unit.lane + 2]) {
+          // A Signal Tower is a spotter on a mast: the battery can be walked
+          // onto any file on the board instead of the two either side.
+          const spotted = this.hasBuilding(unit.faction, 'signal_tower')
+          const reach = spotted
+            ? Array.from({ length: LANE_COUNT }, (_, i) => i).filter(i => Math.abs(i - unit.lane) > 1)
+            : [unit.lane - 2, unit.lane + 2]
+          for (const lane of reach) {
             if (lane >= 0 && lane < LANE_COUNT) gather(enemyLanes[lane], plunge)
           }
           if (plunge.length > 0) {
@@ -2842,7 +2950,10 @@ export default class Battlefield {
     }
     // Occult — the ability feeds on death, and the enemy flinches at it.
     if (killer.hasTech('soul_tithe') || killer.ascendedTo === 'dark_circle') {
-      killer.abilityCharge = Math.min(1, killer.abilityCharge + 0.05)
+      // The Black Chapel is where the tithe is actually collected, so it takes
+      // a bigger cut of every death on the field.
+      const tithe = this.hasBuilding(winner, 'black_chapel') ? 0.08 : 0.05
+      killer.abilityCharge = Math.min(1, killer.abilityCharge + tithe)
     }
     if (killer.hasTech('evil_eye')) {
       for (const u of this.units) {
@@ -2861,8 +2972,11 @@ export default class Battlefield {
     // You cannot puppet what lies in six pieces: a butchered army's dead
     // are torn too thoroughly for the thrall-rite to take.
     if (killer.hasTech('mind_thrall') && !owner.hasTech('butchery') && this.rng.chance(0.22)) {
+      // With a Thrall Pit the turned dead are not counted against your cap —
+      // an occult army stops trading its own supply for someone else's corpses.
       const risen = this.spawnUnit(winner, unit.def, unit.x)
       risen.hp = risen.maxHp * 0.4
+      risen.freeUpkeep = this.hasBuilding(winner, 'thrall_pit')
       this.vfx.impact(unit.x, groundY - 24, 0xb46bff, 1.3, false)
     }
     // Nekrotic doctrine — your own fallen get up once, on their own.
@@ -3132,6 +3246,10 @@ export default class Battlefield {
     attacker: Damageable | null = null,
     laneLock?: number
   ): void {
+    // A Powder Magazine is a shed of the stuff behind the line: every charge
+    // you pack is a heavier one. It applies here, at the single point every
+    // splash in the game passes through, rather than at fifteen call sites.
+    if (this.hasBuilding(faction, 'powder_magazine')) radius *= 1.18
     const targets: Damageable[] = [
       ...this.units,
       this.playerBase,
@@ -3187,6 +3305,9 @@ export default class Battlefield {
       this.addZone(x, 40, 2600, 12, faction, 'fire', 0, this.laneAtY(y))
     }
 
+    // The Powder Magazine is a shed full of the stuff: everything you fire
+    // throws further. It is also the single most dangerous thing in your own
+    // yard, and `raze` is where that bill comes due.
     // Whatever stood in the blast takes it too.
     for (let i = 0; i < this.props.length; i += 1) {
       const prop = this.props[i]
@@ -3269,6 +3390,8 @@ export default class Battlefield {
     )
     const base = seat.base
     void def
+    // The new seat inherits the stone you have already paid for.
+    this.applyTracks(faction)
     // The strip between the new seat and the one it supersedes has just become
     // contested ground — it was behind your own gate a second ago and nobody
     // will ever fight over it again if it stays a bare plain. Dress the part of
@@ -3343,6 +3466,41 @@ export default class Battlefield {
     return true
   }
 
+  /**
+   * What a doctrine building's collapse does on the way down.
+   *
+   * Kept in one place because it is the other half of the doctrine buildings'
+   * bargain: they are strong, one tier, all-or-nothing, and an opponent who
+   * has read your creed knows which plot to burn. Losing one has to be an
+   * EVENT — otherwise a rule quietly stops applying and nobody notices.
+   */
+  private onBuildingRazed(faction: Faction, razed: Building): void {
+    const id = razed.def?.id
+    if (id === 'bone_kiln') {
+      // The renderings go up with it, and the remains are worthless until
+      // somebody builds another one — or waits half a minute.
+      this.kilnShock[faction] = 30000
+      this.vfx.floatingLabel(razed.x, razed.y - 60, 'the renderings burn', '#c86464')
+    } else if (id === 'powder_magazine') {
+      // The most Cinder Host thing imaginable: a building that is also a
+      // liability. It goes off where it stands, in your own yard, and it does
+      // not care whose soldiers are near it.
+      this.vfx.explosion(razed.x, razed.y - 30, 260, 0xffa640, true)
+      this.applySplash(razed.x, razed.y - 30, 220, OPPOSITE[faction], {
+        amount: 520,
+        type: 'explosive',
+        knockback: 420
+      })
+      // And on your own people too — this is the whole joke.
+      this.applySplash(razed.x, razed.y - 30, 220, faction, {
+        amount: 520,
+        type: 'explosive',
+        knockback: 420
+      })
+      this.terrain.crater(razed.x, razed.lane, 90, 26, this.elapsedMs)
+    }
+  }
+
   /** Pulls a building down yourself, for the plot back and half the gold. */
   razeOwnPlot(faction: Faction, plotIndex: number): boolean {
     const seat = this.activeSeat(faction)
@@ -3357,6 +3515,46 @@ export default class Battlefield {
     this.refreshYard(faction)
     this.onSeatChanged?.(faction)
     return true
+  }
+
+  /**
+   * Buys the next level of a fortress track and applies what it means.
+   *
+   * Health and turret health are applied to the standing fortress rather than
+   * to the next one built, because a commander who pays for stone during a
+   * siege should get the stone during the siege.
+   */
+  buyTrack(faction: Faction, id: FortressTrackId): boolean {
+    const army = this.armyFor(faction)
+    if (!army.buyTrack(id)) return false
+    this.applyTracks(faction)
+    audio.play('coin', 0.5)
+    this.onSeatChanged?.(faction)
+    return true
+  }
+
+  /** Pushes the track levels onto the seat they act on. */
+  private applyTracks(faction: Faction): void {
+    const army = this.armyFor(faction)
+    const seat = this.activeSeat(faction)
+    const base = seat.base
+    const rampart = RAMPART_HP[Math.min(RAMPART_HP.length - 1, army.tracks.ramparts)]
+    const full = ageDef(seat.generation).baseHp * army.modifiers.baseHp * rampart
+    if (full > base.maxHp) {
+      // Reinforcing adds wall rather than healing what is already broken: the
+      // gain lands on the maximum and on the current, so a fortress at half
+      // strength is still at half strength, just of a bigger number.
+      base.hp += full - base.maxHp
+      base.maxHp = full
+    }
+    const guard = Math.min(BARBICAN_HP.length - 1, army.tracks.barbican)
+    const before = base.turretHpMult
+    base.turretHpMult = BARBICAN_HP[guard]
+    base.barbicanLevel = army.tracks.barbican
+    if (base.turretHpMult > before && before > 0) {
+      const scale = base.turretHpMult / before
+      for (const slot of base.slots) if (slot.def && slot.hp > 0) slot.hp *= scale
+    }
   }
 
   /** Chooses what a superseded seat turns out, from the roster of its own age. */

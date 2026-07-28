@@ -210,6 +210,12 @@ export default class Unit implements Damageable {
    * producing forever the first time its three soldiers are killed.
    */
   fromSeat: { aliveFromHere: number } | null = null
+
+  /**
+   * Eats no supply. A Thrall Pit's turned dead are somebody else's soldiers
+   * being spent, so an occult commander stops paying their own cap for them.
+   */
+  freeUpkeep = false
   /** True while this flanker's file is clear ahead — set by the battlefield. */
   raiding = false
   /** Weight of the ranks pressing in behind this one. Set by the battlefield. */

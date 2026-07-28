@@ -130,6 +130,15 @@ export default class Base implements Damageable {
   /** Read by `emitLight`: a dead seat does not keep its braziers burning. */
   private derelict = false
 
+  /**
+   * What the barbican is worth. Written by the battlefield whenever the track
+   * is bought, rather than baked into each turret at purchase time, so raising
+   * the track reinforces the guns already standing on the wall.
+   */
+  turretHpMult = 1
+  /** Barbican levels owned: 1 mends idle guns, 2 steadies them under fire. */
+  barbicanLevel = 0
+
   setAge(age: number, maxHp: number): void {
     const ratio = this.maxHp > 0 ? this.hp / this.maxHp : 1
     this.maxHp = maxHp
@@ -180,7 +189,7 @@ export default class Base implements Damageable {
     this.clearTurretSprites(slot)
     slot.wreck = undefined
     slot.def = def
-    slot.hp = def.hp
+    slot.hp = def.hp * this.turretHpMult
     slot.cooldown = 0
     slot.burstLeft = 0
     slot.angle = 0
@@ -250,6 +259,13 @@ export default class Base implements Damageable {
       this.sprite.setX(this.x + this.shakeOffset)
     }
 
+    // A burning fortress is a bad gun platform: crews are fighting fires, the
+    // wall is shaking, and the guns come round slower. This is what the second
+    // barbican level buys off — without the penalty existing there would be
+    // nothing for it to remove.
+    const wounds = this.maxHp > 0 ? 1 - Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1) : 0
+    const shaken = this.barbicanLevel >= 2 ? 1 : 1 + Math.max(0, wounds - 0.5) * 1.6
+
     this.slots.forEach((slot, index) => {
       if (!slot.def || slot.hp <= 0) return
       if (slot.recoil > 0) slot.recoil = Math.max(0, slot.recoil - dtMs / 90)
@@ -257,7 +273,11 @@ export default class Base implements Damageable {
 
       const target = this.pickTurretTarget(slot.def, candidates)
       if (!target) {
-        // Idle scan.
+        // Idle scan — and, with a barbican, a crew with time to make repairs.
+        if (this.barbicanLevel >= 1) {
+          const full = slot.def.hp * this.turretHpMult
+          slot.hp = Math.min(full, slot.hp + (full * 0.012 * dtMs) / 1000)
+        }
         slot.angle = Phaser.Math.Linear(slot.angle, -0.12, 0.02)
         this.applyTurretTransform(index, slot)
         return
@@ -287,7 +307,7 @@ export default class Base implements Damageable {
       }
 
       if (slot.cooldown <= 0) {
-        slot.cooldown = slot.def.attackMs
+        slot.cooldown = slot.def.attackMs * shaken
         if (attack.kind === 'projectile' && attack.burst) {
           slot.burstLeft = attack.burst.rounds
           slot.burstTimer = 0

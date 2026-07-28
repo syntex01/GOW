@@ -68,6 +68,9 @@ export function applyCommand(bf: Battlefield, faction: Faction, command: Command
     case 'garrison':
       bf.setGarrison(faction, command.seat, command.id)
       break
+    case 'fortify':
+      bf.buyTrack(faction, command.track)
+      break
   }
 }
 

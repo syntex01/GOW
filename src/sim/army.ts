@@ -6,6 +6,7 @@ import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
 import { powi } from './dmath'
+import { TRACKS_BY_ID, trackCost, type FortressTrackId } from '../data/fortress'
 import { OATHS, TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
 /** How many cards the command bar can show. */
@@ -83,6 +84,13 @@ export default class Army {
 
   /** Purchased in-match economy upgrades, each level adds income. */
   incomeLevel = 0
+
+  /**
+   * Levels owned in each fortress track. Unlike the outworks these cannot be
+   * burned down, which is why they are held on the army rather than on a plot
+   * — and why they are priced as if that mattered.
+   */
+  readonly tracks: Record<FortressTrackId, number> = { ramparts: 0, barbican: 0, cellars: 0 }
   /**
    * What this army has actually done this match. The nodes that decide what an
    * army becomes are gated on it, so the deep research is earned rather than
@@ -327,6 +335,23 @@ export default class Army {
       // Whatever was half-built belonged to the old army.
       this.queue.length = 0
     }
+    return true
+  }
+
+  /** What the next level of a track costs, or null if it is finished. */
+  trackCost(id: FortressTrackId): number | null {
+    const track = TRACKS_BY_ID[id]
+    const level = this.tracks[id]
+    if (!track || level >= track.levels.length) return null
+    return trackCost(track, level, this.age)
+  }
+
+  /** Buys the next level of a track. The battlefield applies what it means. */
+  buyTrack(id: FortressTrackId): boolean {
+    const cost = this.trackCost(id)
+    if (cost === null || this.gold < cost) return false
+    this.gold -= cost
+    this.tracks[id] += 1
     return true
   }
 

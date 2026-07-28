@@ -67,7 +67,17 @@ function start(): void {
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
     __gowLog: typeof gameLog
     __gowTurrets: string[]
-    __gowBuildings: { id: string; name: string; color: number; tiers: number; kind: string }[]
+    __gowBuildings: {
+      id: string
+      name: string
+      color: number
+      tiers: number
+      kind: string
+      faces: string[]
+      requires?: string
+      branch?: string
+      blurb: string
+    }[]
     __gowTechs: {
       id: string
       name: string
@@ -82,7 +92,19 @@ function start(): void {
   }
   debug.__gowLog = gameLog
   debug.__gowTurrets = TURRETS.map(t => t.id)
-  debug.__gowBuildings = ALL_BUILDINGS.map(b => ({ id: b.id, name: b.name, color: b.color, tiers: b.tiers.length, kind: b.kind }))
+  debug.__gowBuildings = ALL_BUILDINGS.map(b => ({
+    id: b.id,
+    name: b.name,
+    color: b.color,
+    tiers: b.tiers.length,
+    kind: b.kind,
+    // faces and requires decide whether a plot will take a building at all, so
+    // anything reasoning about the yard from outside needs them.
+    faces: [...b.faces],
+    requires: b.requires,
+    branch: b.branch,
+    blurb: b.blurb
+  }))
   debug.__gowTechs = TECHS.map(t => ({
     id: t.id,
     name: t.name,

@@ -1,3 +1,4 @@
+import type { FortressTrackId } from '../data/fortress'
 import type { Faction } from '../sim/types'
 
 /**
@@ -22,9 +23,13 @@ import type { Faction } from '../sim/types'
  * which changes the match seed's draw order and therefore every prop position.
  * v13 is the outworks: fortresses reachable only from their own gate files,
  * plots that can be built on and burned, and a new seat founded further back
- * on every age-up which leaves the last one standing and derelict.
+ * on every age-up which leaves the last one standing and derelict. v14 widened
+ * that step to 460 and gave soldiers a muster line that advances as the capital
+ * retreats, moving every spawn position in the game. v15 adds the fortress
+ * tracks: wall health, gate width, the siege ceiling and how fast a wounded
+ * fortress can work its guns.
  */
-export const PROTOCOL_VERSION = 14
+export const PROTOCOL_VERSION = 15
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing
@@ -44,6 +49,7 @@ export type Command =
   | { t: 'build'; plot: number; id: string }
   | { t: 'raze'; plot: number }
   | { t: 'garrison'; seat: number; id: string }
+  | { t: 'fortify'; track: FortressTrackId }
 
 /** One tick's worth of a peer's intent, plus an optional integrity check. */
 export interface TickMessage {
