@@ -1413,6 +1413,39 @@ export const UNITS: UnitDef[] = [
   },
 ]
 
+/**
+ * What one coin is worth at each age.
+ *
+ * Measured across the whole roster, unit power (hp x dps) per gold spent ran
+ * 173, 195, 214, 97, 158 across the five ages. Age four was a CRATER and age
+ * five never recovered to age three — which means ageing up did not make an
+ * army stronger per coin, it made it weaker. Every complaint about the late
+ * game sagging traces back to that one line.
+ *
+ * The fix is a per-age scalar rather than fifty hand-retuned units, and it is
+ * applied to hp and damage TOGETHER. That matters: scaling both by k scales
+ * power by k-squared while leaving time-to-kill between two units of the SAME
+ * age completely unchanged, so every within-age matchup the combos codex pins
+ * down still holds. What changes is only what an age is worth against the ages
+ * around it, which is exactly the thing that was broken.
+ *
+ * Targets ~1.35x per age in power-per-gold. A coin does not merely keep its
+ * value as you age — it buys a third more each time, so committing to the next
+ * age is always the strongest thing you can do with money, and the units you
+ * unlock there feel like a different weight class rather than a slightly
+ * better version of the last one.
+ */
+const AGE_POWER_SCALE = [1, 1.1, 1.21, 2.1, 1.91]
+
+for (const unit of UNITS) {
+  const k = AGE_POWER_SCALE[Math.max(0, Math.min(AGE_POWER_SCALE.length - 1, unit.age))]
+  if (k === 1) continue
+  unit.hp = Math.round(unit.hp * k)
+  unit.damage = Math.round(unit.damage * k)
+}
+
+export { AGE_POWER_SCALE }
+
 export const UNITS_BY_ID: Record<string, UnitDef> = Object.fromEntries(UNITS.map(u => [u.id, u]))
 
 export function unitsForAge(age: number): UnitDef[] {

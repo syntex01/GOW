@@ -1,4 +1,5 @@
 import { creedColours } from './creedPalette'
+import { AGE_POWER_SCALE } from './units'
 import type { UnitDef, UnitVisual } from './types'
 
 /**
@@ -1613,6 +1614,19 @@ for (const unit of FACTION_UNITS) {
   const faction = FACTION_BY_PREFIX[unit.id.slice(0, 3)]
   if (!faction) continue
   Object.assign(unit.visual, creedColours(faction, unit))
+}
+
+/**
+ * The faction rosters ride the same per-age power curve as the core one. See
+ * AGE_POWER_SCALE in data/units.ts — without this the creed units keep the old
+ * crater at age four and a creed army gets measurably worse than a vanilla one
+ * at exactly the point a player commits to it.
+ */
+for (const unit of FACTION_UNITS) {
+  const k = AGE_POWER_SCALE[Math.max(0, Math.min(AGE_POWER_SCALE.length - 1, unit.age))]
+  if (k === 1) continue
+  unit.hp = Math.round(unit.hp * k)
+  unit.damage = Math.round(unit.damage * k)
 }
 
 /** The five units an ascended army fields. */
