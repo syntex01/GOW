@@ -232,6 +232,26 @@ export default class Unit implements Damageable {
   vy = 0
   private airborne = false
   stagger = 0
+  /**
+   * Plunder.
+   *
+   * A soldier who reaches the enemy's wall in a file that is not allowed to
+   * attack it, with nothing else in reach, used to stand there for the rest of
+   * the match — measured: six of them walked the length of the board, arrived,
+   * and held zero targets for seventy-five seconds. The wall being SOLID in
+   * every file and only the gate files being allowed to hit it are two rules
+   * that did not compose.
+   *
+   * He is not stuck now, he is looting. He stands in the yard cutting the
+   * supply line (which was already a rule and had no visible payoff), and then
+   * he leaves the board with what he could carry and sends part of his price
+   * home. It is a REFUND, never a profit — the rest is the tempo you paid for
+   * sending him up a flank instead of at the gate.
+   */
+  plunderMs = 0
+  /** Set once he has finished looting: walks off the board and is gone. */
+  leaving = false
+
   /** Move this soldier to another lane. Only the battlefield calls this. */
   setLane(lane: number): void {
     this.lane = Math.max(0, Math.min(LANE_Y.length - 1, lane))

@@ -121,6 +121,21 @@ export const FLANK_LANES: ReadonlySet<number> = new Set([0, 4])
  * How many bodies a blast can catch at close to full strength before the ones
  * in front start absorbing it for the ones behind. See `applySplash`.
  */
+/** How long a soldier loots a yard he cannot fight in before heading home. */
+const PLUNDER_MS = 7000
+/** How far in front of a wall counts as standing in the yard. */
+const PLUNDER_REACH = 220
+/**
+ * What share of his price a plundering soldier sends home.
+ *
+ * Under half, always: this is a refund on a soldier who ran out of things to
+ * do, not an income. Sending men up an undefended flank has to stay a LOSS in
+ * gold — what it buys is the supply you cut while they were standing there.
+ */
+const PLUNDER_REFUND = 0.4
+/** How far past the edge of the board a departing soldier walks before he is gone. */
+const PLUNDER_EXIT = 300
+
 const SPLASH_SHIELDING = 9
 
 /** What share of a weapon's shove the blast carries, as against a direct hit. */
@@ -2255,7 +2270,17 @@ export default class Battlefield {
 
   private updateUnits(dtMs: number): void {
     const alive: Unit[] = []
-    for (const u of this.units) if (u.alive) alive.push(u)
+    for (const u of this.units) {
+      if (!u.alive) continue
+      // A soldier who has taken his plunder and turned for home is gone once
+      // he is off the board. No corpse: he did not die, he left.
+      if (u.leaving && (u.x < -PLUNDER_EXIT || u.x > this.config.worldWidth + PLUNDER_EXIT)) {
+        u.alive = false
+        u.destroy()
+        continue
+      }
+      alive.push(u)
+    }
     this.units = alive
 
     const playerUnits: Unit[] = []
@@ -2401,6 +2426,7 @@ export default class Battlefield {
       unit.update(dtMs, blocker, target)
       if (unit.layer === 'ground' && unit.alive) {
         this.stopAtTheWall(unit)
+        this.updatePlunder(unit, target, dtMs)
         aheadX = unit.x - dir * (unit.radius + 2)
       }
     }
@@ -2429,6 +2455,42 @@ export default class Battlefield {
    * battlefield's knowledge — and it is what makes a derelict a real obstacle
    * rather than a picture of one.
    */
+  /**
+   * Turns a soldier with nowhere left to go into one who loots and leaves.
+   *
+   * The test is deliberately narrow: he must be AT a wall, have nothing at all
+   * in reach, and be in a file that may never attack that wall however long he
+   * waits. A soldier who is merely between targets, or who could hit the gate
+   * if he closed another step, is not plundering — he is fighting.
+   */
+  private updatePlunder(unit: Unit, target: Damageable | null, dtMs: number): void {
+    if (unit.leaving) return
+    if (target || this.canReachGate(unit)) {
+      unit.plunderMs = 0
+      return
+    }
+    const dir = ADVANCE_DIR[unit.faction]
+    let atWall = false
+    for (const seat of this.seats[OPPOSITE[unit.faction]]) {
+      if (!seat.base.alive) continue
+      const wall = seat.base.x - dir * seat.base.radius
+      if ((unit.x - wall) * dir > -PLUNDER_REACH) atWall = true
+    }
+    if (!atWall) {
+      unit.plunderMs = 0
+      return
+    }
+    unit.plunderMs += dtMs
+    if (unit.plunderMs < PLUNDER_MS) return
+    unit.leaving = true
+    // Paid the moment he turns for home, not when he clears the edge: the
+    // gold is the decision's payoff and it should land while the player is
+    // still looking at the soldier who earned it.
+    const back = Math.round(unit.def.cost * PLUNDER_REFUND)
+    this.armyFor(unit.faction).gold += back
+    this.vfx.damageNumber(unit.x, unit.centerY - unit.def.height * 0.6, back, 0xf1c75a, false)
+  }
+
   private stopAtTheWall(unit: Unit): void {
     const dir = ADVANCE_DIR[unit.faction]
     for (const seat of this.seats[OPPOSITE[unit.faction]]) {
@@ -2443,6 +2505,9 @@ export default class Battlefield {
       // Only the fortress ahead of him, and only if he has just crossed it —
       // a unit spawned or flung behind a wall is left where it is rather than
       // being snapped back through it.
+      // A soldier who has finished looting walks THROUGH: he is going home, not
+      // into the fortress, and the whole point is that he leaves.
+      if (unit.leaving) continue
       if (overshoot > 0 && overshoot < base.radius * 2 + 60) unit.x = wall
     }
   }
