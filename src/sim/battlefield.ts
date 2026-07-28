@@ -38,7 +38,7 @@ import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
 import Terrain, { RELIEF_BUCKET } from './terrain'
 import Unit, { resetUnitIds, type UnitWorld } from './unit'
-import { ADVANCE_DIR, LANE_COUNT, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type TechBranchLean } from './types'
+import { ADVANCE_DIR, LANE_COUNT, LANE_MID, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type TechBranchLean } from './types'
 
 export interface BattlefieldConfig {
   worldWidth: number
@@ -445,21 +445,6 @@ export default class Battlefield {
     this.foundSeat('enemy', this.enemy.age, config.worldWidth - margin, enemyMods.baseHp)
 
     this.relayoutBanners()
-
-    this.playerBase.onTurretFire = this.handleTurretFire
-    this.enemyBase.onTurretFire = this.handleTurretFire
-    const shedRubble = (x: number, y: number, amount: number) => {
-      const chunks = Math.min(4, 1 + Math.floor(amount / 90))
-      for (let i = 0; i < chunks; i += 1) {
-        this.physics.spawn('rubble', x, y, this.rng.spread(150), -this.rng.range(40, 200), {
-          size: this.rng.range(0.45, 1),
-          spin: this.rng.spread(9),
-          ttl: 14000
-        })
-      }
-    }
-    this.playerBase.onWallHit = shedRubble
-    this.enemyBase.onWallHit = shedRubble
 
     this.playerBase.onDestroyed = () => this.endMatch(false)
     this.enemyBase.onDestroyed = () => this.endMatch(true)
@@ -1756,16 +1741,34 @@ export default class Battlefield {
   }
 
   /**
-   * A derelict seat is still a fortress standing in the road. Its own files are
-   * blocked until it comes down; every other file walks straight past it, which
-   * is the whole tension — bypass the outpost and it keeps making soldiers
-   * behind you, or stop and dig it out while the clock runs.
+   * Every fortress one side still has standing — the seat they occupy and every
+   * one they left behind.
+   *
+   * Almost everything in the simulation used to reach for `playerBase` /
+   * `enemyBase`, which are getters over the ACTIVE seat, and a derelict was
+   * therefore absent from the shell collision list, absent from the splash
+   * list, absent from the turret pass and absent from the health bars. It was
+   * not "hard to kill"; it was not in the game. Anything that asks "what
+   * fortresses are on the board" has to ask this.
+   */
+  standingBases(owner: Faction): Base[] {
+    const out: Base[] = []
+    for (const seat of this.seats[owner]) if (seat.base.alive) out.push(seat.base)
+    return out
+  }
+
+  /**
+   * A derelict seat is still a fortress standing in the road, and its gate
+   * stands open: every file that can put a soldier in front of it can break it,
+   * and it is in the way of all of them until they do. See
+   * `DERELICT_ASSAULT_LANES` for why the founding generation's narrow gate rule
+   * does not survive the garrison walking away from it.
    */
   derelictBlockers(owner: Faction, lane: number): Damageable[] {
     const out: Damageable[] = []
     for (const seat of this.seats[owner]) {
       if (!seat.derelict || !seat.alive) continue
-      if (!seat.gateLanes.has(lane)) continue
+      if (!seat.assaultLanes.has(lane)) continue
       out.push(seat.base)
     }
     return out
@@ -1809,6 +1812,30 @@ export default class Battlefield {
     return seat.base.x + dir * (seat.base.radius + 30 + receded)
   }
 
+  /**
+   * The ground a shot fired down a given file will land on.
+   *
+   * THE LOWER HALF OF THE BOARD COULD NOT SHOOT. Every projectile in the game
+   * was handed `config.groundY` — the ground line of the MIDDLE file — as the
+   * height it buries itself at. The five files are drawn as depth, so a soldier
+   * in file 3 stands 34px below that line and one in file 4 stands 68px below
+   * it, which put their muzzles UNDERGROUND by the projectile's reckoning: the
+   * shot detonated on the frame it was created, at the shooter's feet, every
+   * time. Measured on a Slinger against a soldier at 200px, by file:
+   *
+   *      file 0: 280 damage   file 1: 280   file 2: 280   file 3: 0   file 4: 0
+   *
+   * Not "weaker on the flanks" — no projectile ever existed. Two of the five
+   * files could field nothing but melee, wall guns could not defend the lower
+   * flank at all, and the same hole is why an abandoned fortress could not be
+   * shot at from the files it was most exposed in. Terrain and cover were
+   * already being tested per file (`updateProjectiles` reads `config.lane`);
+   * only the shot's own floor was left behind in the middle one.
+   */
+  private groundLineFor(lane: number): number {
+    return this.config.groundY + LANE_Y[Math.max(0, Math.min(LANE_COUNT - 1, lane))]
+  }
+
   /** How far in front of a fortress its supply yard reaches. */
   private static readonly SIEGE_REACH = 300
   /** Supply cut per point of enemy population standing in the yard. */
@@ -1831,11 +1858,28 @@ export default class Battlefield {
     const reach = Battlefield.SIEGE_REACH
     let onPlayer = 0
     let onEnemy = 0
+    // THE YARD HAS A BACK WALL.
+    //
+    // The test was one-sided — "anywhere in front of the gate, however far in
+    // front" — so the whole of the board behind a commander's own fortress
+    // counted as their yard. Combined with soldiers who used to walk straight
+    // through the wall (see `stopAtTheWall`) that produced a supply penalty
+    // with no way to remove it: the enemies charging it were standing off the
+    // end of the map, out of sight and out of reach, and every soldier the
+    // defender bought to clear their yard found nothing there. The yard is the
+    // ground in FRONT of the gate. Anything past the gate has broken through,
+    // and is a different problem.
+    const playerGate = this.playerBase
+    const enemyGate = this.enemyBase
     for (const unit of this.units) {
       if (!unit.alive) continue
-      if (unit.faction === 'enemy') {
-        if (unit.x < this.playerBase.x + reach) onPlayer += unit.def.pop
-      } else if (unit.x > this.enemyBase.x - reach) onEnemy += unit.def.pop
+      const besieged = unit.faction === 'enemy'
+      const base = besieged ? playerGate : enemyGate
+      // How far out in front of the wall he stands, the way the defender faces.
+      const out = (unit.x - base.x) * ADVANCE_DIR[base.faction]
+      if (out < -base.radius || out > reach) continue
+      if (besieged) onPlayer += unit.def.pop
+      else onEnemy += unit.def.pop
     }
     // Deep cellars are stores an enemy standing in the yard cannot get at, so
     // they lower the ceiling on how much of your supply a siege can take. They
@@ -1917,12 +1961,28 @@ export default class Battlefield {
    */
   private foundSeat(faction: Faction, generation: number, x: number, baseHpMult: number): Seat {
     const previous = this.seats[faction][this.seats[faction].length - 1]
-    if (previous) previous.derelict = true
     const rampart = RAMPART_HP[Math.min(RAMPART_HP.length - 1, this.armyFor(faction).tracks.ramparts)]
     const hp = ageDef(generation).baseHp * baseHpMult * rampart
     const base = new Base(this.scene, faction, x, this.config.groundY, hp, this.vfx)
     base.setAge(generation, hp)
     base.onTurretFire = this.handleTurretFire
+    base.onWallHit = this.shedRubble
+    // THE HANDLERS FOLLOW THE SEAT, NOT THE BUILDING.
+    //
+    // "Losing the game" is a property of the seat a commander is sitting in,
+    // and every age-up moves it. Wiring the defeat handler once in the
+    // constructor left it welded to the FIRST fortress for the whole match, so
+    // after a single age-up the two worst bugs in the game were live at once:
+    // breaking the enemy's actual capital ended nothing, and knocking over
+    // their abandoned Stone Age camp won you the war. Whatever the outgoing
+    // seat was wired to end the match with — including Endless mode's
+    // breakthrough handler — is handed to the seat that now stands in its
+    // place, and the one being left behind gets the handler for a ruin.
+    base.onDestroyed = previous?.base.onDestroyed
+    if (previous) {
+      previous.derelict = true
+      previous.base.onDestroyed = () => this.handleDerelictFall(faction, previous)
+    }
     const seat = new Seat(faction, generation, base)
     const dir = ADVANCE_DIR[faction]
     SEAT_PLOTS[seat.generation].forEach((spec, plot) => {
@@ -2233,8 +2293,50 @@ export default class Battlefield {
       const target = this.pickTarget(unit, enemyLanes, enemyAir, enemyBase)
       unit.update(dtMs, blocker, target)
       if (unit.layer === 'ground' && unit.alive) {
+        this.stopAtTheWall(unit)
         aheadX = unit.x - dir * (unit.radius + 2)
       }
+    }
+  }
+
+  /**
+   * A soldier cannot walk through a fortress.
+   *
+   * Nothing used to stop one. A unit only halts when it has something IN REACH
+   * to hit, and the gate rule says a soldier in a flank file may not hit the
+   * gate — so a man in file 0 marched up to a citadel, found nothing he was
+   * allowed to attack, and kept marching: through the wall, past the enemy
+   * capital, off the end of the world, where he stood at the map edge for the
+   * rest of the match. Two consequences, both of them reported as bugs:
+   *
+   *  THE SIEGE THAT COULD NOT BE LIFTED. The supply penalty counts everything
+   *  standing in a commander's yard, and a soldier parked beyond the far edge
+   *  of the board is inside it forever. The defender was billed for enemies
+   *  they could not see, could not reach and could not kill.
+   *
+   *  THE ARMY THAT WALKED OFF THE BOARD. Whoever's units were in the flank
+   *  files simply stopped being in the war.
+   *
+   * A wall stops a man whether or not his orders let him attack it. Held here
+   * rather than in the unit, because which fortresses are standing is the
+   * battlefield's knowledge — and it is what makes a derelict a real obstacle
+   * rather than a picture of one.
+   */
+  private stopAtTheWall(unit: Unit): void {
+    const dir = ADVANCE_DIR[unit.faction]
+    for (const seat of this.seats[OPPOSITE[unit.faction]]) {
+      const base = seat.base
+      if (!base.alive) continue
+      // In every file, whatever the gate rule says about attacking it: whether
+      // a soldier is ALLOWED to hit a wall and whether the wall is SOLID are
+      // different questions, and only the second one is physics.
+      // The face of the wall the attacker is coming at.
+      const wall = base.x - dir * base.radius
+      const overshoot = (unit.x - wall) * dir
+      // Only the fortress ahead of him, and only if he has just crossed it —
+      // a unit spawned or flung behind a wall is left where it is rather than
+      // being snapped back through it.
+      if (overshoot > 0 && overshoot < base.radius * 2 + 60) unit.x = wall
     }
   }
 
@@ -2389,8 +2491,10 @@ export default class Battlefield {
 
   private updateProjectiles(dtMs: number): void {
     if (this.projectiles.length === 0) return
-    const alivePlayer: Damageable[] = [this.playerBase, ...this.liveBuildings('player')]
-    const aliveEnemy: Damageable[] = [this.enemyBase, ...this.liveBuildings('enemy')]
+    // Every standing fortress, not only the occupied one — a shell aimed at a
+    // derelict used to pass clean through it and land in the dirt behind.
+    const alivePlayer: Damageable[] = [...this.standingBases('player'), ...this.liveBuildings('player')]
+    const aliveEnemy: Damageable[] = [...this.standingBases('enemy'), ...this.liveBuildings('enemy')]
     for (const u of this.units) {
       if (!u.alive) continue
       ;(u.faction === 'player' ? alivePlayer : aliveEnemy).push(u)
@@ -2516,8 +2620,23 @@ export default class Battlefield {
     // in to burn a granary is standing well inside the wall's arc.
     playerTargets.push(...this.liveBuildings('enemy'))
     enemyTargets.push(...this.liveBuildings('player'))
-    this.playerBase.update(dtMs, enemyTargets)
-    this.enemyBase.update(dtMs, playerTargets)
+    // EVERY fortress takes its turn, not just the occupied one.
+    //
+    // Turrets are mounted on the fortress, and ageing up does not carry them
+    // back to the new one — the guns you bought stay on the wall you bought
+    // them for. Running only the active seat therefore did not merely make the
+    // old fort quiet: it silently deleted every coin a commander had ever spent
+    // on turrets the moment they aged up. A derelict is still a fort with guns
+    // on it; nobody is giving the crews orders, but nobody has to in order for
+    // them to shoot at what walks up to the wall.
+    //
+    // It cannot run away with the game, because a derelict is the one structure
+    // on the board that only ever gets weaker: no rampart reinforcement, no
+    // Forge repairs, no barbican mending, and a destroyed gun is never rebuilt.
+    // Its guns are the guns of the age that raised them, firing into the next
+    // one, and they wear out for good.
+    for (const base of this.standingBases('player')) base.update(dtMs, enemyTargets)
+    for (const base of this.standingBases('enemy')) base.update(dtMs, playerTargets)
   }
 
   private updateBeams(dtMs: number): void {
@@ -2531,10 +2650,18 @@ export default class Battlefield {
     this.beams = remaining
   }
 
+  /**
+   * A bar over every fortress still standing, occupied or not.
+   *
+   * A thing you are told to break has to show you how far along you are. A
+   * derelict with no bar reads as scenery you cannot hurt, which is precisely
+   * what it was reported as.
+   */
   private drawBaseHealth(): void {
     this.baseHealthGfx.clear()
-    if (this.playerBase.alive) this.playerBase.drawHealthBar(this.baseHealthGfx)
-    if (this.enemyBase.alive) this.enemyBase.drawHealthBar(this.baseHealthGfx)
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      for (const base of this.standingBases(faction)) base.drawHealthBar(this.baseHealthGfx)
+    }
   }
 
   // ───────────────────────────── Spawning ─────────────────────────────
@@ -2575,7 +2702,7 @@ export default class Battlefield {
           damage: parent.config.damage * 0.5,
           splash: (parent.config.splash ?? 0) * 0.7
         },
-        this.config.groundY,
+        this.groundLineFor(parent.config.lane ?? LANE_MID),
         this.vfx
       )
       // Children do not split again, or one shell becomes an artillery barrage.
@@ -2769,6 +2896,7 @@ export default class Battlefield {
         )
       }
 
+      const shotLane = target instanceof Unit ? target.lane : unit.lane
       this.equipProjectile(
         new Projectile(
           this.scene,
@@ -2788,11 +2916,11 @@ export default class Battlefield {
             target,
             hitsAir: unit.def.hitsAir ?? false,
             owner: unit,
-            lane: target instanceof Unit ? target.lane : unit.lane,
+            lane: shotLane,
             bonusVs: unit.def.bonusVs,
             crit: unit.def.crit
           },
-          this.config.groundY,
+          this.groundLineFor(shotLane),
           this.vfx
         )
       )
@@ -3032,6 +3160,37 @@ export default class Battlefield {
     }
   }
 
+  /**
+   * Masonry knocked out of a wall. Held as a field rather than a local in the
+   * constructor because every seat founded later needs the same one — a
+   * fortress raised at the fourth age used to take hits without shedding a
+   * single stone.
+   */
+  private shedRubble = (x: number, y: number, amount: number): void => {
+    const chunks = Math.min(4, 1 + Math.floor(amount / 90))
+    for (let i = 0; i < chunks; i += 1) {
+      this.physics.spawn('rubble', x, y, this.rng.spread(150), -this.rng.range(40, 200), {
+        size: this.rng.range(0.45, 1),
+        spin: this.rng.spread(9),
+        ttl: 14000
+      })
+    }
+  }
+
+  /**
+   * A superseded fortress comes down.
+   *
+   * It does not end anything — that is the whole difference between the seat a
+   * commander occupies and the ones they left. What breaking it buys the
+   * attacker is the road: the free soldiers stop coming out of it, and every
+   * file it was standing in is open again.
+   */
+  private handleDerelictFall(faction: Faction, seat: Seat): void {
+    seat.base.playDestruction()
+    this.vfx.shake(0.01, 700)
+    this.onSeatChanged?.(faction)
+  }
+
   private handleTurretFire = (base: Base, slot: TurretSlot, target: Damageable): void => {
     const def = slot.def
     if (!def) return
@@ -3047,6 +3206,7 @@ export default class Battlefield {
 
     audio.play(this.turretSfx(def), 0.4)
     this.vfx.muzzleFlash(muzzle.x, muzzle.y, finalAngle, def.age >= 4 ? 0x8ff0ff : 0xffd08a, 1.4)
+    const shotLane = target instanceof Unit ? target.lane : LANE_MID
 
     this.equipProjectile(
       new Projectile(
@@ -3066,9 +3226,13 @@ export default class Battlefield {
           homing: attack.homing,
           target,
           hitsAir: def.hitsAir,
-          owner: base
+          owner: base,
+          // A gun on the wall shoots down a FILE, like everything else. Without
+          // this its shells were flown down the middle one and buried in the
+          // ground short of anything standing in the lower two.
+          lane: shotLane
         },
-        this.config.groundY,
+        this.groundLineFor(shotLane),
         this.vfx
       )
     )
@@ -3250,10 +3414,15 @@ export default class Battlefield {
     // you pack is a heavier one. It applies here, at the single point every
     // splash in the game passes through, rather than at fifteen call sites.
     if (this.hasBuilding(faction, 'powder_magazine')) radius *= 1.18
+    // Derelict fortresses belong in here too. Most melee in the game carries a
+    // small splash — a clubman's swing does — so leaving them out meant an
+    // abandoned fort could not be touched even by the men standing against its
+    // wall hitting it, which is exactly how it came to be reported as
+    // indestructible.
     const targets: Damageable[] = [
       ...this.units,
-      this.playerBase,
-      this.enemyBase,
+      ...this.standingBases('player'),
+      ...this.standingBases('enemy'),
       ...this.liveBuildings('player'),
       ...this.liveBuildings('enemy')
     ]
@@ -3836,8 +4005,11 @@ export default class Battlefield {
     this.units.forEach(u => u.destroy())
     this.projectiles.forEach(p => p.destroy())
     this.beams.forEach(b => b.gfx.destroy())
-    this.playerBase.destroy()
-    this.enemyBase.destroy()
+    // Every seat ever founded, not just the two occupied ones — the derelicts
+    // own sprites, braziers and smoke emitters of their own.
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      for (const seat of this.seats[faction]) seat.base.destroy()
+    }
     this.baseHealthGfx.destroy()
   }
 }

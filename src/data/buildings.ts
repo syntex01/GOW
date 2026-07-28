@@ -97,6 +97,29 @@ export const SEAT_GATE_LANES: ReadonlySet<number>[] = [
 ]
 
 /**
+ * Which files may attack a SUPERSEDED seat: all of them. Its gate stands open.
+ *
+ * A narrow gate is a defended one — crews on the wall, the road covered, the
+ * flanks walled off. That is a thing a garrison DOES, and a superseded seat has
+ * no garrison; the commander left with the crews and took the orders with them.
+ * What is left is a big stone building standing in the middle of the road.
+ *
+ * Keeping the founding generation's gate rule on a derelict produced the worst
+ * reading in the game: a Stone Age camp abandoned in mid-field could be hit
+ * from file 2 and from nowhere else, so four soldiers out of five walked
+ * through a fortress and the thing looked invulnerable. A player cannot see a
+ * gate rule; they can see a fortress. So the rule a derelict is played by is
+ * the one that matches the picture — anything that can stand in front of it can
+ * break it, and it is in everyone's way until they do.
+ *
+ * The price of that is paid on the other side of the ledger and never taken
+ * back: a derelict is never repaired, never reinforced by ramparts, and its
+ * guns are never rebuilt. It is the cheapest fortress on the board to break,
+ * and it gets cheaper every age.
+ */
+export const DERELICT_ASSAULT_LANES: ReadonlySet<number> = new Set([0, 1, 2, 3, 4])
+
+/**
  * How far back each new seat is founded, and therefore how much the playfield
  * grows every time somebody ages up.
  *

@@ -1,4 +1,5 @@
 import {
+  DERELICT_ASSAULT_LANES,
   DERELICT_MAX_ALIVE,
   DERELICT_SPAWN_MS,
   SEAT_GATE_LANES,
@@ -67,9 +68,25 @@ export default class Seat {
     return this.base.alive && this.base.hp > 0
   }
 
-  /** Which files may attack this seat's fortress. */
+  /**
+   * Which files this seat's gate is held from — the files its free soldiers
+   * march out of, and, while it is still occupied, the only files its fortress
+   * can be attacked from.
+   */
   get gateLanes(): ReadonlySet<number> {
     return SEAT_GATE_LANES[this.generation]
+  }
+
+  /**
+   * Which files this seat's fortress may actually be broken from.
+   *
+   * The same as its gate while somebody is holding it. Once superseded the gate
+   * stands open and it is simply a building in the road: every file that can
+   * put a soldier in front of it can break it, and it is in the way of all of
+   * them until they do. See `DERELICT_ASSAULT_LANES`.
+   */
+  get assaultLanes(): ReadonlySet<number> {
+    return this.derelict ? DERELICT_ASSAULT_LANES : this.gateLanes
   }
 
   /** A commander may only build on the seat they currently occupy. */
