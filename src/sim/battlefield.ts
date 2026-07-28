@@ -185,6 +185,15 @@ const BANNER_ERAS: { at: number; lane: number; kind: BannerKind }[][] = [
   ]
 ]
 
+/** Creed colours for the banner rally pulse. */
+const BRANCH_FX_COLOR: Record<string, number> = {
+  carnage: 0xd93b2b,
+  ordnance: 0xffa640,
+  engineering: 0x8fd0ff,
+  occult: 0xb46bff,
+  blight: 0x8fd694
+}
+
 export default class Battlefield {
   readonly scene: Phaser.Scene
   readonly config: BattlefieldConfig
@@ -261,6 +270,7 @@ export default class Battlefield {
   private bannerCarry: Record<Faction, number> = { player: 0, enemy: 0 }
   private bannerEra = -1
   private boneCarry: Record<Faction, number> = { player: 0, enemy: 0 }
+  private bannerFx = 0
   /** Blight's sprouting scan cursor, so zone growth staggers over frames. */
   private bloomClock = 0
   /** Spawn counter for this match, so nothing depends on a global id. */
@@ -744,6 +754,8 @@ export default class Battlefield {
     lane: number
     /** Accumulator for fire consuming the settled dead inside it. */
     burn?: number
+    /** Purely visual clock, so a per-tick rule emits an effect occasionally. */
+    fx?: number
   }[] = []
 
   /** Lays down a patch of hostile ground. */
@@ -793,7 +805,14 @@ export default class Battlefield {
       // ordnance lean stokes the rate. Fire also SCOURS THE HAUNT: the
       // occult's ash-rings burn out of ground a fire crosses.
       if (zone.kind === 'fire') {
-        if (zone.lane >= 0) this.terrain.scourHaunt(zone.x, zone.lane, 0.25 * dt)
+        if (zone.lane >= 0 && this.terrain.hauntAt(zone.x, zone.lane) > 0.05) {
+          this.terrain.scourHaunt(zone.x, zone.lane, 0.25 * dt)
+          zone.fx = (zone.fx ?? 0) + dtMs
+          if (zone.fx >= 500) {
+            zone.fx = 0
+            this.vfx.scour(zone.x, this.config.groundY + LANE_Y[Math.max(0, zone.lane)] - 6)
+          }
+        }
         // A GROWN GARDEN SMOTHERS EMBERS: wet rot starves flame — but only
         // a garden big enough to matter, and slower than fire burns spores.
         for (const other of this.zones) {
@@ -801,6 +820,11 @@ export default class Battlefield {
           if (other.lane !== -1 && zone.lane !== -1 && other.lane !== zone.lane) continue
           if (Math.abs(other.x - zone.x) < other.radius + zone.radius) {
             zone.ttl -= dtMs
+            zone.fx = (zone.fx ?? 0) + dtMs
+            if (zone.fx >= 600) {
+              zone.fx = 0
+              this.vfx.smother(zone.x, this.config.groundY + LANE_Y[Math.max(0, zone.lane)] - 6)
+            }
             break
           }
         }
@@ -833,7 +857,7 @@ export default class Battlefield {
             this.physics.bodies.splice(bi, 1)
             zone.ttl = Math.min(zone.ttl + 900, 45000)
             zone.radius = Math.min(260, zone.radius + 2)
-            this.vfx.impact(body.x, this.config.groundY - 6, 0x8fd694, 0.4, false)
+            this.vfx.digest(body.x, this.config.groundY - 6)
             break
           }
         }
@@ -846,6 +870,11 @@ export default class Battlefield {
           zone.ttl -= dtMs * 0.5 * power
           const circle = this.armyFor(foe)
           circle.abilityCharge = Math.min(1, circle.abilityCharge + 0.002 * power * dt)
+          zone.fx = (zone.fx ?? 0) + dtMs
+          if (zone.fx >= 700) {
+            zone.fx = 0
+            this.vfx.tithe(zone.x, this.config.groundY + LANE_Y[Math.max(0, zone.lane)] - 8)
+          }
         }
       }
 
@@ -1135,6 +1164,14 @@ export default class Battlefield {
       if (lean === 'occult' && power > 0) {
         army.abilityCharge = Math.min(1, army.abilityCharge + 0.0075 * power * dt)
       }
+      // A held flag beats like a drum in its holder's creed colour.
+      if (lean && power > 0) {
+        this.bannerFx += dtMs
+        if (this.bannerFx >= 1400) {
+          this.bannerFx = 0
+          this.vfx.rally(banner.x, this.config.groundY + LANE_Y[banner.lane] - 10, BRANCH_FX_COLOR[lean] ?? 0xffd66e)
+        }
+      }
       if ((lean === 'carnage' || lean === 'ordnance' || lean === 'blight') && power > 0) {
         for (const unit of this.units) {
           if (!unit.alive || unit.faction !== holder || unit.lane !== banner.lane) continue
@@ -1278,6 +1315,14 @@ export default class Battlefield {
         if (pile >= 5) {
           u.mire(interval + 150)
           u.rooting = Math.min(u.rooting, 2000)
+          // Once per burial, not once per pass: the clods heap up when the
+          // pile closes, and again only if the soldier gets free and re-digs.
+          if (!u.buriedShown) {
+            u.buriedShown = true
+            this.vfx.buried(u.x, u.groundLine)
+          }
+        } else {
+          u.buriedShown = false
         }
       }
     }
@@ -2328,7 +2373,7 @@ export default class Battlefield {
     // comes apart into half the usable remains.
     if (this.leanCache[winner] === 'occult') {
       unit.banished = true
-      this.vfx.impact(unit.x, unit.centerY, 0xb46bff, 0.7, false)
+      this.vfx.banish(unit.x, unit.centerY)
     }
     // DROWN THE GARDEN: a carnage-lean kill inside hostile blight splatters
     // enough blood to scald the growth back. Fight IN the zones to clear them.
@@ -2340,6 +2385,7 @@ export default class Battlefield {
         zone.radius -= 16
         if (zone.radius < 16) zone.ttl = 0
         this.vfx.impact(unit.x, this.config.groundY + LANE_Y[unit.lane] - 10, 0xa03830, 0.8, false)
+        this.vfx.smother(unit.x, this.config.groundY + LANE_Y[unit.lane] - 6)
         break
       }
     }

@@ -323,7 +323,7 @@ export const TECHS: TechNode[] = [
     ring: 3,
     row: 3,
     age: 2,
-    cost: 1500,
+    cost: 2200,
     requires: ['ricochet'],
     effect: 'Your explosions throw fragments. They fly, fall, and wound whatever they reach.'
   },
@@ -359,7 +359,7 @@ export const TECHS: TechNode[] = [
     ring: 3,
     row: 6,
     age: 2,
-    cost: 1700,
+    cost: 1300,
     requires: ['salvage'],
     effect: 'Your vehicles, walkers and aircraft repair themselves continuously while they fight.'
   },
@@ -422,7 +422,7 @@ export const TECHS: TechNode[] = [
     ring: 4,
     row: 2,
     age: 3,
-    cost: 2400,
+    cost: 2000,
     requires: ['shrapnel', 'powder_discipline'],
     effect: 'Blasts stop nudging and start throwing. Soldiers leave the ground and land badly.'
   },
@@ -596,7 +596,7 @@ export const TECHS: TechNode[] = [
     ring: 5,
     row: 7,
     age: 4,
-    cost: 3600,
+    cost: 1900,
     requires: ['demolition', 'nanite_field'],
     effect: 'Soldiers standing together share what they take. Break the formation and it stops.'
   },
@@ -659,7 +659,7 @@ export const TECHS: TechNode[] = [
     ring: 6,
     row: 0,
     age: 4,
-    cost: 4200,
+    cost: 3000,
     requires: ['corpse_wall', 'bone_harvest'],
     demand: { metric: 'losses', amount: 25, label: 'Lose 25 of your own' },
     effect: 'Your half of the field raises what has fallen on it. Enough remains, and they get up again.'
@@ -697,7 +697,7 @@ export const TECHS: TechNode[] = [
     ring: 6,
     row: 10,
     age: 4,
-    cost: 3300,
+    cost: 2500,
     requires: ['verdant_tide', 'contagion'],
     effect: 'Blighted ground answers to you: enemies crossing it are dragged to a crawl.'
   },

@@ -13,9 +13,10 @@ import type { Faction } from '../sim/types'
  * counters: mound cover, banishment, hex-unmaking, cleansing ground,
  * field hygiene, quarry denial and thrall denial. v8 filled the matrix:
  * buried lines, scoured haunts, tithed growth, corpse-fed gardens and
- * smothered embers.
+ * smothered embers. v9 made thrown soldiers land badly (fall damage) and
+ * repriced five nodes against measured value.
  */
-export const PROTOCOL_VERSION = 8
+export const PROTOCOL_VERSION = 9
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

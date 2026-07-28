@@ -12,6 +12,7 @@ import Environment from '../gfx/environment'
 import DebrisLayer from '../gfx/debrisLayer'
 import Splatter from '../gfx/splatter'
 import TerrainLayer from '../gfx/terrainLayer'
+import ZoneLayer from '../gfx/zoneLayer'
 import Lighting from '../gfx/lighting'
 import { AGE_THEMES } from '../gfx/palette'
 import Vfx from '../gfx/vfx'
@@ -48,6 +49,7 @@ export default class BattleScene extends Phaser.Scene {
   private debris!: DebrisLayer
   private splatter!: Splatter
   private terrainLayer!: TerrainLayer
+  private zoneLayer!: ZoneLayer
   /** Accumulator for the peace-time stain sweep. */
   private erosionClock = 0
   private erosionX = 0
@@ -189,6 +191,8 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     this.terrainLayer = new TerrainLayer(this, this.battlefield, GROUND_Y)
+    // Fire, spores and plague get a body of their own.
+    this.zoneLayer = new ZoneLayer(this, this.battlefield, GROUND_Y)
 
     // War banners: the map-control flags. Their number, lanes and KINDS come
     // from the sim (they grow with the war), so the sprites rebuild whenever
@@ -760,6 +764,7 @@ export default class BattleScene extends Phaser.Scene {
       this.spawnCreedMotes()
     }
     this.debris.render(this.battlefield.physics)
+    this.zoneLayer.update(delta)
     const layoutKey = this.battlefield.banners.map(b => `${b.x}:${b.lane}:${b.kind}`).join('|')
     if (layoutKey !== this.bannerLayoutKey) this.rebuildBannerFlags()
     for (let i = 0; i < this.bannerFlags.length; i += 1) {

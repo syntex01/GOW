@@ -137,6 +137,10 @@ export default class Unit implements Damageable {
   banished = false
   /** Standing in own blight: hostile control drains three times as fast. */
   cleansing = false
+  /** Effect latches, so a per-tick rule shows its effect once per event. */
+  buriedShown = false
+  private wardShown = false
+  private purgeShow = 0
   hp: number
   maxHp: number
   alive = true
@@ -678,6 +682,12 @@ export default class Unit implements Damageable {
     // barrier. This is how the occult opens an engineering line — not by
     // hitting harder, but by making the engineering stop being true.
     const hexed = this.hexedFor > 0
+    // The moment a hex actually costs this unit a ward, show it coming apart.
+    if (hexed && !this.wardShown && (this.def.special === 'plating' || this.linked > 0 || this.rooting > 0 || this.auraShield > 0)) {
+      this.wardShown = true
+      this.world.vfx.wardBreak(this.x, this.centerY)
+    }
+    if (!hexed) this.wardShown = false
     // Plating: purpose-built against small arms — pierce and slash glance off.
     if (!hexed && this.def.special === 'plating' && (type === 'pierce' || type === 'slash')) mult *= 0.75
     // Aegis: a soldier in formation takes a share, not the whole blow. Break
@@ -959,6 +969,13 @@ export default class Unit implements Damageable {
     if (this.attackCooldown > 0) this.attackCooldown -= dtMs
     // The garden cleanses: own blight underfoot burns hostile control off.
     const purge = this.cleansing ? 3 : 1
+    if (purge > 1 && (this.miredFor > 0 || this.hexedFor > 0 || this.terrorFor > 0)) {
+      this.purgeShow -= dtMs
+      if (this.purgeShow <= 0) {
+        this.purgeShow = 700
+        this.world.vfx.cleanse(this.x, this.groundLine - 6)
+      }
+    }
     this.cleansing = false
     if (this.miredFor > 0) this.miredFor -= dtMs * purge
     if (this.cursedFor > 0) this.cursedFor -= dtMs
@@ -1015,9 +1032,23 @@ export default class Unit implements Damageable {
       if (this.y >= this.groundLine) {
         this.y = this.groundLine
         this.airborne = false
-        if (Math.abs(this.vy) > 200) {
+        const fall = Math.abs(this.vy)
+        if (fall > 200) {
           this.world.vfx.footDust(this.x, this.groundLine)
           this.world.vfx.impact(this.x, this.world.groundY - 6, 0xbfae8a, 0.6, false)
+        }
+        // LANDING BADLY. Being thrown was a free ride until now: a blast
+        // that launched a soldier merely carried it out of the melee, which
+        // is why the throwing techs measured as a mercy to the enemy. A hard
+        // landing costs, and it costs the heavy most — armour does not help
+        // you meet the ground. Capped, so this never one-shots.
+        if (fall > 360 && this.alive) {
+          const hurt = Math.min(this.maxHp * 0.22, (fall - 360) * 0.11 * (0.7 + this.def.mass * 0.15))
+          if (hurt > 1) {
+            this.takeDamage(hurt, 'blunt')
+            this.stagger = Math.max(this.stagger, 260)
+            this.world.vfx.impact(this.x, this.groundLine - 6, 0xd8c8a8, 0.8, true)
+          }
         }
         this.vy = 0
       }

@@ -270,6 +270,390 @@ export default class Vfx {
     this.energy.emitParticleAt(x, y, Math.round(6 * this.quality))
   }
 
+  // ────────────────────── The creeds' own signatures ──────────────────────
+  //
+  // Each of these belongs to exactly one mechanism in the doctrine web, and
+  // each is built to be told apart at a glance in a crowded fight: the motion
+  // carries the meaning. Things being TAKEN collapse inward; things being
+  // DESTROYED throw outward; things GROWING rise and spread.
+
+  /** THE BANISHMENT — the soul is tithed: a wisp torn loose and snuffed. */
+  banish(x: number, y: number): void {
+    this.lighting?.flash(x, y, 96, 0xb46bff, 0.9)
+    // A hole in the light where the soul was, so the violet reads even
+    // against a red gore burst at the same spot.
+    const hole = this.scene.add
+      .image(x, y, 'fx:soft')
+      .setDepth(317)
+      .setTint(0x1a0d2a)
+      .setScale(0.8, 1.0)
+      .setAlpha(0.75)
+    this.scene.tweens.add({
+      targets: hole,
+      scaleX: 0.05,
+      scaleY: 0.1,
+      alpha: 0,
+      duration: 420,
+      ease: 'Cubic.easeIn',
+      onComplete: () => hole.destroy()
+    })
+    // The one ring in the game that closes instead of opening. Something was
+    // taken from here.
+    const ring = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(318)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xb46bff)
+      .setScale(2.3, 0.9)
+      .setAlpha(0.95)
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: 0.02,
+      scaleY: 0.02,
+      alpha: 0,
+      duration: 380,
+      ease: 'Cubic.easeIn',
+      onComplete: () => ring.destroy()
+    })
+    // The wisp: up, thinning, gone.
+    const wisp = this.scene.add
+      .image(x, y - 6, 'fx:soft')
+      .setDepth(319)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xf0e2ff)
+      .setScale(0.85, 1.5)
+      .setAlpha(1)
+    this.scene.tweens.add({
+      targets: wisp,
+      y: y - 74,
+      scaleX: 0.06,
+      scaleY: 0.3,
+      alpha: 0,
+      duration: 620,
+      ease: 'Sine.easeIn',
+      onComplete: () => wisp.destroy()
+    })
+    this.energy.setParticleTint(0x9a5ce0)
+    this.energy.emitParticleAt(x, y - 4, Math.round(7 * this.quality))
+  }
+
+  /** THE DEAD BURY THE LINE — clods heap against a soldier that will not move. */
+  buried(x: number, y: number): void {
+    const q = this.quality
+    // Debris thrown INWARD: the pile is closing around the boots.
+    for (let i = 0; i < Math.round(6 * q); i += 1) {
+      const side = i % 2 === 0 ? -1 : 1
+      const from = x + side * (26 + rng.range(0, 16))
+      const clod = this.scene.add
+        .image(from, y - 20 - rng.range(0, 14), 'fx:debris')
+        .setDepth(311)
+        .setTint(i % 3 === 0 ? 0x6e241e : 0x4a3524)
+        .setScale(rng.range(0.5, 0.95))
+        .setAngle(rng.range(-180, 180))
+      this.scene.tweens.add({
+        targets: clod,
+        x: x + rng.spread(10),
+        y: y - 2,
+        angle: clod.angle + rng.spread(220),
+        alpha: 0.2,
+        duration: 300 + rng.range(0, 160),
+        ease: 'Quad.easeIn',
+        onComplete: () => clod.destroy()
+      })
+    }
+    this.dustPuff.setParticleTint(0x584434)
+    this.dustPuff.emitParticleAt(x, y - 4, Math.round(5 * q))
+    // The mound-line that has closed over the ankles.
+    const heap = this.scene.add
+      .image(x, y, 'fx:soft')
+      .setDepth(309)
+      .setTint(0x3b2a1e)
+      .setAlpha(0)
+      .setScale(0.7, 0.16)
+    this.scene.tweens.add({
+      targets: heap,
+      alpha: 0.55,
+      scaleX: 1.1,
+      duration: 260,
+      yoyo: true,
+      hold: 500,
+      onComplete: () => heap.destroy()
+    })
+  }
+
+  /** FIRE SCOURS THE HAUNT — violet ash catches and burns away. */
+  scour(x: number, y: number): void {
+    this.lighting?.flash(x, y, 60, 0xff9a40, 0.6)
+    const ring = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(317)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xb46bff)
+      .setScale(0.5, 0.2)
+      .setAlpha(0.9)
+    // Violet → ember orange as it goes: the haunt is being cremated.
+    this.scene.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 460,
+      onUpdate: tw => {
+        const t = tw.getValue() ?? 0
+        const r = Math.round(0xb4 + (0xff - 0xb4) * t)
+        const g = Math.round(0x6b + (0x9a - 0x6b) * t)
+        const bch = Math.round(0xff + (0x30 - 0xff) * t)
+        ring.setTint((r << 16) | (g << 8) | bch)
+      }
+    })
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: 1.5,
+      scaleY: 0.5,
+      alpha: 0,
+      duration: 460,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy()
+    })
+    this.smoke.setParticleTint(0x6a4a70)
+    this.smoke.emitParticleAt(x, y - 6, Math.round(3 * this.quality))
+    this.sparks.setParticleTint(0xffb050)
+    this.sparks.emitParticleAt(x, y - 4, Math.round(5 * this.quality))
+  }
+
+  /** THE GARDEN EATS — remains drawn into the rot, and something sprouts. */
+  digest(x: number, y: number): void {
+    const q = this.quality
+    for (let i = 0; i < Math.round(5 * q); i += 1) {
+      const mote = this.scene.add
+        .image(x + rng.spread(30), y - rng.range(4, 22), 'fx:soft')
+        .setDepth(313)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0xbdf7a0)
+        .setScale(0.22)
+        .setAlpha(0.95)
+      this.scene.tweens.add({
+        targets: mote,
+        x,
+        y: y + 2,
+        scale: 0.03,
+        alpha: 0,
+        duration: 380 + rng.range(0, 200),
+        ease: 'Sine.easeIn',
+        onComplete: () => mote.destroy()
+      })
+    }
+    // The cap that pushes up where the body was.
+    const cap = this.scene.add
+      .image(x, y, 'fx:soft')
+      .setDepth(314)
+      .setTint(0xeaffd8)
+      .setScale(0.02, 0.02)
+      .setAlpha(0.95)
+    this.scene.tweens.add({
+      targets: cap,
+      scaleX: 0.36,
+      scaleY: 0.46,
+      y: y - 9,
+      alpha: 0,
+      duration: 700,
+      ease: 'Back.easeOut',
+      onComplete: () => cap.destroy()
+    })
+  }
+
+  /** A GROWN GARDEN SMOTHERS EMBERS — wet rot rolls over the flame. */
+  smother(x: number, y: number): void {
+    const q = this.quality
+    this.smoke.setParticleTint(0xc8e8c0)
+    this.smoke.emitParticleAt(x, y - 8, Math.round(4 * q))
+    // Steam: the fire is being drowned, not blown out.
+    for (let i = 0; i < Math.round(4 * q); i += 1) {
+      const steam = this.scene.add
+        .image(x + rng.spread(26), y - 4, 'fx:soft')
+        .setDepth(315)
+        .setTint(0xeaf6e6)
+        .setScale(0.1)
+        .setAlpha(0.6)
+      this.scene.tweens.add({
+        targets: steam,
+        y: y - 40 - rng.range(0, 22),
+        scale: 0.42,
+        alpha: 0,
+        duration: 620 + rng.range(0, 240),
+        ease: 'Sine.easeOut',
+        onComplete: () => steam.destroy()
+      })
+    }
+    // Embers guttering downward instead of flying.
+    this.sparks.setParticleTint(0xff7a30)
+    this.sparks.emitParticleAt(x, y - 2, Math.round(3 * q))
+  }
+
+  /** THE FLESH WALL — a shot slams into the piled dead and stops. */
+  wallBlock(x: number, y: number): void {
+    const q = this.quality
+    this.lighting?.flash(x, y, 34, 0xa03830, 0.3)
+    this.dustPuff.setParticleTint(0x4a2018)
+    this.dustPuff.emitParticleAt(x, y, Math.round(5 * q))
+    // Bone chips: pale, angular, thrown back the way the shot came.
+    for (let i = 0; i < Math.round(4 * q); i += 1) {
+      const chip = this.scene.add
+        .image(x, y - rng.range(0, 10), 'fx:debris')
+        .setDepth(313)
+        .setTint(0xe8dcc4)
+        .setScale(rng.range(0.3, 0.6))
+      this.scene.tweens.add({
+        targets: chip,
+        x: x + rng.spread(58),
+        y: y - rng.range(10, 40),
+        angle: rng.spread(300),
+        alpha: 0,
+        duration: 420 + rng.range(0, 200),
+        ease: 'Quad.easeOut',
+        onComplete: () => chip.destroy()
+      })
+    }
+    if (save.settings.bloodEffects) {
+      this.blood.setParticleTint(0x7a1410)
+      this.blood.emitParticleAt(x, y, Math.round(3 * q))
+    }
+  }
+
+  /** THE HEX UNMAKES THE WARD — the shield does not break, it stops being. */
+  wardBreak(x: number, y: number): void {
+    this.lighting?.flash(x, y, 56, 0x8a4fd0, 0.55)
+    // Plate-shards of the ward itself, flying apart and fading violet.
+    for (let i = 0; i < Math.round(7 * this.quality); i += 1) {
+      const a = (i / 7) * Math.PI * 2
+      const shard = this.scene.add
+        .image(x, y, 'fx:spark')
+        .setDepth(321)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0x9fd4ff)
+        .setScale(0.7, 0.25)
+        .setAngle((a * 180) / Math.PI)
+        .setAlpha(0.95)
+      this.scene.tweens.add({
+        targets: shard,
+        x: x + Math.cos(a) * 44,
+        y: y + Math.sin(a) * 30,
+        scaleX: 0.1,
+        alpha: 0,
+        duration: 340,
+        ease: 'Quad.easeOut',
+        onComplete: () => shard.destroy()
+      })
+    }
+    const stain = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(320)
+      .setTint(0x8a4fd0)
+      .setScale(0.15)
+      .setAlpha(0.8)
+    this.scene.tweens.add({
+      targets: stain,
+      scale: 0.9,
+      alpha: 0,
+      duration: 420,
+      onComplete: () => stain.destroy()
+    })
+  }
+
+  /** THE GARDEN CLEANSES — hostile control burned off by the rot underfoot. */
+  cleanse(x: number, y: number): void {
+    const ring = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(316)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0x8fd694)
+      .setScale(0.1, 0.05)
+      .setAlpha(0.7)
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: 0.8,
+      scaleY: 0.26,
+      alpha: 0,
+      duration: 420,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy()
+    })
+    // Motes lifting OFF the soldier: the mark leaving, not arriving.
+    for (let i = 0; i < Math.round(4 * this.quality); i += 1) {
+      const m = this.scene.add
+        .image(x + rng.spread(18), y - 4, 'fx:soft')
+        .setDepth(317)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0xd8f0c0)
+        .setScale(0.12)
+        .setAlpha(0.8)
+      this.scene.tweens.add({
+        targets: m,
+        y: y - 40 - rng.range(0, 16),
+        alpha: 0,
+        scale: 0.02,
+        duration: 460 + rng.range(0, 160),
+        onComplete: () => m.destroy()
+      })
+    }
+  }
+
+  /** THE CIRCLE TITHES THE GROWTH — green rises, turns violet, is drunk. */
+  tithe(x: number, y: number): void {
+    for (let i = 0; i < Math.round(4 * this.quality); i += 1) {
+      const m = this.scene.add
+        .image(x + rng.spread(40), y, 'fx:soft')
+        .setDepth(318)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0x8fd694)
+        .setScale(0.15)
+        .setAlpha(0.85)
+      this.scene.tweens.add({
+        targets: m,
+        y: y - 54 - rng.range(0, 20),
+        x: m.x + rng.spread(14),
+        alpha: 0,
+        scale: 0.04,
+        duration: 620 + rng.range(0, 200),
+        ease: 'Sine.easeIn',
+        onComplete: () => m.destroy()
+      })
+      this.scene.tweens.addCounter({
+        from: 0,
+        to: 1,
+        duration: 620,
+        onUpdate: tw => {
+          const t = tw.getValue() ?? 0
+          const r = Math.round(0x8f + (0xb4 - 0x8f) * t)
+          const g = Math.round(0xd6 + (0x6b - 0xd6) * t)
+          const bch = Math.round(0x94 + (0xff - 0x94) * t)
+          m.setTint((r << 16) | (g << 8) | bch)
+        }
+      })
+    }
+  }
+
+  /** A HELD BANNER'S RALLY — the garrison takes heart, in its creed's colour. */
+  rally(x: number, y: number, color: number): void {
+    this.lighting?.flash(x, y - 30, 90, color, 0.5)
+    const pulse = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(315)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(color)
+      .setScale(0.1, 0.05)
+      .setAlpha(0.75)
+    this.scene.tweens.add({
+      targets: pulse,
+      scaleX: 2.2,
+      scaleY: 0.7,
+      alpha: 0,
+      duration: 700,
+      ease: 'Cubic.easeOut',
+      onComplete: () => pulse.destroy()
+    })
+    this.energy.setParticleTint(color)
+    this.energy.emitParticleAt(x, y - 20, Math.round(5 * this.quality))
+  }
+
   // ───────────────────────────── Decals ─────────────────────────────
 
   private pushDecal(image: Phaser.GameObjects.Image): void {

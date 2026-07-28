@@ -7,6 +7,7 @@ import { morphedDef } from './data/morphs'
 import type { UnitDef } from './data/types'
 import { UNITS_BY_ID } from './data/units'
 import { TURRETS } from './data/turrets'
+import { TECHS } from './data/tech'
 import { FACTION_UNITS } from './data/factions'
 import BattleScene from './scenes/battleScene'
 import BootScene from './scenes/bootScene'
@@ -65,9 +66,11 @@ function start(): void {
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
     __gowLog: typeof gameLog
     __gowTurrets: string[]
+    __gowTechs: { id: string; kind: string; cost: number; age: number; branch: string; requires: string[] }[]
   }
   debug.__gowLog = gameLog
   debug.__gowTurrets = TURRETS.map(t => t.id)
+  debug.__gowTechs = TECHS.map(t => ({ id: t.id, kind: t.kind, cost: t.cost, age: t.age, branch: t.branch, requires: [...t.requires] }))
   debug.__gowGame = game
   // Exposed so a smoke test can put a unit on the field without waiting out a
   // build queue in real time.

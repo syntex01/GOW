@@ -32,7 +32,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
   ricochet: 'Solid (non-explosive) shots that strike heavy or structure armour at a shallow angle deflect and fly on to hit something else (up to 2 skips, full damage).',
   shrapnel: 'Every explosion throws 5–14 real fragments, each dealing 16% of the blast as pierce damage where it lands.',
   incendiary: 'Blasts of 50px or more leave the ground burning: 40px, 12 damage/s, for 2.6s.',
-  overpressure: 'Blasts throw bodies: everything within 1.5× the radius is launched airborne. Knockback impulse ×3.4.',
+  overpressure: 'Blasts throw bodies: everything within 1.5× the radius is launched airborne. Knockback impulse ×3.4 — and a hard landing hurts, so the throw is a wound, not an escape.',
   cluster: 'Every lobbed shot splits at the top of its arc into 2 shells at 50% damage, 70% splash.',
   penetrator: 'Your shots pass through the first body they hit at full damage and carry on into the next.',
   torchbearer_doctrine: 'Unlocks the Torchbearer.',

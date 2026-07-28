@@ -278,7 +278,9 @@ export default class Projectile {
       const big = splash > 110
       this.vfx.explosion(this.x, this.y, splash, damageType === 'energy' ? 0x7affe0 : 0xffa640, big)
     } else if (groundHit) {
-      this.vfx.footDust(this.x, this.groundY)
+      // Stopping ON the piled dead is not the same event as hitting dirt.
+      if (this.moundRise > 0) this.vfx.wallBlock(this.x, this.groundY - this.moundRise)
+      else this.vfx.footDust(this.x, this.groundY)
       if (STICKY.includes(projectile)) {
         this.stickInGround()
         return
