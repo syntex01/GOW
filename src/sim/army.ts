@@ -6,7 +6,7 @@ import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import { LANE_COUNT, type Faction, type ReserveMode } from './types'
 import { powi } from './dmath'
-import { BASE_RESEARCH_RATE, RESEARCH_PER_GOLD, RESEARCH_RING_STEP } from '../data/buildings'
+import { BASE_RESEARCH_RATE, RESEARCH_PER_GOLD, RESEARCH_PER_XP, RESEARCH_RING_STEP } from '../data/buildings'
 import { TRACKS_BY_ID, trackCost, type FortressTrackId } from '../data/fortress'
 import { OATHS, TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
@@ -654,6 +654,16 @@ export default class Army {
   rewardKill(bounty: number, xp: number): void {
     this.gold += bounty
     this.xp += xp
+    // You learn from what you fight.
+    //
+    // Research accruing purely on a clock made it something that HAPPENED to a
+    // commander rather than something they did — build one Reliquary, forget it,
+    // and watch a number tick. A share of it now comes off the field, so the
+    // tree advances when the war does and a commander who is winning fights is
+    // a commander who is learning. It also gives the Reliquary a rival: you can
+    // out-research an opponent by out-fighting them.
+    this.research += xp * RESEARCH_PER_XP
+    this.researchEarned += xp * RESEARCH_PER_XP
     this.abilityCharge = Math.min(1, this.abilityCharge + 0.022)
   }
 

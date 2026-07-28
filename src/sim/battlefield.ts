@@ -32,6 +32,7 @@ import {
   REBUILD_FRACTION,
   SEAT_PLOTS,
   MUSTER_ADVANCE,
+  FORGE_HOME_GUARD,
   MUSTER_AUTOSPAWN_MS,
   MUSTER_BUILD_SPEED,
   MUSTER_SLOTS,
@@ -2377,6 +2378,11 @@ export default class Battlefield {
           if (!aura) continue
           if (Math.abs(e.x - u.x) <= aura.radius) best = Math.max(best, aura.damageReduction)
         }
+        // A Forge is a defensive building, so what it buys is HOME GROUND: your
+        // soldiers are harder to kill on your own half and no better than
+        // anyone else's on the enemy's. It takes the best of the two rather
+        // than stacking, so a Forge and a screening tank do not multiply.
+        best = Math.max(best, this.homeGuard(u))
         u.auraShield = best
         u.setAuraVisual(best > 0)
       }
@@ -2489,6 +2495,25 @@ export default class Battlefield {
     const back = Math.round(unit.def.cost * PLUNDER_REFUND)
     this.armyFor(unit.faction).gold += back
     this.vfx.damageNumber(unit.x, unit.centerY - unit.def.height * 0.6, back, 0xf1c75a, false)
+  }
+
+  /**
+   * How much a Forge takes off this soldier right now.
+   *
+   * Zero unless he is standing on his own commander's half — measured from the
+   * midpoint between the two active seats, so the line moves as the war does
+   * and a commander who has been pushed back keeps the ground they still hold.
+   */
+  private homeGuard(unit: Unit): number {
+    const tier = this.yardBonus(unit.faction, 'forge')
+    if (tier < 0) return 0
+    const guard = FORGE_HOME_GUARD[Math.min(FORGE_HOME_GUARD.length - 1, tier)]
+    if (guard <= 0) return 0
+    const mine = this.activeSeat(unit.faction).x
+    const theirs = this.activeSeat(OPPOSITE[unit.faction]).x
+    const half = (mine + theirs) / 2
+    const onMyHalf = ADVANCE_DIR[unit.faction] === 1 ? unit.x <= half : unit.x >= half
+    return onMyHalf ? guard : 0
   }
 
   private stopAtTheWall(unit: Unit): void {

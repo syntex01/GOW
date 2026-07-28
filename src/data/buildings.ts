@@ -185,6 +185,22 @@ export const MUSTER_BUILD_SPEED = [1 / 0.88, 1 / 0.78, 1 / 0.7] as const
 export const MUSTER_AUTOSPAWN_MS = [0, 0, 8000] as const
 
 /**
+ * How much damage a Forge takes off your soldiers while they stand on your own
+ * half, by tier.
+ *
+ * Measured, the Forge was the emptiest building in the game: a full one cost
+ * 28,688 gold at age four and bought exactly nothing you could count — no
+ * income, no research, no build slots. Its whole payload was fortress repair
+ * and TURRETS, and turrets were already measured never reaching midfield.
+ *
+ * Defence is supposed to be one of the four bottlenecks, so it now does the
+ * thing defence actually means: ground you hold is ground you fight better on.
+ * It is deliberately worthless on the attack — a commander who wants to push
+ * buys a Muster Yard, and one who wants to hold buys this.
+ */
+export const FORGE_HOME_GUARD = [0, 0.12, 0.22] as const
+
+/**
  * How often a superseded seat sends out a soldier, and how many of its own may
  * be alive at once. Slow, capped, and — because it can only ever make what it
  * knew how to make — quietly obsolete by the time there are four of them.
@@ -211,6 +227,16 @@ export const MUSTER_AUTOSPAWN_MS = [0, 0, 8000] as const
 export const RESEARCH_PER_GOLD = 5
 export const RESEARCH_RING_STEP = 1.35
 export const BASE_RESEARCH_RATE = 1
+
+/**
+ * Research points earned per point of experience taken off the field.
+ *
+ * The counterweight to the Reliquary. A commander who never builds one is slow
+ * but not frozen out, and a commander who is winning the war is learning from
+ * it — which is the difference between research being a decision and research
+ * being a clock you watch.
+ */
+export const RESEARCH_PER_XP = 0.04
 
 /** Research points a second, by the best Reliquary standing. -1 means none. */
 export const RELIQUARY_RESEARCH = [2.2, 4.6, 9]
@@ -307,8 +333,8 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     color: 0xc06a3a,
     tiers: [
       { cost: 420, hp: 5400, effect: 'the fortress mends 0.4%/s while nothing is hitting it' },
-      { cost: 880, hp: 8400, effect: '+ turret range +12%' },
-      { cost: 1400, hp: 12400, effect: '+ a fourth turret slot on the wall' }
+      { cost: 880, hp: 8400, effect: '+ your soldiers take 12% less damage on your own half' },
+      { cost: 1400, hp: 12400, effect: '+ 22% less, and a fourth turret slot on the wall' }
     ]
   }
 ]
