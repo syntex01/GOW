@@ -1,5 +1,10 @@
 import Phaser from 'phaser'
 import { TURRETS } from '../data/turrets'
+import { ALL_BUILDINGS } from '../data/buildings'
+import { drawBuilding } from './buildingArt'
+
+/** Creeds a building can be built in — the five, plus the unaligned default. */
+export const BUILDING_CREEDS = ['none', 'carnage', 'ordnance', 'engineering', 'occult', 'blight'] as const
 import type { ProjectileId, UnitDef } from '../data/types'
 import { UNITS } from '../data/units'
 import { FACTION_UNITS } from '../data/factions'
@@ -357,6 +362,21 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
       for (let age = 0; age < AGE_THEMES.length; age += 1) {
         addCanvas(scene, `base:${age}:player`, drawFortress(age, 'player'))
         addCanvas(scene, `base:${age}:enemy`, drawFortress(age, 'enemy'))
+      }
+    }
+  })
+
+  steps.push({
+    label: 'Raising the outworks',
+    run: () => {
+      // One texture per building, per tier, per creed. Small canvases and a
+      // small vocabulary, so the whole set is a fraction of a unit's part sheet.
+      for (const def of ALL_BUILDINGS) {
+        for (let tier = 0; tier < def.tiers.length; tier += 1) {
+          for (const creed of BUILDING_CREEDS) {
+            addCanvas(scene, `bld:${def.id}:${tier}:${creed}`, drawBuilding(def, tier, creed))
+          }
+        }
       }
     }
   })

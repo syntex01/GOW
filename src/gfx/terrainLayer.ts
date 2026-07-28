@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { AGE_THEMES } from './palette'
 import Pix, { mix, ramp, tone } from './pixel'
+import { CELL } from './buildingArt'
 import type Battlefield from '../sim/battlefield'
 import { RELIEF_BUCKET } from '../sim/terrain'
 import { LANE_COUNT, LANE_Y, type TechBranchLean } from '../sim/types'
@@ -21,7 +22,9 @@ import { LANE_COUNT, LANE_Y, type TechBranchLean } from '../sim/types'
 export default class TerrainLayer {
   private scene: Phaser.Scene
   private bf: Battlefield
+  private groundY = 0
   private strips: Phaser.GameObjects.Image[] = []
+  private plotSprites: Phaser.GameObjects.Image[] = []
   private propSprites: Phaser.GameObjects.Image[] = []
   private sinceRedraw = 0
   private lastScarred = -1
@@ -35,6 +38,7 @@ export default class TerrainLayer {
   constructor(scene: Phaser.Scene, bf: Battlefield, groundY: number) {
     this.scene = scene
     this.bf = bf
+    this.groundY = groundY
     const h = TerrainLayer.UP + TerrainLayer.DOWN
     for (let lane = 0; lane < LANE_COUNT; lane += 1) {
       const key = `terrain:lane:${lane}`
@@ -57,6 +61,46 @@ export default class TerrainLayer {
       this.propSprites.push(img)
     }
     bf.onPropChanged = index => this.refreshProp(index)
+
+    // The outworks. Every plot gets a sprite up front — most are empty, which
+    // costs nothing but means a building appearing is a texture swap rather
+    // than an allocation in the middle of a fight.
+    this.refreshSeats()
+    bf.onSeatChanged = () => this.refreshSeats()
+  }
+
+  /**
+   * Repaints every plot and re-sizes every seat.
+   *
+   * Called whenever a seat is founded or a plot changes, which is rare enough
+   * that rebuilding the whole set is simpler and safer than tracking deltas —
+   * and a derelict seat's sprites have to be re-parented anyway.
+   */
+  private refreshSeats(): void {
+    for (const img of this.plotSprites) img.destroy()
+    this.plotSprites.length = 0
+    const bf = this.bf
+    for (const faction of ['player', 'enemy'] as const) {
+      for (const seat of bf.seats[faction]) {
+        seat.base.setGeneration(seat.generation)
+        // A superseded seat is visibly out of the war: it keeps its shape and
+        // loses its colour, so a glance tells you which fortress still matters.
+        seat.base.setDerelictLook(seat.derelict)
+        const creed = bf.leanOf?.(faction) ?? 'none'
+        for (const plot of seat.plots) {
+          if (!plot.def || !plot.alive) continue
+          const key = `bld:${plot.def.id}:${plot.tier}:${creed ?? 'none'}`
+          if (!this.scene.textures.exists(key)) continue
+          const img = this.scene.add
+            .image(plot.x, plot.y + 4, key)
+            .setOrigin(0.5, 1)
+            .setDepth(120 + (plot.y - this.groundY + 68) * 0.08 - 0.02)
+            .setDisplaySize(CELL * 1.7, CELL * 1.7)
+          if (seat.derelict) img.setTint(0x9aa0aa)
+          this.plotSprites.push(img)
+        }
+      }
+    }
   }
 
   /**

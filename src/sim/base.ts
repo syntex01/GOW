@@ -50,6 +50,16 @@ export default class Base implements Damageable {
   private smoke?: Phaser.GameObjects.Particles.ParticleEmitter
   private brazier?: Phaser.GameObjects.Particles.ParticleEmitter
   private age = -1
+  /**
+   * Which generation of seat this is, and therefore how big it is drawn.
+   *
+   * A commander's first seat is a hut on a bank; the one they retire into at
+   * the last age is a citadel that fills the screen. The art was always five
+   * distinct buildings — stockade, keep, bastion, bunker, citadel — but every
+   * one of them was drawn at the same 200×250, so the progression read as a
+   * change of style rather than a change of scale. Now it is both.
+   */
+  private generation = 0
   private flashTimer = 0
   private shakeOffset = 0
 
@@ -82,6 +92,42 @@ export default class Base implements Damageable {
       this.slots.push({ def: null, hp: 0, cooldown: 0, burstLeft: 0, burstTimer: 0, angle: 0, recoil: 0 })
     }
   }
+
+  /** How much bigger each generation of seat stands than the first. */
+  static readonly SEAT_SCALE = [0.52, 0.68, 0.82, 0.95, 1.12]
+
+  get seatScale(): number {
+    return Base.SEAT_SCALE[Math.max(0, Math.min(Base.SEAT_SCALE.length - 1, this.generation))]
+  }
+
+  /**
+   * Sets which generation this seat is, and re-sizes everything that depends on
+   * it: the sprite, the hitbox radius, and how high its centre of mass sits.
+   */
+  setGeneration(generation: number): void {
+    this.generation = generation
+    const s = this.seatScale
+    this.sprite.setDisplaySize(BASE_W * s, BASE_H * s)
+    this.radius = BASE_W * 0.34 * s
+    this.centerOffsetY = -BASE_H * 0.4 * s
+  }
+
+  /**
+   * A superseded seat is visibly out of the war.
+   *
+   * It keeps its shape — the ruin is the point, and it is still standing in
+   * the road — but loses its colour and its light, so a glance across the
+   * board tells you which fortress still ends the game and which one is merely
+   * in the way.
+   */
+  setDerelictLook(derelict: boolean): void {
+    this.derelict = derelict
+    this.sprite.setTint(derelict ? 0x7a8090 : 0xffffff)
+    this.sprite.setAlpha(derelict ? 0.92 : 1)
+  }
+
+  /** Read by `emitLight`: a dead seat does not keep its braziers burning. */
+  private derelict = false
 
   setAge(age: number, maxHp: number): void {
     const ratio = this.maxHp > 0 ? this.hp / this.maxHp : 1
@@ -258,7 +304,9 @@ export default class Base implements Damageable {
    */
   private emitLight(): void {
     const lighting = this.vfx.lighting
-    if (!lighting) return
+    // Nobody is left to keep the fires in. A superseded seat goes dark, which
+    // is most of what makes it read as abandoned at a glance.
+    if (!lighting || this.derelict) return
     const glowColor = this.age >= 4 ? FACTION_COLOR[this.faction] : this.age >= 3 ? 0xffb347 : 0xff9a4a
     const radius = this.age >= 4 ? BASE_H * 1.5 : BASE_H * 1.15
     // These two lights overlap, and the lighting pass compounds them: each one
