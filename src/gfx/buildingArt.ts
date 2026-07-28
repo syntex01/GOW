@@ -73,7 +73,11 @@ export function drawBuilding(def: BuildingDef, tier: number, creed = 'none'): Ca
   const n = pixelNoise(def.id.length * 131 + tier * 17)
   const timberBase = CREED_TIMBER[creed] ?? CREED_TIMBER.none
   const tiers = Math.max(1, def.tiers.length)
-  const growth = tiers > 1 ? tier / (tiers - 1) : 0.6
+  // A doctrine building has exactly one tier, which left `growth` sitting at a
+  // middling value and made the creed-locked endgame buildings read SMALLER
+  // than the tier-3 granary anybody can raise. They are the heaviest things in
+  // a yard and they should look it.
+  const growth = tiers > 1 ? tier / (tiers - 1) : 0.92
 
   // The creed owns the material; the building owns the trim.
   const timber = ramp(mix(timberBase, def.color, 0.16), { contrast: 1.05 })
@@ -192,18 +196,47 @@ export function drawBuilding(def: BuildingDef, tier: number, creed = 'none'): Ca
       break
     }
     // ── the doctrine buildings ──
+    // ── carnage: a bottle kiln. A tapering brick cone, and nothing else in
+    //    the set is a cone, so it reads from across the board. ──
     case 'kiln': {
-      const w = Math.round(22 + growth * 8)
-      const h = Math.round(20 + growth * 8)
-      const b = body(w, h, stone)
-      // A dome, and a fire under it.
-      for (let j = 0; j < 8; j += 1) {
-        const inset = Math.round(8 - Math.sqrt(Math.max(0, 64 - j * j)))
-        p.fill(b.x + inset, b.y - 8 + j, w - inset * 2, 1, stone[j < 3 ? 3 : 2])
+      const baseW = Math.round(24 + growth * 8)
+      const h = Math.round(30 + growth * 8)
+      const cx = Math.round(CELL / 2)
+      for (let j = 0; j < h; j += 1) {
+        const t = j / h
+        // Narrows fast at first and then holds, which is the bottle profile —
+        // a straight taper reads as a tent.
+        const w = Math.max(6, Math.round(baseW * (1 - Math.pow(t, 0.62) * 0.72)))
+        const y = ground - 3 - j
+        const x = cx - Math.round(w / 2)
+        p.fill(x, y, w, 1, stone[2])
+        p.set(x, y, stone[1])
+        p.set(x + w - 1, y, stone[3])
+        // Brick courses banding round the cone.
+        if (j % 4 === 0) p.fill(x + 1, y, w - 2, 1, stone[1])
       }
-      p.fill(b.x + Math.round(w / 2) - 3, b.y + h - 7, 6, 5, trim[4])
-      // Bone stacked against the side, because this is what it renders.
-      for (let i = 0; i < 6; i += 1) p.fill(b.x - 4, b.y + h - 4 - i * 2, 5, 1, trim[3])
+      grain(p, cx - 6, ground - h, 12, h - 6, stone, n, 0.35)
+      // Iron hoops, because a kiln that is worked hard is a kiln that is tied
+      // together.
+      for (const j of [Math.round(h * 0.35), Math.round(h * 0.62)]) {
+        const t = j / h
+        const w = Math.max(6, Math.round(baseW * (1 - Math.pow(t, 0.62) * 0.72)))
+        p.fill(cx - Math.round(w / 2) - 1, ground - 3 - j, w + 2, 1, dark[3])
+      }
+      // The crown, open, with the heat coming off it.
+      const crownW = Math.max(5, Math.round(baseW * 0.3))
+      p.fill(cx - Math.round(crownW / 2) - 1, ground - 4 - h, crownW + 2, 2, dark[3])
+      p.fill(cx - Math.round(crownW / 2), ground - 5 - h, crownW, 1, trim[4])
+      // The stoke hole at the foot: the one genuinely bright thing on it.
+      p.fill(cx - 4, ground - 10, 8, 7, dark[0])
+      p.fill(cx - 3, ground - 8, 6, 5, trim[3])
+      p.fill(cx - 2, ground - 7, 4, 4, trim[4])
+      // The material, stacked against the side where it is fed in from.
+      for (let i = 0; i < 7; i += 1) {
+        const bx = cx + Math.round(baseW / 2) - 1
+        p.fill(bx, ground - 4 - i * 2, 6 - Math.round(i / 2), 1, trim[3])
+        p.set(bx + 6 - Math.round(i / 2), ground - 4 - i * 2, trim[4])
+      }
       break
     }
     case 'vat': {
@@ -230,18 +263,52 @@ export function drawBuilding(def: BuildingDef, tier: number, creed = 'none'): Ca
       p.fill(b.x + w - 4, b.y - 8, 3, 7, stone[1])
       break
     }
+    // ── ordnance: a bermed bunker with a blast door. Wide, low, and marked. ──
     case 'magazine': {
-      const w = Math.round(26 + growth * 10)
-      const h = Math.round(14 + growth * 6)
+      // Half-BURIED, which is the point of a magazine and also what separates
+      // its outline from the palisade's — that was a wide wall of the same
+      // height and the two masked as the same object.
+      const w = Math.round(32 + growth * 10)
+      const h = Math.round(10 + growth * 3)
       const b = body(w, h, stone)
-      // Earth berm heaped over it, because everyone knows what is inside.
-      for (let i = 0; i < w + 10; i += 1) {
-        const d = Math.abs(i - (w + 10) / 2) / ((w + 10) / 2)
-        const lift = Math.round((1 - d * d) * 10)
-        p.fill(b.x - 5 + i, b.y - lift, 1, lift + 1, dark[2])
+      // Earth heaped over and around it, because everybody knows what is
+      // inside and nobody wants it above ground.
+      for (let i = 0; i < w + 14; i += 1) {
+        const d = Math.abs(i - (w + 14) / 2) / ((w + 14) / 2)
+        const lift = Math.round((1 - d * d) * (7 + growth * 2))
+        p.fill(b.x - 7 + i, b.y - lift, 1, lift + 1, dark[2])
+        p.set(b.x - 7 + i, b.y - lift, dark[3])
+        if (n(i, 7) > 0.82) p.set(b.x - 7 + i, b.y - lift + 1, timber[2])
       }
-      p.fill(b.x + Math.round(w / 2) - 4, b.y + h - 9, 8, 7, dark[4])
-      p.fill(b.x + Math.round(w / 2) - 3, b.y + h - 8, 6, 5, trim[2])
+      // The blast door: recessed, heavy, and striped so the warning is the
+      // first thing you read off it.
+      const dw = 12
+      const dx = b.x + Math.round((w - dw) / 2)
+      const dy = b.y + h - 10
+      p.fill(dx - 2, dy - 2, dw + 4, 12, dark[3])
+      p.fill(dx, dy, dw, 10, stone[1])
+      for (let j = 0; j < 10; j += 1) {
+        for (let i = 0; i < dw; i += 1) {
+          if ((i + j) % 6 < 3) p.set(dx + i, dy + j, trim[3])
+        }
+      }
+      p.fill(dx, dy, dw, 1, trim[4])
+      p.fill(dx + Math.round(dw / 2) - 1, dy + 4, 3, 2, dark[4])
+      // A tall vent stack — the one thing that stands up off a buried bunker,
+      // and therefore the thing that names it from a distance.
+      const vx = b.x + 4
+      const vh = Math.round(20 + growth * 6)
+      p.fill(vx, b.y - vh, 4, vh + 4, stone[2])
+      p.fill(vx, b.y - vh, 1, vh + 4, stone[1])
+      p.fill(vx - 1, b.y - vh - 3, 6, 3, stone[3])
+      p.fill(vx, b.y - vh - 5, 4, 2, dark[3])
+      for (let i = 0; i < 3; i += 1) {
+        const kx = b.x + w + 1 + (i % 2) * 5
+        const ky = ground - 6 - Math.floor(i / 2) * 5
+        p.fill(kx, ky, 4, 5, trim[2])
+        p.fill(kx, ky, 4, 1, trim[3])
+        p.fill(kx, ky + 2, 4, 1, dark[3])
+      }
       break
     }
     case 'mast': {
@@ -320,14 +387,128 @@ export function drawBuilding(def: BuildingDef, tier: number, creed = 'none'): Ca
       }
       break
     }
+    // ── engineering: the factory roofline, which nothing else here has ──
+    case 'line': {
+      // Narrower and taller than the Muster Yard it used to mask identically
+      // to — both were wide low sheds and only their decoration differed.
+      const w = Math.round(28 + growth * 9)
+      const h = Math.round(19 + growth * 7)
+      const bx = Math.round((CELL - w) / 2)
+      const by = ground - 3 - h
+      p.fill(bx, by, w, h, stone[2])
+      p.fill(bx, by, 1, h, stone[1])
+      p.fill(bx + w - 1, by, 1, h, stone[3])
+      grain(p, bx, by, w, h, stone, n, 0.4)
+      // A sawtooth roof — vertical glazing facing one way, slope the other.
+      // This is THE factory silhouette and no other building in the set has it.
+      const teeth = 4
+      const tw = Math.round(w / teeth)
+      for (let t = 0; t < teeth; t += 1) {
+        const tx = bx + t * tw
+        for (let i = 0; i < tw; i += 1) {
+          const rise = Math.round(9 * (1 - i / tw))
+          p.fill(tx + i, by - rise, 1, rise + 1, i < 2 ? dark[3] : stone[1])
+        }
+        // The north light: a strip of glass down the vertical face.
+        p.fill(tx, by - 9, 1, 8, trim[3])
+        p.set(tx, by - 9, trim[4])
+      }
+      // The conveyor running out of the near end, with product on it.
+      const cy = by + h - 6
+      p.fill(bx + w - 2, cy, 9, 2, dark[3])
+      for (let i = 0; i < 3; i += 1) p.fill(bx + w + 1 + i * 3, cy - 2, 2, 2, trim[2])
+      // A gantry arm over the middle, because something has to be doing the work.
+      const gx = bx + Math.round(w * 0.4)
+      p.fill(gx, by - 16, 2, 8, dark[2])
+      p.fill(gx - 4, by - 17, 10, 2, dark[3])
+      p.fill(gx + 4, by - 15, 2, 5, trim[2])
+      // The extraction stack: a tall, thin vertical off one end. This is the
+      // element that breaks the outline out of the low-shed family entirely.
+      const sx = bx - 5
+      const sh = Math.round(26 + growth * 8)
+      p.fill(sx, by - sh, 5, sh + h, stone[2])
+      p.fill(sx, by - sh, 1, sh + h, stone[1])
+      p.fill(sx + 4, by - sh, 1, sh + h, stone[3])
+      for (let j = 4; j < sh; j += 7) p.fill(sx, by - sh + j, 5, 1, dark[2])
+      p.fill(sx - 1, by - sh - 2, 7, 3, stone[3])
+      p.fill(sx + 1, by - sh - 4, 3, 2, trim[3])
+      break
+    }
+    // ── occult: a stepped mass with a lit doorway. Wide, not tall. ──
+    case 'chapel': {
+      const steps = 4
+      const baseW = Math.round(32 + growth * 10)
+      let sy = ground - 3
+      for (let t = 0; t < steps; t += 1) {
+        const sw = Math.round(baseW * (1 - t * 0.19))
+        const sh = Math.round(6 + growth * 2)
+        const sx = Math.round((CELL - sw) / 2)
+        p.fill(sx, sy - sh, sw, sh, stone[2])
+        p.fill(sx, sy - sh, sw, 1, stone[3])
+        p.fill(sx, sy - sh, 1, sh, stone[1])
+        p.fill(sx + sw - 1, sy - sh, 1, sh, stone[1])
+        grain(p, sx + 1, sy - sh + 1, sw - 2, sh - 1, stone, n, 0.35)
+        sy -= sh
+      }
+      // The doorway, cut up through the bottom two steps and lit from inside.
+      const dw = 8
+      const dx = Math.round((CELL - dw) / 2)
+      const dh = Math.round(11 + growth * 3)
+      p.fill(dx, ground - 3 - dh, dw, dh, dark[0])
+      for (let i = 0; i < dw; i += 1) {
+        const arch = Math.round(Math.sqrt(Math.max(0, 16 - (i - dw / 2) * (i - dw / 2))))
+        p.fill(dx + i, ground - 3 - dh - arch, 1, arch, dark[0])
+      }
+      p.fill(dx + 1, ground - 6, dw - 2, 3, trim[3])
+      p.fill(dx + 2, ground - 5, dw - 4, 2, trim[4])
+      // The thing hanging over the door, which is the whole point of a chapel
+      // to this creed: an eye, open, unblinking.
+      const ex = Math.round(CELL / 2)
+      const ey = sy - 6
+      p.fill(ex - 5, ey, 11, 5, dark[2])
+      p.fill(ex - 4, ey + 1, 9, 3, trim[2])
+      p.fill(ex - 2, ey + 1, 4, 3, trim[4])
+      p.set(ex, ey + 2, dark[0])
+      break
+    }
+    // ── occult: a hole with a lid on it, and almost no mass at all ──
+    case 'thrall': {
+      const w = Math.round(30 + growth * 10)
+      const x0 = Math.round((CELL - w) / 2)
+      const cx = x0 + Math.round(w / 2)
+      // A low kerb of dressed stone. Everything about this reads FLAT — the
+      // quarry next to it is a headframe thirty pixels tall, and the two must
+      // never be confused at gameplay distance.
+      p.fill(x0, ground - 7, w, 7, stone[2])
+      p.fill(x0, ground - 7, w, 1, stone[3])
+      for (let i = 0; i < w; i += 6) p.fill(x0 + i, ground - 7, 1, 7, stone[1])
+      // The shaft, and the grate bolted over it.
+      const mw = w - 12
+      p.fill(cx - Math.round(mw / 2), ground - 12, mw, 6, dark[0])
+      for (let i = 0; i < mw; i += 3) p.fill(cx - Math.round(mw / 2) + i, ground - 12, 1, 6, dark[3])
+      p.fill(cx - Math.round(mw / 2), ground - 13, mw, 1, dark[3])
+      // What is down there, showing through the bars.
+      for (let i = 2; i < mw - 2; i += 5) p.set(cx - Math.round(mw / 2) + i + 1, ground - 10, trim[4])
+      // Four posts and the chains slung between them.
+      for (const side of [-1, 1]) {
+        const px = cx + side * Math.round(w / 2 - 2)
+        p.fill(px, ground - 20, 2, 14, timber[2])
+        p.set(px, ground - 21, timber[3])
+        for (let i = 1; i < 6; i += 1) {
+          p.set(px - side * i * 2, ground - 19 + Math.round(Math.sin(i) * 1), dark[3])
+        }
+      }
+      break
+    }
+    // ── blight: a thing that GREW. Nothing here is a rectangle. ──
     case 'root': {
       const cx = Math.round(CELL / 2)
-      // Buttress roots first, thick and above the ground line, so the thing has
-      // a footprint. Drawn before the bole so the bole sits into them.
-      for (let i = 0; i < 6; i += 1) {
+      // Roots first, low and wide and hugging the ground, so the footprint is
+      // a splay rather than a footing.
+      for (let i = 0; i < 7; i += 1) {
         const dir = i % 2 === 0 ? 1 : -1
-        const len = 10 + Math.round(n(i, 2) * 8 + growth * 6)
-        const rise = 5 + (i % 3) * 3
+        const len = 11 + Math.round(n(i, 2) * 9 + growth * 6)
+        const rise = 4 + (i % 3) * 3
         for (let j = 0; j < len; j += 1) {
           const t = j / len
           const thick = Math.max(1, Math.round((1 - t) * 4))
@@ -336,24 +517,45 @@ export function drawBuilding(def: BuildingDef, tier: number, creed = 'none'): Ca
           if (j % 4 === 0) p.set(cx + dir * (2 + j), y - thick - 1, dark[2])
         }
       }
-      // A knotted bole with the heart showing through a split in it.
-      const w = Math.round(16 + growth * 8)
-      const h = Math.round(24 + growth * 10)
-      const b = body(w, h, timber)
-      for (let j = 0; j < h; j += 3) {
-        p.set(b.x + 1 + ((j * 5) % Math.max(1, w - 2)), b.y + j, dark[2])
+      // The bole: a tapering, leaning, knotted column drawn row by row. The
+      // rectangle this used to be masked identically to the Black Chapel's
+      // stepped mass — at gameplay distance they were the same building.
+      const h = Math.round(30 + growth * 10)
+      const baseW = Math.round(17 + growth * 6)
+      const spine: number[] = []
+      for (let j = 0; j < h; j += 1) {
+        const t = j / h
+        // Narrows toward the crown, leans a little, and bulges where the knots
+        // are — an outline no piece of masonry in the set can produce.
+        const lean = Math.round(Math.sin(t * 2.1) * 3)
+        const knot = n(3, j) > 0.72 ? 2 : n(5, j) < 0.2 ? -1 : 0
+        const w = Math.max(5, Math.round(baseW * (1 - t * 0.55)) + knot)
+        const x = cx + lean - Math.round(w / 2)
+        const y = ground - 3 - j
+        spine.push(cx + lean)
+        p.fill(x, y, w, 1, timber[2])
+        p.set(x, y, timber[1])
+        p.set(x + w - 1, y, timber[3])
+        if (j % 3 === 0) p.set(x + 1 + ((j * 5) % Math.max(1, w - 2)), y, dark[2])
       }
-      const hx = b.x + Math.round(w / 2) - 3
-      const hy = b.y + Math.round(h * 0.35)
-      p.fill(hx - 1, hy - 1, 8, 10, dark[1])
-      p.fill(hx, hy, 6, 8, trim[2])
-      p.fill(hx + 1, hy + 1, 4, 6, trim[3])
-      p.fill(hx + 2, hy + 2, 2, 4, trim[4])
-      // Growth reaching up out of the crown.
-      for (let i = 0; i < 4; i += 1) {
+      // The heart, showing through a split about a third of the way up.
+      const hy = ground - 3 - Math.round(h * 0.42)
+      const hx = spine[Math.round(h * 0.42)] - 3
+      p.fill(hx - 1, hy - 5, 8, 11, dark[1])
+      p.fill(hx, hy - 4, 6, 9, trim[2])
+      p.fill(hx + 1, hy - 3, 4, 7, trim[3])
+      p.fill(hx + 2, hy - 2, 2, 5, trim[4])
+      // Boughs reaching out of the crown, which is where the mass goes instead
+      // of into a roofline.
+      const top = spine[h - 1] ?? cx
+      for (let i = 0; i < 5; i += 1) {
         const dir = i % 2 === 0 ? 1 : -1
-        for (let j = 0; j < 6 + i; j += 1) {
-          p.set(b.x + Math.round(w / 2) + dir * Math.round(j * 0.6), b.y - j, timber[2])
+        const len = 7 + Math.round(n(i, 9) * 7 + growth * 4)
+        for (let j = 0; j < len; j += 1) {
+          const bx = top + dir * Math.round(j * 0.85)
+          const by = ground - 4 - h - Math.round(j * (0.5 + (i % 3) * 0.22))
+          p.set(bx, by, timber[dir > 0 ? 3 : 1])
+          if (j > len - 3) p.set(bx, by - 1, trim[3])
         }
       }
       break

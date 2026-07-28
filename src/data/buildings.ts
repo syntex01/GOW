@@ -164,6 +164,7 @@ export interface BuildingDef {
   shape:
     | 'silo' | 'yard' | 'spire' | 'forge' | 'kiln' | 'vat'
     | 'magazine' | 'mast' | 'pit' | 'bed' | 'root' | 'redoubt' | 'palisade'
+    | 'line' | 'chapel' | 'thrall'
   color: number
   /** Which faces this may be raised on. Defences only, out in front. */
   faces: PlotFace[]
@@ -312,7 +313,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     branch: 'engineering',
     requires: 'autoforge',
     blurb: 'The turret was being rebuilt before it finished falling over.',
-    shape: 'forge',
+    shape: 'line',
     color: 0x7fe8ff,
     tiers: [{ cost: 2600, hp: 3200, effect: 'Destroyed turrets rebuild INSTANTLY, and come back one age higher where a better model exists.' }]
   },
@@ -325,7 +326,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     branch: 'occult',
     requires: 'soul_tithe',
     blurb: 'Nine seats, eight of them occupied, and a very good view of the field.',
-    shape: 'spire',
+    shape: 'chapel',
     color: 0xb46bff,
     tiers: [{ cost: 2000, hp: 2000, effect: 'Every enemy death anywhere feeds your ability +8% instead of +5%.' }]
   },
@@ -337,7 +338,7 @@ export const DOCTRINE_BUILDINGS: BuildingDef[] = [
     branch: 'occult',
     requires: 'mind_thrall',
     blurb: 'Somewhere to keep them until they stop arguing.',
-    shape: 'pit',
+    shape: 'thrall',
     color: 0xc98bff,
     tiers: [{ cost: 2400, hp: 2600, effect: 'Raised thralls cost no population at all.' }]
   },
