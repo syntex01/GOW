@@ -261,11 +261,19 @@ export default class Base implements Damageable {
     if (!lighting) return
     const glowColor = this.age >= 4 ? FACTION_COLOR[this.faction] : this.age >= 3 ? 0xffb347 : 0xff9a4a
     const radius = this.age >= 4 ? BASE_H * 1.5 : BASE_H * 1.15
-    const intensity = this.age >= 4 ? 1.15 : 0.95
+    // These two lights overlap, and the lighting pass compounds them: each one
+    // erases the ambient gloom by its own intensity, so a pair at 0.95 and 0.8
+    // left 98% of the shadow gone AND stacked both additive glows on top. The
+    // fortress blew out to white and took the ground in front of it with it.
+    // A fortress is braziers and windows, not a floodlight — so the main lamp
+    // lifts the gloom and the gate merely warms it.
+    const intensity = this.age >= 4 ? 0.74 : 0.6
     const phase = this.faction === 'player' ? 0 : 2.1
     lighting.addFlickering(this.x, this.y - BASE_H * (this.age >= 4 ? 0.62 : 0.34), radius, glowColor, intensity, phase)
     // A warm pool at the gate so units silhouette against it as they march out.
-    lighting.addFlickering(this.x + this.dir * BASE_W * 0.3, this.y - 24, BASE_W * 0.95, glowColor, 0.8, phase + 1)
+    // Kept well below the main lamp: its job is to shape the doorway, and two
+    // lights of equal strength in one place is just one brighter light.
+    lighting.addFlickering(this.x + this.dir * BASE_W * 0.34, this.y - 22, BASE_W * 0.66, glowColor, 0.34, phase + 1)
   }
 
   private applyTurretTransform(index: number, slot: TurretSlot): void {

@@ -17,9 +17,11 @@ import type { Faction } from '../sim/types'
  * repriced five nodes against measured value. v10 pays experience for damage
  * dealt, so a bypass stalemate can no longer freeze both sides' ages. v11
  * added oaths — five pairs of deep nodes that close each other forever — and
- * besieged supply, where enemies standing in your yard cut your income.
+ * besieged supply, where enemies standing in your yard cut your income. v12
+ * deals the opening board as clustered sites rather than scattered singles,
+ * which changes the match seed's draw order and therefore every prop position.
  */
-export const PROTOCOL_VERSION = 11
+export const PROTOCOL_VERSION = 12
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

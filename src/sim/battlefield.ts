@@ -402,24 +402,53 @@ export default class Battlefield {
     // The clean opening board: a handful of trees, wells, carts and boulders
     // on the middle ground, dealt from the match seed so both peers stand the
     // same world.
-    const propCount = 5 + this.rng.int(0, 3)
-    for (let i = 0; i < propCount; i += 1) {
-      const x = config.worldWidth * (0.28 + this.rng.next() * 0.44)
-      const lane = this.rng.int(0, LANE_COUNT - 1)
-      const roll = this.rng.next()
-      const kind: PropKind = roll < 0.4 ? 'tree' : roll < 0.55 ? 'well' : roll < 0.75 ? 'cart' : 'boulder'
-      const spec = PROP_SPECS[kind]
-      this.props.push({
-        x,
-        lane,
-        kind,
-        hp: spec.hp,
-        maxHp: spec.hp,
-        radius: spec.radius,
-        blockH: spec.blockH,
-        alive: true,
-        diedAt: 0
-      })
+    // Landscape is not confetti. Props used to be dealt one at a time, each
+    // with an independent random x, lane and kind, which is exactly how you get
+    // a lone tree, a lone well and a lone cart standing apart from each other
+    // with no reason to be where they are. Ground that reads as a PLACE has
+    // things that belong together: a copse, a wrecked camp, a spill of rock off
+    // a ridge. So the board is dealt as a few SITES instead, each with a theme,
+    // its members sharing a patch of ground and neighbouring lanes.
+    const SITES: { kinds: PropKind[]; min: number; max: number }[] = [
+      // A stand of trees with a boulder that the trees grew around.
+      { kinds: ['tree', 'tree', 'tree', 'boulder'], min: 3, max: 4 },
+      // Somebody stopped here, and did not leave.
+      { kinds: ['cart', 'well', 'cart', 'tree'], min: 2, max: 4 },
+      // Rock that came down off the high ground and stayed.
+      { kinds: ['boulder', 'boulder', 'cart'], min: 2, max: 3 },
+      // A waypoint: water, shade, and the cart that was heading for both.
+      { kinds: ['well', 'tree', 'cart'], min: 2, max: 3 }
+    ]
+    const siteCount = 3 + this.rng.int(0, 1)
+    for (let s = 0; s < siteCount; s += 1) {
+      const site = SITES[this.rng.int(0, SITES.length - 1)]
+      // Sites are spread across the middle of the board in their own slices, so
+      // two of them can never land on top of each other and read as one mess.
+      const slice = (0.76 - 0.24) / siteCount
+      const centreX = config.worldWidth * (0.24 + slice * (s + 0.5) + (this.rng.next() - 0.5) * slice * 0.5)
+      const centreLane = this.rng.int(0, LANE_COUNT - 1)
+      const members = site.min + this.rng.int(0, site.max - site.min)
+      for (let i = 0; i < members; i += 1) {
+        const kind = site.kinds[this.rng.int(0, site.kinds.length - 1)]
+        const spec = PROP_SPECS[kind]
+        // Fanned out from the centre rather than piled on it, and drifting a
+        // lane either way so a site has depth instead of standing in a row.
+        // The step itself varies, because evenly spaced trees read as a fence.
+        const step = 34 + this.rng.next() * 30
+        const x = centreX + (i - (members - 1) / 2) * step + (this.rng.next() - 0.5) * 20
+        const lane = Math.max(0, Math.min(LANE_COUNT - 1, centreLane + this.rng.int(-1, 1)))
+        this.props.push({
+          x,
+          lane,
+          kind,
+          hp: spec.hp,
+          maxHp: spec.hp,
+          radius: spec.radius,
+          blockH: spec.blockH,
+          alive: true,
+          diedAt: 0
+        })
+      }
     }
 
     this.physics = new PhysicsWorld(config.groundY, config.worldWidth, this.rng, {
