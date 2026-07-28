@@ -2006,6 +2006,13 @@ export default class Battlefield {
       seat.plots.push(building)
     })
     this.seats[faction].push(seat)
+    // A seat's SIZE is simulation, not decoration: it sets the hit radius and
+    // the solid box debris bounces off. It was only ever applied by the terrain
+    // layer, which runs after this — so the newest fortress spent the gap with
+    // an unscaled collision box, and anything reading physics before the next
+    // frame saw a generation-4 capital shaped like a generation-0 camp. The
+    // renderer still calls this; it is idempotent.
+    base.setGeneration(seat.generation)
     this.refreshSolids()
     this.onSeatChanged?.(faction)
     return seat
