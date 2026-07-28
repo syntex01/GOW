@@ -11,9 +11,11 @@ import type { Faction } from '../sim/types'
  * banners lane-bound, era-evolving and kind-typed, and added the doctrine
  * counter pentagon. v7 replaced the pentagon's stat rules with physical
  * counters: mound cover, banishment, hex-unmaking, cleansing ground,
- * field hygiene, quarry denial and thrall denial.
+ * field hygiene, quarry denial and thrall denial. v8 filled the matrix:
+ * buried lines, scoured haunts, tithed growth, corpse-fed gardens and
+ * smothered embers.
  */
-export const PROTOCOL_VERSION = 7
+export const PROTOCOL_VERSION = 8
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

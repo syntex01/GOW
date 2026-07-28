@@ -166,6 +166,18 @@ export default class Terrain {
     }
   }
 
+  /** Burns the haunt out of the ground — flame answers the ash-rings. */
+  scourHaunt(x: number, lane: number, amount: number): void {
+    const row = this.haunt[lane]
+    if (!row) return
+    const centre = this.index(x)
+    for (let k = -1; k <= 1; k += 1) {
+      const i = centre + k
+      if (i < 0 || i >= this.buckets) continue
+      row[i] = Math.max(0, row[i] - amount * (k === 0 ? 1 : 0.5))
+    }
+  }
+
   /** How haunted the ground under a point is, 0..1. */
   hauntAt(x: number, lane: number): number {
     return this.haunt[lane]?.[this.index(x)] ?? 0

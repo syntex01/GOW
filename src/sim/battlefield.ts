@@ -790,8 +790,20 @@ export default class Battlefield {
       // ORDNANCE COUNTERS CARNAGE: fire eats the dead. A burning zone
       // consumes the settled remains inside it — the fuel that bonepickers,
       // corpse walls, necropolis and the harvest all run on — and an
-      // ordnance lean stokes the rate.
+      // ordnance lean stokes the rate. Fire also SCOURS THE HAUNT: the
+      // occult's ash-rings burn out of ground a fire crosses.
       if (zone.kind === 'fire') {
+        if (zone.lane >= 0) this.terrain.scourHaunt(zone.x, zone.lane, 0.25 * dt)
+        // A GROWN GARDEN SMOTHERS EMBERS: wet rot starves flame — but only
+        // a garden big enough to matter, and slower than fire burns spores.
+        for (const other of this.zones) {
+          if (other.kind !== 'spore' || other.faction === zone.faction || other.radius < 110) continue
+          if (other.lane !== -1 && zone.lane !== -1 && other.lane !== zone.lane) continue
+          if (Math.abs(other.x - zone.x) < other.radius + zone.radius) {
+            zone.ttl -= dtMs
+            break
+          }
+        }
         zone.burn = (zone.burn ?? 0) + dtMs
         const stoke = this.leanCache[zone.faction] === 'ordnance' ? 1 + 2 * this.leanPower[zone.faction] : 1
         if (zone.burn >= 800 / stoke) {
@@ -804,6 +816,36 @@ export default class Battlefield {
             this.vfx.impact(body.x, this.config.groundY - 6, 0xff9a40, 0.5, false)
             break
           }
+        }
+      }
+
+      // THE GARDEN EATS THE DEAD FIRST: spores digest settled remains and
+      // GROW on them — blight's answer to the meat engine. Slower than fire
+      // (the rot takes its time), and it feeds the zone instead of the void.
+      if (zone.kind === 'spore') {
+        zone.burn = (zone.burn ?? 0) + dtMs
+        if (zone.burn >= 1500) {
+          zone.burn = 0
+          for (let bi = 0; bi < this.physics.bodies.length; bi += 1) {
+            const body = this.physics.bodies[bi]
+            if (body.kind !== 'gib' || !body.settled) continue
+            if (Math.abs(body.x - zone.x) > zone.radius) continue
+            this.physics.bodies.splice(bi, 1)
+            zone.ttl = Math.min(zone.ttl + 900, 45000)
+            zone.radius = Math.min(260, zone.radius + 2)
+            this.vfx.impact(body.x, this.config.groundY - 6, 0x8fd694, 0.4, false)
+            break
+          }
+        }
+        // THE CIRCLE TITHES THE GROWTH: hostile spores creeping over haunted
+        // ground are drunk by the congregation — the zone withers and the
+        // dark ability feeds on it.
+        const foe = OPPOSITE[zone.faction]
+        if (this.leanCache[foe] === 'occult' && this.terrain.hauntAt(zone.x, Math.max(0, zone.lane)) > 0.3) {
+          const power = this.leanPower[foe]
+          zone.ttl -= dtMs * 0.5 * power
+          const circle = this.armyFor(foe)
+          circle.abilityCharge = Math.min(1, circle.abilityCharge + 0.002 * power * dt)
         }
       }
 
@@ -1221,6 +1263,22 @@ export default class Battlefield {
       if (foeLean === 'ordnance' && foePower > 0) {
         // Broken ground is hard going: a soldier down in a bowl wades.
         if (this.terrain.heightAt(u.x, u.lane) <= -6) u.mire(interval + 150)
+      }
+      // THE DEAD BURY THE LINE: against a carnage lean, a soldier that has
+      // stood planted long enough for the corpses to pile against it is
+      // half-buried — mired, and its roots can sink no deeper. The meat
+      // engine's answer to the fortress line that will not move.
+      if (foeLean === 'carnage' && foePower > 0 && u.rooting >= 2000) {
+        let pile = 0
+        for (const body of this.physics.bodies) {
+          if (body.kind !== 'gib' || !body.settled) continue
+          if (Math.abs(body.x - u.x) <= 42) pile += 1
+          if (pile >= 5) break
+        }
+        if (pile >= 5) {
+          u.mire(interval + 150)
+          u.rooting = Math.min(u.rooting, 2000)
+        }
       }
     }
 
