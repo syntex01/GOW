@@ -39,7 +39,7 @@ function clamp8(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : Math.round(v)
 }
 
-function toHsl(hex: number): [number, number, number] {
+export function toHsl(hex: number): [number, number, number] {
   const r = ((hex >> 16) & 0xff) / 255
   const g = ((hex >> 8) & 0xff) / 255
   const b = (hex & 0xff) / 255
@@ -56,7 +56,7 @@ function toHsl(hex: number): [number, number, number] {
   return [h, s, l]
 }
 
-function fromHsl(h: number, s: number, l: number): number {
+export function fromHsl(h: number, s: number, l: number): number {
   h = ((h % 1) + 1) % 1
   s = Math.min(1, Math.max(0, s))
   l = Math.min(1, Math.max(0, l))

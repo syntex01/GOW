@@ -1,3 +1,4 @@
+import { creedColours } from './creedPalette'
 import type { UnitDef, UnitVisual } from './types'
 
 /**
@@ -217,7 +218,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 70
     },
     description: 'Lobs bile that keeps killing where it lands. The ground remembers its work.',
-    visual: look('nekrotics', { torso: 'robe', weapon: 'staff', helmet: 'hood', cape: true })
+    visual: look('nekrotics', { helmet: 'kettle', torso: 'coat', weapon: 'sling', cape: true, bulk: 1.1 })
   },
   {
     id: 'nk_gravetide',
@@ -286,9 +287,9 @@ export const FACTION_UNITS: UnitDef[] = [
     age: 1,
     role: 'melee',
     layer: 'ground',
-    cost: 520,
+    cost: 440,
     buildMs: 4200,
-    hp: 950,
+    hp: 1080,
     armor: 'heavy',
     damage: 130,
     damageType: 'energy',
@@ -304,7 +305,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'plating',
     attack: { kind: 'melee', knockback: 120 },
     description: 'A soldier finished in metal. Small arms glance off; it repairs as it fights.',
-    visual: look('cyborgs', { torso: 'exo', weapon: 'saber', helmet: 'visor' })
+    visual: look('cyborgs', { helmet: 'combat', torso: 'vest', weapon: 'sword', shield: 'kite', bulk: 1.1 })
   },
   {
     id: 'cy_lancer',
@@ -375,7 +376,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 50
     },
     description: 'A walking wall that projects one: everything near it takes less.',
-    visual: look('cyborgs', { kind: 'mech', torso: 'exo', weapon: 'plasma', helmet: 'halo', chassis: 'legs', bulk: 1.6 })
+    visual: look('cyborgs', { kind: 'mech', helmet: 'halo', torso: 'exo', weapon: 'lmg', shield: 'tower', chassis: 'tracks', bulk: 1.6 })
   },
   {
     id: 'cy_swarmhost',
@@ -497,9 +498,9 @@ export const FACTION_UNITS: UnitDef[] = [
     layer: 'ground',
     cost: 150,
     buildMs: 1700,
-    hp: 430,
+    hp: 500,
     armor: 'unarmored',
-    damage: 56,
+    damage: 66,
     damageType: 'slash',
     attackMs: 880,
     range: 40,
@@ -526,7 +527,7 @@ export const FACTION_UNITS: UnitDef[] = [
     buildMs: 3800,
     hp: 900,
     armor: 'unarmored',
-    damage: 200,
+    damage: 170,
     damageType: 'energy',
     attackMs: 1900,
     range: 340,
@@ -601,7 +602,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 160, splash: 88 },
     aura: { damageReduction: 0.3, radius: 210 },
     description: 'Chants on a slow clock. When the verse lands, everything nearby forgets how to walk.',
-    visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true })
+    visual: look('dark_circle', { helmet: 'horns', torso: 'robe', weapon: 'lance', cape: true })
   },
   {
     id: 'dc_ninthsign',
@@ -635,7 +636,7 @@ export const FACTION_UNITS: UnitDef[] = [
       splash: 200
     },
     description: 'Its shellfall carries dread — everything caught in the blast wades as if drowning.',
-    visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true, bulk: 1.5 })
+    visual: look('dark_circle', { helmet: 'great', torso: 'plate', weapon: 'none', cape: true, bulk: 1.55 })
   },
 
   // ─────────────────────────── Cinder Host ───────────────────────────
@@ -664,7 +665,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'death_burst',
     attack: { kind: 'melee', knockback: 70, splash: 40 },
     description: 'A charge with legs. Killing one up close is a mistake you make exactly once.',
-    visual: look('cinder_host', { torso: 'vest', weapon: 'grenade', helmet: 'combat' })
+    visual: look('cinder_host', { helmet: 'none', torso: 'fur', weapon: 'club' })
   },
   {
     id: 'ch_torchbearer',
@@ -676,7 +677,7 @@ export const FACTION_UNITS: UnitDef[] = [
     buildMs: 3400,
     hp: 800,
     armor: 'light',
-    damage: 300,
+    damage: 240,
     damageType: 'explosive',
     attackMs: 2200,
     range: 240,
@@ -909,7 +910,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'entangle',
     attack: { kind: 'heal', amount: 300, radius: 200 },
     description: 'Tends the line, and on a slow pulse the roots take everyone else by the ankles.',
-    visual: look('hollow_bloom', { torso: 'robe', weapon: 'staff', helmet: 'hood' })
+    visual: look('hollow_bloom', { helmet: 'horns', torso: 'robe', weapon: 'staff', cape: true, bulk: 1.15 })
   },
   {
     id: 'hb_titanbloom',
@@ -995,7 +996,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'lifesteal',
     attack: { kind: 'melee', knockback: 200 },
     description: 'Drinks two fifths of every wound it opens. Starving it is the only argument it hears.',
-    visual: look('nekrotics', { torso: 'bare', weapon: 'axe', helmet: 'none', bulk: 1.25 })
+    visual: look('nekrotics', { helmet: 'kettle', torso: 'coat', weapon: 'axe', bulk: 1.4 })
   },
   {
     id: 'nk_shrike',
@@ -1072,7 +1073,7 @@ export const FACTION_UNITS: UnitDef[] = [
     hitsAir: true,
     attack: { kind: 'projectile', projectile: 'bolt', speed: 900, gravity: 0, spread: 0.05, knockback: 60 },
     description: 'The carnage answer to the sky: it feeds on what it strikes, and it strikes the weakest first.',
-    visual: look('nekrotics', { kind: 'aircraft', chassis: 'hover', torso: 'fur', bulk: 1.2 })
+    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'bare', weapon: 'saber', bulk: 1.05 })
   },
   {
     id: 'ch_petardier',
@@ -1110,9 +1111,9 @@ export const FACTION_UNITS: UnitDef[] = [
     buildMs: 3200,
     hp: 900,
     armor: 'light',
-    damage: 95,
+    damage: 120,
     damageType: 'pierce',
-    attackMs: 900,
+    attackMs: 820,
     range: 340,
     speed: 40,
     mass: 2.4,
@@ -1225,7 +1226,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { heavy: 1.6 },
     attack: { kind: 'projectile', projectile: 'laserbolt', speed: 1200, gravity: 0, spread: 0.01, knockback: 40 },
     description: 'An industrial cutter pointed at the war. Armour is a material it was built to work.',
-    visual: look('cyborgs', { torso: 'exo', weapon: 'laser', helmet: 'visor' })
+    visual: look('cyborgs', { helmet: 'kettle', torso: 'plate', weapon: 'lance', shield: 'energy', bulk: 1.2 })
   },
   {
     id: 'cy_aegis_node',
@@ -1377,7 +1378,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'terror',
     attack: { kind: 'heal', amount: 220, radius: 190 },
     description: 'Mends its own and unmans the enemy: everything near it swings a beat slower than it meant to.',
-    visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'hood', cape: true })
+    visual: look('dark_circle', { helmet: 'none', torso: 'robe', weapon: 'none', cape: true })
   },
   {
     id: 'dc_reaper',
@@ -1429,7 +1430,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'gravity_well',
     attack: { kind: 'projectile', projectile: 'plasmaball', speed: 620, gravity: 0, spread: 0.02, knockback: 0, splash: 130 },
     description: 'Its blasts do not throw the enemy away. They gather them in, for the next one.',
-    visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'halo', cape: true, bulk: 1.3 })
+    visual: look('dark_circle', { helmet: 'hood', torso: 'coat', weapon: 'none', cape: true, bulk: 1.4 })
   },
   {
     id: 'dc_pale_king',
@@ -1505,7 +1506,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'toxin',
     attack: { kind: 'projectile', projectile: 'bolt', speed: 700, gravity: 120, spread: 0.05, knockback: 40 },
     description: 'Its darts are the least of it. What the darts carry keeps working long after they land.',
-    visual: look('hollow_bloom', { torso: 'robe', weapon: 'bow', helmet: 'band' })
+    visual: look('hollow_bloom', { helmet: 'hood', torso: 'fur', weapon: 'sling', bulk: 1.1 })
   },
   {
     id: 'hb_creeper',
@@ -1557,7 +1558,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'bog_pulse',
     attack: { kind: 'heal', amount: 380, radius: 220 },
     description: 'Every mending pulse feeds its own and takes the enemy by the ankles in the same breath.',
-    visual: look('hollow_bloom', { torso: 'robe', weapon: 'staff', helmet: 'hood', bulk: 1.2 })
+    visual: look('hollow_bloom', { helmet: 'great', torso: 'fur', weapon: 'staff', bulk: 1.35 })
   },
   {
     id: 'hb_rotwhale',
@@ -1585,6 +1586,34 @@ export const FACTION_UNITS: UnitDef[] = [
     visual: look('hollow_bloom', { kind: 'aircraft', chassis: 'hover', torso: 'fur', bulk: 1.6 })
   },
 ]
+
+/** Which path a unit belongs to, read off the id it was authored with. */
+const FACTION_BY_PREFIX: Record<string, FactionId> = {
+  nk_: 'nekrotics',
+  cy_: 'cyborgs',
+  dc_: 'dark_circle',
+  ch_: 'cinder_host',
+  hb_: 'hollow_bloom'
+}
+
+/**
+ * Place every soldier inside its creed's colour territory.
+ *
+ * `look()` above gives each unit its creed's palette *centre* — which, on its
+ * own, made ten Nekrotics ten copies of one colour scheme. This runs once over
+ * the finished roster and moves each unit to its own point in the family,
+ * derived from its rank, its role and its own name. The creed still owns the
+ * hue; the soldier owns everything else.
+ *
+ * It runs here rather than inside `look()` because the placement needs the
+ * unit's age, role and cost, and those are authored below the visual — a unit
+ * cannot describe its own rank before it has one.
+ */
+for (const unit of FACTION_UNITS) {
+  const faction = FACTION_BY_PREFIX[unit.id.slice(0, 3)]
+  if (!faction) continue
+  Object.assign(unit.visual, creedColours(faction, unit))
+}
 
 /** The five units an ascended army fields. */
 export function factionRoster(id: FactionId): UnitDef[] {

@@ -13,6 +13,13 @@ import { ballisticReach } from './projectile'
 import type { TechId } from '../data/tech'
 import { ADVANCE_DIR, LANE_Y, damageMultiplier, type ArmorType, type Damageable, type DamageType, type Faction, type Layer } from './types'
 
+/**
+ * How long a half-fired burst waits for a new target before giving up. Long
+ * enough to traverse onto the next body in a line, short enough that a gunner
+ * left alone on the field stops shooting at nothing.
+ */
+const BURST_GRACE_MS = 420
+
 export type UnitState = 'advance' | 'engage' | 'dead'
 
 export interface UnitWorld {
@@ -212,6 +219,17 @@ export default class Unit implements Damageable {
   private swing = 0
   private burstLeft = 0
   private burstTimer = 0
+  /**
+   * How long a half-fired burst will wait for something else to shoot at.
+   *
+   * A burst used to be thrown away the instant its target died, which punished
+   * exactly the weapons that were good at their job: a machine gunner that
+   * killed on round two lost rounds three through eight AND still paid the full
+   * cooldown, so the highest nominal damage in its age measured as the worst
+   * unit in it. A gunner mid-burst now traverses onto whatever is next, and
+   * only stops when there is genuinely nothing left in front of it.
+   */
+  private burstGrace = 0
   private animTime = 0
   private stepPhase = 0
   private flashTimer = 0
@@ -1163,6 +1181,7 @@ export default class Unit implements Damageable {
     if (attack.kind === 'projectile' && attack.burst) {
       this.burstLeft = attack.burst.rounds
       this.burstTimer = 0
+      this.burstGrace = BURST_GRACE_MS
       return
     }
 
@@ -1180,9 +1199,14 @@ export default class Unit implements Damageable {
     if (this.burstTimer > 0) return
     const target = this.target
     if (!target || !target.alive) {
-      this.burstLeft = 0
+      // Nothing to shoot at this instant. Hold the remaining rounds briefly —
+      // the battlefield re-targets every tick, so a new body usually presents
+      // itself well inside the grace window.
+      this.burstGrace -= dtMs
+      if (this.burstGrace <= 0) this.burstLeft = 0
       return
     }
+    this.burstGrace = BURST_GRACE_MS
     this.fireOnce(target)
     this.burstLeft -= 1
     this.burstTimer = attack.burst.gapMs
