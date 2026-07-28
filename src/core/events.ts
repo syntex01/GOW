@@ -7,6 +7,7 @@ export interface GameEventMap {
   'hud:flash': { message: string; tone: 'info' | 'warn' | 'good' }
   /** Open or close the research screen. */
   'hud:tech': void
+  'hud:base': void
   /** The active lane changed — the placement cursor of the whole game. */
   'hud:lane': number
   'match:ended': { victory: boolean; stats: MatchStats }

@@ -5,7 +5,8 @@ import { gameEvents } from '../core/events'
 import { ACHIEVEMENTS, save } from '../core/save'
 import { session } from '../core/session'
 import { AGES, ageDef } from '../data/ages'
-import { SEAT_STEP } from '../data/buildings'
+import { BUILDINGS_BY_ID, REBUILD_FRACTION, SEAT_STEP, buildingCost } from '../data/buildings'
+import { TRACKS_BY_ID, type FortressTrackId } from '../data/fortress'
 import { FACTIONS_BY_ID } from '../data/factions'
 import { TECHS_BY_ID, type TechId } from '../data/tech'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
@@ -492,8 +493,9 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-E', () => this.tryEvolve())
     keyboard.on('keydown-Q', () => this.tryAbility())
     keyboard.on('keydown-SPACE', () => this.tryAbility())
-    keyboard.on('keydown-U', () => this.tryEconomy())
+    keyboard.on('keydown-U', () => gameEvents.emit('hud:base', undefined))
     keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
+    keyboard.on('keydown-B', () => gameEvents.emit('hud:base', undefined))
     // The black box, on demand: F9 downloads this session's debug log.
     keyboard.on('keydown-F9', () => gameLog.download())
     // The whole of placement: pick the file the next piece will walk.
@@ -684,6 +686,85 @@ export default class BattleScene extends Phaser.Scene {
     this.dispatch({ t: 'tech', id })
     audio.play('evolve', 0.6)
     gameEvents.emit('hud:flash', { message: `${node.name} researched`, tone: 'good' })
+    return true
+  }
+
+  /**
+   * Raises a building on a plot, or lifts what stands there by one tier.
+   *
+   * Every refusal the simulation can make is spelled out here rather than
+   * failing silently: the panel is the only place a player meets the outworks,
+   * and "nothing happened" is the worst thing a building menu can say.
+   */
+  tryBuild(plot: number, id: string): boolean {
+    const bf = this.battlefield
+    const army = this.localArmy
+    const seat = bf.activeSeat(this.localFaction)
+    const target = seat.plots[plot]
+    const def = BUILDINGS_BY_ID[id]
+    if (!target || !def) return false
+    const deny = (message: string): boolean => {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message, tone: 'warn' })
+      return false
+    }
+    if (!seat.accepts(plot, def)) return deny(`${def.name} cannot stand on that plot`)
+    if (def.requires && !army.techs.has(def.requires)) {
+      return deny(`${def.name} needs ${TECHS_BY_ID[def.requires]?.name ?? 'research'}`)
+    }
+    if (target.underConstruction) return deny(`${target.def?.name ?? 'That plot'} is still being built`)
+    if (target.alive && target.def && target.def.id !== def.id) {
+      return deny(`${target.def.name} stands there — raze it first`)
+    }
+    const razed = !target.alive && target.def !== null
+    const tier = target.alive && target.def ? target.tier + 1 : razed && target.def?.id === def.id ? target.tier : 0
+    if (tier >= def.tiers.length) return deny(`${def.name} is at its highest tier`)
+    const full = buildingCost(def, tier, army.age)
+    const cost = razed ? Math.round(full * REBUILD_FRACTION) : full
+    if (army.gold < cost) return deny(`${def.name} costs ${cost} gold`)
+    this.dispatch({ t: 'build', plot, id })
+    audio.play('coin', 0.6)
+    gameEvents.emit('hud:flash', {
+      message: razed ? `${def.name} being rebuilt` : tier > 0 ? `${def.name} raised to tier ${tier + 1}` : `${def.name} raised`,
+      tone: 'good'
+    })
+    return true
+  }
+
+  /** Clears a plot you own, for half the money back. */
+  tryRaze(plot: number): boolean {
+    const target = this.battlefield.activeSeat(this.localFaction).plots[plot]
+    if (!target?.alive || !target.def) return false
+    this.dispatch({ t: 'raze', plot })
+    audio.play('ui_click', 0.5)
+    gameEvents.emit('hud:flash', { message: `${target.def.name} cleared`, tone: 'info' })
+    return true
+  }
+
+  /** Buys the next level of a fortress track. */
+  tryFortify(track: FortressTrackId): boolean {
+    const army = this.localArmy
+    const spec = TRACKS_BY_ID[track]
+    const cost = army.trackCost(track)
+    if (cost === null) {
+      gameEvents.emit('hud:flash', { message: `${spec.name} is finished`, tone: 'info' })
+      return false
+    }
+    if (army.gold < cost) {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message: `${spec.name} costs ${cost} gold`, tone: 'warn' })
+      return false
+    }
+    this.dispatch({ t: 'fortify', track })
+    audio.play('coin', 0.6)
+    gameEvents.emit('hud:flash', { message: `${spec.name} ${army.tracks[track] + 1}`, tone: 'good' })
+    return true
+  }
+
+  /** Chooses what a superseded seat turns out for free. */
+  trySetGarrison(seat: number, id: string): boolean {
+    this.dispatch({ t: 'garrison', seat, id })
+    audio.play('ui_click', 0.5)
     return true
   }
 

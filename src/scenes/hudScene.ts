@@ -9,6 +9,7 @@ import { AGE_THEMES, FACTION_COLOR, TIER_COLORS, UI } from '../gfx/palette'
 import { ensureUnitArt } from '../gfx/textureFactory'
 import Tutorial from '../ui/tutorial'
 import { audio } from '../core/audio'
+import BasePanel from '../ui/basePanel'
 import TechTree from '../ui/techTree'
 import { Bar, Button, Modal, Tooltip, formatNumber, formatTime, hex, label, panel } from '../ui/widgets'
 import BattleScene from './battleScene'
@@ -47,6 +48,7 @@ export default class HUDScene extends Phaser.Scene {
   private economyButton!: Button
   private techButton!: Button
   private techTree?: TechTree
+  private basePanel?: BasePanel
   private speedButton!: Button
   private pauseButton!: Button
 
@@ -68,6 +70,7 @@ export default class HUDScene extends Phaser.Scene {
   create(): void {
     this.resetWidgets()
     gameEvents.on('hud:tech', () => this.toggleTechTree())
+    gameEvents.on('hud:base', () => this.toggleBasePanel())
     this.battle = this.scene.get('BattleScene') as BattleScene
     this.buildTopBar()
     this.buildBottomBar()
@@ -117,6 +120,8 @@ export default class HUDScene extends Phaser.Scene {
   private resetWidgets(): void {
     this.techTree?.destroy()
     this.techTree = undefined
+    this.basePanel?.destroy()
+    this.basePanel = undefined
     this.unitCards = []
     this.turretButtons = []
     this.queueIcons = []
@@ -234,12 +239,12 @@ export default class HUDScene extends Phaser.Scene {
     this.economyButton = new Button(this, 1054, CARD_Y, {
       width: 70,
       height: CARD_H,
-      text: 'ECON',
+      text: 'BASE',
       subtext: '—',
       fontSize: 13,
       accent: UI.gold,
-      corner: 'U',
-      onClick: () => this.battle.tryEconomy()
+      corner: 'B',
+      onClick: () => this.toggleBasePanel()
     })
     this.economyButton.setDepth(2)
 
@@ -338,6 +343,42 @@ export default class HUDScene extends Phaser.Scene {
         this.battle.modalOpen = false
       }
     )
+  }
+
+  /**
+   * Opens or closes the outworks. Every action inside it goes back through the
+   * battle scene's command path, so a networked match applies it on the same
+   * tick on both machines — the panel never touches the simulation directly.
+   */
+  private toggleBasePanel(): void {
+    if (this.basePanel) {
+      this.basePanel.destroy()
+      this.basePanel = undefined
+      this.battle.modalOpen = false
+      return
+    }
+    this.battle.modalOpen = true
+    audio.play('ui_click', 0.5)
+    const close = (): void => {
+      this.basePanel?.destroy()
+      this.basePanel = undefined
+      this.battle.modalOpen = false
+    }
+    this.basePanel = new BasePanel(this, this.battle.battlefield, this.battle.localFaction, {
+      build: (plot, id) => {
+        if (this.battle.tryBuild(plot, id)) this.basePanel?.refresh()
+      },
+      raze: plot => {
+        if (this.battle.tryRaze(plot)) this.basePanel?.refresh()
+      },
+      fortify: track => {
+        if (this.battle.tryFortify(track as never)) this.basePanel?.refresh()
+      },
+      garrison: (seat, id) => {
+        if (this.battle.trySetGarrison(seat, id)) this.basePanel?.refresh()
+      },
+      close
+    })
   }
 
   private handleTurretSlot(index: number): void {
@@ -719,16 +760,16 @@ export default class HUDScene extends Phaser.Scene {
       .setCooldown(1 - army.abilityCharge)
       .setAccent(ready ? UI.good : UI.accent)
 
-    // Economy.
-    const cost = army.incomeUpgradeCost()
-    if (cost === null) {
-      this.economyButton.setText('ECON').setSubtext('MAX', UI.good).setEnabled(false)
-    } else {
-      this.economyButton
-        .setText(`ECON ${army.incomeLevel + 1}`)
-        .setSubtext(`${formatNumber(cost)}`, army.gold >= cost ? UI.gold : UI.bad)
-        .setEnabled(army.gold >= cost)
-    }
+    // The outworks. The button reports how much of your ground is developed,
+    // because that is the number a commander actually watches — an empty plot
+    // is money not working and a burned one is money that stopped.
+    const plots = this.battle.battlefield.activeSeat(this.battle.localFaction).plots
+    const up = plots.filter(p => p.alive).length
+    const hurt = plots.some(p => p.def && !p.alive)
+    this.economyButton
+      .setText('BASE')
+      .setSubtext(`${up}/${plots.length} plots`, hurt ? UI.bad : up === plots.length ? UI.good : UI.gold)
+      .setEnabled(true)
   }
 
   private updateTurretButtons(): void {
