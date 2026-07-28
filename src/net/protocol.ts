@@ -15,9 +15,11 @@ import type { Faction } from '../sim/types'
  * buried lines, scoured haunts, tithed growth, corpse-fed gardens and
  * smothered embers. v9 made thrown soldiers land badly (fall damage) and
  * repriced five nodes against measured value. v10 pays experience for damage
- * dealt, so a bypass stalemate can no longer freeze both sides' ages.
+ * dealt, so a bypass stalemate can no longer freeze both sides' ages. v11
+ * added oaths — five pairs of deep nodes that close each other forever — and
+ * besieged supply, where enemies standing in your yard cut your income.
  */
-export const PROTOCOL_VERSION = 10
+export const PROTOCOL_VERSION = 11
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

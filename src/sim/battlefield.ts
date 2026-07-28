@@ -1072,6 +1072,9 @@ export default class Battlefield {
     this.statsByFaction.enemy.durationMs = this.elapsedMs
     this.world.speedScale = this.speedScale
 
+    // The siege is read BEFORE income is paid, so a wall full of enemies costs
+    // you this tick's gold rather than last tick's.
+    this.updateSiege()
     this.tickArmy(this.player, dtMs)
     this.tickArmy(this.enemy, dtMs)
 
@@ -1587,6 +1590,42 @@ export default class Battlefield {
   /** Which commander's half of the field a point lies on. */
   halfOwner(x: number): Faction {
     return x < this.config.worldWidth / 2 ? 'player' : 'enemy'
+  }
+
+  /** How far in front of a fortress its supply yard reaches. */
+  private static readonly SIEGE_REACH = 300
+  /** Supply cut per point of enemy population standing in the yard. */
+  private static readonly SIEGE_PER_POP = 0.07
+  /** However bad it gets, something still comes in. */
+  private static readonly SIEGE_MAX = 0.7
+
+  /**
+   * Besieged supply.
+   *
+   * Reaching a fortress used to be worth only the damage you did to it, which
+   * made ignoring a lane nearly free — you could walk past a defence, sit on
+   * the wall, and the defender's economy never noticed. Now anything standing
+   * in the defender's yard cuts their income while it stands there, weighted
+   * by how much of the field it takes up. Lane coverage stops being optional
+   * and becomes the cheapest economic decision on the board.
+   *
+   * It scales by population rather than headcount so a colossus in your yard
+   * is the crisis it looks like, and a lone scout is a nuisance.
+   */
+  private updateSiege(): void {
+    const reach = Battlefield.SIEGE_REACH
+    let onPlayer = 0
+    let onEnemy = 0
+    for (const unit of this.units) {
+      if (!unit.alive) continue
+      if (unit.faction === 'enemy') {
+        if (unit.x < this.playerBase.x + reach) onPlayer += unit.def.pop
+      } else if (unit.x > this.enemyBase.x - reach) onEnemy += unit.def.pop
+    }
+    const cut = (pop: number): number =>
+      pop <= 0 ? 0 : Math.min(Battlefield.SIEGE_MAX, pop * Battlefield.SIEGE_PER_POP)
+    this.player.siege = cut(onPlayer)
+    this.enemy.siege = cut(onEnemy)
   }
 
   private tickArmy(army: Army, dtMs: number): void {

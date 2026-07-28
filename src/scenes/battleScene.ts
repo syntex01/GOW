@@ -624,6 +624,15 @@ export default class BattleScene extends Phaser.Scene {
       gameEvents.emit('hud:flash', { message: `${node.name} unlocks in a later age`, tone: 'warn' })
       return false
     }
+    if (state === 'sworn') {
+      const rival = TECHS_BY_ID[army.sworn(id) ?? '']
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', {
+        message: `${node.name} is closed — you swore ${rival?.name ?? 'the other road'}`,
+        tone: 'warn'
+      })
+      return false
+    }
     if (state === 'demand' && node.demand) {
       audio.play('ui_denied', 0.5)
       gameEvents.emit('hud:flash', { message: `${node.name}: ${node.demand.label}`, tone: 'warn' })

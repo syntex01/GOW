@@ -105,8 +105,13 @@ export default class AiController {
     this.profile = profile
     this.rng = new Rng(seed)
     this.branch = this.rng.pick(TECH_BRANCHES).id
+    // Which arm of each oath this commander swears is drawn from the same
+    // seed as everything else, so two matches against the same difficulty are
+    // not the same opponent — and so the AI actually *makes* the choice the
+    // oath demands rather than stalling at a fork it cannot buy both sides of.
+    const oath = [...new Set(TECHS.flatMap(t => t.requiresAny ?? []))].filter(() => this.rng.next() < 0.5)
     const goal = ascensionFor(this.branch)
-    this.path = goal ? lineageFor(goal.id) : []
+    this.path = goal ? lineageFor(goal.id, oath) : []
   }
 
   update(dtMs: number): void {
@@ -118,7 +123,9 @@ export default class AiController {
 
     const army = this.bf.enemy
     const base = this.bf.enemyBase
-    this.pressure = 1 - base.hp / base.maxHp
+    // A cut supply line is as urgent as a cracked wall: both mean the game is
+    // being lost somewhere the commander is not looking.
+    this.pressure = Math.max(1 - base.hp / base.maxHp, army.siege)
 
     // One strategic decision per reaction window — but the queue is never left
     // idle for it. Returning after the first thing it did meant a commander who
@@ -263,10 +270,14 @@ export default class AiController {
   private pickLane(): number {
     const pressure = [0, 0, 0, 0, 0]
     let any = false
+    const home = this.bf.enemyBase.x
     for (const u of this.bf.units) {
       if (!u.alive || u.layer === 'air') continue
       any = true
-      pressure[u.lane] += (u.faction === 'player' ? 1 : -1) * u.def.cost
+      // Weighted by how deep it has come. A soldier in the yard is cutting the
+      // supply line and is worth answering before one still crossing the field.
+      const depth = 1 + 2 * Math.max(0, 1 - Math.abs(u.x - home) / 900)
+      pressure[u.lane] += (u.faction === 'player' ? depth : -depth) * u.def.cost
     }
     if (!any) return this.laneRotation++ % 5
     let best = 0

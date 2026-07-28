@@ -6,7 +6,7 @@ import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import type { Faction } from './types'
 import { powi } from './dmath'
-import { TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
+import { OATHS, TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
 /** How many cards the command bar can show. */
 const MAX_ROSTER = 11
@@ -120,8 +120,24 @@ export default class Army {
     return this.ageDefinition.populationCap
   }
 
-  get incomePerSecond(): number {
+  /**
+   * How much of the supply line is currently cut, 0–1.
+   *
+   * Recomputed every tick from the enemy standing in your yard, so ignoring a
+   * lane is no longer free: soldiers who reach your wall and are left there
+   * stop being a nuisance and start being an economic problem. Derived purely
+   * from unit positions, which the state hash already covers, so it needs no
+   * hashing of its own.
+   */
+  siege = 0
+
+  /** Income before the siege takes its cut — what the yard *could* produce. */
+  get grossIncomePerSecond(): number {
     return this.ageDefinition.income * this.modifiers.income * (1 + this.incomeLevel * 0.22)
+  }
+
+  get incomePerSecond(): number {
+    return this.grossIncomePerSecond * (1 - this.siege)
   }
 
   get xpToAdvance(): number {
@@ -252,14 +268,24 @@ export default class Army {
     return this.techs.has(id)
   }
 
+  /** The rival oath this army already swore, closing a node forever. */
+  sworn(id: TechId): TechId | null {
+    for (const rival of OATHS[id] ?? []) if (this.techs.has(rival)) return rival
+    return null
+  }
+
   /** Whether this army could research a node right now, and why not if not. */
-  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'gold' | 'demand' {
+  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'gold' | 'demand' | 'sworn' {
     const node = TECHS_BY_ID[id]
     if (!node) return 'locked'
     if (this.techs.has(id)) return 'owned'
     // You get one ascension. Committing to a faction closes the other four.
     if (node.kind === 'ascension' && this.ascendedTo) return 'locked'
+    // An oath already sworn is not a thing you are short of — it is a door you
+    // shut yourself, and it never reopens this match.
+    if (this.sworn(id)) return 'sworn'
     if (!node.requires.every(r => this.techs.has(r))) return 'locked'
+    if (node.requiresAny && !node.requiresAny.some(r => this.techs.has(r))) return 'locked'
     if (this.age < node.age) return 'age'
     if (node.demand && this.deeds[node.demand.metric] < node.demand.amount) return 'demand'
     if (this.gold < node.cost) return 'gold'

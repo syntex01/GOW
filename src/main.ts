@@ -66,11 +66,31 @@ function start(): void {
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
     __gowLog: typeof gameLog
     __gowTurrets: string[]
-    __gowTechs: { id: string; kind: string; cost: number; age: number; branch: string; requires: string[] }[]
+    __gowTechs: {
+      id: string
+      name: string
+      kind: string
+      cost: number
+      age: number
+      branch: string
+      requires: string[]
+      requiresAny?: string[]
+      excludes?: string[]
+    }[]
   }
   debug.__gowLog = gameLog
   debug.__gowTurrets = TURRETS.map(t => t.id)
-  debug.__gowTechs = TECHS.map(t => ({ id: t.id, kind: t.kind, cost: t.cost, age: t.age, branch: t.branch, requires: [...t.requires] }))
+  debug.__gowTechs = TECHS.map(t => ({
+    id: t.id,
+    name: t.name,
+    kind: t.kind,
+    cost: t.cost,
+    age: t.age,
+    branch: t.branch,
+    requires: [...t.requires],
+    requiresAny: t.requiresAny ? [...t.requiresAny] : undefined,
+    excludes: t.excludes ? [...t.excludes] : undefined
+  }))
   debug.__gowGame = game
   // Exposed so a smoke test can put a unit on the field without waiting out a
   // build queue in real time.

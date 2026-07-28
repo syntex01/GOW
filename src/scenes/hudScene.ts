@@ -24,6 +24,8 @@ export default class HUDScene extends Phaser.Scene {
 
   private goldText!: Phaser.GameObjects.Text
   private incomeText!: Phaser.GameObjects.Text
+  /** So the siege warning fires when it starts, not once every frame. */
+  private siegeWarned = false
   private ageText!: Phaser.GameObjects.Text
   private popText!: Phaser.GameObjects.Text
   private enemyGoldText!: Phaser.GameObjects.Text
@@ -596,7 +598,17 @@ export default class HUDScene extends Phaser.Scene {
 
     this.refreshLanes()
     this.goldText.setText(formatNumber(player.gold))
-    this.incomeText.setText(`+${player.incomePerSecond.toFixed(0)}/s`)
+    // A cut supply line is the most expensive thing that can be happening to
+    // you, and it happens off-screen at the wall — so it is said in the one
+    // place the player is already looking, in the colour of a problem.
+    const siege = Math.round(player.siege * 100)
+    this.incomeText
+      .setText(siege > 0 ? `+${player.incomePerSecond.toFixed(0)}/s  SIEGED −${siege}%` : `+${player.incomePerSecond.toFixed(0)}/s`)
+      .setColor(hex(siege >= 40 ? UI.bad : siege > 0 ? UI.warn : UI.textDim))
+    if (siege > 0 && this.siegeWarned === false) {
+      this.siegeWarned = true
+      gameEvents.emit('hud:flash', { message: 'Supply line cut — clear your wall', tone: 'warn' })
+    } else if (siege === 0) this.siegeWarned = false
     this.ageText.setText(ageDef(player.age).name).setColor(hex(AGE_ACCENT[player.age]))
     this.popText.setText(`${player.population + player.queuedPopulation()}/${player.populationCap}`)
     this.enemyGoldText.setText(formatNumber(enemy.gold))

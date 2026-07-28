@@ -5,8 +5,10 @@ import {
   BRANCH_ACCENT,
   CREEDS,
   MAX_RING,
+  OATHS,
   TECHS,
   TECHS_BY_ID,
+  oathRivals,
   type TechId,
   type TechNode
 } from '../data/tech'
@@ -563,7 +565,7 @@ export default class TechTree {
     const raw: { parent: TechNode; child: TechNode; state: NodeState; color: number }[] = []
     for (const view of this.views) {
       const child = view.node
-      for (const parentId of child.requires) {
+      for (const parentId of [...child.requires, ...(child.requiresAny ?? [])]) {
         const parent = TECHS_BY_ID[parentId]
         if (!parent) continue
         const state: NodeState = this.army.techs.has(child.id)
@@ -641,6 +643,58 @@ export default class TechTree {
         stroke(e, 8, 0.16)
         stroke(e, 3.5, 1)
       }
+
+    this.drawOaths()
+  }
+
+  /**
+   * Oaths, drawn as what they are: a short broken tie between two nodes that
+   * will never both be yours. It is dashed rather than solid because nothing
+   * flows along it, and once one arm is sworn the tie goes cold and the other
+   * arm greys out — the screen says "you gave that up" without a word.
+   */
+  private drawOaths(): void {
+    const g = this.edges
+    const drawn = new Set<string>()
+    for (const view of this.views) {
+      for (const rivalId of OATHS[view.node.id] ?? []) {
+        const key = view.node.id < rivalId ? `${view.node.id}|${rivalId}` : `${rivalId}|${view.node.id}`
+        if (drawn.has(key)) continue
+        drawn.add(key)
+        const rival = TECHS_BY_ID[rivalId]
+        if (!rival) continue
+        const ax = this.nodeX(view.node)
+        const ay = this.nodeY(view.node)
+        const bx = this.nodeX(rival)
+        const by = this.nodeY(rival)
+        const settled = this.army.techs.has(view.node.id) || this.army.techs.has(rivalId)
+        const color = settled ? 0x6b3038 : 0xd8555f
+        const alpha = settled ? 0.4 : 0.85
+        // Dashes, walked along the straight line between the two medallions.
+        const len = Math.max(1, Math.hypot(bx - ax, by - ay))
+        const ux = (bx - ax) / len
+        const uy = (by - ay) / len
+        const inset = Math.max(this.halfOf(view.node), this.halfOf(rival)) + 2
+        g.lineStyle(settled ? 2 : 2.5, color, alpha)
+        for (let d = inset; d < len - inset; d += 11) {
+          const e = Math.min(len - inset, d + 6)
+          g.beginPath()
+          g.moveTo(ax + ux * d, ay + uy * d)
+          g.lineTo(ax + ux * e, ay + uy * e)
+          g.strokePath()
+        }
+        // A break mark at the midpoint: the tie is cut, not merely thin.
+        const mx = (ax + bx) / 2
+        const my = (ay + by) / 2
+        g.lineStyle(settled ? 2 : 3, color, alpha)
+        for (const sign of [-1, 1]) {
+          g.beginPath()
+          g.moveTo(mx - 5 * sign - uy * 5, my + ux * -5 + 0)
+          g.lineTo(mx + 5 * sign + uy * 5, my + ux * 5 + 0)
+          g.strokePath()
+        }
+      }
+    }
   }
 
   // ──────────────────────────────── input ────────────────────────────────
@@ -771,6 +825,9 @@ export default class TechTree {
       case 'demand':
         this.buyBtn.setText('EARN IT FIRST').setEnabled(false)
         break
+      case 'sworn':
+        this.buyBtn.setText('OATH ALREADY SWORN').setEnabled(false)
+        break
       default:
         this.buyBtn.setText('LOCKED').setEnabled(false)
         break
@@ -824,7 +881,9 @@ export default class TechTree {
               ? `locked until age ${node.age + 1}`
               : state === 'demand' && node.demand
                 ? `${node.demand.label} — ${formatNumber(Math.floor(this.army.deeds[node.demand.metric]))}/${formatNumber(node.demand.amount)}`
-                : 'prerequisites not met'
+                : state === 'sworn'
+                  ? `closed by your oath to ${TECHS_BY_ID[this.army.sworn(node.id) ?? '']?.name ?? 'the other road'}`
+                  : 'prerequisites not met'
 
     this.detailName.setText(node.name).setColor(
       hex(node.kind === 'ascension' && node.becomes ? FACTIONS_BY_ID[node.becomes].accent : BRANCH_ACCENT[node.branch])
@@ -845,14 +904,30 @@ export default class TechTree {
       .setColor(hex(KIND_BADGE[node.kind].color))
 
     const missing = node.requires.filter(r => !this.army.techs.has(r))
-    this.detailReq.setText(
+    const fork = node.requiresAny?.length
+      ? ` · and either ${node.requiresAny.map(r => TECHS_BY_ID[r]?.name ?? r).join(' or ')}`
+      : ''
+    const forkUnmet = Boolean(node.requiresAny?.length) && !node.requiresAny!.some(r => this.army.techs.has(r))
+    const base =
       node.requires.length === 0
         ? 'the root — needs nothing'
         : missing.length === 0
           ? `follows: ${node.requires.map(r => TECHS_BY_ID[r]?.name ?? r).join(', ')}`
           : `still needs: ${missing.map(r => TECHS_BY_ID[r]?.name ?? r).join(', ')}`
+    // An oath is the most consequential thing on the screen, so it is said in
+    // full before the click, not discovered afterwards.
+    const rivals = oathRivals(node.id)
+    const oath = rivals.length
+      ? state === 'owned'
+        ? `  ⟡ OATH SWORN — ${rivals.map(r => r.name).join(', ')} closed for this war`
+        : state === 'sworn'
+          ? `  ⟡ OATH LOST — you already swore ${TECHS_BY_ID[this.army.sworn(node.id) ?? '']?.name ?? 'the other road'}`
+          : `  ⟡ OATH — taking this closes ${rivals.map(r => r.name).join(', ')} forever`
+      : ''
+    this.detailReq.setText(base + fork + oath)
+    this.detailReq.setColor(
+      hex(rivals.length && state !== 'owned' ? UI.warn : missing.length === 0 && !forkUnmet ? UI.textDim : UI.warn)
     )
-    this.detailReq.setColor(hex(missing.length === 0 ? UI.textDim : UI.warn))
   }
 
   // ─────────────────────────────── refresh ───────────────────────────────
@@ -910,6 +985,12 @@ export default class TechTree {
                 : 'earn it'
             )
             .setColor(hex(UI.gold))
+          break
+        case 'sworn':
+          // Not "locked" — forsaken. It reads differently because it is
+          // permanent, and because it was the player's own decision.
+          view.name.setColor(hex(UI.bad)).setAlpha(0.45)
+          view.tag.setText('OATH LOST').setColor(hex(UI.bad))
           break
         default:
           view.name.setColor(hex(UI.textDim)).setAlpha(0.5)

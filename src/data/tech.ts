@@ -77,6 +77,19 @@ export interface TechNode {
   cost: number
   /** Every parent must be owned. Early nodes deliberately have several. */
   requires: TechId[]
+  /**
+   * At least ONE of these must be owned, on top of `requires`. Used where a
+   * road forks and either arm gets you to the rim: the ascensions sit behind
+   * an oath, and an oath is a choice, so demanding both arms would make the
+   * choice fictional.
+   */
+  requiresAny?: TechId[]
+  /**
+   * Nodes this one closes off forever. Two nodes that exclude each other are
+   * an *oath*: one creed, two irreconcilable readings of it, and you take one.
+   * This is what stops the network being a schedule you eventually finish.
+   */
+  excludes?: TechId[]
   /** What it does, stated as a behaviour. */
   effect: string
   /** For `unit` nodes: which unit joins the roster. */
@@ -537,6 +550,7 @@ export const TECHS: TechNode[] = [
     age: 3,
     cost: 2700,
     requires: ['plague_wind', 'flenser_rite'],
+    excludes: ['necropolis'],
     effect: 'Remains on the ground stop enemy shots. Pile up enough dead and they become cover.'
   },
   {
@@ -549,6 +563,7 @@ export const TECHS: TechNode[] = [
     age: 4,
     cost: 3800,
     requires: ['overpressure', 'cluster'],
+    excludes: ['ashfall'],
     demand: { metric: 'kills', amount: 40, label: 'Kill 40' },
     effect: 'Your shots pass through the first body they hit and carry on into the next.'
   },
@@ -562,6 +577,7 @@ export const TECHS: TechNode[] = [
     age: 4,
     cost: 3300,
     requires: ['torchbearer_doctrine'],
+    excludes: ['penetrator'],
     effect: 'Fire on the ground spreads outward on its own and takes far longer to burn out.'
   },
   {
@@ -574,6 +590,7 @@ export const TECHS: TechNode[] = [
     age: 4,
     cost: 3600,
     requires: ['demolition'],
+    excludes: ['aegis'],
     effect: 'Energy hits shut machines down. Tanks and walkers stop dead for a few seconds.'
   },
   {
@@ -598,6 +615,7 @@ export const TECHS: TechNode[] = [
     age: 4,
     cost: 1900,
     requires: ['demolition', 'nanite_field'],
+    excludes: ['emp'],
     effect: 'Soldiers standing together share what they take. Break the formation and it stops.'
   },
   {
@@ -614,6 +632,19 @@ export const TECHS: TechNode[] = [
     effect: 'Fields the Hexer: points at something, and it stops being structurally certain.'
   },
   {
+    id: 'black_sun',
+    name: 'Black Sun',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 5,
+    row: 8,
+    age: 3,
+    cost: 2800,
+    requires: ['evil_eye', 'sacrament'],
+    excludes: ['mind_thrall'],
+    effect: 'The light goes wrong. Enemy fire scatters badly and their artillery stops landing where it was aimed.'
+  },
+  {
     id: 'mind_thrall',
     name: 'Mind Thrall',
     branch: 'occult',
@@ -623,6 +654,7 @@ export const TECHS: TechNode[] = [
     age: 3,
     cost: 2500,
     requires: ['evil_eye', 'sacrament'],
+    excludes: ['black_sun'],
     effect: 'Some of what you kill gets back up on your side instead of theirs.'
   },
   {
@@ -635,6 +667,7 @@ export const TECHS: TechNode[] = [
     age: 3,
     cost: 2300,
     requires: ['rooted'],
+    excludes: ['contagion'],
     effect: 'Your soldiers heal while they stand on ground the blight has taken.'
   },
   {
@@ -647,6 +680,7 @@ export const TECHS: TechNode[] = [
     age: 3,
     cost: 2500,
     requires: ['sporeling_bloom', 'mycelium'],
+    excludes: ['verdant_tide'],
     effect: 'Anything that dies in your blight bursts too, and passes it on.'
   },
 
@@ -660,21 +694,10 @@ export const TECHS: TechNode[] = [
     row: 0,
     age: 4,
     cost: 3000,
-    requires: ['corpse_wall', 'bone_harvest'],
+    requires: ['plague_wind', 'bone_harvest'],
+    excludes: ['corpse_wall'],
     demand: { metric: 'losses', amount: 25, label: 'Lose 25 of your own' },
     effect: 'Your half of the field raises what has fallen on it. Enough remains, and they get up again.'
-  },
-  {
-    id: 'black_sun',
-    name: 'Black Sun',
-    branch: 'occult',
-    kind: 'behaviour',
-    ring: 6,
-    row: 8,
-    age: 4,
-    cost: 3500,
-    requires: ['mind_thrall'],
-    effect: 'The light goes wrong. Enemy fire scatters badly and their artillery stops landing where it was aimed.'
   },
   {
     id: 'ninth_seal',
@@ -685,7 +708,8 @@ export const TECHS: TechNode[] = [
     row: 9,
     age: 4,
     cost: 4000,
-    requires: ['black_sun', 'hexer_pact'],
+    requires: ['hexer_pact'],
+    requiresAny: ['black_sun', 'mind_thrall'],
     unlocks: 'dc_ninthsign',
     effect: 'Fields the Ninth Sign: the last of them that still needs a body to walk around in.'
   },
@@ -698,7 +722,8 @@ export const TECHS: TechNode[] = [
     row: 10,
     age: 4,
     cost: 2500,
-    requires: ['verdant_tide', 'contagion'],
+    requires: ['rooted', 'mycelium'],
+    requiresAny: ['verdant_tide', 'contagion'],
     effect: 'Blighted ground answers to you: enemies crossing it are dragged to a crawl.'
   },
   {
@@ -775,7 +800,8 @@ export const TECHS: TechNode[] = [
     row: 0,
     age: 4,
     cost: 6000,
-    requires: ['necropolis', 'flenser_rite'],
+    requires: ['flenser_rite'],
+    requiresAny: ['necropolis', 'corpse_wall'],
     becomes: 'nekrotics',
     demand: { metric: 'losses', amount: 60, label: 'Lose 60 of your own — the dead are the point' },
     effect: 'Stop burying your dead. Your roster becomes the Nekrotics, and every soldier you lose gets up once, on its own.'
@@ -789,7 +815,8 @@ export const TECHS: TechNode[] = [
     row: 3,
     age: 4,
     cost: 6000,
-    requires: ['penetrator', 'ashfall'],
+    requires: ['cluster', 'torchbearer_doctrine'],
+    requiresAny: ['penetrator', 'ashfall'],
     becomes: 'cinder_host',
     demand: { metric: 'kills', amount: 90, label: 'Kill 90' },
     effect: 'Burn it all to keep warm. Your roster becomes the Cinder Host, and everything you kill sets fire to where it fell.'
@@ -803,7 +830,8 @@ export const TECHS: TechNode[] = [
     row: 6,
     age: 4,
     cost: 6000,
-    requires: ['emp', 'autoforge', 'aegis'],
+    requires: ['autoforge', 'demolition'],
+    requiresAny: ['emp', 'aegis'],
     becomes: 'cyborgs',
     demand: { metric: 'built', amount: 55, label: 'Build 55 units — the foundry never stops' },
     effect: 'Finish the edit. Your roster becomes the Cyborgs: everything repairs itself, and nothing you field can be shut down.'
@@ -939,7 +967,7 @@ export function branchTechs(branch: TechBranch): TechNode[] {
  * requirement graph backwards instead, which is what both the AI and any
  * "research path" hint actually need.
  */
-export function lineageFor(id: TechId): TechNode[] {
+export function lineageFor(id: TechId, prefer: TechId[] = []): TechNode[] {
   const seen = new Set<TechId>()
   const out: TechNode[] = []
   const visit = (nodeId: TechId): void => {
@@ -948,6 +976,14 @@ export function lineageFor(id: TechId): TechNode[] {
     const node = TECHS_BY_ID[nodeId]
     if (!node) return
     for (const parent of node.requires) visit(parent)
+    // A fork takes exactly one arm: an oath that swore both ways would be no
+    // oath at all, and a road that lists both would tell the AI to buy a node
+    // it can never own. `prefer` lets a caller choose which arm; otherwise the
+    // first authored one wins, which keeps this deterministic across peers.
+    if (node.requiresAny && node.requiresAny.length > 0) {
+      const arm = node.requiresAny.find(a => prefer.includes(a)) ?? node.requiresAny[0]
+      visit(arm)
+    }
     out.push(node)
   }
   visit(id)
@@ -963,6 +999,28 @@ export function ascensionFor(branch: TechBranch): TechNode | undefined {
 
 /** Stable order, used to pack an army's owned techs into the state hash. */
 export const TECH_ORDER: string[] = TECHS.map(t => t.id)
+
+/**
+ * Oaths, resolved both ways.
+ *
+ * Exclusion is authored on one arm or both; a commander does not care which
+ * way round it was written down, so it is normalised here into a symmetric
+ * map. Everything else in the game asks this, never the raw field.
+ */
+export const OATHS: Record<TechId, TechId[]> = (() => {
+  const map: Record<TechId, Set<TechId>> = {}
+  const tie = (a: TechId, b: TechId): void => {
+    ;(map[a] ??= new Set()).add(b)
+    ;(map[b] ??= new Set()).add(a)
+  }
+  for (const node of TECHS) for (const other of node.excludes ?? []) tie(node.id, other)
+  return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v].sort()]))
+})()
+
+/** The node an oath forbids once this one is taken, or null if it is free. */
+export function oathRivals(id: TechId): TechNode[] {
+  return (OATHS[id] ?? []).map(other => TECHS_BY_ID[other]).filter(Boolean)
+}
 
 /** Every unit id any research node can put into a roster. */
 export const UNLOCKABLE_UNIT_IDS: string[] = TECHS.filter(t => t.unlocks).map(t => t.unlocks as string)
