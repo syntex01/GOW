@@ -71,6 +71,11 @@ export interface ButtonOptions {
 }
 
 /** Interactive panel button with hover, press, disabled and "flash" states. */
+/** Breathing room either side of a button's label, in pixels. */
+const LABEL_PADDING = 10
+/** However long the label, it never shrinks past this. */
+const MIN_LABEL_SIZE = 8
+
 export class Button {
   readonly container: Phaser.GameObjects.Container
   readonly width: number
@@ -80,6 +85,8 @@ export class Button {
   private bg: Phaser.GameObjects.NineSlice
   private accentBar: Phaser.GameObjects.Rectangle
   private textObj?: Phaser.GameObjects.Text
+  /** The size the label was authored at — what `fitLabel` shrinks down FROM. */
+  private baseFontSize = 17
   private subObj?: Phaser.GameObjects.Text
   private cornerObj?: Phaser.GameObjects.Text
   private iconObj?: Phaser.GameObjects.Image
@@ -112,12 +119,14 @@ export class Button {
     }
 
     if (options.text) {
+      this.baseFontSize = options.fontSize ?? 17
       this.textObj = label(scene, options.width / 2, options.icon ? options.height - 30 : options.height / 2 - 12, options.text, {
-        size: options.fontSize ?? 17,
+        size: this.baseFontSize,
         align: 'center',
         bold: true
       })
       this.container.add(this.textObj)
+      this.fitLabel()
     }
     if (options.subtext) {
       this.subObj = label(scene, options.width / 2, options.height - 20, options.subtext, {
@@ -224,7 +233,28 @@ export class Button {
   setText(text: string): this {
     if (!this.live) return this
     this.textObj?.setText(text)
+    this.fitLabel()
     return this
+  }
+
+  /**
+   * Shrinks a label that does not fit rather than letting it spill.
+   *
+   * Buttons carry content whose length nobody controls — an ability is called
+   * ION CANNON in a 68-pixel button, and the overflow ran straight through the
+   * EVOLVE button next door and read as "MAX AGEON CANNON". A label is allowed
+   * to get smaller; it is not allowed to leave its own button.
+   */
+  private fitLabel(): void {
+    const label = this.textObj
+    if (!label) return
+    const room = this.width - LABEL_PADDING
+    if (room <= 0) return
+    // Reset first, or a label that once shrank never grows back.
+    label.setFontSize(this.baseFontSize)
+    for (let size = this.baseFontSize; size > MIN_LABEL_SIZE && label.width > room; size -= 1) {
+      label.setFontSize(size)
+    }
   }
 
   /** Lets a button shrink its label when the content changes length. */
