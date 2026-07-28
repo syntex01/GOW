@@ -64,6 +64,8 @@ export interface ButtonOptions {
   icon?: string
   iconScale?: number
   onClick: () => void
+  /** Right-click on a pointer, long-press on a touch screen. */
+  onAltClick?: () => void
   onHover?: () => void
   onOut?: () => void
   /** Small text pinned to the bottom-right corner, e.g. a hotkey. */
@@ -71,6 +73,9 @@ export interface ButtonOptions {
 }
 
 /** Interactive panel button with hover, press, disabled and "flash" states. */
+/** How long a press has to be held to count as the alternate action. */
+const LONG_PRESS_MS = 380
+
 /** Breathing room either side of a button's label, in pixels. */
 const LABEL_PADDING = 10
 /** However long the label, it never shrinks past this. */
@@ -87,6 +92,9 @@ export class Button {
   private textObj?: Phaser.GameObjects.Text
   /** The size the label was authored at — what `fitLabel` shrinks down FROM. */
   private baseFontSize = 17
+  private holdTimer?: Phaser.Time.TimerEvent
+  /** Set when a hold or right-click already ran, so the release does nothing. */
+  private altFired = false
   private subObj?: Phaser.GameObjects.Text
   private cornerObj?: Phaser.GameObjects.Text
   private iconObj?: Phaser.GameObjects.Image
@@ -163,17 +171,42 @@ export class Button {
         options.onHover?.()
       })
       .on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+        this.holdTimer?.remove()
+        this.holdTimer = undefined
         this.hovered = false
         this.overlay.setFillStyle(0xffffff, 0)
         this.container.setScale(1)
         options.onOut?.()
       })
-      .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
         if (!this.enabled) return
         this.container.setScale(0.97)
+        if (!options.onAltClick) return
+        // Right-click is the alternate on a desktop; a press held past the
+        // threshold is the alternate on a phone, where there is no such thing
+        // as a right button. Both land on the same handler.
+        if (pointer.rightButtonDown()) {
+          this.altFired = true
+          options.onAltClick()
+          return
+        }
+        this.altFired = false
+        this.holdTimer = scene.time.delayedCall(LONG_PRESS_MS, () => {
+          this.altFired = true
+          this.container.setScale(1)
+          options.onAltClick?.()
+        })
       })
       .on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
+        this.holdTimer?.remove()
+        this.holdTimer = undefined
         this.container.setScale(1)
+        // A hold that already did the alternate must not also do the normal
+        // one when the finger comes off.
+        if (this.altFired) {
+          this.altFired = false
+          return
+        }
         if (!this.enabled) {
           audio.play('ui_denied', 0.5)
           this.shake()

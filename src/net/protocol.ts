@@ -1,5 +1,5 @@
 import type { FortressTrackId } from '../data/fortress'
-import type { Faction } from '../sim/types'
+import type { Faction, ReserveMode } from '../sim/types'
 
 /**
  * Wire protocol version — peers refuse to connect across a mismatch, at
@@ -29,7 +29,7 @@ import type { Faction } from '../sim/types'
  * tracks: wall health, gate width, the siege ceiling and how fast a wounded
  * fortress can work its guns.
  */
-export const PROTOCOL_VERSION = 17
+export const PROTOCOL_VERSION = 18
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing
@@ -50,6 +50,12 @@ export type Command =
   | { t: 'raze'; plot: number }
   | { t: 'garrison'; seat: number; id: string }
   | { t: 'fortify'; track: FortressTrackId }
+  // Standing orders. Late game a line soldier costs 200 gold against 374 a
+  // second, so keeping a field up by hand means two clicks a second for the
+  // rest of the match. An order is the same decision made once instead of two
+  // hundred times, so it has to cross the wire like any other decision.
+  | { t: 'order'; id: string; lane: number }
+  | { t: 'reserve'; mode: ReserveMode }
 
 /** One tick's worth of a peer's intent, plus an optional integrity check. */
 export interface TickMessage {

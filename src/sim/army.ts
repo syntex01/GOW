@@ -4,7 +4,7 @@ import type { UnitDef } from '../data/types'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
-import type { Faction } from './types'
+import { LANE_COUNT, type Faction, type ReserveMode } from './types'
 import { powi } from './dmath'
 import { BASE_RESEARCH_RATE, RESEARCH_PER_GOLD, RESEARCH_RING_STEP } from '../data/buildings'
 import { TRACKS_BY_ID, trackCost, type FortressTrackId } from '../data/fortress'
@@ -44,6 +44,21 @@ export interface QueueEntry {
 }
 
 export const QUEUE_LIMIT = 6
+
+/** One line of the battle plan: keep this unit coming, into this file. */
+export interface StandingOrder {
+  id: string
+  lane: number
+}
+
+/**
+ * How many lines a battle plan may have.
+ *
+ * Eleven cards across five files is fifty-five possible orders, which is not a
+ * plan, it is a spreadsheet. Ten is more than any real composition needs and
+ * keeps the strip along the bottom readable at a glance.
+ */
+export const ORDER_LIMIT = 10
 
 export interface ArmyModifiers {
   /** Multiplies passive gold income. */
@@ -439,6 +454,97 @@ export default class Army {
     return this.gold >= def.cost
   }
 
+  /**
+   * Standing orders: keep this unit coming, into this file.
+   *
+   * The one placement decision this game asks of a commander is which file a
+   * soldier walks down, and late game the economy pays for about two soldiers a
+   * second — so making that decision by hand means two clicks a second for the
+   * rest of the match, which is not a decision, it is a chore. An order is the
+   * same decision made ONCE. The list is the battle plan: one line per
+   * (unit, file), filled round-robin, so what you set up is what walks out.
+   *
+   * It never takes anything away from the player. Orders fill SPARE build
+   * capacity only, they never push a hand-placed build down the queue, and
+   * they never spend below the reserve.
+   */
+  orders: StandingOrder[] = []
+  reserveMode: ReserveMode = 'none'
+  /** Whose turn it is in the rotation. Simulation state — it goes in the hash. */
+  orderCursor = 0
+
+  /**
+   * Adds or removes the order for this unit in this file.
+   *
+   * Toggling rather than a separate add and remove because the card in the bar
+   * is the control: it is either standing an order in the file you have
+   * selected or it is not, and clicking it again says so.
+   */
+  toggleOrder(unitId: string, lane: number): boolean {
+    const file = Math.max(0, Math.min(LANE_COUNT - 1, Math.round(lane)))
+    const id = baseIdFor(unitId)
+    const at = this.orders.findIndex(o => o.id === id && o.lane === file)
+    if (at >= 0) {
+      this.orders.splice(at, 1)
+      if (this.orderCursor > at) this.orderCursor -= 1
+      if (this.orders.length > 0) this.orderCursor %= this.orders.length
+      else this.orderCursor = 0
+      return true
+    }
+    if (this.orders.length >= ORDER_LIMIT) return false
+    this.orders.push({ id, lane: file })
+    return true
+  }
+
+  hasOrder(unitId: string, lane: number): boolean {
+    const id = baseIdFor(unitId)
+    return this.orders.some(o => o.id === id && o.lane === lane)
+  }
+
+  /** Which files this unit is currently ordered into, ascending. */
+  orderedLanes(unitId: string): number[] {
+    const id = baseIdFor(unitId)
+    return this.orders.filter(o => o.id === id).map(o => o.lane).sort((a, b) => a - b)
+  }
+
+  /** The gold figure the current reserve mode works out to right now. */
+  get reserve(): number {
+    if (this.reserveMode === 'age') return this.age >= MAX_AGE ? 0 : this.ageDefinition.evolveCost
+    if (this.reserveMode === 'elite') {
+      let best = 0
+      for (const def of this.roster) if (def.cost > best) best = def.cost
+      return best
+    }
+    return 0
+  }
+
+  /**
+   * Tops the build slots up from the standing orders.
+   *
+   * Fills only as far as `buildSlots` rather than the whole queue: the point is
+   * to keep the yard busy, not to bury a commander's own next click behind six
+   * automatic ones. A slot that a hand-placed build is already using is a slot
+   * an order does not touch.
+   */
+  private fillFromOrders(): void {
+    const n = this.orders.length
+    if (n === 0) return
+    // Bounded twice over: the queue can only grow to `buildSlots`, and every
+    // order gets at most one look per unit added.
+    for (let tried = 0, cap = 0; tried < n && cap < n * QUEUE_LIMIT; tried += 1, cap += 1) {
+      if (this.queue.length >= this.buildSlots) return
+      const order = this.orders[this.orderCursor]
+      this.orderCursor = (this.orderCursor + 1) % n
+      const base = ALL_UNITS_BY_ID[baseIdFor(order.id)]
+      if (!base) continue
+      const def = morphedDef(base, this.techs)
+      if (this.gold - def.cost < this.reserve) continue
+      // An order that goes through resets the patience: the next sweep may
+      // fill the slot after it in the same tick.
+      if (this.enqueue(order.id, order.lane)) tried = -1
+    }
+  }
+
   queueFull(): boolean {
     return this.queue.length >= QUEUE_LIMIT
   }
@@ -536,6 +642,10 @@ export default class Army {
     } else {
       this.autoSpawnTimer = 0
     }
+
+    // Standing orders top up AFTER the queue has been advanced and drained, so
+    // a slot that came free this tick is refilled on this tick.
+    this.fillFromOrders()
 
     return { ready, income: whole, autoSpawn }
   }

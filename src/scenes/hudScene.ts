@@ -14,6 +14,9 @@ import TechTree from '../ui/techTree'
 import { Bar, Button, Modal, Tooltip, formatNumber, formatTime, hex, label, panel } from '../ui/widgets'
 import BattleScene from './battleScene'
 
+/** The keys that pick each file, used to label a standing order at a glance. */
+const LANE_LETTERS = ['Z', 'X', 'C', 'V', 'B']
+
 const BAR_Y = 600
 const CARD_Y = 612
 const CARD_W = 72
@@ -39,13 +42,14 @@ export default class HUDScene extends Phaser.Scene {
   private enemyHpBar!: Bar
   private enemyXpBar!: Bar
 
-  private unitCards: { button: Button; def: UnitDef }[] = []
+  private unitCards: { button: Button; def: UnitDef; badge: Phaser.GameObjects.Text }[] = []
   private laneRows: { box: Phaser.GameObjects.Rectangle; mine: Phaser.GameObjects.Text; theirs: Phaser.GameObjects.Text }[] = []
   private turretButtons: Button[] = []
   private bannerPips: Phaser.GameObjects.Rectangle[] = []
   private evolveButton!: Button
   private abilityButton!: Button
   private economyButton!: Button
+  private reserveButton!: Button
   private researchText!: Phaser.GameObjects.Text
   private techButton!: Button
   private techTree?: TechTree
@@ -253,6 +257,20 @@ export default class HUDScene extends Phaser.Scene {
     })
     this.economyButton.setDepth(2)
 
+    // What the standing orders refuse to spend. It sits over the build queue
+    // rather than in the action row because it is a rule about the queue, and
+    // because the action row is full.
+    this.reserveButton = new Button(this, 306, 556, {
+      width: 210,
+      height: 40,
+      text: 'SPEND ALL',
+      subtext: 'no standing orders',
+      fontSize: 13,
+      accent: UI.textDim,
+      onClick: () => this.battle.cycleReserve()
+    })
+    this.reserveButton.setDepth(2)
+
     this.evolveButton = new Button(this, 1128, CARD_Y, {
       width: 70,
       height: CARD_H,
@@ -280,7 +298,10 @@ export default class HUDScene extends Phaser.Scene {
 
   /** Rebuilds the unit cards after an age change. */
   private rebuildRoster(): void {
-    this.unitCards.forEach(c => c.button.destroy())
+    this.unitCards.forEach(c => {
+      c.button.destroy()
+      c.badge.destroy()
+    })
     this.unitCards = []
 
     const army = this.battle.localArmy
@@ -297,11 +318,25 @@ export default class HUDScene extends Phaser.Scene {
         accent: ROLE_COLORS[def.role] ?? UI.panelEdge,
         corner: `${i + 1}`,
         onClick: () => this.battle.queueByIndex(i),
+        // Right-click, or hold on a touch screen: stand this card as an order
+        // in the file you have selected.
+        onAltClick: () => this.battle.toggleOrderByIndex(i),
         onHover: () => this.showUnitTooltip(def, 10 + i * (CARD_W + 4)),
         onOut: () => this.tooltip.hide()
       })
       button.setDepth(2)
-      this.unitCards.push({ button, def })
+      // The files this card is standing an order in, written across the top of
+      // it. A commander reads the battle plan off the bar rather than off a
+      // separate panel — the plan IS the bar.
+      const badge = label(this, 10 + i * (CARD_W + 4) + CARD_W - 6, CARD_Y + 4, '', {
+        size: 11,
+        bold: true,
+        color: UI.good,
+        align: 'right'
+      })
+        .setDepth(4)
+        .setVisible(false)
+      this.unitCards.push({ button, def, badge })
     })
     this.lastAge = army.age
     this.lastRosterKey = roster.map(d => d.id).join(',')
@@ -695,10 +730,15 @@ export default class HUDScene extends Phaser.Scene {
 
   private updateUnitCards(): void {
     const army = this.battle.localArmy
-    for (const { button, def } of this.unitCards) {
+    for (const { button, def, badge } of this.unitCards) {
       const blocked = army.blockReason(def)
       button.setEnabled(blocked === null)
       button.setSubtext(`${def.cost}`, army.gold >= def.cost ? UI.gold : UI.bad)
+      // Which files this card is standing an order in — the initials of the
+      // lane keys, so the badge and the keyboard agree.
+      const lanes = army.orderedLanes(def.id)
+      badge.setVisible(lanes.length > 0)
+      if (lanes.length > 0) badge.setText('\u21bb' + lanes.map(l => LANE_LETTERS[l]).join(''))
     }
   }
 
@@ -775,6 +815,25 @@ export default class HUDScene extends Phaser.Scene {
     const plots = this.battle.battlefield.activeSeat(this.battle.localFaction).plots
     const up = plots.filter(p => p.alive).length
     const hurt = plots.some(p => p.def && !p.alive)
+    // The reserve, and what it currently works out to in gold.
+    const RESERVE_TEXT: Record<string, [string, string]> = {
+      none: ['SPEND ALL', 'nothing held back'],
+      age: ['HOLD: AGE', 'keeps the age-up'],
+      elite: ['HOLD: ELITE', 'keeps the dearest']
+    }
+    const [rText, rSub] = RESERVE_TEXT[army.reserveMode]
+    const held = army.reserve
+    const plan = army.orders.length
+    // formatNumber abbreviates, so "27420g" comes back "27.4k" — writing the
+    // unit straight after it read as kilograms.
+    const holding = held > 0 ? `${formatNumber(held)} gold held` : rSub
+    this.reserveButton
+      .setText(rText)
+      .setSubtext(plan > 0 ? `${plan} order${plan === 1 ? '' : 's'} · ${holding}` : 'no standing orders',
+        plan === 0 ? UI.textDim : held > 0 ? UI.gold : UI.good)
+      .setAccent(army.reserveMode === 'none' ? UI.textDim : UI.gold)
+      .setMuted(plan === 0)
+
     this.economyButton
       .setText('BASE')
       .setSubtext(`${up}/${plots.length} plots`, hurt ? UI.bad : up === plots.length ? UI.good : UI.gold)

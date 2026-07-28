@@ -52,6 +52,19 @@ export const LANE_MID = 2
 /** The research direction an army has leant into, or null while undecided. */
 export type TechBranchLean = 'carnage' | 'ordnance' | 'engineering' | 'occult' | 'blight' | null
 
+/**
+ * What a standing order refuses to spend.
+ *
+ * Not a number, because a number that means anything in the stone age means
+ * nothing in the last one. These are the two things a commander actually saves
+ * FOR, and both re-price themselves as the war moves:
+ *
+ *  - `none`  — orders spend down to the last coin.
+ *  - `age`   — never spend below what the next age costs.
+ *  - `elite` — never spend below the dearest thing on your own bar.
+ */
+export type ReserveMode = 'none' | 'age' | 'elite'
+
 /** A minimal 2D vector used throughout the simulation. */
 export interface Vec2 {
   x: number

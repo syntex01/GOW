@@ -71,6 +71,12 @@ export function applyCommand(bf: Battlefield, faction: Faction, command: Command
     case 'fortify':
       bf.buyTrack(faction, command.track)
       break
+    case 'order':
+      army.toggleOrder(command.id, command.lane)
+      break
+    case 'reserve':
+      army.reserveMode = command.mode
+      break
   }
 }
 

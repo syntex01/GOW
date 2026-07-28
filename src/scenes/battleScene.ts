@@ -23,10 +23,11 @@ import LockstepDriver, { applyCommand } from '../net/lockstep'
 import type { PeerState } from '../net/peer'
 import { TICK_SUBSTEPS, type Command, type NetMessage } from '../net/protocol'
 import AiController, { AI_PROFILES } from '../sim/ai'
+import { ORDER_LIMIT } from '../sim/army'
 import type Army from '../sim/army'
 import type Base from '../sim/base'
 import Battlefield from '../sim/battlefield'
-import { LANE_Y, OPPOSITE, type Faction } from '../sim/types'
+import { LANE_Y, OPPOSITE, type Faction, type ReserveMode } from '../sim/types'
 import { rng as cosmeticRng } from '../core/rng'
 
 /**
@@ -495,6 +496,7 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-SPACE', () => this.tryAbility())
     keyboard.on('keydown-U', () => gameEvents.emit('hud:base', undefined))
     keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
+    keyboard.on('keydown-G', () => this.cycleReserve())
     // The black box, on demand: F9 downloads this session's debug log.
     keyboard.on('keydown-F9', () => gameLog.download())
     // The whole of placement: pick the file the next piece will walk.
@@ -511,7 +513,12 @@ export default class BattleScene extends Phaser.Scene {
     })
 
     for (let i = 1; i <= DIGIT_KEYS.length; i += 1) {
-      keyboard.on(`keydown-${DIGIT_KEYS[i - 1]}`, () => this.queueByIndex(i - 1))
+      // Shift stands the card as an order instead of buying one of it, so the
+      // battle plan is reachable without ever leaving the keyboard.
+      keyboard.on(`keydown-${DIGIT_KEYS[i - 1]}`, (event: KeyboardEvent) => {
+        if (event.shiftKey) this.toggleOrderByIndex(i - 1)
+        else this.queueByIndex(i - 1)
+      })
     }
 
     // The camera belongs to the player, full stop. Drag to pan (the world
@@ -600,6 +607,42 @@ export default class BattleScene extends Phaser.Scene {
       return
     }
     this.dispatch({ t: 'unit', id: def.id, lane: this.localLane })
+    audio.play('ui_click', 0.4)
+  }
+
+  /**
+   * Stands (or lifts) an order for this card in the file currently selected.
+   *
+   * Deliberately the SELECTED file rather than a file picked in some separate
+   * dialogue: choosing a file is already the game's one placement decision and
+   * already has five keys bound to it, so an order is that same decision, held.
+   */
+  toggleOrderByIndex(index: number): void {
+    const army = this.localArmy
+    const def = army.roster[index]
+    if (!def) return
+    const lane = this.localLane
+    const standing = army.hasOrder(def.id, lane)
+    if (!standing && army.orders.length >= ORDER_LIMIT) {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message: `Battle plan is full (${ORDER_LIMIT} orders)`, tone: 'warn' })
+      return
+    }
+    this.dispatch({ t: 'order', id: def.id, lane })
+    audio.play('ui_click', 0.4)
+    gameEvents.emit('hud:flash', {
+      message: standing
+        ? `Standing down ${def.name} · ${LANE_NAMES[lane]}`
+        : `${def.name} on repeat · ${LANE_NAMES[lane]}`,
+      tone: standing ? 'warn' : 'good'
+    })
+  }
+
+  /** Cycles what the standing orders refuse to spend. */
+  cycleReserve(): void {
+    const order: ReserveMode[] = ['none', 'age', 'elite']
+    const next = order[(order.indexOf(this.localArmy.reserveMode) + 1) % order.length]
+    this.dispatch({ t: 'reserve', mode: next })
     audio.play('ui_click', 0.4)
   }
 
@@ -1097,6 +1140,9 @@ export default class BattleScene extends Phaser.Scene {
     this.vfx.destroy()
   }
 }
+
+/** How a file is named to the player, matching the lane strip in the HUD. */
+const LANE_NAMES = ['FAR', 'Z-MID', 'MID', 'MID-N', 'NEAR']
 
 const DIGIT_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
 

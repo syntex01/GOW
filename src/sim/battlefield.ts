@@ -1107,6 +1107,10 @@ export default class Battlefield {
       mix(army.research)
       // The Muster Yard produces on its own clock, so that clock is sim state.
       mix(Math.round(army.autoSpawnTimer))
+      // Standing orders enqueue units on their own, so both the plan and whose
+      // turn it is in the rotation decide what the field looks like.
+      mix(army.orderCursor)
+      for (const o of army.orders) mix(o.lane + 8)
       // Fortress tracks change wall health, gate width, siege ceiling and gun
       // rate — all sim, all divergent if the two peers disagree.
       mix(army.tracks.ramparts * 100 + army.tracks.barbican * 10 + army.tracks.cellars)
