@@ -14,9 +14,10 @@ import type { Faction } from '../sim/types'
  * field hygiene, quarry denial and thrall denial. v8 filled the matrix:
  * buried lines, scoured haunts, tithed growth, corpse-fed gardens and
  * smothered embers. v9 made thrown soldiers land badly (fall damage) and
- * repriced five nodes against measured value.
+ * repriced five nodes against measured value. v10 pays experience for damage
+ * dealt, so a bypass stalemate can no longer freeze both sides' ages.
  */
-export const PROTOCOL_VERSION = 9
+export const PROTOCOL_VERSION = 10
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

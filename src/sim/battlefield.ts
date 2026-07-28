@@ -185,6 +185,13 @@ const BANNER_ERAS: { at: number; lane: number; kind: BannerKind }[][] = [
   ]
 ]
 
+/**
+ * Experience paid per point of damage dealt. Calibrated against the roster:
+ * a Clubman has 260 hp and pays 26 experience when killed, so grinding one
+ * down is worth about a third of the kill, and the kill still pays in full.
+ */
+const XP_PER_DAMAGE = 0.03
+
 /** Creed colours for the banner rally pulse. */
 const BRANCH_FX_COLOR: Record<string, number> = {
   carnage: 0xd93b2b,
@@ -2637,6 +2644,21 @@ export default class Battlefield {
 
     if (attacker) this.statsFor(attacker.faction).damageDealt += amount
     this.statsFor(target.faction).damageTaken += amount
+
+    // WAR EXPERIENCE.
+    //
+    // Ages used to advance on KILLS alone. Two armies that walk past each
+    // other in different lanes and besiege opposite fortresses therefore
+    // killed nothing, learned nothing, and could never evolve — both sides
+    // frozen at the same age for as long as the bypass held, with a full
+    // treasury and an experience bar that would not move. Fighting itself
+    // now teaches: every blow landed on an enemy soldier or fortress pays
+    // experience, at roughly a third of what the finishing blow is worth, so
+    // killing remains what you actually want to do.
+    if (attacker && attacker.faction !== target.faction) {
+      const army = this.armyFor(attacker.faction)
+      army.xp += amount * XP_PER_DAMAGE * army.modifiers.bounty
+    }
 
     target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback)
 
