@@ -13,3 +13,7 @@
 /android/capacitor-cordova-android-plugins
 /android/local.properties
 /android/app/src/main/assets/public
+# The signing key and the signed APK stay out of the repo — a keystore in
+# version control is a keystore everybody has.
+/gow-release.jks
+/GOW-*.apk
