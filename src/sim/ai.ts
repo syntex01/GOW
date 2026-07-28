@@ -134,7 +134,15 @@ export default class AiController {
     // out-produce it simply by never pausing. Measured against a plain
     // reference build order, it lost every game at every setting.
     this.considerAbility()
-    if (!this.considerTech() && !this.considerEvolve() && !this.considerEconomy()) this.considerTurret()
+    // Developing the yard is spending SURPLUS, not taking a turn, so it does
+    // not queue behind the strategic decision. Behind it, the AI never built
+    // anything at all: research and ageing consumed nearly every reaction
+    // window, and since the Granary replaced the flat income upgrade that
+    // meant an AI commander was permanently poorer than any player who
+    // bothered to raise one. It is gated on a comfortable surplus instead, so
+    // it can never build itself out of an army it needed this second.
+    this.considerEconomy()
+    if (!this.considerTech() && !this.considerEvolve()) this.considerTurret()
     this.considerUnit()
 
     void army
@@ -230,6 +238,16 @@ export default class AiController {
       if (this.bf.buildOnPlot('enemy', i, plot.def.id)) return true
     }
 
+    // How much room it wants over the price, by how developed it already is.
+    // A commander under constant pressure never banks a surplus, so waiting for
+    // one meant the AI finished whole matches without raising a single
+    // building — the outworks were a player-only system in practice. The FIRST
+    // granary is treated the way a player treats it: something you buy as soon
+    // as you can afford it, because it pays for itself in about two minutes.
+    // Each one after that has to wait for more room.
+    const developed = seat.plots.filter(p => p.alive).length
+    const margin = developed === 0 ? 1.0 : developed === 1 ? 1.25 : 1.7
+
     // Then the ladder: raise what is missing, lift what is low. The order is
     // the order a commander cares about them in.
     const wishlist = ['granary', 'muster', 'forge', 'reliquary']
@@ -243,9 +261,7 @@ export default class AiController {
       const plot = seat.plots[target]
       const tier = plot.alive && plot.def ? plot.tier + 1 : 0
       if (tier >= def.tiers.length) continue
-      // Only spend from a comfortable surplus, so it never builds itself out
-      // of an army it needed this second.
-      if (army.gold < buildingCost(def, tier, army.age) * 1.9) continue
+      if (army.gold < buildingCost(def, tier, army.age) * margin) continue
       if (this.bf.buildOnPlot('enemy', target, id)) return true
     }
 
@@ -256,15 +272,20 @@ export default class AiController {
       if (this.bf.hasBuilding('enemy', def.id)) continue
       const empty = seat.plots.findIndex(p => p.empty && seat.accepts(p.plot, def))
       if (empty < 0) continue
-      if (army.gold < buildingCost(def, 0, army.age) * 1.7) continue
+      // Doctrine buildings are a bigger commitment and there is only ever one
+      // of each, so they wait for a little more room than the core four.
+      if (army.gold < buildingCost(def, 0, army.age) * 1.4) continue
       if (this.bf.buildOnPlot('enemy', empty, def.id)) return true
     }
 
-    // And stone, when it is being leaned on and has money to spare.
-    if (this.pressure > 0.2) {
+    // And stone, once it is actually being leaned on. The threshold is low
+    // deliberately: by the time a fortress is at 60% the game is usually
+    // decided, and a commander who only starts building walls then has left it
+    // far too late to matter.
+    if (this.pressure > 0.12) {
       for (const track of ['ramparts', 'cellars', 'barbican'] as const) {
         const cost = army.trackCost(track)
-        if (cost === null || army.gold < cost * 2.2) continue
+        if (cost === null || army.gold < cost * 1.15) continue
         if (this.bf.buyTrack('enemy', track)) return true
       }
     }
