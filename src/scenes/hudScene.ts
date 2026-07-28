@@ -609,7 +609,12 @@ export default class HUDScene extends Phaser.Scene {
     this.enemyHpBar.setValue(foeBase.hp / foeBase.maxHp)
     this.enemyHpBar.setColor(healthColor(foeBase.hp / foeBase.maxHp, theirs))
 
-    this.playerXpBar.setValue(player.age >= 4 ? 1 : player.xp / player.xpToAdvance)
+    // A full bar is a promise: hold back the last sliver until evolving is
+    // genuinely possible, so "the bar is full" and "the button works" can
+    // never disagree.
+    this.playerXpBar.setValue(
+      player.age >= 4 ? 1 : player.xp >= player.xpToAdvance ? 1 : Math.min(0.97, player.xp / player.xpToAdvance)
+    )
     this.enemyXpBar.setValue(enemy.age >= 4 ? 1 : enemy.xp / enemy.xpToAdvance)
 
     this.timerText.setText(formatTime(bf.elapsedMs))
@@ -668,10 +673,21 @@ export default class HUDScene extends Phaser.Scene {
     } else {
       const xpRatio = Math.min(1, army.xp / army.xpToAdvance)
       const ready = army.canEvolve
+      const xpFull = army.xp >= army.xpToAdvance
+      // FLOOR, never round: rounding showed "100% XP" from 99.5% up, so a
+      // button that was genuinely one experience point short claimed it was
+      // ready and then refused to work. And when experience IS full, the
+      // thing standing in the way is gold — so say gold.
+      const shown = xpFull ? 100 : Math.min(99, Math.floor(xpRatio * 100))
       this.evolveButton
         .setText('EVOLVE')
-        .setSubtext(ready ? `${army.evolveCost} gold` : `${Math.round(xpRatio * 100)}% XP`, ready ? UI.gold : UI.textDim)
-        .setEnabled(ready)
+        .setSubtext(
+          ready ? `${army.evolveCost} gold` : xpFull ? `needs ${formatNumber(army.evolveCost)}g` : `${shown}% XP`,
+          ready ? UI.gold : xpFull ? UI.warn : UI.textDim
+        )
+        // Always live: a click that cannot evolve still explains itself.
+        .setEnabled(true)
+        .setMuted(!ready)
         .setCooldown(1 - xpRatio)
       if (ready) this.evolveButton.setAccent(UI.good)
       else this.evolveButton.setAccent(UI.xp)
@@ -682,8 +698,12 @@ export default class HUDScene extends Phaser.Scene {
     const ready = army.abilityReady
     this.abilityButton
       .setText(ability.short)
-      .setSubtext(ready ? 'READY' : `${Math.round(army.abilityCharge * 100)}%`, ready ? UI.good : UI.textDim)
-      .setEnabled(ready)
+      .setSubtext(
+        ready ? 'READY' : `${Math.min(99, Math.floor(army.abilityCharge * 100))}%`,
+        ready ? UI.good : UI.textDim
+      )
+      .setEnabled(true)
+      .setMuted(!ready)
       .setCooldown(1 - army.abilityCharge)
       .setAccent(ready ? UI.good : UI.accent)
 

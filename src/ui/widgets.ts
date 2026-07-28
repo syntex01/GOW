@@ -86,6 +86,7 @@ export class Button {
   private overlay: Phaser.GameObjects.Rectangle
   private cooldownMask: Phaser.GameObjects.Rectangle
   private enabled = true
+  private muted = false
   private hovered = false
 
   constructor(scene: Phaser.Scene, x: number, y: number, options: ButtonOptions) {
@@ -188,6 +189,27 @@ export class Button {
     this.iconObj?.setAlpha(alpha)
     this.textObj?.setAlpha(value ? 1 : 0.6)
     this.subObj?.setAlpha(value ? 1 : 0.6)
+    return this
+  }
+
+  /**
+   * Dims a button without deadening it.
+   *
+   * A disabled button eats its own click, so the handler never gets to say
+   * WHY it will not work — the player is left staring at a grey rectangle.
+   * Muting keeps the "not yet" look and still lets the click through, so the
+   * action can explain itself.
+   */
+  setMuted(value: boolean): this {
+    if (!this.live) return this
+    if (this.muted === value) return this
+    this.muted = value
+    const alpha = value ? 0.55 : 1
+    this.bg.setAlpha(alpha)
+    this.accentBar.setAlpha(alpha)
+    this.iconObj?.setAlpha(alpha)
+    this.textObj?.setAlpha(value ? 0.72 : 1)
+    this.subObj?.setAlpha(value ? 0.72 : 1)
     return this
   }
 
