@@ -22,6 +22,7 @@ import {
   BUILDINGS_BY_ID,
   REBUILD_FRACTION,
   SEAT_PLOTS,
+  MUSTER_ADVANCE,
   SEAT_STEP,
   buildingCost
 } from '../data/buildings'
@@ -295,6 +296,13 @@ export default class Battlefield {
   readonly props: { x: number; lane: number; kind: PropKind; hp: number; maxHp: number; radius: number; blockH: number; alive: boolean; diedAt: number }[] = []
   /** A prop changed (took damage or fell); the scene should repaint it. */
   onPropChanged?: (index: number) => void
+  /**
+   * Fired when new scenery is dealt onto ground that has just opened up. The
+   * board gains props mid-match now — every age-up dresses the strip it just
+   * exposed — so the view has to be able to grow its sprite list, not only
+   * repaint the sprites it was given at construction.
+   */
+  onPropsAdded?: () => void
 
   /**
    * Every seat a commander has ever held, oldest first. The last one is the
@@ -393,7 +401,8 @@ export default class Battlefield {
     this.player = new Army('player', config.startingGold, playerMods)
     this.enemy = new Army('enemy', config.startingGold, enemyMods)
     this.enemy.age = Math.max(0, Math.min(4, config.enemyStartAge ?? 0))
-    this.relayoutBanners()
+    // Banners are laid out AFTER the seats exist: their span is measured from
+    // the two commanders' positions, and at construction time there are none.
 
     // The physics world is created below; the unit world holds the same one.
     this.world = {
@@ -420,6 +429,8 @@ export default class Battlefield {
     const margin = 150 + SEAT_STEP * (AGES.length - 1)
     this.foundSeat('player', this.player.age, margin, playerMods.baseHp)
     this.foundSeat('enemy', this.enemy.age, config.worldWidth - margin, enemyMods.baseHp)
+
+    this.relayoutBanners()
 
     this.playerBase.onTurretFire = this.handleTurretFire
     this.enemyBase.onTurretFire = this.handleTurretFire
@@ -454,47 +465,13 @@ export default class Battlefield {
     // things that belong together: a copse, a wrecked camp, a spill of rock off
     // a ridge. So the board is dealt as a few SITES instead, each with a theme,
     // its members sharing a patch of ground and neighbouring lanes.
-    const SITES: { kinds: PropKind[]; min: number; max: number }[] = [
-      // A stand of trees with a boulder that the trees grew around.
-      { kinds: ['tree', 'tree', 'tree', 'boulder'], min: 3, max: 4 },
-      // Somebody stopped here, and did not leave.
-      { kinds: ['cart', 'well', 'cart', 'tree'], min: 2, max: 4 },
-      // Rock that came down off the high ground and stayed.
-      { kinds: ['boulder', 'boulder', 'cart'], min: 2, max: 3 },
-      // A waypoint: water, shade, and the cart that was heading for both.
-      { kinds: ['well', 'tree', 'cart'], min: 2, max: 3 }
-    ]
-    const siteCount = 3 + this.rng.int(0, 1)
-    for (let s = 0; s < siteCount; s += 1) {
-      const site = SITES[this.rng.int(0, SITES.length - 1)]
-      // Sites are spread across the middle of the board in their own slices, so
-      // two of them can never land on top of each other and read as one mess.
-      const slice = (0.76 - 0.24) / siteCount
-      const centreX = config.worldWidth * (0.24 + slice * (s + 0.5) + (this.rng.next() - 0.5) * slice * 0.5)
-      const centreLane = this.rng.int(0, LANE_COUNT - 1)
-      const members = site.min + this.rng.int(0, site.max - site.min)
-      for (let i = 0; i < members; i += 1) {
-        const kind = site.kinds[this.rng.int(0, site.kinds.length - 1)]
-        const spec = PROP_SPECS[kind]
-        // Fanned out from the centre rather than piled on it, and drifting a
-        // lane either way so a site has depth instead of standing in a row.
-        // The step itself varies, because evenly spaced trees read as a fence.
-        const step = 34 + this.rng.next() * 30
-        const x = centreX + (i - (members - 1) / 2) * step + (this.rng.next() - 0.5) * 20
-        const lane = Math.max(0, Math.min(LANE_COUNT - 1, centreLane + this.rng.int(-1, 1)))
-        this.props.push({
-          x,
-          lane,
-          kind,
-          hp: spec.hp,
-          maxHp: spec.hp,
-          radius: spec.radius,
-          blockH: spec.blockH,
-          alive: true,
-          diedAt: 0
-        })
-      }
-    }
+    // Dealt across the OPENING FIELD, not across the world. The world is now
+    // sized for the deepest seat either side will ever retire to, so most of it
+    // is ground nobody stands on until somebody has aged up four times; sites
+    // spread over `worldWidth` put half the board's scenery behind the players'
+    // own gates where it is never seen and never fought over.
+    const openSpan = this.backEdge - this.frontEdge
+    this.dealSites(this.frontEdge + openSpan * 0.24, this.backEdge - openSpan * 0.24, 3 + this.rng.int(0, 1))
 
     this.physics = new PhysicsWorld(config.groundY, config.worldWidth, this.rng, {
       onStain: (body, x, y, speed, onWall) => this.handleStain(body, x, y, speed, onWall),
@@ -1188,7 +1165,11 @@ export default class Battlefield {
     const old = this.banners.slice()
     this.banners.length = 0
     for (const spec of BANNER_ERAS[era]) {
-      const x = this.config.worldWidth * spec.at
+      // Spread across the ground actually in play. Using the whole allocated
+      // world would put half the flags in the dead space behind a commander
+      // before they had ever aged up.
+      const span = this.backEdge - this.frontEdge
+      const x = this.frontEdge + span * spec.at
       // A flag already flying near this spot keeps its allegiance across the
       // age — armies do not forget who holds a hill just because the war grew.
       let hold = 0
@@ -1731,7 +1712,40 @@ export default class Battlefield {
 
   /** Which commander's half of the field a point lies on. */
   halfOwner(x: number): Faction {
-    return x < this.config.worldWidth / 2 ? 'player' : 'enemy'
+    return x < this.midfield ? 'player' : 'enemy'
+  }
+
+  /**
+   * The live board, which is not the allocated world.
+   *
+   * The world is sized once for two fully-receded commanders, but at the first
+   * age most of it is empty ground nobody will ever walk on. Everything that
+   * asks "where is the middle" or "how far can the camera go" has to ask THIS,
+   * or the early game is a tiny fight adrift in a huge empty map.
+   */
+  get frontEdge(): number {
+    return this.activeSeat('player').x
+  }
+
+  get backEdge(): number {
+    return this.activeSeat('enemy').x
+  }
+
+  /** Halfway between the two commanders as they stand now. */
+  get midfield(): number {
+    return (this.frontEdge + this.backEdge) / 2
+  }
+
+  /**
+   * Where a commander's soldiers form up: ahead of the gate by half the ground
+   * that gate has retreated over. See `MUSTER_ADVANCE` — this is what keeps
+   * receding from being a movement tax on every unit you will ever buy.
+   */
+  musterX(faction: Faction): number {
+    const seat = this.activeSeat(faction)
+    const dir = ADVANCE_DIR[faction]
+    const receded = SEAT_STEP * seat.generation * MUSTER_ADVANCE
+    return seat.base.x + dir * (seat.base.radius + 30 + receded)
   }
 
   /** How far in front of a fortress its supply yard reaches. */
@@ -1768,6 +1782,65 @@ export default class Battlefield {
       pop <= 0 ? 0 : Math.min(Battlefield.SIEGE_MAX, pop * Battlefield.SIEGE_PER_POP)
     this.player.siege = cut(onPlayer)
     this.enemy.siege = cut(onEnemy)
+  }
+
+  /**
+   * Deals themed sites of scenery across a stretch of ground.
+   *
+   * Landscape is not confetti. Props used to be dealt one at a time, each with
+   * an independent random x, lane and kind, which is exactly how you get a lone
+   * tree, a lone well and a lone cart standing apart with no reason to be where
+   * they are. Ground that reads as a PLACE has things that belong together: a
+   * copse, a wrecked camp, a spill of rock off a ridge. So ground is dealt as
+   * SITES, each with a theme, its members sharing a patch and neighbouring
+   * lanes.
+   *
+   * Taken from `this.rng`, so it is identical on both peers whether it happens
+   * at match start or halfway through an age-up.
+   */
+  private dealSites(fromX: number, toX: number, count: number): void {
+    const SITES: { kinds: PropKind[]; min: number; max: number }[] = [
+      // A stand of trees with a boulder that the trees grew around.
+      { kinds: ['tree', 'tree', 'tree', 'boulder'], min: 3, max: 4 },
+      // Somebody stopped here, and did not leave.
+      { kinds: ['cart', 'well', 'cart', 'tree'], min: 2, max: 4 },
+      // Rock that came down off the high ground and stayed.
+      { kinds: ['boulder', 'boulder', 'cart'], min: 2, max: 3 },
+      // A waypoint: water, shade, and the cart that was heading for both.
+      { kinds: ['well', 'tree', 'cart'], min: 2, max: 3 }
+    ]
+    if (count <= 0 || toX <= fromX) return
+    const slice = (toX - fromX) / count
+    for (let s = 0; s < count; s += 1) {
+      const site = SITES[this.rng.int(0, SITES.length - 1)]
+      // Each site gets its own slice, so two of them can never land on top of
+      // each other and read as one mess.
+      const centreX = fromX + slice * (s + 0.5) + (this.rng.next() - 0.5) * slice * 0.5
+      const centreLane = this.rng.int(0, LANE_COUNT - 1)
+      const members = site.min + this.rng.int(0, site.max - site.min)
+      for (let i = 0; i < members; i += 1) {
+        const kind = site.kinds[this.rng.int(0, site.kinds.length - 1)]
+        const spec = PROP_SPECS[kind]
+        // Fanned out from the centre rather than piled on it, and drifting a
+        // lane either way so a site has depth instead of standing in a row.
+        // The step itself varies, because evenly spaced trees read as a fence.
+        const step = 34 + this.rng.next() * 30
+        const x = centreX + (i - (members - 1) / 2) * step + (this.rng.next() - 0.5) * 20
+        const lane = Math.max(0, Math.min(LANE_COUNT - 1, centreLane + this.rng.int(-1, 1)))
+        this.props.push({
+          x,
+          lane,
+          kind,
+          hp: spec.hp,
+          maxHp: spec.hp,
+          radius: spec.radius,
+          blockH: spec.blockH,
+          alive: true,
+          diedAt: 0
+        })
+      }
+    }
+    this.onPropsAdded?.()
   }
 
   /**
@@ -2407,9 +2480,7 @@ export default class Battlefield {
     // Doctrine morphs derive defs at runtime, so the sprite for this one may
     // not have been drawn yet. Cosmetic only — it cannot move the hash.
     ensureUnitArt(this.scene, def)
-    const base = this.baseFor(faction)
-    const dir = ADVANCE_DIR[faction]
-    const spawnX = atX ?? base.x + dir * (base.radius + 30)
+    const spawnX = atX ?? this.musterX(faction)
 
     const unit = new Unit(this.scene, def, faction, spawnX, this.world, this.rng.spread(26), lane)
     const army = this.armyFor(faction)
@@ -3198,6 +3269,15 @@ export default class Battlefield {
     )
     const base = seat.base
     void def
+    // The strip between the new seat and the one it supersedes has just become
+    // contested ground — it was behind your own gate a second ago and nobody
+    // will ever fight over it again if it stays a bare plain. Dress the part of
+    // it that is not already covered by one establishment or the other, so the
+    // board gains scenery at the same rate it gains length.
+    const inner = 170
+    const gapFrom = Math.min(seat.x, old.x) + inner
+    const gapTo = Math.max(seat.x, old.x) - inner
+    this.dealSites(gapFrom, gapTo, 1)
     this.statsFor(faction).agesReached = army.age + 1
     audio.play('evolve', 0.8)
     this.vfx.flash(0xffffff, 320, 0.5)

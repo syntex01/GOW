@@ -24,7 +24,7 @@ import type { Faction } from '../sim/types'
  * plots that can be built on and burned, and a new seat founded further back
  * on every age-up which leaves the last one standing and derelict.
  */
-export const PROTOCOL_VERSION = 13
+export const PROTOCOL_VERSION = 14
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

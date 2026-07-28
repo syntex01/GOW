@@ -61,6 +61,7 @@ export default class TerrainLayer {
       this.propSprites.push(img)
     }
     bf.onPropChanged = index => this.refreshProp(index)
+    bf.onPropsAdded = () => this.syncProps()
 
     // The outworks. Every plot gets a sprite up front — most are empty, which
     // costs nothing but means a building appearing is a texture swap rather
@@ -268,6 +269,24 @@ export default class TerrainLayer {
       for (let x = 36 - w; x <= 36 + w; x += 1) if (x < 48) boulderDead.set(x, y, x < 36 ? rock[2] : rock[1])
     }
     add('prop:boulder:dead', boulderDead)
+  }
+
+  /**
+   * Gives a sprite to every prop that does not have one yet.
+   *
+   * The board is no longer dealt once: an age-up opens a strip of ground behind
+   * the old seat and dresses it, so `bf.props` grows during the match. Only the
+   * tail is built, so this stays cheap however often it is called.
+   */
+  private syncProps(): void {
+    for (let i = this.propSprites.length; i < this.bf.props.length; i += 1) {
+      const prop = this.bf.props[i]
+      const img = this.scene.add
+        .image(prop.x, this.groundY + LANE_Y[prop.lane] + 3, `prop:${prop.kind}`)
+        .setOrigin(0.5, 1)
+        .setDepth(120 + (LANE_Y[prop.lane] + 68) * 0.08 - 0.01)
+      this.propSprites.push(img)
+    }
   }
 
   private refreshProp(index: number): void {

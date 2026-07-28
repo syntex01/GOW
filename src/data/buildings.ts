@@ -95,8 +95,41 @@ export const SEAT_GATE_LANES: ReadonlySet<number>[] = [
   new Set([0, 1, 2, 3, 4])
 ]
 
-/** How far back each new seat is founded, from the one before it. */
-export const SEAT_STEP = 92
+/**
+ * How far back each new seat is founded, and therefore how much the playfield
+ * grows every time somebody ages up.
+ *
+ * This is the mechanism, not a decoration. A step has to clear the WHOLE of the
+ * old establishment and then leave open ground behind it — the derelict town,
+ * its plots, and a stretch of nothing — or the two seats simply overlap into
+ * one sprawl and the war never gets any longer.
+ *
+ * A late seat measures about 284px from its rearmost plot (dx −104, half a
+ * 56px cell) to its forward one (dx +124, likewise). A step of 280 therefore
+ * put the establishments literally shoulder to shoulder: photographed at the
+ * last age they read as one continuous row of fortresses, which is the exact
+ * opposite of what a step is for. 460 clears the footprint and leaves ~176px
+ * of open ground between one capital and the next — enough that each reads as
+ * its own place, with a march between them.
+ */
+export const SEAT_STEP = 460
+
+/**
+ * How much of the ground you have receded your soldiers make up again before
+ * they start walking, as a fraction of it.
+ *
+ * Without this, receding is a straight movement tax: age up and every soldier
+ * you buy for the rest of the match spawns 460px further from the fight, while
+ * an opponent who stayed put pays nothing. Ageing already costs you a stranded
+ * town; it should not also quietly cost you tempo on every single unit.
+ *
+ * At 0.5 the muster line advances half as fast as the capital retreats, so the
+ * CONTESTED field still grows every age — which is the whole point — while the
+ * other half of the new ground becomes what depth is supposed to be: layers
+ * behind your line, holding your derelict towns and their free garrisons, that
+ * an attacker has to chew through after breaking you rather than before.
+ */
+export const MUSTER_ADVANCE = 0.5
 
 /**
  * How often a superseded seat sends out a soldier, and how many of its own may

@@ -4,7 +4,8 @@ import { gameLog } from '../core/log'
 import { gameEvents } from '../core/events'
 import { ACHIEVEMENTS, save } from '../core/save'
 import { session } from '../core/session'
-import { ageDef } from '../data/ages'
+import { AGES, ageDef } from '../data/ages'
+import { SEAT_STEP } from '../data/buildings'
 import { FACTIONS_BY_ID } from '../data/factions'
 import { TECHS_BY_ID, type TechId } from '../data/tech'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
@@ -26,7 +27,25 @@ import Battlefield from '../sim/battlefield'
 import { LANE_Y, OPPOSITE, type Faction } from '../sim/types'
 import { rng as cosmeticRng } from '../core/rng'
 
-export const WORLD_WIDTH = 2400
+/**
+ * The board, sized for the war it will become rather than the one it starts as.
+ *
+ * Every age-up founds a seat SEAT_STEP further back, so the ground between two
+ * commanders grows by that much on each side — the playfield IS the age track.
+ * The whole extent is allocated once, up front, because a terrain array that
+ * resized mid-match would have to be re-hashed and would fork a networked game;
+ * the CAMERA is what is bounded to the part of it that is currently in use.
+ *
+ * Two commanders at the first age stand INITIAL_FIELD apart. Two who have both
+ * reached the last age stand INITIAL_FIELD + 2 × MAX_RECEDE apart — a little
+ * over twice as far, with four derelict establishments strung out between them.
+ */
+const SEAT_MARGIN = 150
+const INITIAL_FIELD = 2100
+export const MAX_RECEDE = SEAT_STEP * (AGES.length - 1)
+/** Where a commander's FIRST seat stands. Everything recedes from here. */
+export const FIRST_SEAT_X = SEAT_MARGIN + MAX_RECEDE
+export const WORLD_WIDTH = INITIAL_FIELD + 2 * FIRST_SEAT_X
 export const GROUND_Y = 520
 export const AIR_Y = 240
 /** Slight zoom so soldiers read clearly without shrinking the battlefield. */
@@ -110,7 +129,10 @@ export default class BattleScene extends Phaser.Scene {
     this.resetSceneState()
     const cam = this.cameras.main
     cam.fadeIn(320, 0, 0, 0)
+    // The camera is bounded to the ground in play, which grows as the war does.
+    // `refreshCameraBounds` is called again whenever a seat is founded.
     cam.setBounds(0, 0, WORLD_WIDTH, cam.height)
+    cam.setScroll(this.localFaction === 'player' ? 0 : WORLD_WIDTH, CAMERA_SCROLL_Y)
     cam.setZoom(CAMERA_ZOOM)
 
     this.lighting = new Lighting(this, 700, GROUND_Y - 138)
@@ -318,7 +340,7 @@ export default class BattleScene extends Phaser.Scene {
     // With no auto-follow, the opening frame is the one thing the scene sets:
     // each commander starts looking at their own fortress.
     if (this.localFaction === 'enemy') {
-      this.cameras.main.setScroll(WORLD_WIDTH - this.cameras.main.width / CAMERA_ZOOM, CAMERA_SCROLL_Y)
+      this.cameras.main.setScroll(this.cameraLimit() - this.cameras.main.width / CAMERA_ZOOM, CAMERA_SCROLL_Y)
     }
     const peer = session.peer ?? undefined
 
@@ -527,11 +549,25 @@ export default class BattleScene extends Phaser.Scene {
     ]
   }
 
+  /**
+   * The right-hand edge the camera may reach: a little past the far commander,
+   * never out into the ground that has not been receded into yet.
+   */
+  private cameraLimit(): number {
+    const bf = this.battlefield
+    return Math.min(WORLD_WIDTH, bf.backEdge + 320)
+  }
+
+  /** The left-hand edge, likewise. */
+  private cameraFloor(): number {
+    return Math.max(0, this.battlefield.frontEdge - 320)
+  }
+
   /** Moves the camera by a delta, pinned to the board. One clamp, one place. */
   private panCamera(dx: number): void {
     const cam = this.cameras.main
-    const max = Math.max(0, WORLD_WIDTH - cam.width / CAMERA_ZOOM)
-    cam.setScroll(Math.round(Phaser.Math.Clamp(cam.scrollX + dx, 0, max)), CAMERA_SCROLL_Y)
+    const max = Math.max(0, this.cameraLimit() - cam.width / CAMERA_ZOOM)
+    cam.setScroll(Math.round(Phaser.Math.Clamp(cam.scrollX + dx, this.cameraFloor(), max)), CAMERA_SCROLL_Y)
   }
 
   private setLane(lane: number): void {
@@ -716,8 +752,13 @@ export default class BattleScene extends Phaser.Scene {
     for (const faction of ['player', 'enemy'] as Faction[]) {
       const lean = bf.leanOf(faction)
       if (!lean || lean === 'engineering') continue
-      const half = faction === 'player' ? 0 : WORLD_WIDTH / 2
-      const x = half + WORLD_WIDTH * 0.1 + cosmeticRng.next() * WORLD_WIDTH * 0.36
+      // Over the LIVE field, not the allocated world. The world is sized once
+      // for the deepest seat either side will ever retire to, so most of it is
+      // empty ground at age one — weather thrown across that reads as fog on a
+      // map nobody is standing on.
+      const halfSpan = (bf.backEdge - bf.frontEdge) / 2
+      const half = faction === 'player' ? bf.frontEdge : bf.midfield
+      const x = half + halfSpan * 0.08 + cosmeticRng.next() * halfSpan * 0.84
       const lane = cosmeticRng.int(0, LANE_Y.length - 1)
       const y = GROUND_Y + LANE_Y[lane] - 4 - cosmeticRng.next() * 12
       const marked =
@@ -763,7 +804,11 @@ export default class BattleScene extends Phaser.Scene {
       const bf = this.battlefield
       if (bf.elapsedMs - bf.lastViolenceMs > 12000) {
         const strength = [0.16, 0.09, 0.05, 0.02, 0.008][bf.era]
-        this.erosionX = (this.erosionX + 173) % WORLD_WIDTH
+        // Sweeps the live field, which grows as seats recede, rather than the
+        // whole allocated world — otherwise most passes scrub empty ground.
+        const span = Math.max(1, bf.backEdge - bf.frontEdge)
+        const walk = this.erosionX - bf.frontEdge + 173
+        this.erosionX = bf.frontEdge + ((walk % span) + span) % span
         this.splatter.erode(this.erosionX, 130, strength)
       }
     }
