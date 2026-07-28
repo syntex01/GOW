@@ -520,6 +520,26 @@ export function buildingCost(def: BuildingDef, tier: number, age: number): numbe
 }
 
 /**
+ * How much sturdier a structure raised in a later age is.
+ *
+ * Buildings were a flat table while soldiers ride the three curves in
+ * `data/curves.ts`, so an age-five raiding party walked up to a granary and had
+ * it down in under two seconds — the outworks stopped being objectives and
+ * became decoration the moment the war got serious.
+ *
+ * Structures grow more slowly than soldiers on purpose. A building should get
+ * harder to burn as the war escalates, but never so hard that a raid is
+ * pointless: bringing the right tool and paying tempo for it has to stay the
+ * winning play.
+ */
+export const BUILDING_HP_SCALE = [1, 1.9, 3.6, 6.8, 12.9] as const
+
+export function buildingHp(def: BuildingDef, tier: number, age: number): number {
+  const step = def.tiers[Math.max(0, Math.min(def.tiers.length - 1, tier))]
+  return Math.round(step.hp * BUILDING_HP_SCALE[Math.max(0, Math.min(4, age))])
+}
+
+/**
  * How much richer an age is than the first one. Everything a commander can
  * spend gold on is quoted against this, so a price means the same thing at
  * every point in a match.

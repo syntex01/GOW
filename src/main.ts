@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { gameLog } from './core/log'
 import type { Difficulty } from './core/save'
 import { session } from './core/session'
+import { AGES } from './data/ages'
 import { LEVELS_BY_ID, type GameMode } from './data/levels'
 import { morphedDef } from './data/morphs'
 import type { UnitDef } from './data/types'
@@ -72,6 +73,7 @@ function start(): void {
       name: string
       color: number
       tiers: number
+      ladder: { cost: number; hp: number; effect: string }[]
       kind: string
       faces: string[]
       requires?: string
@@ -89,7 +91,9 @@ function start(): void {
       requiresAny?: string[]
       excludes?: string[]
     }[]
+    __gowAges: { name: string; income: number; evolveCost: number; baseHp: number }[]
   }
+  debug.__gowAges = AGES.map(a => ({ name: a.name, income: a.income, evolveCost: a.evolveCost, baseHp: a.baseHp }))
   debug.__gowLog = gameLog
   debug.__gowTurrets = TURRETS.map(t => t.id)
   debug.__gowBuildings = ALL_BUILDINGS.map(b => ({
@@ -97,6 +101,9 @@ function start(): void {
     name: b.name,
     color: b.color,
     tiers: b.tiers.length,
+    // The ladder itself, not just its length: anything pricing a yard from
+    // outside the sim needs the base cost and health of each rung.
+    ladder: b.tiers.map(t => ({ cost: t.cost, hp: t.hp, effect: t.effect })),
     kind: b.kind,
     // faces and requires decide whether a plot will take a building at all, so
     // anything reasoning about the yard from outside needs them.

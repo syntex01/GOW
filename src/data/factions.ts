@@ -1,4 +1,5 @@
 import { creedColours } from './creedPalette'
+import { relayCurves } from './curves'
 import { AGE_POWER_SCALE } from './units'
 import type { UnitDef, UnitVisual } from './types'
 
@@ -1628,6 +1629,11 @@ for (const unit of FACTION_UNITS) {
   unit.hp = Math.round(unit.hp * k)
   unit.damage = Math.round(unit.damage * k)
 }
+
+// The creed rosters ride the same three curves as the neutral one. `relayCurves`
+// works off constants alone, so running it here and in units.ts gives every unit
+// the same answer regardless of which module a caller loaded first.
+relayCurves(FACTION_UNITS)
 
 /** The five units an ascended army fields. */
 export function factionRoster(id: FactionId): UnitDef[] {

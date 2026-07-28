@@ -117,6 +117,15 @@ export const GATE_LANES: ReadonlySet<number> = new Set([1, 2, 3])
 /** The two files a commander's outworks stand in. */
 export const FLANK_LANES: ReadonlySet<number> = new Set([0, 4])
 
+/**
+ * How many bodies a blast can catch at close to full strength before the ones
+ * in front start absorbing it for the ones behind. See `applySplash`.
+ */
+const SPLASH_SHIELDING = 9
+
+/** What share of a weapon's shove the blast carries, as against a direct hit. */
+const SPLASH_KNOCKBACK = 0.4
+
 /** How far back a rank still counts as pressing into the fight ahead of it. */
 const PRESS_REACH = 105
 /** Extra share of a blow contributed by each supporting rank. */
@@ -3503,7 +3512,9 @@ export default class Battlefield {
       ...this.liveBuildings('player'),
       ...this.liveBuildings('enemy')
     ]
-    for (const t of targets) {
+    const caught: { t: Damageable; dist: number; seq: number }[] = []
+    for (let seq = 0; seq < targets.length; seq += 1) {
+      const t = targets[seq]
       if (!t.alive || t.faction === faction) continue
       // A swung weapon sweeps the swinger's own file. Shells do not care.
       if (laneLock !== undefined && t instanceof Unit && t.layer === 'ground' && t.lane !== laneLock) continue
@@ -3511,11 +3522,43 @@ export default class Battlefield {
       const dy = t.y + t.centerOffsetY - y
       const dist = Math.sqrt(dx * dx + dy * dy) - t.radius
       if (dist > radius) continue
+      caught.push({ t, dist, seq })
+    }
+    // Nearest first. The crowd rule below reads this ordering, so it has to be
+    // total: ties fall back to position in `targets`, which both peers build in
+    // the same order from the same state.
+    caught.sort((a, b) => a.dist - b.dist || a.seq - b.seq)
+
+    // Only BODIES shield bodies. A wall or a granary caught in the blast is not
+    // a rank of soldiers standing in front of one — counting it would mean a
+    // mound of rubble quietly halved every shell that landed behind it, which
+    // is the opposite of what lobbed fire is for.
+    let rank = 0
+    for (let i = 0; i < caught.length; i += 1) {
+      const { t, dist } = caught[i]
+      const shielded = t instanceof Unit ? rank++ : 0
       const falloff = Phaser.Math.Clamp(1 - dist / radius, 0.32, 1)
+      // Bodies shield bodies.
+      //
+      // A blast used to hit everything inside its radius at full strength, and
+      // a radius of 110 over a rank standing eleven pixels apart is thirty
+      // soldiers. That one rule is why quantity could never trade against
+      // quality anywhere in this game: four elites deleted the entire engaged
+      // frontage of a swarm every volley, so a hundred and thirty line
+      // soldiers were measured landing nothing at all on four of them — and
+      // that held with the cost curves switched off, so it was never a pricing
+      // problem.
+      //
+      // Total damage delivered still grows with the size of the crowd, just
+      // logarithmically rather than linearly: a shell into a mob is worth more
+      // than a shell into open ground, and much less than thirty shells.
       this.applyDamage(attacker, t, {
         ...event,
-        amount: event.amount * falloff,
-        knockback: event.knockback * falloff
+        amount: (event.amount * falloff) / (1 + shielded / SPLASH_SHIELDING),
+        // And a shell that lands NEAR you throws you far less than one that
+        // lands on you — otherwise a single burst shoves an entire rank out of
+        // its own reach at once and the fight simply stops happening.
+        knockback: (event.knockback * falloff * SPLASH_KNOCKBACK) / (1 + shielded / SPLASH_SHIELDING)
       })
     }
 
@@ -3705,8 +3748,8 @@ export default class Battlefield {
     const cost = razed ? Math.round(full * REBUILD_FRACTION) : full
     if (army.gold < cost) return false
     army.gold -= cost
-    if (razed) plot.beginRebuild(def, tier, 1 + this.yardBonusLevel(faction, 'forge') * 0.25)
-    else plot.raise(def, tier)
+    if (razed) plot.beginRebuild(def, tier, 1 + this.yardBonusLevel(faction, 'forge') * 0.25, army.age)
+    else plot.raise(def, tier, army.age)
     this.refreshYard(faction)
     this.onSeatChanged?.(faction)
     return true

@@ -1,5 +1,5 @@
 import { rng } from '../core/rng'
-import { BUILDINGS_BY_ID, REBUILD_MS, type BuildingDef } from '../data/buildings'
+import { BUILDINGS_BY_ID, REBUILD_MS, buildingHp, type BuildingDef } from '../data/buildings'
 import type Vfx from '../gfx/vfx'
 import type { ArmorType, Damageable, DamageType, Faction, Layer } from './types'
 
@@ -28,6 +28,8 @@ export default class Building implements Damageable {
   y: number
   hp = 0
   maxHp = 0
+  /** The age this structure was raised in — what its health is measured against. */
+  builtInAge = 0
   alive = false
   radius = 34
   centerOffsetY = -34
@@ -44,7 +46,7 @@ export default class Building implements Damageable {
    */
   rebuildMs = 0
   /** What is being rebuilt, so the crew knows what to put back. */
-  private rebuilding: { def: BuildingDef; tier: number } | null = null
+  private rebuilding: { def: BuildingDef; tier: number; age: number } | null = null
 
   /** Set the frame it dies, so the scene can play the collapse once. */
   justRazed = false
@@ -79,10 +81,14 @@ export default class Building implements Damageable {
   }
 
   /** Raises something on bare ground, or lifts what is here by one tier. */
-  raise(def: BuildingDef, tier: number): void {
+  raise(def: BuildingDef, tier: number, age = 0): void {
     this.def = def
     this.tier = Math.max(0, Math.min(def.tiers.length - 1, tier))
-    this.maxHp = def.tiers[this.tier].hp
+    // The age a thing was RAISED in is what it is made of. A granary put up in
+    // the stone age does not get sturdier because its owner later learned to
+    // smelt — it gets replaced.
+    this.builtInAge = age
+    this.maxHp = buildingHp(def, this.tier, age)
     // Lifting a tier repairs as it reinforces, but does not fully heal — a
     // building shelled to a sliver cannot be made whole by paying for a roof.
     this.hp = this.hp > 0 ? Math.min(this.maxHp, this.hp + this.maxHp * 0.5) : this.maxHp
@@ -92,8 +98,8 @@ export default class Building implements Damageable {
   }
 
   /** Starts the crew. The plot stands empty until the timer runs out. */
-  beginRebuild(def: BuildingDef, tier: number, speed = 1): void {
-    this.rebuilding = { def, tier }
+  beginRebuild(def: BuildingDef, tier: number, speed = 1, age = 0): void {
+    this.rebuilding = { def, tier, age }
     this.rebuildMs = REBUILD_MS / Math.max(0.2, speed)
     this.def = null
     this.alive = false
@@ -105,9 +111,9 @@ export default class Building implements Damageable {
     if (this.rebuildMs > 0) {
       this.rebuildMs -= dtMs
       if (this.rebuildMs <= 0 && this.rebuilding) {
-        const { def, tier } = this.rebuilding
+        const { def, tier, age } = this.rebuilding
         this.hp = 0
-        this.raise(def, tier)
+        this.raise(def, tier, age)
       }
     }
   }

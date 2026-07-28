@@ -61,6 +61,13 @@ const PROJECTILE_LIGHT: Partial<Record<ProjectileId, { color: number; radius: nu
   cannonball: { color: 0xffc07a, radius: 34, intensity: 0.25 }
 }
 
+/**
+ * How steep a descent has to be to clear a burial mound: vertical speed as a
+ * multiple of horizontal. At 0.6 a bow or a mortar drops behind the crest and
+ * a musket ball does not.
+ */
+const MOUND_CLEAR_SLOPE = 0.6
+
 export default class Projectile {
   readonly faction: Faction
   readonly config: ProjectileConfig
@@ -238,7 +245,14 @@ export default class Projectile {
       return { hit: best, done: true }
     }
 
-    const wallRise = Math.abs(this.x - this.bornX) > 40 ? this.moundRise : 0
+    // A mound is cover against a FLAT trajectory, not against a plunging one:
+    // a shot coming down steeply drops behind the crest rather than into its
+    // face. Without this the rule was uniform, and "lobbed fire answers
+    // mounds" was a line in the design that the simulation did not honour —
+    // an archer measured 2127 damage over open ground against 304 over a wall
+    // of the dead, which is the same cover flat rifle fire gets.
+    const plunging = this.gravity > 0 && this.vy > Math.abs(this.vx) * MOUND_CLEAR_SLOPE
+    const wallRise = !plunging && Math.abs(this.x - this.bornX) > 40 ? this.moundRise : 0
     if (this.y >= this.groundY - wallRise) {
       this.y = this.groundY - wallRise
       this.detonate(true)

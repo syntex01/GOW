@@ -106,6 +106,32 @@ const HOLD_MS = 600
 const STAGGER_FLOOR = 60
 /** How fast knockback resistance bleeds off, in stacks per second. */
 const KNOCK_RECOVERY = 1.6
+/**
+ * The hardest a blow can throw a soldier, as a multiple of its own march.
+ *
+ * The diminishing-returns system below was built against massed LIGHT fire and
+ * is blind to a single heavy one: stacks bleed off at 1.6/s, so a gun that
+ * fires every 2.7 seconds always lands at zero stacks and always lands at full
+ * force. A Titan — reach 410 against a line soldier's 380, splash 110,
+ * knockback 520 — therefore launched the entire front rank backwards faster
+ * than it could walk, every volley, forever. Measured: a hundred and thirty
+ * seven line soldiers never landed a single shot on one.
+ *
+ * A range advantage plus a shove should not add up to being untouchable. A
+ * heavy blow still throws a light soldier — it may not throw one out of the
+ * war.
+ *
+ * Friction works out so that displacement is roughly the initial velocity in
+ * pixels, which makes this number readable: a single blow costs a soldier
+ * about three quarters of a second of marching. A weapon on a 2.7-second
+ * reload therefore takes back a third of what its target walks between
+ * volleys, so a rank that has closed STAYS closed — measured, the lead soldier
+ * used to be shoved from 98 pixels out to 452 over five seconds and never got
+ * back inside its own 380 of reach.
+ */
+const KNOCK_SPEED_CAP = 0.75
+/** What fraction of its march a staggered soldier keeps while closing. */
+const STAGGER_ADVANCE = 0.55
 
 let nextId = 1
 
@@ -754,7 +780,8 @@ export default class Unit implements Damageable {
       // not the damage, is what made long range with knockback strictly the
       // best thing to buy. Each shove now counts for less than the last, and
       // the stacks bleed off over about a second of not being hit.
-      const impulse = (knockback / Math.max(0.4, this.def.mass)) * 1.6 / (1 + this.knockStacks)
+      const raw = (knockback / Math.max(0.4, this.def.mass)) * 1.6 / (1 + this.knockStacks)
+      const impulse = Math.min(raw, Math.max(120, this.def.speed * KNOCK_SPEED_CAP))
       this.knockStacks = Math.min(6, this.knockStacks + 1)
       this.vx += -this.dir * impulse
       if (impulse > 150 && this.layer === 'ground') {
@@ -1110,10 +1137,18 @@ export default class Unit implements Damageable {
       if (!staggered) this.tryAttack(nearest, dtMs)
     } else {
       this.state = 'advance'
-      if (!staggered) {
-        if (this.overrun()) this.giveGround(dt)
-        else this.advance(dt, blockerX)
-      }
+      // A soldier being shot at from beyond its own reach does not stand there
+      // flinching — it puts its head down and runs at whatever is shooting it.
+      //
+      // Stagger stopping a unit from SHOOTING is the point of stagger. Stagger
+      // stopping it from CLOSING turns any reach edge over a splash weapon into
+      // an absolute lock, because the rank never covers the last thirty pixels:
+      // 137 line soldiers were measured landing zero hits on a single Titan
+      // that outranged them by 30. It still slows the charge, so a heavy blow
+      // reads as a heavy blow.
+      const pace = staggered ? dt * STAGGER_ADVANCE : dt
+      if (this.overrun()) this.giveGround(pace)
+      else this.advance(pace, blockerX)
     }
 
     this.handleBurst(dtMs)

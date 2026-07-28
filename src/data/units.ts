@@ -1,3 +1,4 @@
+import { relayCurves } from './curves'
 import type { UnitDef } from './types'
 
 /**
@@ -1445,6 +1446,11 @@ for (const unit of UNITS) {
 }
 
 export { AGE_POWER_SCALE }
+
+// And on top of that baseline, the three curves: line units flat and linear,
+// elites exponential in both directions, everything between interpolated. See
+// data/curves.ts for why the roster could not simply be re-authored by hand.
+relayCurves(UNITS)
 
 export const UNITS_BY_ID: Record<string, UnitDef> = Object.fromEntries(UNITS.map(u => [u.id, u]))
 
