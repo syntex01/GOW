@@ -68,6 +68,59 @@ function boards(p: Pix, x: number, y: number, w: number, h: number, r: Ramp, ste
  * `growth` runs 0–1 across the tiers and drives every "more of it" decision, so
  * a new tier never needs new art — it needs the same art, taller and heavier.
  */
+/**
+ * What is left on a plot after somebody has burned what stood there.
+ *
+ * A razed plot used to render as nothing at all, which meant the most
+ * significant thing that can happen to a commander's economy left no mark on
+ * the board — you could not tell a plot that had never been built on from one
+ * that had just cost its owner four thousand gold. Rubble is drawn in the
+ * building's OWN materials, so at a glance you can still tell what it was.
+ */
+export function drawRubble(def: BuildingDef, creed = 'none'): Canvas2D {
+  const p = new Pix(CELL, CELL)
+  const n = pixelNoise(def.id.length * 977 + 31)
+  const timberBase = CREED_TIMBER[creed] ?? CREED_TIMBER.none
+  const stone = ramp(mix(0x6e6a63, timberBase, 0.35), { contrast: 0.95 })
+  const dark = ramp(mix(timberBase, 0x14161c, 0.6), { contrast: 0.85 })
+  const trim = ramp(def.color, { contrast: 1.2 })
+  const ground = CELL - 3
+
+  // A low, uneven heap. Nothing stands more than a third of the height the
+  // building did, so a ruin never reads as a smaller building.
+  const w = 34
+  const x0 = Math.round((CELL - w) / 2)
+  for (let i = 0; i < w; i += 1) {
+    const t = i / w
+    const h = Math.round(3 + Math.sin(t * Math.PI) * 7 + n(i, 2) * 4)
+    for (let j = 0; j < h; j += 1) {
+      const y = ground - j
+      const v = n(i * 3, j * 5)
+      p.set(x0 + i, y, v > 0.72 ? stone[3] : v < 0.24 ? dark[2] : stone[2])
+    }
+    p.set(x0 + i, ground - h, n(i, 9) > 0.5 ? stone[3] : dark[3])
+  }
+  // Broken uprights still standing out of it, which is what says a BUILDING
+  // fell here rather than a cart tipping over.
+  for (const [dx, h] of [[-11, 11], [5, 8], [13, 6]] as [number, number][]) {
+    const x = Math.round(CELL / 2) + dx
+    for (let j = 0; j < h; j += 1) p.set(x, ground - 4 - j, dark[j > h - 3 ? 1 : 2])
+    p.set(x, ground - 4 - h, dark[1])
+  }
+  // A few pieces of whatever it was, still recognisable in the heap.
+  for (let i = 0; i < 5; i += 1) {
+    const x = x0 + 4 + Math.round(n(i, 4) * (w - 8))
+    const y = ground - 2 - Math.round(n(i, 6) * 6)
+    p.fill(x, y, 2, 1, trim[2])
+    p.set(x, y - 1, trim[3])
+  }
+  // Char, because most of these come down burning.
+  for (let i = 0; i < w; i += 2) {
+    if (n(i, 13) > 0.62) p.set(x0 + i, ground - 1, dark[0])
+  }
+  return sealPart(p, mix(timberBase, 0x0a0c12, 0.62))
+}
+
 export function drawBuilding(def: BuildingDef, tier: number, creed = 'none'): Canvas2D {
   const p = new Pix(CELL, CELL)
   const n = pixelNoise(def.id.length * 131 + tier * 17)

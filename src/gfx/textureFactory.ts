@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { TURRETS } from '../data/turrets'
 import { ALL_BUILDINGS } from '../data/buildings'
-import { drawBuilding } from './buildingArt'
+import { drawBuilding, drawRubble } from './buildingArt'
 
 /** Creeds a building can be built in — the five, plus the unaligned default. */
 export const BUILDING_CREEDS = ['none', 'carnage', 'ordnance', 'engineering', 'occult', 'blight'] as const
@@ -376,6 +376,11 @@ export function createTextureJobs(scene: Phaser.Scene): TextureJob[] {
           for (const creed of BUILDING_CREEDS) {
             addCanvas(scene, `bld:${def.id}:${tier}:${creed}`, drawBuilding(def, tier, creed))
           }
+        }
+        // And what is left of it. Tier-independent: a heap of masonry does not
+        // remember how many storeys it used to have.
+        for (const creed of BUILDING_CREEDS) {
+          addCanvas(scene, `bld:${def.id}:rubble:${creed}`, drawRubble(def, creed))
         }
       }
     }

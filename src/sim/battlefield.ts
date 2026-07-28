@@ -3475,6 +3475,25 @@ export default class Battlefield {
    * EVENT — otherwise a rule quietly stops applying and nobody notices.
    */
   private onBuildingRazed(faction: Faction, razed: Building): void {
+    // A building is thousands of gold and it used to leave the board with one
+    // puff and then simply not be there any more. It comes down properly now:
+    // its own masonry thrown out across the plot, dust off the footprint, and
+    // the ground under it dented. The rubble that lands is the same `rubble`
+    // body a fortress wall sheds, so it settles, blocks nothing, and rots away
+    // on the same clock as everything else on the field.
+    const chunks = 10 + Math.round((razed.maxHp / 4000) * 6)
+    for (let i = 0; i < chunks; i += 1) {
+      this.physics.spawn('rubble', razed.x + this.rng.spread(26), razed.y - this.rng.range(10, 54), this.rng.spread(210), -this.rng.range(60, 300), {
+        size: this.rng.range(0.5, 1.35),
+        spin: this.rng.spread(11),
+        ttl: 22000
+      })
+    }
+    this.vfx.smother(razed.x, razed.y - 8)
+    this.vfx.impact(razed.x, razed.y - 20, razed.def?.color ?? 0x8a7f6a, 1.6, false)
+    this.terrain.crater(razed.x, razed.lane, 54, 9, this.elapsedMs)
+    audio.play('base_hit', 0.75)
+
     const id = razed.def?.id
     if (id === 'bone_kiln') {
       // The renderings go up with it, and the remains are worthless until

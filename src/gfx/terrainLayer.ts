@@ -90,8 +90,15 @@ export default class TerrainLayer {
         seat.base.setDerelictLook(seat.derelict)
         const creed = bf.leanOf?.(faction) ?? 'none'
         for (const plot of seat.plots) {
-          if (!plot.def || !plot.alive) continue
-          const key = `bld:${plot.def.id}:${plot.tier}:${creed ?? 'none'}`
+          if (!plot.def) continue
+          // A razed plot leaves its ruin standing until somebody pays a crew to
+          // clear it. Without this the most significant thing that can happen
+          // to an economy left no mark at all — a plot that had never been
+          // built on looked exactly like one that had just cost four thousand
+          // gold.
+          const key = plot.alive
+            ? `bld:${plot.def.id}:${plot.tier}:${creed ?? 'none'}`
+            : `bld:${plot.def.id}:rubble:${creed ?? 'none'}`
           if (!this.scene.textures.exists(key)) continue
           const img = this.scene.add
             .image(plot.x, plot.y + 4, key)
