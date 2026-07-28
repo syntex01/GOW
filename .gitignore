@@ -17,3 +17,4 @@
 # version control is a keystore everybody has.
 /gow-release.jks
 /GOW-*.apk
+/GOW-*.apk.idsig
