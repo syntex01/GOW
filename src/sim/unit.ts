@@ -631,7 +631,9 @@ export default class Unit implements Damageable {
 
   distanceTo(other: Damageable): number {
     const dx = Math.abs(other.x - this.x)
-    const dy = Math.abs(other.y + other.centerOffsetY - this.centerY)
+    // A wall is at your height whatever file you are standing in. Only bodies
+    // are measured to their centre.
+    const dy = other.flatContact ? 0 : Math.abs(other.y + other.centerOffsetY - this.centerY)
     // sqrt is correctly rounded by IEEE-754; Math.hypot is not specified
     // exactly, so it can differ between engines and break lockstep.
     return Math.max(0, Math.sqrt(dx * dx + dy * dy) - other.radius - this.radius * 0.4)

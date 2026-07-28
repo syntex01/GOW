@@ -118,7 +118,6 @@ export default class TerrainLayer {
     // mid air, seventy pixels over the roof of a first seat. The fortresses are
     // handed over as live solids instead, so the shape is re-asked every step
     // and cannot go stale behind a seat that grew, moved or fell.
-    bf.physics.setSolids((['player', 'enemy'] as const).flatMap(f => bf.seats[f].map(seat => seat.base)))
   }
 
   /**

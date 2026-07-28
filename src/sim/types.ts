@@ -72,5 +72,17 @@ export interface Damageable {
   radius: number
   /** Vertical offset of the centre of mass from the object's anchor. */
   centerOffsetY: number
+  /**
+   * True for something that is a WALL rather than a body: reachable from any
+   * file that is allowed to attack it, at whatever height the attacker happens
+   * to stand.
+   *
+   * A fortress is drawn sitting at the back of the yard, so measuring to its
+   * centre made a soldier in the near file 90px away vertically against a reach
+   * of 36 — he advanced forever and never swung. Which files may attack a gate
+   * is supposed to be a RULE (see `gateLanesFor`), not an accident of where the
+   * art happens to sit.
+   */
+  flatContact?: boolean
   takeDamage(amount: number, type: DamageType, source?: Damageable, knockback?: number): void
 }

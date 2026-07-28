@@ -43,6 +43,8 @@ export default class Base implements Damageable, Solid {
   alive = true
   radius: number
   centerOffsetY: number
+  /** A fortress is a wall: see Damageable.flatContact. */
+  readonly flatContact = true
 
   slots: TurretSlot[] = []
 

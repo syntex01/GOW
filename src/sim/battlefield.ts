@@ -23,7 +23,6 @@ import { ensureUnitArt } from '../gfx/textureFactory'
 import type Vfx from '../gfx/vfx'
 import Army, { type ArmyModifiers, defaultModifiers } from './army'
 import Base, { type TurretSlot } from './base'
-import { BASE_H, BASE_W } from '../gfx/propArt'
 import Building from './building'
 import Seat from './seat'
 import {
@@ -481,10 +480,7 @@ export default class Battlefield {
       onSettle: body => this.handleSettle(body)
     })
     this.world.physics = this.physics
-    this.physics.setWalls([
-      { x0: this.playerBase.x - BASE_W * 0.5, x1: this.playerBase.x + BASE_W * 0.5, top: config.groundY - BASE_H * 0.8 },
-      { x0: this.enemyBase.x - BASE_W * 0.5, x1: this.enemyBase.x + BASE_W * 0.5, top: config.groundY - BASE_H * 0.8 }
-    ])
+    this.refreshSolids()
 
     this.updateWind()
     this.baseHealthGfx = scene.add.graphics().setDepth(290)
@@ -2010,8 +2006,28 @@ export default class Battlefield {
       seat.plots.push(building)
     })
     this.seats[faction].push(seat)
+    this.refreshSolids()
     this.onSeatChanged?.(faction)
     return seat
+  }
+
+  /**
+   * Hands the physics world every fortress that is currently standing.
+   *
+   * This used to be a one-time snapshot of the two opening bases, so after any
+   * age-up the collision boxes described buildings standing nowhere — debris
+   * came to rest in mid-air and gore stamped itself onto vertical faces fifty
+   * pixels clear of anything. It belongs here rather than in the terrain layer
+   * because where a wall is, is simulation, not rendering.
+   */
+  private refreshSolids(): void {
+    // The opening seats are founded before the physics world exists, and the
+    // constructor calls this again once it does. Third time this file has bitten
+    // on constructor ordering, hence the guard rather than a re-ordering.
+    if (!this.physics) return
+    this.physics.setSolids(
+      (['player', 'enemy'] as const).flatMap(f => this.seats[f].map(seat => seat.base))
+    )
   }
 
   /**

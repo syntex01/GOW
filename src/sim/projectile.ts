@@ -138,7 +138,8 @@ export default class Projectile {
     // Homing: steer velocity toward the target's centre.
     const target = this.config.target
     if (this.config.homing && target && target.alive) {
-      const desired = datan2(target.y + target.centerOffsetY - this.y, target.x - this.x)
+      const aimY = target.flatContact ? this.y : target.y + target.centerOffsetY
+      const desired = datan2(aimY - this.y, target.x - this.x)
       let current = datan2(this.vy, this.vx)
       let diff = Phaser.Math.Angle.Wrap(desired - current)
       const maxTurn = this.config.homing * dt
@@ -194,7 +195,11 @@ export default class Projectile {
       // A body already ricocheted off or penetrated through is behind us.
       if (this.deflected.has(c)) continue
       if (c.layer === 'air' && !this.config.hitsAir) continue
-      const cy = c.y + c.centerOffsetY
+      // A wall is hit wherever the shell meets it, at whatever height that is.
+      // Measuring to a fortress's centre made shots from the near two files
+      // sail past a building they were fired point-blank into: 210/252/210/0/0
+      // damage by file, with the shooters correctly in range and firing.
+      const cy = c.flatContact ? this.y : c.y + c.centerOffsetY
       const t = segmentHit(prevX, prevY, this.x, this.y, c.x, cy, c.radius + 6)
       if (t !== null && t < bestT) {
         bestT = t
