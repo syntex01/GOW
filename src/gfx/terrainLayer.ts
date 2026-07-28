@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { BAND, SLOT, onGround, onGroundAtY } from './depth'
 import { AGE_THEMES } from './palette'
 import Pix, { mix, ramp, tone } from './pixel'
 import { CELL } from './buildingArt'
@@ -48,7 +49,7 @@ export default class TerrainLayer {
       const img = scene.add
         .image(0, groundY + LANE_Y[lane] - TerrainLayer.UP, key)
         .setOrigin(0, 0)
-        .setDepth(60 + lane * 0.2)
+        .setDepth(BAND.terrain + lane * 0.2)
       this.strips.push(img)
     }
     this.buildPropArt()
@@ -57,7 +58,7 @@ export default class TerrainLayer {
       const img = scene.add
         .image(prop.x, groundY + LANE_Y[prop.lane] + 3, `prop:${prop.kind}`)
         .setOrigin(0.5, 1)
-        .setDepth(120 + (LANE_Y[prop.lane] + 68) * 0.08 - 0.01)
+        .setDepth(onGround(prop.lane, SLOT.prop))
       this.propSprites.push(img)
     }
     bf.onPropChanged = index => this.refreshProp(index)
@@ -95,7 +96,7 @@ export default class TerrainLayer {
           const img = this.scene.add
             .image(plot.x, plot.y + 4, key)
             .setOrigin(0.5, 1)
-            .setDepth(120 + (plot.y - this.groundY + 68) * 0.08 - 0.02)
+            .setDepth(onGroundAtY(plot.y, this.groundY, SLOT.building))
             .setDisplaySize(CELL * 1.7, CELL * 1.7)
           if (seat.derelict) img.setTint(0x9aa0aa)
           this.plotSprites.push(img)
@@ -284,7 +285,7 @@ export default class TerrainLayer {
       const img = this.scene.add
         .image(prop.x, this.groundY + LANE_Y[prop.lane] + 3, `prop:${prop.kind}`)
         .setOrigin(0.5, 1)
-        .setDepth(120 + (LANE_Y[prop.lane] + 68) * 0.08 - 0.01)
+        .setDepth(onGround(prop.lane, SLOT.prop))
       this.propSprites.push(img)
     }
   }

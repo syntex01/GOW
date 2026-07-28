@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { BAND } from './depth'
 import { rng } from '../core/rng'
 import type Battlefield from '../sim/battlefield'
 import { LANE_Y } from '../sim/types'
@@ -150,12 +151,12 @@ export default class ZoneLayer {
       const body = this.scene.add
         .image(0, 0, 'zone:fire:0')
         .setOrigin(0.5, 1)
-        .setDepth(64)
+        .setDepth(BAND.decal + 1)
         .setVisible(false)
       const glow = this.scene.add
         .image(0, 0, 'zone:glow')
         .setOrigin(0.5, 0.5)
-        .setDepth(63)
+        .setDepth(BAND.decal)
         .setBlendMode(Phaser.BlendModes.ADD)
         .setVisible(false)
       this.views.push({ body, glow })
@@ -213,7 +214,7 @@ export default class ZoneLayer {
       const fire = zone.kind === 'fire'
       const mote = this.scene.add
         .image(zone.x + rng.spread(zone.radius * 1.6), y - 2, 'fx:soft')
-        .setDepth(66)
+        .setDepth(BAND.decal + 3)
         .setBlendMode(fire ? Phaser.BlendModes.ADD : Phaser.BlendModes.NORMAL)
         .setTint(fire ? 0xffb648 : zone.kind === 'spore' ? 0xd8f0c0 : 0xbcd89a)
         .setScale(fire ? 0.1 : 0.14)

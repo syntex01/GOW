@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { BAND } from '../gfx/depth'
 import { RES } from '../gfx/pixel'
 import { rng } from '../core/rng'
 import { datan, datan2, dcos, dlen, dsin } from './dmath'
@@ -117,7 +118,7 @@ export default class Projectile {
     this.sprite = scene.add
       .image(this.x, this.y, `proj:${config.projectile}`)
       .setScale(1 / RES)
-      .setDepth(250)
+      .setDepth(BAND.projectile + 2)
       .setRotation(Math.atan2(this.vy, this.vx))
 
     const glowing = ['laserbolt', 'plasmaball', 'railslug'].includes(config.projectile)
@@ -256,7 +257,7 @@ export default class Projectile {
 
     const puff = this.scene.add
       .image(this.x, this.y, 'fx:soft')
-      .setDepth(248)
+      .setDepth(BAND.projectile)
       .setTint(trail.color)
       .setAlpha(trail.additive ? 0.7 : 0.4)
       .setScale(trail.additive ? 0.16 : 0.2)
@@ -294,7 +295,7 @@ export default class Projectile {
   /** Spent arrows quiver in the dirt for a while — cheap but very readable. */
   private stickInGround(): void {
     this.alive = false
-    this.sprite.setDepth(70)
+    this.sprite.setDepth(BAND.litter)
     this.sprite.setRotation(Math.atan2(this.vy, this.vx))
     this.sprite.y = this.groundY - 2
     this.sprite.x += rng.spread(4)

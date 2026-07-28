@@ -9,6 +9,7 @@ import { SEAT_STEP } from '../data/buildings'
 import { FACTIONS_BY_ID } from '../data/factions'
 import { TECHS_BY_ID, type TechId } from '../data/tech'
 import { ENDLESS_WAVE_SECONDS, LEVELS, computeStars } from '../data/levels'
+import { BAND, SLOT, onGround } from '../gfx/depth'
 import Environment from '../gfx/environment'
 import DebrisLayer from '../gfx/debrisLayer'
 import Splatter from '../gfx/splatter'
@@ -99,7 +100,8 @@ export default class BattleScene extends Phaser.Scene {
     }
     this.bannerFlags = this.battlefield.banners.map(banner => {
       const laneY = GROUND_Y + LANE_Y[banner.lane]
-      const depth = 79 + LANE_Y[banner.lane] * 0.05
+      // A banner is furniture standing on the road, so it sorts with the road.
+      const depth = onGround(banner.lane, SLOT.prop)
       return {
         pole: this.add.image(banner.x, laneY + 4, 'banner:pole').setOrigin(0.5, 1).setDepth(depth),
         flag: this.add
@@ -139,8 +141,8 @@ export default class BattleScene extends Phaser.Scene {
     this.vfx = new Vfx(this, GROUND_Y, this.lighting)
     this.background = new Environment(this, WORLD_WIDTH, GROUND_Y)
     // The mess sits above the ground and below the fighting.
-    this.splatter = new Splatter(this, WORLD_WIDTH, GROUND_Y, 70)
-    this.debris = new DebrisLayer(this, 100)
+    this.splatter = new Splatter(this, WORLD_WIDTH, GROUND_Y, BAND.litter)
+    this.debris = new DebrisLayer(this, BAND.debris)
 
     const setup = session.setup
     const level = setup.level

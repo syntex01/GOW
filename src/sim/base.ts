@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { BAND } from '../gfx/depth'
 import { ballisticReach } from './projectile'
 import { turretBarrelPivot } from '../gfx/textureFactory'
 import { audio } from '../core/audio'
@@ -82,7 +83,7 @@ export default class Base implements Damageable {
     this.sprite = scene.add
       .image(x, groundY + 6, 'base:0:player')
       .setOrigin(0.5, 1)
-      .setDepth(40)
+      .setDepth(BAND.fortress)
       .setDisplaySize(BASE_W, BASE_H)
     // Not flipped. The fortress is drawn per faction, so mirroring it only
     // moves the key light to the upper left and puts that one building out of
@@ -164,7 +165,7 @@ export default class Base implements Damageable {
         quantity: 1,
         blendMode: Phaser.BlendModes.ADD
       })
-      .setDepth(46)
+      .setDepth(BAND.fortress + 0.6)
   }
 
   /** Where attackers stop and start hitting the wall. */
@@ -215,12 +216,12 @@ export default class Base implements Damageable {
     slot.barrelSprite = this.scene.add
       .image(wx, wy - 8, `turret:${def.id}:barrel`)
       .setOrigin(...turretBarrelPivot(def.id))
-      .setDepth(44)
+      .setDepth(BAND.fortress + 0.4)
       .setScale(1 / RES)
     slot.baseSprite = this.scene.add
       .image(wx, wy, `turret:${def.id}:base`)
       .setOrigin(0.5, 0.7)
-      .setDepth(45)
+      .setDepth(BAND.fortress + 0.5)
       .setScale(1 / RES)
     slot.baseSprite.setFlipX(this.faction === 'enemy')
   }
@@ -420,7 +421,7 @@ export default class Base implements Damageable {
           frequency: 220,
           quantity: 1
         })
-        .setDepth(46)
+        .setDepth(BAND.fortress + 0.6)
     }
     if (this.smoke) {
       this.smoke.frequency = ratio < 0.25 ? 70 : ratio < 0.4 ? 130 : 220

@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { audio } from '../core/audio'
+import { BAND, SLOT, onGround } from '../gfx/depth'
 import { rng } from '../core/rng'
 import type { UnitDef } from '../data/types'
 import { getUnitArt, unitPartKey } from '../gfx/textureFactory'
@@ -187,8 +188,11 @@ export default class Unit implements Damageable {
    * always draws over a far-file one — the ground plane's own sorting rule. */
   setStage(offset: number): void {
     this.stageY = offset
-    if (this.layer === 'ground') {
-      this.container.setDepth(120 + (LANE_Y[this.lane] + 68) * 0.08 + offset * 0.02)
+    // The dead keep their file but not their place in it. Re-staging a corpse
+    // lifted it back out of the ground and into the living order, so a body
+    // drew over the soldier standing on it.
+    if (this.layer === 'ground' && this.alive) {
+      this.container.setDepth(onGround(this.lane, SLOT.unit, offset * 0.02))
     }
   }
 
@@ -397,12 +401,12 @@ export default class Unit implements Damageable {
 
     this.scaleFactor = 1 / RES
     this.container = scene.add.container(this.x, this.y)
-    this.container.setDepth(def.layer === 'air' ? 260 : 120)
+    this.container.setDepth(def.layer === 'air' ? BAND.air : onGround(lane))
 
 
     this.shadow = scene.add
       .image(this.x, this.groundLine + 2, 'fx:shadow')
-      .setDepth(60)
+      .setDepth(BAND.decal + 4)
       .setAlpha(def.layer === 'air' ? 0.22 : 0.4)
       .setDisplaySize(def.height * 0.9, def.height * 0.26)
 
@@ -410,7 +414,7 @@ export default class Unit implements Damageable {
     // soldier is on, even in a crowded melee.
     this.teamRing = scene.add
       .image(this.x, this.groundLine + 1, 'fx:soft')
-      .setDepth(61)
+      .setDepth(BAND.decal + 5)
       .setTint(FACTION_COLOR[faction])
       .setAlpha(0.62)
       .setDisplaySize(def.height * 0.78, def.height * 0.26)
@@ -423,7 +427,7 @@ export default class Unit implements Damageable {
       // head, the rank pips and the health bar.
       this.conductMark = scene.add
         .image(this.x + this.dir * (this.radius + 7), this.groundLine + 1, glyphKey)
-        .setDepth(62)
+        .setDepth(BAND.decal + 6)
         .setTint(FACTION_COLOR[faction])
         .setAlpha(0.9)
     }
@@ -434,10 +438,10 @@ export default class Unit implements Damageable {
     this.buildRig()
 
     const barW = Math.max(24, def.height * 0.62)
-    this.hpBarBg = scene.add.rectangle(0, 0, barW + 2, 5, 0x08111f, 0.85).setDepth(280).setOrigin(0.5)
+    this.hpBarBg = scene.add.rectangle(0, 0, barW + 2, 5, 0x08111f, 0.85).setDepth(BAND.chrome).setOrigin(0.5)
     this.hpBar = scene.add
       .rectangle(0, 0, barW, 3, FACTION_COLOR[faction], 1)
-      .setDepth(281)
+      .setDepth(BAND.chrome + 1)
       .setOrigin(0, 0.5)
     this.hpBarBg.setVisible(false)
     this.hpBar.setVisible(false)
@@ -803,6 +807,13 @@ export default class Unit implements Damageable {
     this.conductMark?.destroy()
     this.conductMark = undefined
     this.teamRing.setAlpha(0.25)
+    // Out of the living order and into the ground, in its own file. Set here
+    // rather than in the topple animation, because a body that comes apart is
+    // still a body: the dismember branch used to leave the wreckage sorted as
+    // if it were standing up and fighting.
+    if (this.layer === 'ground') {
+      this.container.setDepth(onGround(this.lane, SLOT.corpse, this.stageY * 0.002))
+    }
 
     const kind = this.def.visual.kind
     const mechanical = kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
@@ -932,7 +943,6 @@ export default class Unit implements Damageable {
   /** Limbs splay, the body topples, and the corpse fades into the ground. */
   private playDeathAnimation(mechanical: boolean): void {
     const tumbleDir = this.vx !== 0 ? Math.sign(this.vx) : -this.dir
-    this.container.setDepth(80 + this.stageY * 0.05)
 
     Object.entries(this.parts).forEach(([name, part]) => {
       if (name === 'weapon' || name === 'shield') {
@@ -1492,7 +1502,7 @@ export default class Unit implements Damageable {
           strokeThickness: 3
         })
         .setOrigin(0.5)
-        .setDepth(282)
+        .setDepth(BAND.chrome + 2)
     }
     this.rankMark.setText('▲'.repeat(this.rank)).setColor(colour)
     // A veteran stands a little taller. Two percent per rank is under the
@@ -1667,7 +1677,7 @@ export default class Unit implements Damageable {
     if (active && !this.auraSprite) {
       this.auraSprite = this.scene.add
         .image(this.x, this.centerY, 'fx:soft')
-        .setDepth(115)
+        .setDepth(BAND.ground - 5)
         .setTint(0x74f0ff)
         .setAlpha(0.22)
         .setBlendMode(Phaser.BlendModes.ADD)
