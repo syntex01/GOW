@@ -187,7 +187,29 @@ for how that is kept honest.
 - **12 turrets** in five tiers, including dedicated anti-air
 - **5 special abilities**, one per age
 - **15 research nodes** across three branches, every one a new behaviour
+- **16 buildings** — four every commander can raise in three tiers, two
+  defences, and ten creed-locked ones, each with its own silhouette
+- **3 fortress tracks** — ramparts, barbican and deep cellars
 - **12 campaign missions** and **12 achievements**
+
+### The outworks
+
+A fortress used to be the only thing on a commander's half worth attacking, and
+everything else they owned was two numbers. Now the two outer files carry
+**plots** an enemy can walk up to and burn, and the fortress can only be reached
+from its own gate files — so the board asks one question all match: *push the
+gate to win the game, or push the flanks to starve it.* Whichever you pick, the
+soldiers you send are soldiers not doing the other thing, and it is visible on
+the board rather than hidden in a build order.
+
+Ageing up **founds a new seat 460px further back** and strands the one you were
+using. It keeps its buildings and their effects and turns out free soldiers of
+its own age forever, and it stops taking orders. That is the mechanism by which
+the playfield grows: two commanders at the first age stand 2,100px apart and two
+at the last stand 5,780px apart, with four abandoned towns strung out between
+them. Soldiers form up at a **muster line** that advances half as fast as the
+capital retreats, so receding buys defensive depth without taxing every unit you
+will ever buy.
 
 ## Architecture
 
@@ -196,7 +218,7 @@ src/
   core/         event bus, save/settings, procedural audio synth, seeded RNG
   data/         ages, units, turrets, abilities, tech trees, levels (pure data)
   gfx/          canvas painters, unit rigs, props, parallax, particles, VFX
-  sim/          units, projectiles, bases, armies, AI, physics, the battlefield
+  sim/          units, projectiles, bases, seats, buildings, armies, AI, physics
   net/          wire protocol, WebRTC peer, deterministic lockstep driver
   scenes/       boot, preload, menu, battle, HUD, multiplayer lobby, results
   ui/           buttons, bars, tooltips, modals
