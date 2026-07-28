@@ -149,6 +149,12 @@ export default class Army {
   yardIncome = 1
   yardBuildSpeed = 1
   researchDiscount = 1
+  /** Units that may be under construction simultaneously. See `MUSTER_SLOTS`. */
+  buildSlots = 1
+  /** Milliseconds between free line soldiers, or 0 where nothing autospawns. */
+  autoSpawnMs = 0
+  /** Public so the state hash can see it — it is simulation state like any other. */
+  autoSpawnTimer = 0
 
   /**
    * Research points, and the rate they arrive at.
@@ -286,6 +292,24 @@ export default class Army {
       }
     }
     return morphedRoster(list.slice(0, MAX_ROSTER), this.techs)
+  }
+
+  /**
+   * The soldier a Muster Yard turns out on its own: the cheapest ground body
+   * this army could otherwise buy.
+   *
+   * Deliberately the CHEAPEST rather than the best. A tier-3 Muster is meant to
+   * keep a field populated between your real decisions, not to make them for
+   * you — free elites would let a commander skip the composition game entirely,
+   * which is the one part of this game that is supposed to be hard.
+   */
+  get lineUnit(): UnitDef | null {
+    let best: UnitDef | null = null
+    for (const def of this.roster) {
+      if (def.layer !== 'ground') continue
+      if (!best || def.cost < best.cost) best = def
+    }
+    return best
   }
 
   /** The apocalyptic faction this army ascended into, if it has. */
@@ -469,7 +493,7 @@ export default class Army {
     return this.techs.has('blood_pact')
   }
 
-  tick(dtMs: number): { ready: QueueEntry[]; income: number } {
+  tick(dtMs: number): { ready: QueueEntry[]; income: number; autoSpawn: UnitDef | null } {
     const dt = dtMs / 1000
     const gained = this.incomePerSecond * dt + this.incomeCarry
     const whole = Math.floor(gained)
@@ -481,22 +505,39 @@ export default class Army {
 
     const ready: QueueEntry[] = []
     if (this.queue.length > 0) {
-      const head = this.queue[0]
       // Blood Pact: the whole queue finishes at once. The cost is taken from
       // the fortress by the battlefield, which is the only thing that knows
       // about fortresses.
-      head.remainingMs -= this.instantBuild ? head.remainingMs + 1 : dtMs
-      while (this.queue.length > 0 && this.queue[0].remainingMs <= 0) {
-        const done = this.queue.shift()
-        if (done) ready.push(done)
-        if (this.queue.length > 0) {
-          // Carry leftover time into the next build so the queue never stalls.
-          this.queue[0].remainingMs += Math.min(0, done?.remainingMs ?? 0)
-        }
+      const slots = this.instantBuild ? this.queue.length : Math.min(this.buildSlots, this.queue.length)
+      for (let i = 0; i < slots; i += 1) {
+        const entry = this.queue[i]
+        entry.remainingMs -= this.instantBuild ? entry.remainingMs + 1 : dtMs
       }
+      // Sweep back to front so splicing never skips a neighbour, then restore
+      // queue order — two soldiers finishing on the same tick must still walk
+      // out in the order they were bought, or a replay diverges from the match.
+      for (let i = this.queue.length - 1; i >= 0; i -= 1) {
+        if (this.queue[i].remainingMs > 0) continue
+        ready.push(this.queue.splice(i, 1)[0])
+      }
+      ready.reverse()
     }
 
-    return { ready, income: whole }
+    // The tier-3 Muster Yard's own production. It runs on a wall clock rather
+    // than off the queue, so it keeps working while the queue is empty, while
+    // the queue is full, and while its owner is reading the tech tree.
+    let autoSpawn: UnitDef | null = null
+    if (this.autoSpawnMs > 0) {
+      this.autoSpawnTimer += dtMs
+      if (this.autoSpawnTimer >= this.autoSpawnMs) {
+        this.autoSpawnTimer -= this.autoSpawnMs
+        autoSpawn = this.lineUnit
+      }
+    } else {
+      this.autoSpawnTimer = 0
+    }
+
+    return { ready, income: whole, autoSpawn }
   }
 
   /** Kills feed both the war chest and the tech tree. */

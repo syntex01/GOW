@@ -718,8 +718,11 @@ export default class HUDScene extends Phaser.Scene {
         entry.bar.setValue(0).setVisible(false)
         return
       }
-      entry.icon.setVisible(true).setTexture(`icon:${item.def.id}`).setScale(0.42)
-      entry.bar.setVisible(true).setValue(1 - item.remainingMs / item.totalMs)
+      // A Muster Yard builds several at once, so the bar has to say which of
+      // these are actually being worked on and which are only waiting in line.
+      const working = i < this.battle.localArmy.buildSlots
+      entry.icon.setVisible(true).setTexture(`icon:${item.def.id}`).setScale(0.42).setAlpha(working ? 1 : 0.55)
+      entry.bar.setVisible(true).setValue(1 - item.remainingMs / item.totalMs).setColor(working ? UI.good : UI.textDim)
     })
   }
 

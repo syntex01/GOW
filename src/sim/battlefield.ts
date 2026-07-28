@@ -32,6 +32,9 @@ import {
   REBUILD_FRACTION,
   SEAT_PLOTS,
   MUSTER_ADVANCE,
+  MUSTER_AUTOSPAWN_MS,
+  MUSTER_BUILD_SPEED,
+  MUSTER_SLOTS,
   SEAT_STEP,
   buildingCost
 } from '../data/buildings'
@@ -1093,6 +1096,8 @@ export default class Battlefield {
       mix(army.incomeLevel)
       // Research is a resource now, so it forks a networked match if it drifts.
       mix(army.research)
+      // The Muster Yard produces on its own clock, so that clock is sim state.
+      mix(Math.round(army.autoSpawnTimer))
       // Fortress tracks change wall health, gate width, siege ceiling and gun
       // rate — all sim, all divergent if the two peers disagree.
       mix(army.tracks.ramparts * 100 + army.tracks.barbican * 10 + army.tracks.cellars)
@@ -2103,6 +2108,8 @@ export default class Battlefield {
     const army = this.armyFor(faction)
     army.yardIncome = this.yardIncome(faction)
     army.yardBuildSpeed = this.yardBuildSpeed(faction)
+    army.buildSlots = this.yardBuildSlots(faction)
+    army.autoSpawnMs = this.yardAutoSpawnMs(faction)
     army.researchDiscount = this.yardResearchDiscount(faction)
     army.researchRate = this.yardResearchRate(faction)
     // The doctrine buildings are asked about from inside per-unit and per-kill
@@ -2140,7 +2147,26 @@ export default class Battlefield {
 
   yardBuildSpeed(faction: Faction): number {
     const tier = this.yardBonus(faction, 'muster')
-    return tier < 0 ? 1 : [1 / 0.88, 1 / 0.78, 1 / 0.7][tier]
+    return tier < 0 ? 1 : MUSTER_BUILD_SPEED[tier]
+  }
+
+  /** How many soldiers this commander can have under construction at once. */
+  yardBuildSlots(faction: Faction): number {
+    const tier = this.yardBonus(faction, 'muster')
+    return tier < 0 ? 1 : MUSTER_SLOTS[tier]
+  }
+
+  /**
+   * Milliseconds between the Muster Yard's own free soldiers.
+   *
+   * Unlike research, this does NOT stack across halls — the fastest yard sets
+   * the clock. Two tier-3 Musters would otherwise be an army that plays itself,
+   * and a plot spent on a second one should buy you slots you already have, not
+   * a doubling.
+   */
+  yardAutoSpawnMs(faction: Faction): number {
+    const tier = this.yardBonus(faction, 'muster')
+    return tier < 0 ? 0 : MUSTER_AUTOSPAWN_MS[tier]
   }
 
   /**
@@ -2185,7 +2211,7 @@ export default class Battlefield {
     // a granary that burns stops paying the instant it falls.
     this.refreshYard(army.faction)
     army.tickResearch(dtMs)
-    const { ready } = army.tick(dtMs)
+    const { ready, autoSpawn } = army.tick(dtMs)
     this.statsFor(army.faction).goldEarned += Math.max(0, army.gold - before)
     for (const entry of ready) {
       // Blood Pact bought the time with the fortress's own health. It is a
@@ -2201,6 +2227,12 @@ export default class Battlefield {
         const unit = this.spawnUnit(army.faction, entry.def, undefined, entry.lane)
         if (copies > 1) unit.x -= ADVANCE_DIR[army.faction] * c * 14
       }
+    }
+    if (autoSpawn) {
+      // The Muster Yard's free soldier walks the centre file. It is a trickle
+      // holding the middle, not a placement decision — the commander's lanes
+      // stay the commander's to choose.
+      this.spawnUnit(army.faction, autoSpawn, undefined, LANE_MID)
     }
   }
 

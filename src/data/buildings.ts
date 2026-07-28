@@ -156,6 +156,35 @@ export const SEAT_STEP = 460
 export const MUSTER_ADVANCE = 0.5
 
 /**
+ * The Muster ladder: how many units a commander can have under construction at
+ * once, by Muster Yard tier.
+ *
+ * A build TIME discount is a percentage, and a percentage of a small number is
+ * a small number — shaving 30% off an 1100ms clubman is worth a third of a
+ * second. Slots are worth something else entirely: they change the SHAPE of
+ * what a yard can do. One slot means your army arrives as a single file no
+ * matter how rich you are; three means gold converts into bodies as fast as
+ * you can spend it, which is the only thing that makes a late-game war chest
+ * translate into a late-game field.
+ */
+export const MUSTER_SLOTS = [1, 2, 3] as const
+
+/** Build time multiplier by Muster tier — the discount, as a rate. */
+export const MUSTER_BUILD_SPEED = [1 / 0.88, 1 / 0.78, 1 / 0.7] as const
+
+/**
+ * Milliseconds between free line soldiers at the top of the ladder. Zero at
+ * the lower tiers, where nothing autospawns.
+ *
+ * This is the tier-3 payload and the reason a maxed Muster Yard reads as a
+ * BUILDING rather than a buff: it produces, visibly, on its own clock, whether
+ * or not its owner is paying attention. It also means razing it removes an
+ * income of bodies, which gives a raiding force something to want besides the
+ * granary.
+ */
+export const MUSTER_AUTOSPAWN_MS = [0, 0, 8000] as const
+
+/**
  * How often a superseded seat sends out a soldier, and how many of its own may
  * be alive at once. Slow, capped, and — because it can only ever make what it
  * knew how to make — quietly obsolete by the time there are four of them.
@@ -250,8 +279,8 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     color: 0xa8703c,
     tiers: [
       { cost: 400, hp: 4600, effect: '−12% build time' },
-      { cost: 850, hp: 7200, effect: '−22% build time, and soldiers march out 120px advanced' },
-      { cost: 1350, hp: 10800, effect: '−30% build time, and the first of each pair arrives with +15% health' }
+      { cost: 850, hp: 7200, effect: '−22% build time, and a second build slot — two at once' },
+      { cost: 1350, hp: 10800, effect: '−30%, a third slot, and a free line soldier every 8s' }
     ]
   },
   {

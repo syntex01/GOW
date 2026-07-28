@@ -29,7 +29,7 @@ import type { Faction } from '../sim/types'
  * tracks: wall health, gate width, the siege ceiling and how fast a wounded
  * fortress can work its guns.
  */
-export const PROTOCOL_VERSION = 15
+export const PROTOCOL_VERSION = 16
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing
