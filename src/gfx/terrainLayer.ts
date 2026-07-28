@@ -110,6 +110,15 @@ export default class TerrainLayer {
         }
       }
     }
+    // Every fortress on the board, at the size it is actually built at, is what
+    // debris bounces off. The physics world was handed one box per side when the
+    // match was built, sized from the art's nominal 200×250 and placed at the
+    // seats that existed then; once anybody had aged up those boxes described a
+    // building that stood nowhere, and blood and masonry piled on top of them in
+    // mid air, seventy pixels over the roof of a first seat. The fortresses are
+    // handed over as live solids instead, so the shape is re-asked every step
+    // and cannot go stale behind a seat that grew, moved or fell.
+    bf.physics.setSolids((['player', 'enemy'] as const).flatMap(f => bf.seats[f].map(seat => seat.base)))
   }
 
   /**

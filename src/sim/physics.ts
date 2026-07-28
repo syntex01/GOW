@@ -90,6 +90,22 @@ export interface Wall {
   top: number
 }
 
+/**
+ * Something debris bounces off, asked for its shape rather than measured once.
+ *
+ * A fortress is not a fixed box. Every age-up founds a new seat at a new place
+ * and at a different size, and the one that was there when the world was built
+ * is still standing but is now the smallest thing on the board. A snapshot of
+ * the walls taken at kickoff therefore describes buildings that exist nowhere:
+ * blood and masonry landed on the roof of a fortress that was never there,
+ * seventy pixels above the hut it was supposed to be resting on. Solids are
+ * asked where they are, once per step, so the answer cannot go stale.
+ */
+export interface Solid {
+  /** The box this thing fills right now, or null when it is gone. */
+  solidBox(): Wall | null
+}
+
 /** What the world tells its owner when something interesting happens. */
 export interface PhysicsCallbacks {
   /** A body touched down or hit a wall hard enough to leave a mark. */
@@ -120,6 +136,8 @@ export default class PhysicsWorld {
   private worldWidth: number
   private rng: Rng
   private callbacks: PhysicsCallbacks
+  private solids: Solid[] = []
+  /** Rebuilt once per step, so a body does not ask ten buildings where they are. */
   private walls: Wall[] = []
   /** Sideways push from the age's weather, in px/s². */
   wind = 0
@@ -131,8 +149,27 @@ export default class PhysicsWorld {
     this.callbacks = callbacks
   }
 
+  /**
+   * Hands over the things that are solid. The last call wins: a world has one
+   * set of buildings in it, and a static snapshot and a set of live ones cannot
+   * both be describing them.
+   */
+  setSolids(solids: Solid[]): void {
+    this.solids = solids
+    this.refreshWalls()
+  }
+
+  /** The same, for boxes that genuinely never move. */
   setWalls(walls: Wall[]): void {
-    this.walls = walls
+    this.setSolids(walls.map(w => ({ solidBox: () => w })))
+  }
+
+  private refreshWalls(): void {
+    this.walls.length = 0
+    for (const s of this.solids) {
+      const box = s.solidBox()
+      if (box) this.walls.push(box)
+    }
   }
 
   get count(): number {
@@ -227,6 +264,7 @@ export default class PhysicsWorld {
     if (dt <= 0) return
     const cb = this.callbacks
     let write = 0
+    this.refreshWalls()
 
     for (let i = 0; i < this.bodies.length; i += 1) {
       const b = this.bodies[i]

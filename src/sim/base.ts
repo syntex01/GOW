@@ -11,6 +11,7 @@ import { FACTION_COLOR, UI } from '../gfx/palette'
 import { RES } from '../gfx/pixel'
 import { BASE_H, BASE_W, TURRET_SLOT_OFFSETS } from '../gfx/propArt'
 import type Vfx from '../gfx/vfx'
+import type { Solid, Wall } from './physics'
 import type { ArmorType, Damageable, DamageType, Faction, Layer } from './types'
 import { ADVANCE_DIR } from './types'
 
@@ -29,7 +30,7 @@ export interface TurretSlot {
 }
 
 /** A faction's fortress: the thing you must destroy to win. */
-export default class Base implements Damageable {
+export default class Base implements Damageable, Solid {
   readonly faction: Faction
   readonly armor: ArmorType = 'structure'
   readonly layer: Layer = 'ground'
@@ -92,6 +93,7 @@ export default class Base implements Damageable {
     for (let i = 0; i < TURRET_SLOTS; i += 1) {
       this.slots.push({ def: null, hp: 0, cooldown: 0, burstLeft: 0, burstTimer: 0, angle: 0, recoil: 0 })
     }
+    this.layout()
   }
 
   /** How much bigger each generation of seat stands than the first. */
@@ -101,16 +103,63 @@ export default class Base implements Damageable {
     return Base.SEAT_SCALE[Math.max(0, Math.min(Base.SEAT_SCALE.length - 1, this.generation))]
   }
 
+  /** How wide and how tall this seat's fortress actually stands. */
+  get drawnWidth(): number {
+    return BASE_W * this.seatScale
+  }
+
+  get drawnHeight(): number {
+    return BASE_H * this.seatScale
+  }
+
   /**
    * Sets which generation this seat is, and re-sizes everything that depends on
-   * it: the sprite, the hitbox radius, and how high its centre of mass sits.
+   * it: the sprite, the hitbox radius, how high its centre of mass sits, and
+   * every fitting bolted to the building.
    */
   setGeneration(generation: number): void {
     this.generation = generation
+    this.layout()
+  }
+
+  /**
+   * Puts the fortress and everything mounted on it at this seat's scale.
+   *
+   * Everything here used to be written against the raw BASE_W/BASE_H, which is
+   * the size of the ART, not the size of the BUILDING. A first seat is drawn at
+   * 0.52 of that, so its guns were mounted a hundred pixels above their own
+   * roof, at full size, hanging in the sky over a hut; its braziers burned in
+   * mid-air, and the masonry it shed was knocked out of a wall that was not
+   * there. Scale is applied once, here, and the sprite is the only thing that
+   * knows how big the building is.
+   */
+  private layout(): void {
     const s = this.seatScale
     this.sprite.setDisplaySize(BASE_W * s, BASE_H * s)
     this.radius = BASE_W * 0.34 * s
     this.centerOffsetY = -BASE_H * 0.4 * s
+    this.brazier?.setPosition(this.x + this.dir * BASE_W * 0.34 * s, this.y - BASE_H * 0.12 * s)
+    this.smoke?.setPosition(this.x, this.y - BASE_H * 0.6 * s)
+    this.slots.forEach((slot, i) => {
+      if (!slot.def) return
+      if (!slot.baseSprite) this.placeTurretSprites(i, slot.def)
+      else this.applyTurretTransform(i, slot)
+    })
+  }
+
+  /**
+   * The box debris bounces off: the fortress as it is actually drawn.
+   *
+   * The top is held a little below the roofline because the roof is towers and
+   * merlons rather than a flat lid — a chunk of masonry that comes to rest just
+   * inside the parapet reads as lodged on the wall, one that rests on the tip
+   * of a spire reads as floating. Null once the place has fallen; a collapsed
+   * fortress stops holding anything up.
+   */
+  solidBox(): Wall | null {
+    if (!this.alive) return null
+    const half = this.drawnWidth * 0.5
+    return { x0: this.x - half, x1: this.x + half, top: this.y - this.drawnHeight * 0.8 }
   }
 
   /**
@@ -146,12 +195,14 @@ export default class Base implements Damageable {
     if (age === this.age) return
     this.age = age
     this.sprite.setTexture(`base:${age}:${this.faction}`)
-    this.sprite.setDisplaySize(BASE_W, BASE_H)
     this.buildBrazier(age)
-    // Rebuild turret visuals so they sit correctly on the new silhouette.
+    // Rebuild turret visuals so they sit correctly on the new silhouette, and
+    // re-apply the seat's scale — a texture swap must never quietly restore the
+    // art's nominal size over the size this seat is actually built at.
     this.slots.forEach((slot, i) => {
       if (slot.def) this.placeTurretSprites(i, slot.def)
     })
+    this.layout()
   }
 
   /**
@@ -161,13 +212,14 @@ export default class Base implements Damageable {
   private buildBrazier(age: number): void {
     this.brazier?.destroy()
     const industrial = age >= 3
+    const s = this.seatScale
     const tint = industrial ? [0x8fd6ff, 0xc8f0ff] : [0xff8a2a, 0xffd07a]
     this.brazier = this.scene.add
-      .particles(this.x + this.dir * BASE_W * 0.34, this.y - BASE_H * 0.12, 'fx:soft', {
+      .particles(this.x + this.dir * BASE_W * 0.34 * s, this.y - BASE_H * 0.12 * s, 'fx:soft', {
         lifespan: { min: 520, max: 1000 },
         speedY: { min: -70, max: -26 },
         speedX: { min: -12, max: 12 },
-        scale: { start: industrial ? 0.14 : 0.2, end: 0 },
+        scale: { start: (industrial ? 0.14 : 0.2) * s, end: 0 },
         alpha: { start: 0.75, end: 0 },
         tint,
         frequency: industrial ? 90 : 55,
@@ -215,34 +267,47 @@ export default class Base implements Damageable {
     slot.barrelSprite = undefined
   }
 
+  /**
+   * Where a gun mounted in this slot stands, in world space.
+   *
+   * The slot offsets are quoted against the art's nominal 200×250, so they are
+   * only the fractions of the building — they have to be taken at the size the
+   * building is actually standing at, or a small seat mounts its guns off its
+   * own silhouette.
+   */
+  private turretMount(slotIndex: number): { x: number; y: number } {
+    const [ox, oy] = TURRET_SLOT_OFFSETS[slotIndex]
+    const s = this.seatScale
+    return { x: this.x + ox * s * this.dir, y: this.y + oy * s }
+  }
+
   private placeTurretSprites(slotIndex: number, def: TurretDef): void {
     const slot = this.slots[slotIndex]
     this.clearTurretSprites(slot)
-    const [ox, oy] = TURRET_SLOT_OFFSETS[slotIndex]
-    const wx = this.x + ox * this.dir
-    const wy = this.y + oy
+    const s = this.seatScale
+    const mount = this.turretMount(slotIndex)
 
     slot.barrelSprite = this.scene.add
-      .image(wx, wy - 8, `turret:${def.id}:barrel`)
+      .image(mount.x, mount.y - 8 * s, `turret:${def.id}:barrel`)
       .setOrigin(...turretBarrelPivot(def.id))
       .setDepth(BAND.fortress + 0.4)
-      .setScale(1 / RES)
+      .setScale(s / RES)
     slot.baseSprite = this.scene.add
-      .image(wx, wy, `turret:${def.id}:base`)
+      .image(mount.x, mount.y, `turret:${def.id}:base`)
       .setOrigin(0.5, 0.7)
       .setDepth(BAND.fortress + 0.5)
-      .setScale(1 / RES)
+      .setScale(s / RES)
     slot.baseSprite.setFlipX(this.faction === 'enemy')
   }
 
   turretMuzzle(slotIndex: number): { x: number; y: number } {
-    const [ox, oy] = TURRET_SLOT_OFFSETS[slotIndex]
     const slot = this.slots[slotIndex]
-    const barrelLen = 46
-    const wx = this.x + ox * this.dir
-    const wy = this.y + oy - 8
+    const s = this.seatScale
+    const barrelLen = 46 * s
+    const mount = this.turretMount(slotIndex)
+    const wy = mount.y - 8 * s
     return {
-      x: wx + dcos(slot.angle) * barrelLen * this.dir,
+      x: mount.x + dcos(slot.angle) * barrelLen * this.dir,
       y: wy + dsin(slot.angle) * barrelLen
     }
   }
@@ -328,8 +393,9 @@ export default class Base implements Damageable {
     // Nobody is left to keep the fires in. A superseded seat goes dark, which
     // is most of what makes it read as abandoned at a glance.
     if (!lighting || this.derelict) return
+    const s = this.seatScale
     const glowColor = this.age >= 4 ? FACTION_COLOR[this.faction] : this.age >= 3 ? 0xffb347 : 0xff9a4a
-    const radius = this.age >= 4 ? BASE_H * 1.5 : BASE_H * 1.15
+    const radius = (this.age >= 4 ? BASE_H * 1.5 : BASE_H * 1.15) * s
     // These two lights overlap, and the lighting pass compounds them: each one
     // erases the ambient gloom by its own intensity, so a pair at 0.95 and 0.8
     // left 98% of the shadow gone AND stacked both additive glows on top. The
@@ -338,24 +404,26 @@ export default class Base implements Damageable {
     // lifts the gloom and the gate merely warms it.
     const intensity = this.age >= 4 ? 0.74 : 0.6
     const phase = this.faction === 'player' ? 0 : 2.1
-    lighting.addFlickering(this.x, this.y - BASE_H * (this.age >= 4 ? 0.62 : 0.34), radius, glowColor, intensity, phase)
+    lighting.addFlickering(this.x, this.y - BASE_H * s * (this.age >= 4 ? 0.62 : 0.34), radius, glowColor, intensity, phase)
     // A warm pool at the gate so units silhouette against it as they march out.
     // Kept well below the main lamp: its job is to shape the doorway, and two
     // lights of equal strength in one place is just one brighter light.
-    lighting.addFlickering(this.x + this.dir * BASE_W * 0.34, this.y - 22, BASE_W * 0.66, glowColor, 0.34, phase + 1)
+    lighting.addFlickering(this.x + this.dir * BASE_W * 0.34 * s, this.y - 22 * s, BASE_W * 0.66 * s, glowColor, 0.34, phase + 1)
   }
 
   private applyTurretTransform(index: number, slot: TurretSlot): void {
     if (!slot.barrelSprite) return
-    const [ox, oy] = TURRET_SLOT_OFFSETS[index]
-    const wx = this.x + ox * this.dir + this.shakeOffset
-    const wy = this.y + oy - 8
-    const recoilPush = slot.recoil * 7
+    const s = this.seatScale
+    const mount = this.turretMount(index)
+    const wx = mount.x + this.shakeOffset
+    const wy = mount.y - 8 * s
+    const recoilPush = slot.recoil * 7 * s
     slot.barrelSprite
       .setPosition(wx - dcos(slot.angle) * recoilPush * this.dir, wy - dsin(slot.angle) * recoilPush)
       .setRotation(slot.angle * this.dir)
       .setFlipX(this.faction === 'enemy')
-    slot.baseSprite?.setPosition(wx, this.y + oy)
+      .setScale(s / RES)
+    slot.baseSprite?.setPosition(wx, mount.y).setScale(s / RES)
   }
 
   private pickTurretTarget(def: TurretDef, candidates: Damageable[]): Damageable | null {
@@ -392,16 +460,19 @@ export default class Base implements Damageable {
     const applied = amount * mult
     this.hp = Math.max(0, this.hp - applied)
 
+    const s = this.seatScale
     this.flashTimer = 120
     this.sprite.setTint(0xff9a9a)
     this.shakeOffset = Math.min(9, applied / 40) * (rng.chance(0.5) ? 1 : -1)
-    this.vfx.damageNumber(this.x + rng.spread(50), this.y - BASE_H * 0.55, applied, 0xffd166)
-    this.vfx.ricochet(this.getImpactX(), this.y - BASE_H * (0.2 + rng.next() * 0.4), 0xffca7a, 1.2)
+    this.vfx.damageNumber(this.x + rng.spread(50 * s), this.y - BASE_H * 0.55 * s, applied, 0xffd166)
+    this.vfx.ricochet(this.getImpactX(), this.y - BASE_H * s * (0.2 + rng.next() * 0.4), 0xffca7a, 1.2)
 
     // A hit knocks masonry out of the wall. The rubble is real, it piles at
     // the foot of the fortress, and a wall that has been shelled for a minute
-    // looks it.
-    this.onWallHit?.(this.getImpactX(), this.y - BASE_H * (0.15 + rng.next() * 0.5), applied)
+    // looks it. It is knocked out of THIS seat's wall — a first seat is barely
+    // half the height of the art, and masonry shed at the full-size wall's
+    // height simply appears in the sky above the roof.
+    this.onWallHit?.(this.getImpactX(), this.y - BASE_H * s * (0.15 + rng.next() * 0.5), applied)
     audio.play('base_hit', Math.min(1, 0.3 + applied / 400))
 
     // Splash damage bleeds into the turrets mounted on the wall.
@@ -431,7 +502,7 @@ export default class Base implements Damageable {
     const ratio = this.hp / this.maxHp
     if (ratio < 0.55 && !this.smoke) {
       this.smoke = this.scene.add
-        .particles(this.x, this.y - BASE_H * 0.6, 'fx:smoke', {
+        .particles(this.x, this.y - BASE_H * 0.6 * this.seatScale, 'fx:smoke', {
           lifespan: { min: 1400, max: 2600 },
           speed: { min: 12, max: 46 },
           speedY: { min: -70, max: -26 },
@@ -453,12 +524,13 @@ export default class Base implements Damageable {
   playDestruction(): void {
     const cam = this.scene.cameras.main
     void cam
+    const s = this.seatScale
     for (let i = 0; i < 14; i += 1) {
       this.scene.time.delayedCall(i * 110, () => {
         this.vfx.explosion(
-          this.x + rng.spread(BASE_W * 0.5),
-          this.y - rng.range(10, BASE_H * 0.9),
-          70 + rng.next() * 90,
+          this.x + rng.spread(BASE_W * 0.5 * s),
+          this.y - rng.range(10, BASE_H * 0.9 * s),
+          (70 + rng.next() * 90) * s,
           0xffa640,
           i % 3 === 0
         )
@@ -467,7 +539,7 @@ export default class Base implements Damageable {
     }
     this.scene.tweens.add({
       targets: this.sprite,
-      y: this.sprite.y + BASE_H * 0.5,
+      y: this.sprite.y + BASE_H * 0.5 * s,
       alpha: 0.15,
       scaleY: this.sprite.scaleY * 0.55,
       duration: 1700,
@@ -479,10 +551,11 @@ export default class Base implements Damageable {
   }
 
   drawHealthBar(graphics: Phaser.GameObjects.Graphics): void {
-    const w = BASE_W * 0.86
+    const s = this.seatScale
+    const w = BASE_W * 0.86 * s
     const h = 12
     const x = this.x - w / 2
-    const y = this.y - BASE_H - 26
+    const y = this.y - BASE_H * s - 26
     graphics.fillStyle(UI.ink, 0.85)
     graphics.fillRoundedRect(x - 2, y - 2, w + 4, h + 4, 5)
     graphics.fillStyle(0x223047, 1)
