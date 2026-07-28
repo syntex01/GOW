@@ -546,7 +546,7 @@ export const FACTION_UNITS: UnitDef[] = [
       gravity: 0,
       spread: 0.04,
       knockback: 110,
-      splash: 90
+      splash: 58
     },
     description: 'Points at something and it stops being structurally certain: everything hits it harder.',
     visual: look('dark_circle', { torso: 'robe', weapon: 'staff', helmet: 'hood', cape: true })
@@ -695,7 +695,7 @@ export const FACTION_UNITS: UnitDef[] = [
       gravity: 60,
       spread: 0.11,
       knockback: 120,
-      splash: 110,
+      splash: 78,
       count: 2
     },
     description: 'Twin launchers, and everything they touch keeps burning after.',
