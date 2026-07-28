@@ -4,9 +4,9 @@ import type { MatchStats } from '../core/events'
 import { Rng } from '../core/rng'
 import { datan2, dcos, dsin, halfLifeDecay } from './dmath'
 import { ABILITIES_BY_ID } from '../data/abilities'
-import { ageDef } from '../data/ages'
+import { AGES, ageDef } from '../data/ages'
 import { AGE_THEMES } from '../gfx/palette'
-import { rosterForAge } from '../data/units'
+import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
 import { TECHS_BY_ID, TECH_ORDER, type TechId } from '../data/tech'
 import { FACTION_UNITS, type FactionId } from '../data/factions'
@@ -16,6 +16,15 @@ import type Vfx from '../gfx/vfx'
 import Army, { type ArmyModifiers, defaultModifiers } from './army'
 import Base, { type TurretSlot } from './base'
 import { BASE_H, BASE_W } from '../gfx/propArt'
+import Building from './building'
+import Seat from './seat'
+import {
+  BUILDINGS_BY_ID,
+  REBUILD_FRACTION,
+  SEAT_PLOTS,
+  SEAT_STEP,
+  buildingCost
+} from '../data/buildings'
 import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
 import Terrain, { RELIEF_BUCKET } from './terrain'
@@ -78,6 +87,23 @@ const MAX_SUBSTEPS = 16
 const FIRE_SPREAD = 4
 /** Damage kept by a shot that crosses 0, 1 or 2 lane boundaries. */
 const CROSS_LANE_DAMAGE = [1, 0.5, 0.32] as const
+/**
+ * Which files can reach a fortress at all.
+ *
+ * This used to be an accident rather than a rule: the fortress art is 250px
+ * tall with its centre 100px above the ground line, so the FAR lanes happened
+ * to reach it, the near lane happened not to, and ranged units reached it from
+ * anywhere because 300px of reach swamps the offset. Nobody decided that.
+ *
+ * Now the middle three files are the gate and the walls, and the two outer
+ * files are the yard — where the economy stands and the fortress cannot be
+ * touched. Push the gate to win the game, or push the flanks to starve it.
+ */
+export const GATE_LANES: ReadonlySet<number> = new Set([1, 2, 3])
+
+/** The two files a commander's outworks stand in. */
+export const FLANK_LANES: ReadonlySet<number> = new Set([0, 4])
+
 /** How far back a rank still counts as pressing into the fight ahead of it. */
 const PRESS_REACH = 105
 /** Extra share of a blow contributed by each supporting rank. */
@@ -209,8 +235,31 @@ export default class Battlefield {
 
   readonly player: Army
   readonly enemy: Army
-  readonly playerBase: Base
-  readonly enemyBase: Base
+  /**
+   * The fortress that currently loses you the game. Kept as a getter rather
+   * than a field so the hundred places that already say `playerBase` keep
+   * meaning "the seat I am holding now" without any of them being touched.
+   */
+  get playerBase(): Base {
+    return this.seats.player[this.seats.player.length - 1].base
+  }
+
+  get enemyBase(): Base {
+    return this.seats.enemy[this.seats.enemy.length - 1].base
+  }
+
+  /** The seat a commander occupies now. */
+  activeSeat(faction: Faction): Seat {
+    const list = this.seats[faction]
+    return list[list.length - 1]
+  }
+
+  /** Every plot a commander owns, across every seat they have ever held. */
+  allPlots(faction: Faction): Building[] {
+    const out: Building[] = []
+    for (const seat of this.seats[faction]) out.push(...seat.plots)
+    return out
+  }
 
   units: Unit[] = []
   projectiles: Projectile[] = []
@@ -246,6 +295,15 @@ export default class Battlefield {
   readonly props: { x: number; lane: number; kind: PropKind; hp: number; maxHp: number; radius: number; blockH: number; alive: boolean; diedAt: number }[] = []
   /** A prop changed (took damage or fell); the scene should repaint it. */
   onPropChanged?: (index: number) => void
+
+  /**
+   * Every seat a commander has ever held, oldest first. The last one is the
+   * one they occupy; everything before it is derelict, still standing, still
+   * paying, and still turning out the soldiers of the age that built it.
+   */
+  readonly seats: Record<Faction, Seat[]> = { player: [], enemy: [] }
+  /** A seat was founded, or a plot changed; the scene should repaint. */
+  onSeatChanged?: (faction: Faction) => void
   /**
    * The creeds' ground rules run on their own coarse clock — walking every
    * relief bucket per sub-step would be waste, and none of these effects need
@@ -356,25 +414,12 @@ export default class Battlefield {
       }
     }
 
-    const margin = 150
-    this.playerBase = new Base(
-      scene,
-      'player',
-      margin,
-      config.groundY,
-      ageDef(this.player.age).baseHp * playerMods.baseHp,
-      vfx
-    )
-    this.enemyBase = new Base(
-      scene,
-      'enemy',
-      config.worldWidth - margin,
-      config.groundY,
-      ageDef(this.enemy.age).baseHp * enemyMods.baseHp,
-      vfx
-    )
-    this.playerBase.setAge(this.player.age, ageDef(this.player.age).baseHp * playerMods.baseHp)
-    this.enemyBase.setAge(this.enemy.age, ageDef(this.enemy.age).baseHp * enemyMods.baseHp)
+    // The first seat stands forward, so there is ground behind it to fall back
+    // through. Every age-up founds the next one SEAT_STEP further back, and the
+    // field between the two commanders widens as the war goes on.
+    const margin = 150 + SEAT_STEP * (AGES.length - 1)
+    this.foundSeat('player', this.player.age, margin, playerMods.baseHp)
+    this.foundSeat('enemy', this.enemy.age, config.worldWidth - margin, enemyMods.baseHp)
 
     this.playerBase.onTurretFire = this.handleTurretFire
     this.enemyBase.onTurretFire = this.handleTurretFire
@@ -965,6 +1010,9 @@ export default class Battlefield {
    */
   buyTech(faction: Faction, id: string): boolean {
     const army = this.armyFor(faction)
+    // A standing Reliquary makes the whole tree cheaper, which is why burning
+    // one is worth a detour: it does not merely slow research, it re-prices it.
+    this.refreshYard(faction)
     const bought = army.buyTech(id as TechId)
     if (bought) {
       const node = TECHS_BY_ID[id]
@@ -1082,6 +1130,12 @@ export default class Battlefield {
     // the fingerprint alongside the debris and the stains.
     this.terrain.hash(mix)
     for (const prop of this.props) mix(prop.alive ? Math.round(prop.hp) : -1)
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      for (const seat of this.seats[faction]) {
+        for (const part of seat.hashParts()) mix(part)
+        for (const b of seat.plots) for (const part of b.hashParts()) mix(part)
+      }
+    }
     mix(Math.round(this.quarryBank.player * 100))
     mix(Math.round(this.quarryBank.enemy * 100))
     for (const banner of this.banners) {
@@ -1110,6 +1164,7 @@ export default class Battlefield {
     this.updateUnits(dtMs)
     this.updateProjectiles(dtMs)
     this.updateBanners(dtMs)
+    this.updateBuildings(dtMs)
     this.updateGround(dtMs)
     this.updateCreedGround(dtMs)
     this.updateUnitSpecials(dtMs)
@@ -1616,6 +1671,64 @@ export default class Battlefield {
     }
   }
 
+  /**
+   * Whether this soldier's file can reach the enemy gate at all.
+   *
+   * Ramparts narrow it further as they go up, which is the loop the whole
+   * system turns on: fortifying the gate does not remove the war, it pushes it
+   * onto your flanks — where the economy is standing.
+   */
+  canReachGate(unit: Unit): boolean {
+    if (unit.layer === 'air') return true
+    return this.gateLanesFor(OPPOSITE[unit.faction]).has(unit.lane)
+  }
+
+  /**
+   * Which files may reach a given commander's gate.
+   *
+   * A camp is a narrow strongpoint; the capital retired into at the last age is
+   * a broad target every file can reach. This is the price of depth, and it is
+   * why receding is not simply better than standing.
+   */
+  gateLanesFor(defender: Faction): ReadonlySet<number> {
+    return this.activeSeat(defender).gateLanes
+  }
+
+  /** The buildings of one side that a soldier in this file could hit. */
+  standingBuildings(owner: Faction, lane: number): Damageable[] {
+    const out: Damageable[] = []
+    for (const seat of this.seats[owner]) {
+      for (const b of seat.plots) {
+        if (!b.alive || b.lane !== lane) continue
+        out.push(b)
+      }
+    }
+    return out
+  }
+
+  /** Every standing building of one side, for splash and projectile paths. */
+  liveBuildings(owner: Faction): Building[] {
+    const out: Building[] = []
+    for (const seat of this.seats[owner]) for (const b of seat.plots) if (b.alive) out.push(b)
+    return out
+  }
+
+  /**
+   * A derelict seat is still a fortress standing in the road. Its own files are
+   * blocked until it comes down; every other file walks straight past it, which
+   * is the whole tension — bypass the outpost and it keeps making soldiers
+   * behind you, or stop and dig it out while the clock runs.
+   */
+  derelictBlockers(owner: Faction, lane: number): Damageable[] {
+    const out: Damageable[] = []
+    for (const seat of this.seats[owner]) {
+      if (!seat.derelict || !seat.alive) continue
+      if (!seat.gateLanes.has(lane)) continue
+      out.push(seat.base)
+    }
+    return out
+  }
+
   /** Which commander's half of the field a point lies on. */
   halfOwner(x: number): Faction {
     return x < this.config.worldWidth / 2 ? 'player' : 'enemy'
@@ -1657,8 +1770,142 @@ export default class Battlefield {
     this.enemy.siege = cut(onEnemy)
   }
 
+  /**
+   * Raises a seat and lays out its empty plots.
+   *
+   * Called once at the start and again on every age-up. The new seat is founded
+   * SEAT_STEP behind the last one, which is what puts the old establishment
+   * between the enemy and the thing that loses the game.
+   */
+  private foundSeat(faction: Faction, generation: number, x: number, baseHpMult: number): Seat {
+    const previous = this.seats[faction][this.seats[faction].length - 1]
+    if (previous) previous.derelict = true
+    const hp = ageDef(generation).baseHp * baseHpMult
+    const base = new Base(this.scene, faction, x, this.config.groundY, hp, this.vfx)
+    base.setAge(generation, hp)
+    base.onTurretFire = this.handleTurretFire
+    const seat = new Seat(faction, generation, base)
+    const dir = ADVANCE_DIR[faction]
+    SEAT_PLOTS[seat.generation].forEach((spec, plot) => {
+      const building = new Building(
+        faction,
+        plot,
+        x + dir * spec.dx,
+        this.config.groundY + LANE_Y[spec.lane],
+        spec.lane,
+        this.vfx
+      )
+      building.onRazed = () => {
+        this.refreshYard(faction)
+        this.onSeatChanged?.(faction)
+      }
+      seat.plots.push(building)
+    })
+    this.seats[faction].push(seat)
+    this.onSeatChanged?.(faction)
+    return seat
+  }
+
+  /**
+   * The outworks' turn: rebuild timers, the Forge's slow mending, and the free
+   * soldiers a superseded seat keeps sending out of habit.
+   */
+  private updateBuildings(dtMs: number): void {
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      const army = this.armyFor(faction)
+      for (const seat of this.seats[faction]) {
+        for (const plot of seat.plots) {
+          plot.update(dtMs)
+          if (plot.justRazed) {
+            this.refreshYard(faction)
+            this.onSeatChanged?.(faction)
+          }
+        }
+        // The Forge mends the seat it stands on, but only while nothing is
+        // hitting it — a repair crew is not a second health bar, it is a reason
+        // to break off and come back later.
+        if (!seat.derelict && this.yardBonus(faction, 'forge') >= 0 && seat.base.alive) {
+          const quiet = !this.units.some(
+            u => u.alive && u.faction !== faction && Math.abs(u.x - seat.x) < 420
+          )
+          if (quiet) seat.base.hp = Math.min(seat.base.maxHp, seat.base.hp + seat.base.maxHp * 0.004 * (dtMs / 1000))
+        }
+        // A derelict seat cannot be repaired or rebuilt — the crews left with
+        // the commander. All it can still do is send people forward.
+        if (!seat.derelict) continue
+        const id = seat.tickGarrison(dtMs)
+        if (!id) continue
+        const def = UNITS_BY_ID[id]
+        if (!def) continue
+        // Out of the gate, into one of the files this seat actually holds.
+        const lanes = [...seat.gateLanes]
+        const lane = lanes[seat.aliveFromHere % lanes.length]
+        const unit = this.spawnUnit(faction, def, seat.x + ADVANCE_DIR[faction] * 40, lane)
+        unit.fromSeat = seat
+        seat.aliveFromHere += 1
+        void army
+      }
+    }
+  }
+
+  /**
+   * The multipliers the standing outworks are currently worth.
+   *
+   * Recomputed every tick rather than cached into `army.modifiers`, because a
+   * granary that has just been burned has to stop paying on the same tick that
+   * it fell — a cached bonus would keep feeding a commander whose economy is
+   * already on fire.
+   */
+  /**
+   * Pushes the yard's current worth onto the army.
+   *
+   * Called the instant anything changes a plot as well as every tick, so the
+   * multipliers are never stale: a granary that falls has to stop paying at the
+   * moment it falls, not at the start of the next tick, or a commander whose
+   * economy is on fire keeps being paid for it.
+   */
+  refreshYard(faction: Faction): void {
+    const army = this.armyFor(faction)
+    army.yardIncome = this.yardIncome(faction)
+    army.yardBuildSpeed = this.yardBuildSpeed(faction)
+    army.researchDiscount = this.yardResearchDiscount(faction)
+  }
+
+  yardIncome(faction: Faction): number {
+    const tier = this.yardBonus(faction, 'granary')
+    return tier < 0 ? 1 : [1.18, 1.38, 1.6][tier]
+  }
+
+  yardBuildSpeed(faction: Faction): number {
+    const tier = this.yardBonus(faction, 'muster')
+    return tier < 0 ? 1 : [1 / 0.88, 1 / 0.78, 1 / 0.7][tier]
+  }
+
+  yardResearchDiscount(faction: Faction): number {
+    const tier = this.yardBonus(faction, 'reliquary')
+    return tier < 0 ? 1 : [0.92, 0.85, 0.78][tier]
+  }
+
+  /**
+   * What the outworks are worth right now, recomputed rather than cached: a
+   * building that has just been burned must stop paying on the same tick.
+   */
+  yardBonus(faction: Faction, id: string): number {
+    let best = -1
+    for (const seat of this.seats[faction]) {
+      for (const plot of seat.plots) {
+        if (!plot.alive || plot.def?.id !== id) continue
+        if (plot.tier > best) best = plot.tier
+      }
+    }
+    return best
+  }
+
   private tickArmy(army: Army, dtMs: number): void {
     const before = army.gold
+    // The yard's multipliers are handed to the army for exactly this tick, so
+    // a granary that burns stops paying the instant it falls.
+    this.refreshYard(army.faction)
     const { ready } = army.tick(dtMs)
     this.statsFor(army.faction).goldEarned += Math.max(0, army.gold - before)
     for (const entry of ready) {
@@ -1900,12 +2147,20 @@ export default class Battlefield {
         }
       }
       gather(enemyAir, best)
-      gather([enemyBase], best)
+      // Bombardment still cannot shell a fortress from the yard: a siege engine
+      // standing in a flank file is looking at granaries, not at the gate.
+      if (this.canReachGate(unit)) gather([enemyBase], best)
+      gather(this.derelictBlockers(OPPOSITE[unit.faction], unit.lane), best)
+      gather(this.standingBuildings(OPPOSITE[unit.faction], unit.lane), best)
       if (best.length > 0) return pickFrom(best)
     } else {
       gather(enemyLanes[unit.lane], own)
       if (!melee) gather(enemyAir, own)
-      gather([enemyBase], own)
+      // The gate is only reachable from the middle three files, at ANY range.
+      // Everything else in the yard is a building, and only from the flanks.
+      if (this.canReachGate(unit)) gather([enemyBase], own)
+      gather(this.derelictBlockers(OPPOSITE[unit.faction], unit.lane), own)
+      gather(this.standingBuildings(OPPOSITE[unit.faction], unit.lane), own)
       if (own.length > 0) return pickFrom(own)
       if (!melee) {
         // Spill into the lane next door, at a price. A gun line can help its
@@ -1953,8 +2208,8 @@ export default class Battlefield {
 
   private updateProjectiles(dtMs: number): void {
     if (this.projectiles.length === 0) return
-    const alivePlayer: Damageable[] = [this.playerBase]
-    const aliveEnemy: Damageable[] = [this.enemyBase]
+    const alivePlayer: Damageable[] = [this.playerBase, ...this.liveBuildings('player')]
+    const aliveEnemy: Damageable[] = [this.enemyBase, ...this.liveBuildings('enemy')]
     for (const u of this.units) {
       if (!u.alive) continue
       ;(u.faction === 'player' ? alivePlayer : aliveEnemy).push(u)
@@ -2076,6 +2331,10 @@ export default class Battlefield {
       if (!u.alive) continue
       ;(u.faction === 'player' ? playerTargets : enemyTargets).push(u)
     }
+    // A turret defends the yard as readily as the gate: anything that walked
+    // in to burn a granary is standing well inside the wall's arc.
+    playerTargets.push(...this.liveBuildings('enemy'))
+    enemyTargets.push(...this.liveBuildings('player'))
     this.playerBase.update(dtMs, enemyTargets)
     this.enemyBase.update(dtMs, playerTargets)
   }
@@ -2402,6 +2661,13 @@ export default class Battlefield {
   }
 
   private handleUnitDeath = (unit: Unit, killer?: Damageable): void => {
+    // Release the outpost's standing count, so a seat whose three soldiers are
+    // killed starts sending again rather than going quiet for the rest of the
+    // match.
+    if (unit.fromSeat) {
+      unit.fromSeat.aliveFromHere = Math.max(0, unit.fromSeat.aliveFromHere - 1)
+      unit.fromSeat = null
+    }
     const winner = OPPOSITE[unit.faction]
     // Veterancy is credited to the soldier that actually landed the blow, not
     // to the side — the point is that this one is now worth pulling back.
@@ -2795,7 +3061,13 @@ export default class Battlefield {
     attacker: Damageable | null = null,
     laneLock?: number
   ): void {
-    const targets: Damageable[] = [...this.units, this.playerBase, this.enemyBase]
+    const targets: Damageable[] = [
+      ...this.units,
+      this.playerBase,
+      this.enemyBase,
+      ...this.liveBuildings('player'),
+      ...this.liveBuildings('enemy')
+    ]
     for (const t of targets) {
       if (!t.alive || t.faction === faction) continue
       // A swung weapon sweeps the swinger's own file. Shells do not care.
@@ -2911,8 +3183,21 @@ export default class Battlefield {
     const army = this.armyFor(faction)
     if (!army.evolve()) return false
     const def = ageDef(army.age)
-    const base = this.baseFor(faction)
-    base.setAge(army.age, def.baseHp * army.modifiers.baseHp)
+    // The seat you were holding is superseded, not abandoned: it keeps its
+    // buildings, keeps their effects, and starts turning out the soldiers of
+    // its own age for free. What it loses is you — no more building on it, no
+    // more repairs, no more tiers. Everything spent there is now something to
+    // defend rather than something to spend on.
+    const old = this.activeSeat(faction)
+    old.garrisonUnitId = old.garrisonUnitId ?? rosterForAge(old.generation)[0]?.id ?? null
+    const seat = this.foundSeat(
+      faction,
+      army.age,
+      old.x - ADVANCE_DIR[faction] * SEAT_STEP,
+      army.modifiers.baseHp
+    )
+    const base = seat.base
+    void def
     this.statsFor(faction).agesReached = army.age + 1
     audio.play('evolve', 0.8)
     this.vfx.flash(0xffffff, 320, 0.5)
@@ -2945,6 +3230,68 @@ export default class Battlefield {
     base.buildTurret(slotIndex, turretId)
     audio.play('shield', 0.5)
     return true
+  }
+
+  /**
+   * Raises a building on a plot, or lifts what is there by one tier.
+   *
+   * Only on the seat you currently occupy: the plots of a superseded seat keep
+   * paying but no longer take orders, which is what makes ageing up a decision
+   * rather than a reward.
+   */
+  buildOnPlot(faction: Faction, plotIndex: number, id: string): boolean {
+    const army = this.armyFor(faction)
+    const seat = this.activeSeat(faction)
+    const plot = seat.plots[plotIndex]
+    const def = BUILDINGS_BY_ID[id]
+    if (!plot || !def) return false
+    if (!seat.accepts(plotIndex, def)) return false
+    if (def.requires && !army.techs.has(def.requires)) return false
+    // Raising something new, lifting a tier, or paying a crew to clear rubble.
+    const razed = !plot.alive && plot.def !== null && plot.rebuildMs <= 0
+    if (plot.alive && plot.def && plot.def.id !== def.id) return false
+    const tier = plot.alive && plot.def ? plot.tier + 1 : razed && plot.def?.id === def.id ? plot.tier : 0
+    if (tier >= def.tiers.length) return false
+    const full = buildingCost(def, tier, army.age)
+    const cost = razed ? Math.round(full * REBUILD_FRACTION) : full
+    if (army.gold < cost) return false
+    army.gold -= cost
+    if (razed) plot.beginRebuild(def, tier, 1 + this.yardBonusLevel(faction, 'forge') * 0.25)
+    else plot.raise(def, tier)
+    this.refreshYard(faction)
+    this.onSeatChanged?.(faction)
+    return true
+  }
+
+  /** Pulls a building down yourself, for the plot back and half the gold. */
+  razeOwnPlot(faction: Faction, plotIndex: number): boolean {
+    const seat = this.activeSeat(faction)
+    const plot = seat.plots[plotIndex]
+    if (!plot?.alive || !plot.def) return false
+    const army = this.armyFor(faction)
+    army.gold += Math.round(buildingCost(plot.def, plot.tier, army.age) * 0.5)
+    plot.def = null
+    plot.alive = false
+    plot.hp = 0
+    plot.tier = 0
+    this.refreshYard(faction)
+    this.onSeatChanged?.(faction)
+    return true
+  }
+
+  /** Chooses what a superseded seat turns out, from the roster of its own age. */
+  setGarrison(faction: Faction, seatIndex: number, id: string): boolean {
+    const seat = this.seats[faction][seatIndex]
+    if (!seat || !seat.derelict) return false
+    if (!rosterForAge(seat.generation).some(d => d.id === id)) return false
+    seat.garrisonUnitId = id
+    this.onSeatChanged?.(faction)
+    return true
+  }
+
+  /** Highest standing tier of one building across every seat, or −1. */
+  yardBonusLevel(faction: Faction, id: string): number {
+    return this.yardBonus(faction, id)
   }
 
   sellTurret(faction: Faction, slotIndex: number): boolean {

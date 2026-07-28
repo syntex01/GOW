@@ -131,9 +131,19 @@ export default class Army {
    */
   siege = 0
 
+  /**
+   * What the outworks are currently worth. Written by the battlefield every
+   * tick rather than folded into `modifiers`, because these come from buildings
+   * that can be burned down mid-match — a multiplier baked in at purchase time
+   * would keep paying a commander whose granary is a crater.
+   */
+  yardIncome = 1
+  yardBuildSpeed = 1
+  researchDiscount = 1
+
   /** Income before the siege takes its cut — what the yard *could* produce. */
   get grossIncomePerSecond(): number {
-    return this.ageDefinition.income * this.modifiers.income * (1 + this.incomeLevel * 0.22)
+    return this.ageDefinition.income * this.modifiers.income * this.yardIncome * (1 + this.incomeLevel * 0.22)
   }
 
   get incomePerSecond(): number {
@@ -296,7 +306,7 @@ export default class Army {
   buyTech(id: TechId): boolean {
     if (this.techAvailability(id) !== 'ready') return false
     const node = TECHS_BY_ID[id]
-    this.gold -= node.cost
+    this.gold -= Math.round(node.cost * this.researchDiscount)
     this.techs.add(id)
     // Stat research compounds into the army's modifiers. Units already on the
     // field keep the numbers they were built with — research equips the next
@@ -368,8 +378,8 @@ export default class Army {
     this.queue.push({
       def,
       lane: Math.max(0, Math.min(4, Math.round(lane))),
-      remainingMs: def.buildMs / this.modifiers.buildSpeed,
-      totalMs: def.buildMs / this.modifiers.buildSpeed
+      remainingMs: def.buildMs / (this.modifiers.buildSpeed * this.yardBuildSpeed),
+      totalMs: def.buildMs / (this.modifiers.buildSpeed * this.yardBuildSpeed)
     })
     return true
   }

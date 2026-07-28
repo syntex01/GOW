@@ -20,8 +20,11 @@ import type { Faction } from '../sim/types'
  * besieged supply, where enemies standing in your yard cut your income. v12
  * deals the opening board as clustered sites rather than scattered singles,
  * which changes the match seed's draw order and therefore every prop position.
+ * v13 is the outworks: fortresses reachable only from their own gate files,
+ * plots that can be built on and burned, and a new seat founded further back
+ * on every age-up which leaves the last one standing and derelict.
  */
-export const PROTOCOL_VERSION = 12
+export const PROTOCOL_VERSION = 13
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing
@@ -38,6 +41,9 @@ export type Command =
   | { t: 'sell'; slot: number }
   | { t: 'cancel' }
   | { t: 'tech'; id: string }
+  | { t: 'build'; plot: number; id: string }
+  | { t: 'raze'; plot: number }
+  | { t: 'garrison'; seat: number; id: string }
 
 /** One tick's worth of a peer's intent, plus an optional integrity check. */
 export interface TickMessage {

@@ -200,6 +200,12 @@ export default class Unit implements Damageable {
   private blockedMs = 0
   /** Lanes the current shot crosses: 0 own file, 1 next door, 2 plunging. */
   crossLaneShot = 0
+  /**
+   * The derelict seat that sent this soldier out for free, if any. Held so the
+   * seat's standing cap is released when it dies — otherwise an outpost stops
+   * producing forever the first time its three soldiers are killed.
+   */
+  fromSeat: { aliveFromHere: number } | null = null
   /** True while this flanker's file is clear ahead — set by the battlefield. */
   raiding = false
   /** Weight of the ranks pressing in behind this one. Set by the battlefield. */

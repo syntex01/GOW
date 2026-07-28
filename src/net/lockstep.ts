@@ -59,6 +59,15 @@ export function applyCommand(bf: Battlefield, faction: Faction, command: Command
     case 'tech':
       bf.buyTech(faction, command.id)
       break
+    case 'build':
+      bf.buildOnPlot(faction, command.plot, command.id)
+      break
+    case 'raze':
+      bf.razeOwnPlot(faction, command.plot)
+      break
+    case 'garrison':
+      bf.setGarrison(faction, command.seat, command.id)
+      break
   }
 }
 
