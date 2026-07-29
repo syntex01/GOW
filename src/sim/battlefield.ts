@@ -30,6 +30,9 @@ import {
   BUILDINGS_BY_ID,
   RELIQUARY_DISCOUNT,
   RELIQUARY_RESEARCH,
+  WIDE_FALLOFF,
+  stackRanked,
+  stackShield,
   REBUILD_FRACTION,
   SEAT_PLOTS,
   MUSTER_ADVANCE,
@@ -43,6 +46,7 @@ import {
   CHARNEL_LINE_COST,
   CHARNEL_PER_CORPSE,
   GRANARY_INCOME,
+  DEEP_FALLOFF,
   FORGE_HOME_GUARD,
   FORGE_REGEN,
   GREAT_RITE_MS,
@@ -165,8 +169,6 @@ const PLUNDER_EXIT = 300
 /** Bodies that rot away per second. Half a pile in about ninety seconds. */
 const CORPSE_ROT_PER_S = 0.25
 
-/** What each building past the first of its kind pays, as a share of its own worth. */
-const STACK_FALLOFF = 0.5
 
 const SPLASH_SHIELDING = 9
 
@@ -2274,13 +2276,15 @@ export default class Battlefield {
    * looks nothing like anybody else's.
    */
   yardResearchRate(faction: Faction): number {
-    let rate = BASE_RESEARCH_RATE
     const doctrine = this.armyFor(faction).hasTech('forward_doctrine')
+    // Collected rather than summed as we go: research stacks on its own gentle
+    // curve, and a curve needs to see all of its terms before it can rank them.
+    const halls: number[] = []
     for (const seat of this.seats[faction]) {
       for (const plot of seat.plots) {
         if (!plot.alive || !plot.def) continue
         if (plot.def.id === 'reliquary') {
-          rate += RELIQUARY_RESEARCH[Math.min(RELIQUARY_RESEARCH.length - 1, plot.tier)]
+          halls.push(RELIQUARY_RESEARCH[Math.min(RELIQUARY_RESEARCH.length - 1, plot.tier)])
           continue
         }
         if (plot.def.id !== 'research_hall') continue
@@ -2289,10 +2293,10 @@ export default class Battlefield {
         // place on the board everybody can reach, and let them see it there.
         const forward = this.plotFace(seat, plot.plot) === 'front'
         const bonus = forward ? (doctrine ? RESEARCH_HALL_FORWARD_DOCTRINE : RESEARCH_HALL_FORWARD) : 1
-        rate += RESEARCH_HALL_RATE[Math.min(RESEARCH_HALL_RATE.length - 1, plot.tier)] * bonus
+        halls.push(RESEARCH_HALL_RATE[Math.min(RESEARCH_HALL_RATE.length - 1, plot.tier)] * bonus)
       }
     }
-    return rate
+    return BASE_RESEARCH_RATE + stackRanked(halls, DEEP_FALLOFF)
   }
 
   /** Which face of its seat a plot sits on, or null if the index is stale. */
@@ -2561,18 +2565,14 @@ export default class Battlefield {
   /**
    * How much a whole yard of one building is worth, as a bonus over 1.
    *
-   * The best one pays in full and every further one pays half. That makes going
-   * WIDE a real alternative to going tall without making it strictly better:
-   * two tier-1 granaries beat one tier-1, and lose to one tier-3.
+   * Ranked harmonic falloff — see `stackRanked`. Sorted best-first, the i-th
+   * pays 1 / (1 + i·falloff), so going WIDE is a real alternative to going tall
+   * without ever being strictly better: two tier-1 granaries beat one tier-1,
+   * and lose to one tier-3.
    */
-  private stackedBonus(faction: Faction, id: string, byTier: readonly number[]): number {
-    const tiers = this.yardTiers(faction, id)
-    let total = 0
-    for (let i = 0; i < tiers.length; i += 1) {
-      const value = byTier[Math.min(byTier.length - 1, tiers[i])]
-      total += i === 0 ? value : value * STACK_FALLOFF
-    }
-    return total
+  private stackedBonus(faction: Faction, id: string, byTier: readonly number[], falloff = WIDE_FALLOFF): number {
+    const parts = this.yardTiers(faction, id).map(t => byTier[Math.min(byTier.length - 1, t)])
+    return stackRanked(parts, falloff)
   }
 
   private tickArmy(army: Army, dtMs: number): void {
@@ -2717,10 +2717,11 @@ export default class Battlefield {
         }
         // A Forge is a defensive building, so what it buys is HOME GROUND: your
         // soldiers are harder to kill on your own half and no better than
-        // anyone else's on the enemy's. It takes the best of the two rather
-        // than stacking, so a Forge and a screening tank do not multiply.
-        best = Math.max(best, this.homeGuard(u))
-        u.auraShield = best
+        // anyone else's on the enemy's. It compounds with a screening aura the
+        // same way two Forges compound — shares of what is still getting
+        // through — so the two are worth having together and neither can be
+        // stacked into immunity.
+        u.auraShield = stackShield([best, this.homeGuard(u)])
         u.setAuraVisual(best > 0)
       }
     }
@@ -2842,9 +2843,12 @@ export default class Battlefield {
    * and a commander who has been pushed back keeps the ground they still hold.
    */
   private homeGuard(unit: Unit): number {
-    const tier = this.yardBonus(unit.faction, 'forge')
-    if (tier < 0) return 0
-    const guard = FORGE_HOME_GUARD[Math.min(FORGE_HOME_GUARD.length - 1, tier)]
+    const tiers = this.yardTiers(unit.faction, 'forge')
+    if (tiers.length === 0) return 0
+    // Forges compound the way armour does, not the way percentages do: each
+    // one takes its share of what is still getting through. Two 26% Forges are
+    // 45%, and no number of them ever reaches immunity.
+    const guard = stackShield(tiers.map(t => FORGE_HOME_GUARD[Math.min(FORGE_HOME_GUARD.length - 1, t)]))
     if (guard <= 0) return 0
     const mine = this.activeSeat(unit.faction).x
     const theirs = this.activeSeat(OPPOSITE[unit.faction]).x

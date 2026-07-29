@@ -213,6 +213,58 @@ export const FORGE_HOME_GUARD = [0.14, 0.26, 0.38] as const
 /** How fast a Forge mends the seat it stands on, per second, by tier. */
 export const FORGE_REGEN = [0.004, 0.009, 0.016] as const
 
+// ───────────────────────── How bonuses stack ─────────────────────────
+//
+// Three curves, because the four bottlenecks fail in three different ways.
+// A flat sum breaks all of them: damage reduction reaches immunity, income
+// runs away, and research turns into a linear race nobody can lose from
+// behind. Every stacking rule in the game goes through one of these.
+
+/**
+ * DEFENCE — multiplicative, the Dota rule.
+ *
+ * Each source takes its share of what is still getting through, so two 30%
+ * Forges are 51% rather than 60% and a hundred of them never reach 100%. This
+ * is not a taste decision: additive reduction has a point where it hits total
+ * immunity, and a defence bottleneck with a solved state is not a bottleneck.
+ */
+export function stackShield(parts: readonly number[]): number {
+  let through = 1
+  for (const p of parts) through *= 1 - Math.max(0, Math.min(0.95, p))
+  return 1 - through
+}
+
+/**
+ * ECONOMY and PRODUCTION — ranked harmonic falloff.
+ *
+ * Sorted best-first, the i-th source pays `1 / (1 + i)`: full, half, a third,
+ * a quarter. Going wide keeps working and never stops working, but the total
+ * grows like a logarithm rather than a line, so a yard of six granaries is
+ * worth about two and a half — enough that the plots are not wasted, not
+ * enough that economy is the only thing worth building.
+ */
+export const WIDE_FALLOFF = 1
+
+/**
+ * RESEARCH — the same shape, far gentler.
+ *
+ * Research is the one bottleneck a creed is supposed to be able to open all
+ * the way: Engineering is written as the creed that goes tall on it, and
+ * "two tier-2 halls beat one tier-3" is a promise the tree is balanced
+ * against. At a quarter the falloff the i-th hall pays 1, 0.8, 0.67, 0.57 —
+ * still diminishing, still a real build at the fourth one.
+ */
+export const DEEP_FALLOFF = 0.25
+
+/** Ranked falloff: sorted best-first, the i-th source pays 1 / (1 + i·falloff). */
+export function stackRanked(parts: readonly number[], falloff: number): number {
+  const sorted = [...parts].sort((a, b) => b - a)
+  let total = 0
+  for (let i = 0; i < sorted.length; i += 1) total += sorted[i] / (1 + i * falloff)
+  return total
+}
+
+
 // ─────────────────────────── The creed halls ───────────────────────────
 // Every number the seven halls in CREED_HALLS run on, in one place, so the
 // panel text below and the simulation cannot drift apart.
