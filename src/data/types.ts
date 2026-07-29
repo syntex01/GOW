@@ -19,6 +19,7 @@ export type WeaponVisual =
   | 'laser'
   | 'railgun'
   | 'plasma'
+  | 'tentacle'
   | 'none'
 
 export type HelmetVisual =

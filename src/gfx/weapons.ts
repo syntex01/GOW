@@ -1075,6 +1075,70 @@ function drawPlasma(k: Kit): WeaponArtHi {
  * Returns `null` for the two kinds that have no object to draw: an empty hand
  * and no weapon at all.
  */
+/**
+ * A STABBING TENTACLE. The Shrike's whole argument.
+ *
+ * Not a weapon somebody is holding — a limb that ends in a beak. It has to read
+ * as flesh at a glance against a roster of steel, so: no grip wrap, no guard, a
+ * boneless taper that kinks rather than curves, and a wet highlight running
+ * along the top rather than a polished edge. The tip is the only hard thing on
+ * it, which is the part that goes in.
+ */
+function drawTentacle(k: Kit): WeaponArtHi {
+  const L = k.L
+  const thick = Math.max(3, Math.round(L * 0.17))
+  const p = partCanvas(L + 2, Math.max(9, thick * 3))
+  const cy = Math.round(p.h / 2)
+  const flesh = k.hide
+  const beak = k.iron
+
+  // Two kinks rather than one smooth arc: a boneless thing does not bend on a
+  // radius, it folds where the muscle gives.
+  const bend = (t: number) => {
+    const a = Math.sin(t * 3.4) * thick * 0.55
+    const b = Math.sin(t * 7.1) * thick * 0.22
+    return -(a + b)
+  }
+  edged(
+    p,
+    PAD + 1,
+    PAD + L - Math.round(L * 0.16),
+    cy,
+    t => thick * (1 - 0.42 * t),
+    flesh,
+    bend
+  )
+
+  // Suckers along the underside — the read that says this is not a whip.
+  const span = Math.max(4, L - Math.round(L * 0.2))
+  for (let i = 3; i < span; i += Math.max(3, Math.round(thick * 1.1))) {
+    const t = i / span
+    const h = thick * (1 - 0.42 * t)
+    const y = Math.round(cy + bend(t) + h / 2 - 1)
+    p.set(PAD + 1 + i, y, flesh[1])
+    p.set(PAD + 1 + i, y - 1, flesh[3])
+  }
+
+  // The beak: a short hard spike, the one part of it that is not soft.
+  const tipT = 1
+  const tipX = PAD + L - Math.round(L * 0.16)
+  const tipY = Math.round(cy + bend(tipT))
+  const spike = Math.max(3, Math.round(L * 0.18))
+  for (let i = 0; i < spike; i += 1) {
+    const h = Math.max(1, Math.round(thick * 0.62 * (1 - i / spike)))
+    const top = tipY - Math.round(h / 2)
+    for (let row = 0; row < h; row += 1) p.set(tipX + i, top + row, beak[row === 0 ? 3 : 2])
+  }
+
+  return {
+    canvas: p.toCanvas() as Canvas2D,
+    grip: [PAD + 1, cy],
+    // Carried low and forward, like something that is already reaching.
+    restAngle: 0.18,
+    twoHanded: false
+  }
+}
+
 export function drawWeaponHi(kind: WeaponVisual, v: UnitVisual, lengthPx: number): WeaponArtHi | null {
   if (kind === 'none' || kind === 'fist') return null
   const L = Math.max(8, Math.round(lengthPx * RES))
@@ -1115,6 +1179,8 @@ export function drawWeaponHi(kind: WeaponVisual, v: UnitVisual, lengthPx: number
       return drawRailgun(k)
     case 'plasma':
       return drawPlasma(k)
+    case 'tentacle':
+      return drawTentacle(k)
     default:
       return null
   }

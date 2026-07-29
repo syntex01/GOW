@@ -925,7 +925,10 @@ export const FACTION_UNITS: UnitDef[] = [
     height: 70,
     conduct: 'hunt',
     flanker: true,
-    special: 'charge',
+    // THE LEAP. It does not walk into a fight and stand in it — it crouches,
+    // throws itself over the front rank, opens something up, and is gone before
+    // the rank has turned round. See `Battlefield.updateLeapers`.
+    special: 'leap',
     attack: { kind: 'melee', knockback: 120 },
     // ANTI-CHAFF, and a flesh producer. The age-two pair are the creed's answer
     // to a screen of cheap bodies and its main source of income at the same
@@ -965,7 +968,7 @@ export const FACTION_UNITS: UnitDef[] = [
     id: 'nk_shrike',
     name: 'Shrike',
     age: 3,
-    role: 'ranged',
+    role: 'melee',
     layer: 'ground',
     cost: 820,
     buildMs: 3300,
@@ -974,7 +977,15 @@ export const FACTION_UNITS: UnitDef[] = [
     damage: 190,
     damageType: 'pierce',
     attackMs: 1050,
-    range: 310,
+    // TWO BODIES OF REACH, AND NOT A SHOOTER.
+    //
+    // Carnage is not supposed to have a gun line. The Shrike used to be a
+    // javelin at three hundred pixels, which made the creed's answer to a
+    // backline "stand at the back and out-range it" — the opposite of everything
+    // else about it. It is a melee weapon now, with a haft made of muscle: it
+    // reaches over the man in front and stabs, and if it wants something further
+    // away than that it has to walk.
+    range: 150,
     speed: 48,
     mass: 1.6,
     bounty: 312,
@@ -982,10 +993,10 @@ export const FACTION_UNITS: UnitDef[] = [
     pop: 2,
     height: 66,
     conduct: 'hunt',
-    special: 'execute',
-    attack: { kind: 'projectile', projectile: 'bolt', speed: 820, gravity: 60, spread: 0.03, knockback: 60 },
-    description: 'Hunts the weakest and doubles its javelin into anything already bleeding out.',
-    visual: look('nekrotics', { torso: 'fur', weapon: 'bow', helmet: 'hood' })
+    special: 'headtaker',
+    attack: { kind: 'melee', knockback: 70 },
+    description: 'Tentacles with beaks on the end. It picks whoever is closest to finished and takes the head off them.',
+    visual: look('nekrotics', { torso: 'coat', weapon: 'tentacle', helmet: 'hood', bulk: 1.05 })
   },
   {
     // ══════════════════════ AGE FOUR — THE RENDERING ══════════════════════

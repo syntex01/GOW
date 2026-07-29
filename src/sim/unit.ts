@@ -350,6 +350,20 @@ export default class Unit implements Damageable {
   /** Permanent growth a Monstrum has eaten its way into, for the read. */
   gorged = 0
   /**
+   * THE LEAP. Which beat of the hit-and-run a Ripjaw is on, and how long is
+   * left of it. 0 stalk · 1 in the air · 2 striking · 3 withdrawing.
+   */
+  leapPhase = 0
+  leapMs = 0
+  /**
+   * A deliberate leap does not hurt on landing. Without this the fall-damage
+   * rule — which exists to punish being THROWN — would bill a raider for every
+   * jump it made on purpose.
+   */
+  landsSoft = false
+  /** The Shrike took the head off this one. It drops where the body does. */
+  beheaded = false
+  /**
    * Shared clock for the bodies that work on what is lying around them — the
    * Monstrum's bite, the Flesh Wall's mending, the Flesh Wagon's rendering. One
    * field because no unit is more than one of those things.
@@ -1625,7 +1639,7 @@ export default class Unit implements Damageable {
         // is why the throwing techs measured as a mercy to the enemy. A hard
         // landing costs, and it costs the heavy most — armour does not help
         // you meet the ground. Capped, so this never one-shots.
-        if (fall > 360 && this.alive) {
+        if (fall > 360 && this.alive && !this.landsSoft) {
           const hurt = Math.min(this.maxHp * 0.22, (fall - 360) * 0.11 * (0.7 + this.def.mass * 0.15))
           if (hurt > 1) {
             this.takeDamage(hurt, 'blunt')
@@ -1633,6 +1647,7 @@ export default class Unit implements Damageable {
             this.world.vfx.impact(this.x, this.groundLine - 6, 0xd8c8a8, 0.8, true)
           }
         }
+        this.landsSoft = false
         this.vy = 0
       }
     } else if (this.vx !== 0) {

@@ -269,6 +269,31 @@ const MONSTRUM_DAMAGE_PER_BITE = 0.045
 const FLESH_WALL_MEND_MS = 900
 const FLESH_WALL_MEND_FRACTION = 0.02
 
+/**
+ * THE RIPJAW'S LEAP.
+ *
+ * A flanker that walks into a fight and stands in it is a worse Duelist. This
+ * one is a raid: it crouches, throws itself clean over the front rank, opens
+ * something up, and is gone before the rank has turned round. The withdrawal is
+ * the point — it is what makes a Ripjaw impossible to pin and impossible to
+ * trade with, and it is why the answer to one is a phalanx that reads the
+ * charge rather than a bigger body to put in its way.
+ */
+/** How far ahead it will look for something worth jumping onto. */
+const LEAP_RANGE = 320
+/** Time in the air. */
+const LEAP_FLIGHT_MS = 620
+/** How long it stays to do the work, once it has landed. */
+const LEAP_STRIKE_MS = 900
+/** How long it spends getting back out, and how far back it goes. */
+const LEAP_WITHDRAW_MS = 850
+const LEAP_WITHDRAW_PX = 240
+/** Breath between raids. */
+const LEAP_REST_MS = 700
+
+/** Health below which a Shrike simply takes the head off. */
+const HEADTAKER_THRESHOLD = 0.1
+
 /** The Flesh Wagon: how much it renders down, how often, and into what. */
 const WAGON_RAISE_MS = 5200
 const WAGON_RAISE_COST = 5
@@ -991,6 +1016,25 @@ export default class Battlefield {
       if (sack.bone) parts.push(`${sack.bone} bone`)
       this.vfx.floatingLabel(dropX, (devoured ? ground - 60 : unit.centerY) - unit.def.height * 0.62, parts.join(' '), '#cbb894')
     }
+  }
+
+  /** One skull, dropped under the body the Shrike took it from. */
+  private dropHead(unit: Unit): void {
+    const ground = this.groundLineFor(unit.lane)
+    const life = spoilLife('skull', unit.def.cost)
+    this.physics.spawn('gib', unit.x + this.rng.spread(8), unit.centerY, this.rng.spread(60), -this.rng.range(120, 260), {
+      spoil: 'skull',
+      worth: spoilWorth(unit.def.cost),
+      ttl: life,
+      ttlMax: life,
+      texture: SPOIL_TEXTURE.skull,
+      color: SPOIL_COLOR.skull,
+      size: 1.05,
+      spin: this.rng.spread(5),
+      faction: unit.faction,
+      floor: ground
+    })
+    this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.8, 'HEAD TAKEN', '#e6dfc4')
   }
 
   /**
@@ -1751,6 +1795,8 @@ export default class Battlefield {
       mix(Math.round(u.slain))
       mix(Math.round(u.gorged * 100))
       mix(Math.round(u.eatTimer))
+      mix(u.leapPhase * 4 + (u.landsSoft ? 1 : 0) + (u.beheaded ? 2 : 0))
+      mix(Math.round(u.leapMs))
       // Where a gatherer is walking. It is the only body on the board whose
       // destination is not implied by its faction, so nothing else in this loop
       // pins it down.
@@ -3333,6 +3379,7 @@ export default class Battlefield {
     // techs at all, and would therefore have silently disabled the Incarnation
     // for a commander who bought it without researching anything.
     this.updateFleshEaters(dtMs)
+    this.updateLeapers(dtMs)
     this.updateIncarnation('player', dtMs)
     this.updateIncarnation('enemy', dtMs)
     this.stepSide(playerUnits, enemy.seen, enemy.air, this.enemyBase, dtMs)
@@ -4339,6 +4386,11 @@ export default class Battlefield {
       // land on, so killing deep in your own yard feeds the enemy's harvest
       // and killing in theirs feeds yours.
       this.dropSpoils(unit, unit.lastDamageType, unit.lastOverkill, killer)
+      // A taken head is a skull on the ground, wherever the body fell and
+      // whatever the weapon was. This is the one drop that does not go through
+      // the damage-type table, because the Shrike does not kill things — it
+      // removes their heads, and the head is the point.
+      if (unit.beheaded) this.dropHead(unit)
     }
     // Release the outpost's standing count, so a seat whose three soldiers are
     // killed starts sending again rather than going quiet for the rest of the
@@ -4930,7 +4982,78 @@ export default class Battlefield {
     return best
   }
 
-  /** Core damage pipeline: modifiers, crits, stats, then the target's own logic. */
+
+  /**
+   * THE RIPJAW'S RAID, one beat per sub-step.
+   *
+   * Written here rather than in the unit because the interesting part is the
+   * decision — is there anything worth jumping onto — and a soldier cannot see
+   * the board. The withdrawal reuses `errandX`, which already overrides the
+   * advance rule outright, so a retreating raider walks *backwards through its
+   * own line* instead of queueing politely behind it.
+   */
+  private updateLeapers(dtMs: number): void {
+    for (const u of this.units) {
+      if (!u.alive || u.def.special !== 'leap' || u.layer !== 'ground') continue
+      const dir = ADVANCE_DIR[u.faction]
+      if (u.leapMs > 0) u.leapMs -= dtMs
+
+      switch (u.leapPhase) {
+        // ── 0 · STALKING. Advance normally until something is worth jumping at.
+        case 0: {
+          if (u.leapMs > 0) break
+          let prey: Unit | null = null
+          let bestD = LEAP_RANGE
+          for (const foe of this.units) {
+            if (!foe.alive || foe.faction === u.faction || foe.layer !== 'ground') continue
+            const dx = (foe.x - u.x) * dir
+            if (dx < 20 || dx > bestD) continue
+            bestD = dx
+            prey = foe
+          }
+          if (!prey) break
+          // Over the front rank, not through it. The arc is what makes the raid
+          // ignore the queue it would otherwise have to wait in.
+          u.errandX = null
+          u.landsSoft = true
+          u.launch(dir * (bestD / (LEAP_FLIGHT_MS / 1000)) * 0.62, -430)
+          u.leapPhase = 1
+          u.leapMs = LEAP_FLIGHT_MS
+          u.chargeReady = true
+          this.vfx.footDust(u.x, this.groundLineFor(u.lane))
+          break
+        }
+        // ── 1 · IN THE AIR. Physics owns it; wait for the ground.
+        case 1: {
+          if (u.leapMs > 0) break
+          u.leapPhase = 2
+          u.leapMs = LEAP_STRIKE_MS
+          this.vfx.impact(u.x, this.groundLineFor(u.lane) - 8, 0xc0392b, 1.1, false)
+          break
+        }
+        // ── 2 · STRIKING. It fights like anything else, briefly.
+        case 2: {
+          if (u.leapMs > 0) break
+          u.leapPhase = 3
+          u.leapMs = LEAP_WITHDRAW_MS
+          // Back the way it came, past its own line. `errandX` overrides the
+          // advance rule, so nothing it owns can block the exit.
+          u.errandX = u.x - dir * LEAP_WITHDRAW_PX
+          break
+        }
+        // ── 3 · WITHDRAWING. Cannot be engaged into standing still.
+        default: {
+          if (u.leapMs > 0) break
+          u.errandX = null
+          u.leapPhase = 0
+          u.leapMs = LEAP_REST_MS
+          u.chargeReady = true
+        }
+      }
+    }
+  }
+
+  /** Core damage pipeline: modifiers, crits, stats, then the target's own logic. */  /** Core damage pipeline: modifiers, crits, stats, then the target's own logic. */
   applyDamage(attacker: Damageable | null, target: Damageable, event: DamageEvent): void {
     this.lastViolenceMs = this.elapsedMs
     if (!target.alive) return
@@ -4943,7 +5066,32 @@ export default class Battlefield {
     // The Hexer's mark: a marked soldier is structurally uncertain, and
     // everything that reaches it finds the flaw.
     if (target instanceof Unit && target.hexedFor > 0) amount *= 1.25
-    // The Shrike finishes what is already bleeding out.
+    // THE SHRIKE TAKES THE HEAD. Not a damage bonus — an execution: anything
+    // already under a tenth is finished outright, whatever is left of it, and
+    // the head comes off and lands where the body does. It is the creed's only
+    // reliable source of skulls, which is what makes an executioner worth
+    // fielding in an army that otherwise reads everything it kills for meat.
+    if (
+      attacker instanceof Unit &&
+      attacker.def.special === 'headtaker' &&
+      target instanceof Unit &&
+      target.hp > 0 &&
+      target.hp < target.maxHp * HEADTAKER_THRESHOLD
+    ) {
+      // Deliberately overwhelming rather than "exactly enough".
+      //
+      // `takeDamage` still divides by the victim's toughness and runs it through
+      // the armour matrix, so handing it precisely the health remaining meant a
+      // heavy target survived its own execution — measured, a Bonecrusher walked
+      // away from one with 152 health left. An execution is not a damage roll,
+      // so it is not priced like one; the head comes off and the rest of the
+      // body is written off with it, which is also why a beheaded corpse leaves
+      // little but the skull.
+      amount = target.maxHp * 40 + 1000
+      target.beheaded = true
+      this.vfx.impact(target.x, target.centerY, 0xe6dfc4, 1.5, true)
+    }
+    // The older javelin-Shrike's bonus, kept for anything else carrying it.
     if (
       attacker instanceof Unit &&
       attacker.def.special === 'execute' &&
