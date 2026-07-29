@@ -75,7 +75,7 @@ which is the source of truth (and what the balance harnesses sample).
 
 ## Research (30)
 
-**23. The Gore Engine** — Butchery guarantees dismemberment; Bloodlust reads the soaked ground for up to +45% attack speed.
+**23. The Gore Engine** — Butchery turns every crit into a burst body; Bloodlust reads the soaked ground for up to +45% attack speed. The crits feed the ground that feeds the speed that lands more crits.
    *Beats:* attrition_grind, engaged_front · *Countered by:* ranged_standoff, peace_denial, fight_on_their_half
 
 **24. Carrion Economy** — Butchery fills your half with remains; the Bonewrights walk out, sack them and carry them home for gold.

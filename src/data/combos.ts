@@ -136,7 +136,7 @@ export const COMBOS: ComboEntry[] = [
 
   // ─────────────────────────────── TECH (23–52) ───────────────────────────
   P('gore_engine', 'The Gore Engine', 'tech', ['butchery', 'bloodlust'],
-    'Butchery guarantees dismemberment; Bloodlust reads the soaked ground for up to +45% attack speed.',
+    'Butchery turns every crit into a burst body; Bloodlust reads the soaked ground for up to +45% attack speed. The crits feed the ground that feeds the speed that lands more crits.',
     ['attrition_grind', 'engaged_front'],
     ['ranged_standoff', 'peace_denial', 'fight_on_their_half']),
   P('carrion_economy', 'Carrion Economy', 'tech', ['butchery', 'bone_harvest'],

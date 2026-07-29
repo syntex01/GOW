@@ -106,5 +106,11 @@ export interface Damageable {
    * art happens to sit.
    */
   flatContact?: boolean
-  takeDamage(amount: number, type: DamageType, source?: Damageable, knockback?: number): void
+  /**
+   * `crit` says the blow that landed was a critical. Only soldiers care —
+   * Butchery takes a critically-killed body apart completely — but it rides on
+   * the interface so the damage pipeline does not have to know which kind of
+   * thing it is hitting.
+   */
+  takeDamage(amount: number, type: DamageType, source?: Damageable, knockback?: number, crit?: boolean): void
 }

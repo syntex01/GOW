@@ -284,6 +284,13 @@ export default class Unit implements Damageable {
   private overkillFrac = 0
   private lastHitType: DamageType = 'blunt'
   private lastHitDir = 0
+  /**
+   * Whether the last blow that landed was a critical.
+   *
+   * Butchery reads it: a crit KILL takes the body apart completely, and an
+   * ordinary one does not. Set on every hit, so it can never be stale.
+   */
+  private lastHitCrit = false
 
   /**
    * The killing blow, for whoever has to clean up afterwards.
@@ -298,6 +305,10 @@ export default class Unit implements Damageable {
 
   get lastOverkill(): number {
     return this.overkillFrac
+  }
+
+  get lastWasCrit(): boolean {
+    return this.lastHitCrit
   }
 
   /**
@@ -945,8 +956,9 @@ export default class Unit implements Damageable {
     return (this.def.minRange ?? 0) * this.rangeMult
   }
 
-  takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0): void {
+  takeDamage(amount: number, type: DamageType, source?: Damageable, knockback = 0, crit = false): void {
     if (!this.alive) return
+    this.lastHitCrit = crit
     let mult = damageMultiplier(type, this.armor)
     // THE HEX UNMAKES EVERY WARD: while the mark burns, plating does not
     // glance, formations do not share, roots do not hold and barriers do not
@@ -1151,18 +1163,24 @@ export default class Unit implements Damageable {
     // falls over or a body that comes apart. Overkill is the honest measure:
     // a spearman finished by one more jab topples, one hit by a shell does not
     // stay in one piece.
-    // Butchery makes every death a dismemberment; demolition means the body
-    // was carrying something that has not gone off yet.
-    const butchery = this.techs?.has('butchery') ?? false
+    //
+    // BUTCHERY is the exception, and a precise one: a body finished by a
+    // CRITICAL comes apart completely, however small the blow was. Paired with
+    // the ten points of crit chance the node also grants, that is what makes a
+    // butcher's line a butcher's line — it is not that everything they kill
+    // bursts, it is that the good hits do, and they land more good hits.
+    //
+    // Demolition means the body was carrying something that has not gone off.
+    const butchered = (this.techs?.has('butchery') ?? false) && this.lastHitCrit
     if (this.techs?.has('demolition')) this.world.onDeathCharge?.(this)
     // How readily a body comes apart is the era speaking. Two stone-age
     // spearmen kill each other and both fall over whole; by the last age the
-    // same field is a slaughterhouse. Carnage research drags the bar down a
-    // whole age early, wherever it happens in history.
+    // same field is a slaughterhouse. Bloodlust drags the bar down a whole age
+    // early, wherever it happens in history.
     const era = this.def.age
-    const bar = [1.2, 0.9, 0.65, 0.45, 0.3][era] - (this.techs?.has('bloodlust') || butchery ? 0.15 : 0)
+    const bar = [1.2, 0.9, 0.65, 0.45, 0.3][era] - (this.techs?.has('bloodlust') ? 0.15 : 0)
     const explosiveTears = this.lastHitType === 'explosive' && era >= 1
-    if (butchery || this.overkill >= bar || explosiveTears) {
+    if (butchered || this.overkill >= bar || explosiveTears) {
       this.dismember(mechanical)
     } else {
       this.bleedOut(mechanical)

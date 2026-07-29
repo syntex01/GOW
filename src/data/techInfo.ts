@@ -19,7 +19,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
   old_rites: 'Commander ability charges 10% faster. Opens the occult line.',
 
   // ── carnage ──
-  butchery: 'Every kill dismembers — maximum usable remains for walls, pickers and the harvest. Side effect: your dead are too torn apart for Mind Thrall to puppet.',
+  butchery: '+10% crit chance on everything you field, and a CRIT KILL dismembers the body completely (ordinary kills still follow the era/overkill rule). Your corpses count double toward a Charnel Yard. Side effect: your dead are too torn apart for Mind Thrall to puppet.',
   bonepickers: 'A wounded soldier (below 92% hp) stoops over a nearby corpse piece every 3s and eats it, healing 6% of max hp + 8. Visible: it bends down, and the piece bursts. Consumes the remains.',
   bone_harvest: 'Raises five Bonewrights, one per lane, who walk out, sack up to 3 spoils and carry them home. MEAT pays 12 gold each. 70 hp, no attack, flees when struck, 22s to come back. Meat off a cheap body rots in ~15s and off an elite in ~40s — what you cannot reach, you do not get.',
   clean_kills: 'Pierce and energy kills on your half leave one EXTRA skull, and Bonewrights start carrying skulls home for 9 research apiece. Blunt and explosive kills still leave none. Base skull life 18s off a cheap body, longer off a dear one.',

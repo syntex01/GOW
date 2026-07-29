@@ -39,9 +39,11 @@ import type { Faction, ReserveMode } from '../sim/types'
  * spoils so torn limbs are spectacle rather than economy. v30 trims the ladder
  * to one node an age — Bone Harvest, Clean Kills, the Bone Levy — with Clean
  * Kills both producing the extra skull and reading it; preservation research is
- * gone, since spoil life already scales off the dead body's price.
+ * gone, since spoil life already scales off the dead body's price. v31 rebuilds
+ * Butchery: +10% crit chance, and a body finished by a CRITICAL comes apart
+ * completely instead of every kill bursting regardless.
  */
-export const PROTOCOL_VERSION = 30
+export const PROTOCOL_VERSION = 31
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

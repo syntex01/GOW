@@ -223,6 +223,8 @@ const PLUNDER_EXIT = 300
 
 /** Bodies that rot away per second. Half a pile in about ninety seconds. */
 const CORPSE_ROT_PER_S = 0.25
+/** Critical chance Butchery adds to everything a commander fields. */
+const BUTCHERY_CRIT = 0.1
 
 
 const SPLASH_SHIELDING = 9
@@ -4067,7 +4069,7 @@ export default class Battlefield {
         // being shot the whole way — twenty clubmen drove nineteen slingers
         // three hundred pixels backwards and lost.
         knockback: Math.min(attack.knockback, this.reachableShove(unit, target)),
-        crit: unit.def.crit,
+        crit: this.critChance(unit),
         bonusVs: unit.def.bonusVs
       }
       if (attack.splash && attack.splash > 0) {
@@ -4139,7 +4141,7 @@ export default class Battlefield {
             owner: unit,
             lane: shotLane,
             bonusVs: unit.def.bonusVs,
-            crit: unit.def.crit
+            crit: this.critChance(unit)
           },
           this.groundLineFor(shotLane),
           this.vfx
@@ -4542,6 +4544,20 @@ export default class Battlefield {
     return kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
   }
 
+  /**
+   * A soldier's chance of a critical, with research folded in.
+   *
+   * Butchery grants a flat ten points on top of whatever the unit and its
+   * morphs already carry. It is the node's whole offensive contribution and it
+   * compounds with its other half — a crit KILL dismembers completely — so
+   * taking it makes a line hit harder and makes the field messier by the same
+   * mechanism rather than by two unrelated ones.
+   */
+  private critChance(unit: Unit): number {
+    const base = unit.def.crit ?? 0
+    return this.armyFor(unit.faction).hasTech('butchery') ? base + BUTCHERY_CRIT : base
+  }
+
   /** Core damage pipeline: modifiers, crits, stats, then the target's own logic. */
   applyDamage(attacker: Damageable | null, target: Damageable, event: DamageEvent): void {
     this.lastViolenceMs = this.elapsedMs
@@ -4599,7 +4615,7 @@ export default class Battlefield {
       army.xp += amount * XP_PER_DAMAGE * army.modifiers.bounty
     }
 
-    target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback)
+    target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback, crit)
 
     // On-hit riders: the Butcher drinks the wound, the Flagellant tithes it,
     // the Petardier's concussion knocks the reply out of rhythm, and the

@@ -341,7 +341,7 @@ export const TECHS: TechNode[] = [
     age: 0,
     cost: 650,
     requires: ['field_stripping', 'mob_rule'],
-    effect: 'Everything your soldiers kill comes apart, however it died. A dismembered body counts DOUBLE toward a Charnel Yard, so taking this is choosing to make the field messier on purpose.'
+    effect: 'Your soldiers land ten points more critical hits, and anything a critical FINISHES comes apart completely — however small the blow was. A dismembered body counts DOUBLE toward a Charnel Yard, so taking this is choosing to make the field messier on purpose.'
   },
   {
     id: 'bonepickers',
