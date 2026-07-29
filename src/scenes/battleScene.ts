@@ -299,7 +299,13 @@ export default class BattleScene extends Phaser.Scene {
    * wave counter and camera state.
    */
   private resetSceneState(): void {
-    this.paused = false
+    // A test seam, and only that. A harness measuring determinism has to own
+    // the clock from the very first tick: if the battle runs frame-driven even
+    // for a moment before the harness pauses it, how many frames elapsed
+    // depends on machine load, and two runs of the same seed legitimately
+    // diverge. Setting this before starting a battle hands the harness a world
+    // that has never been stepped.
+    this.paused = (globalThis as { __gowPauseOnStart?: boolean }).__gowPauseOnStart === true
     this.ended = false
     this.leaving = false
     this.speedIndex = 0

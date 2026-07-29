@@ -66,7 +66,8 @@ import {
   MUSTER_BUILD_SPEED,
   MUSTER_SLOTS,
   SEAT_STEP,
-  buildingCost
+  buildingCost,
+  maxTierFor
 } from '../data/buildings'
 import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
@@ -4219,6 +4220,9 @@ export default class Battlefield {
     if (plot.alive && plot.def && plot.def.id !== def.id) return false
     const tier = plot.alive && plot.def ? plot.tier + 1 : razed && plot.def?.id === def.id ? plot.tier : 0
     if (tier >= def.tiers.length) return false
+    // A camp cannot carry what a capital carries. The ceiling arrives with the
+    // establishment, so an age-up unlocks a tier as well as a plot.
+    if (tier > maxTierFor(seat.generation)) return false
     const full = buildingCost(def, tier, army.age)
     const cost = razed ? Math.round(full * REBUILD_FRACTION) : full
     if (army.gold < cost) return false

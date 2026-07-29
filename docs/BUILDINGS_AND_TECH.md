@@ -72,6 +72,36 @@ commander who ages all the way up has raised at most six buildings on their
 final seat — and every doctrine building competes for the same ground. Nobody
 gets all four core buildings at tier 3 *and* their creed's signature.
 
+### Evolution: a seat only carries what a seat that size can carry
+
+Plots were the only thing an age-up bought, which left an obvious degenerate
+opening: bank through the first age, raise one maximal Granary in a tent, and
+snowball on income nobody else has yet. Height is now gated the same way width
+is.
+
+| seat | founded in age | carries to |
+|---|---|---|
+| Camp | 1 | tier 1 |
+| Stone Hold | 2 | tier 2 |
+| Keep | 3 | tier 3 |
+| Bastion | 4 | tier 3 |
+| Citadel | 5 | tier 3 |
+
+Three consequences worth naming:
+
+- **A seat never grows.** The ceiling is set by the generation that founded it,
+  so the Camp's Granary stays tier 1 for the whole match. Ageing up gives you
+  *new ground with a higher ceiling*, not an upgrade to the old ground. That is
+  what makes moving back a rebuild rather than a formality.
+- **Capped is not spent.** A camp that cannot go taller can still go wider, and
+  since the yard bonuses stack (harmonic for income and production, gentle for
+  research), a second tier-1 Granary is a real purchase. Early ages push you
+  toward breadth; later seats let you concentrate.
+- **The wall is legible.** The BASE panel prints the seat's ceiling in its
+  header, marks unreachable tiers `· NEEDS A GREATER SEAT` instead of quoting a
+  price, and says so again on hover. A refusal you can't see the reason for is a
+  bug even when the rule is right.
+
 ---
 
 ## 1. CARNAGE

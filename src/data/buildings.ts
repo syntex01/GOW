@@ -137,6 +137,26 @@ export const DERELICT_ASSAULT_LANES: ReadonlySet<number> = new Set([0, 1, 2, 3, 
  * of open ground between one capital and the next — enough that each reads as
  * its own place, with a march between them.
  */
+/**
+ * The highest tier an establishment of each generation can carry.
+ *
+ * A camp is a camp. Two tents and a fire cannot hold a granary the size of the
+ * one a capital holds, and letting them meant the whole yard could be finished
+ * in the first age — every bottleneck opened before the war had started, and
+ * ageing up reduced to "a bigger fortress and a longer walk".
+ *
+ * Tiers now arrive WITH the establishment that can carry them, so each age-up
+ * unlocks a ceiling as well as a plot. It also stops the obvious degenerate
+ * opening — bank everything, raise one maximal granary, snowball — because the
+ * ground to put it on does not exist yet.
+ */
+export const MAX_TIER_BY_GENERATION = [0, 1, 2, 2, 2] as const
+
+/** The highest tier a seat of this generation will accept, as a tier index. */
+export function maxTierFor(generation: number): number {
+  return MAX_TIER_BY_GENERATION[Math.max(0, Math.min(MAX_TIER_BY_GENERATION.length - 1, generation))]
+}
+
 export const SEAT_STEP = 460
 
 /**

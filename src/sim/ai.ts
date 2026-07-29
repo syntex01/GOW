@@ -3,7 +3,7 @@ import type { Difficulty } from '../core/save'
 import { MAX_AGE } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { turretsForAge } from '../data/turrets'
-import { BUILDINGS_BY_ID, DOCTRINE_BUILDINGS, buildingCost } from '../data/buildings'
+import { BUILDINGS_BY_ID, DOCTRINE_BUILDINGS, buildingCost, maxTierFor } from '../data/buildings'
 import type Battlefield from './battlefield'
 import type { ArmorType } from './types'
 import { TECHS, TECH_BRANCHES, ascensionFor, lineageFor, type TechBranch, type TechNode } from '../data/tech'
@@ -257,13 +257,19 @@ export default class AiController {
     for (const id of wishlist) {
       const def = BUILDINGS_BY_ID[id]
       if (!def) continue
-      const standing = seat.plots.findIndex(p => p.alive && p.def?.id === id)
+      const ceiling = maxTierFor(seat.generation)
+      // A standing building it can still lift, or failing that a fresh plot.
+      // The fallback matters now that a seat caps how tall anything on it may
+      // stand: at a camp the granary tops out at tier one, and the only way to
+      // keep investing in income is a SECOND granary. Without this the AI would
+      // hit the ceiling once and never spend on economy again.
+      const standing = seat.plots.findIndex(p => p.alive && p.def?.id === id && p.tier + 1 <= ceiling)
       const empty = seat.plots.findIndex(p => p.empty && seat.accepts(p.plot, def))
       const target = standing >= 0 ? standing : empty
       if (target < 0) continue
       const plot = seat.plots[target]
       const tier = plot.alive && plot.def ? plot.tier + 1 : 0
-      if (tier >= def.tiers.length) continue
+      if (tier >= def.tiers.length || tier > ceiling) continue
       if (army.gold < buildingCost(def, tier, army.age) * margin) continue
       if (this.bf.buildOnPlot('enemy', target, id)) return true
     }

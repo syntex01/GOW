@@ -8,6 +8,7 @@ import {
   REBUILD_FRACTION,
   SEAT_PLOTS,
   buildingCost,
+  maxTierFor,
   type BuildingDef,
   type PlotFace
 } from '../data/buildings'
@@ -188,13 +189,32 @@ export default class BasePanel {
     return [...CORE_BUILDINGS, ...DEFENCE_BUILDINGS, ...DOCTRINE_BUILDINGS].filter(d => d.faces.includes(face))
   }
 
-  /** What raising or lifting this def on this plot would cost right now. */
-  private priceOf(plot: Building, def: BuildingDef): { cost: number; tier: number; rebuild: boolean } | null {
+  /** The highest tier the seat this panel is looking at will carry. */
+  private get seatCeiling(): number {
+    return maxTierFor(this.bf.activeSeat(this.faction).generation)
+  }
+
+  /**
+   * What raising or lifting this def on this plot would cost right now.
+   *
+   * `capped` is the interesting case: the ground is willing but the seat is too
+   * small. That has to read differently from MAX TIER, because one is the end of
+   * the ladder and the other is a reason to age up.
+   */
+  private priceOf(
+    plot: Building,
+    def: BuildingDef
+  ): { cost: number; tier: number; rebuild: boolean; capped: boolean } | null {
     const razed = !plot.alive && plot.def !== null
     const tier = plot.alive && plot.def ? plot.tier + 1 : razed && plot.def?.id === def.id ? plot.tier : 0
     if (tier >= def.tiers.length) return null
     const full = buildingCost(def, tier, this.army.age)
-    return { cost: razed ? Math.round(full * REBUILD_FRACTION) : full, tier, rebuild: razed }
+    return {
+      cost: razed ? Math.round(full * REBUILD_FRACTION) : full,
+      tier,
+      rebuild: razed,
+      capped: tier > this.seatCeiling
+    }
   }
 
   refresh(): void {
@@ -243,7 +263,7 @@ export default class BasePanel {
         scene,
         x + 16,
         y + 32,
-        `${specs.length} plots · your gate can be attacked from ${gate.length} of 5 files`,
+        `${specs.length} plots · carries to tier ${this.seatCeiling + 1} · gate open from ${gate.length} of 5 files`,
         { size: 11, color: UI.textDim }
       )
     )
@@ -381,11 +401,16 @@ export default class BasePanel {
     if (plot.def && plot.alive) {
       const def = plot.def
       let ry = row
+      const ceiling = this.seatCeiling
       def.tiers.forEach((tier, i) => {
         const owned = i <= plot.tier
-        const price = i === plot.tier + 1 ? buildingCost(def, i, this.army.age) : null
+        const beyond = i > ceiling
+        const price = i === plot.tier + 1 && !beyond ? buildingCost(def, i, this.army.age) : null
+        // A tier the seat will never carry is marked as ground the seat does not
+        // have, not as something unaffordable — the fix is an age, not gold.
+        const note = price ? `  ·  ${formatNumber(price)}g` : beyond ? '  ·  NEEDS A GREATER SEAT' : ''
         this.body.add(
-          label(scene, x + 20, ry, `${owned ? '■' : '□'}  TIER ${i + 1}${price ? `  ·  ${formatNumber(price)}g` : ''}`, {
+          label(scene, x + 20, ry, `${owned ? '■' : beyond ? '·' : '□'}  TIER ${i + 1}${note}`, {
             size: 11,
             color: owned ? def.color : UI.textDim
           })
@@ -405,14 +430,17 @@ export default class BasePanel {
       if (row > y + h - 56) break
       const price = this.priceOf(plot, def)
       const locked = def.requires ? !this.army.techs.has(def.requires) : false
+      const capped = price?.capped ?? false
       const creed = def.branch ? CREED_ACCENT[def.branch] ?? UI.accent : def.color
-      const affordable = price !== null && this.army.gold >= price.cost && !locked
+      const affordable = price !== null && this.army.gold >= price.cost && !locked && !capped
 
       const caption = price === null
         ? 'MAX TIER'
         : locked
           ? `NEEDS ${(TECHS_BY_ID[def.requires!]?.name ?? 'research').toUpperCase()}`
-          : `${formatNumber(price.cost)}g${price.rebuild ? '  REBUILD' : price.tier > 0 ? `  → T${price.tier + 1}` : ''}`
+          : capped
+            ? `T${price.tier + 1} NEEDS A GREATER SEAT`
+            : `${formatNumber(price.cost)}g${price.rebuild ? '  REBUILD' : price.tier > 0 ? `  → T${price.tier + 1}` : ''}`
 
       const button = new Button(scene, x + 16, row, {
         width: w - 32,
@@ -422,7 +450,7 @@ export default class BasePanel {
         fontSize: 13,
         accent: locked ? 0x33445f : creed,
         onClick: () => {
-          if (price === null || locked) {
+          if (price === null || locked || capped) {
             audio.play('ui_denied', 0.4)
             return
           }
@@ -432,7 +460,13 @@ export default class BasePanel {
           const tierIndex = price?.tier ?? plot.tier
           const tier = def.tiers[Math.min(def.tiers.length - 1, tierIndex)]
           const need = locked ? `  ·  Needs ${TECHS_BY_ID[def.requires!]?.name ?? 'research'}.` : ''
-          this.say(`${def.name}${price && price.tier > 0 ? ` — tier ${price.tier + 1}` : ''}`, `${def.blurb}  ${tier.effect}${need}`)
+          const small = capped
+            ? `  ·  A ${SEAT_NAME[this.bf.activeSeat(this.faction).generation] ?? 'seat'} will not carry a tier ${(price?.tier ?? 0) + 1} building. Age up and raise it on the new seat.`
+            : ''
+          this.say(
+            `${def.name}${price && price.tier > 0 ? ` — tier ${price.tier + 1}` : ''}`,
+            `${def.blurb}  ${tier.effect}${need}${small}`
+          )
         }
       })
       button.setDepth(3001)
