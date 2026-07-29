@@ -69,6 +69,8 @@ export default class HUDScene extends Phaser.Scene {
   private basePanel?: BasePanel
   private speedButton!: Button
   private pauseButton!: Button
+  /** Sandbox only: which half of the field you are commanding, and a way to swap. */
+  private sideButton!: Button
 
   private queueIcons: { icon: Phaser.GameObjects.Image; bar: Bar }[] = []
   private tooltip!: Tooltip
@@ -206,6 +208,28 @@ export default class HUDScene extends Phaser.Scene {
       onClick: () => this.battle.togglePause()
     })
     this.pauseButton.setDepth(2)
+
+    // SANDBOX: WHICH SIDE AM I?
+    //
+    // The workbench has always let you take the opposition — it is the whole
+    // point of a mode advertised as "both sides" — but the only way to do it was
+    // an F8 binding mentioned in one code comment and nowhere on the screen. So
+    // the mode's headline feature was undiscoverable unless you read the source.
+    //
+    // It gets a button, next to the speed and pause controls, showing which half
+    // you currently command and carrying the shortcut in its corner. Hidden
+    // outside the sandbox, where swapping is not allowed anyway.
+    this.sideButton = new Button(this, cx + 74, 48, {
+      width: 96,
+      height: 38,
+      text: 'LEFT',
+      fontSize: 14,
+      accent: UI.player,
+      corner: 'F8',
+      onClick: () => this.battle.swapSide()
+    })
+    this.sideButton.setDepth(2)
+    this.sideButton.container.setVisible(this.battle.sandbox)
 
     // Enemy block (mirrored).
     this.enemyAgeText = label(this, width - 14, 6, 'Stone Age', {
@@ -748,6 +772,15 @@ export default class HUDScene extends Phaser.Scene {
       )
       .setColor(hex(study ? 0x9a7bd4 : UI.warn))
     this.refreshHarvest()
+    // Which half the workbench is currently pointed at. Re-read every frame
+    // rather than pushed on swap, because F8 and the button are two entry points
+    // and a networked guest starts out commanding the right-hand side.
+    if (this.battle.sandbox) {
+      const left = this.battle.localFaction === 'player'
+      this.sideButton
+        .setText(left ? 'LEFT' : 'RIGHT')
+        .setAccent(left ? UI.player : UI.enemy)
+    }
     if (siege > 0 && this.siegeWarned === false) {
       this.siegeWarned = true
       gameEvents.emit('hud:flash', { message: 'Supply line cut — clear your wall', tone: 'warn' })

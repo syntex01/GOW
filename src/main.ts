@@ -66,7 +66,7 @@ function start(): void {
   const debug = window as unknown as {
     __gowGame: Phaser.Game
     __gowStart: (mode: GameMode, difficulty: Difficulty, levelId?: string) => void
-    __gowStartSeeded: (mode: GameMode, difficulty: Difficulty, seed: number) => void
+    __gowStartSeeded: (mode: GameMode, difficulty: Difficulty, seed: number, sandbox?: boolean) => void
     __gowCosmeticRng: typeof rng
     __gowUnits: typeof UNITS_BY_ID
     __gowFactionUnits: Record<string, UnitDef>
@@ -163,8 +163,11 @@ function start(): void {
   // the simulation. Being able to spin it deliberately is what turns "the
   // networked match forked" into a test that fails on one machine.
   debug.__gowCosmeticRng = rng
-  debug.__gowStartSeeded = (mode, difficulty, seed) => {
-    session.start({ mode, difficulty, seed })
+  // `sandbox` is optional and off by default, so every existing caller is
+  // unaffected — but without it the workbench was the one mode no harness could
+  // start, which is why its side swap went untested for as long as it existed.
+  debug.__gowStartSeeded = (mode, difficulty, seed, sandbox) => {
+    session.start({ mode, difficulty, seed, sandbox })
     for (const scene of game.scene.scenes) {
       if (scene.scene.isActive() && scene.scene.key !== 'BattleScene') scene.scene.stop()
     }

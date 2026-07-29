@@ -214,6 +214,17 @@ export default class BattleScene extends Phaser.Scene {
     if (!setup.netRole && !this.sandbox) {
       this.ai = new AiController(this.battlefield, profile, (this.matchSeed ^ 0x9e3779b9) >>> 0)
     }
+    // Say out loud what the mode is FOR. Taking the opposition is the whole
+    // point of the workbench and it was documented in one source comment, so
+    // anyone who did not read the code had a mode with an unreachable half.
+    if (this.sandbox) {
+      this.time.delayedCall(900, () => {
+        gameEvents.emit('hud:flash', {
+          message: 'SANDBOX — F8 or the SIDE button takes the other half of the field',
+          tone: 'info'
+        })
+      })
+    }
     this.background.setAge(this.battlefield.player.age)
     this.lighting.setAge(this.battlefield.player.age)
 

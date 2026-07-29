@@ -224,7 +224,7 @@ export default class MenuScene extends Phaser.Scene {
       { text: 'ARMORY', sub: 'unit codex', accent: UI.accent, view: 'codex' },
       { text: 'ACHIEVEMENTS', sub: `${this.unlockedCount()}/${ACHIEVEMENTS.length}`, accent: UI.good, view: 'achievements' },
       { text: 'HOW TO PLAY', sub: 'controls & rules', accent: UI.xp, view: 'howto' },
-      { text: 'SANDBOX', sub: 'no limits, both sides', accent: 0x30d5c8, view: 'sandbox' },
+      { text: 'SANDBOX', sub: 'no limits — F8 swaps sides', accent: 0x30d5c8, view: 'sandbox' },
       { text: 'SETTINGS', sub: 'audio & graphics', accent: UI.panelEdge, view: 'settings' }
     ]
 
