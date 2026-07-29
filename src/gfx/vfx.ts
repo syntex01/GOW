@@ -44,6 +44,34 @@ export default class Vfx {
     return q === 'high' ? 1 : q === 'medium' ? 0.55 : 0.25
   }
 
+  /**
+   * A PER-FRAME BUDGET FOR THE PER-HIT EFFECTS.
+   *
+   * The Carnage signatures below hang off individual blows, and Carnage fields
+   * eight Husks in a squad that all swing on the same beat. Eight mauls is
+   * forty-eight tweened sprites out of one frame, and the twentieth of those is
+   * drawn underneath the other nineteen where nobody will ever see it. So the
+   * first few each frame are drawn in full and the rest are dropped: the read is
+   * identical and the cost is bounded.
+   *
+   * Only the high-frequency effects spend from this. The rare ones — a
+   * possession, a rendering, a Maw's bite — are always drawn, because those are
+   * the moments the effect exists to announce.
+   */
+  private budgetFrame = -1
+  private budgetLeft = 0
+
+  private afford(cost = 1): boolean {
+    const frame = this.scene.game.loop.frame
+    if (frame !== this.budgetFrame) {
+      this.budgetFrame = frame
+      this.budgetLeft = Math.max(2, Math.round(6 * this.quality))
+    }
+    if (this.budgetLeft < cost) return false
+    this.budgetLeft -= cost
+    return true
+  }
+
   private buildEmitters(): void {
     this.sparks = this.scene.add
       .particles(0, 0, 'fx:spark', {
@@ -769,6 +797,457 @@ export default class Vfx {
 
   isHitStopped(): boolean {
     return this.scene.time.now < this.hitStopUntil
+  }
+
+  // ───────────────────────── The Carnage signatures ─────────────────────────
+  //
+  // One effect per body, each tied to the thing that body actually does, and
+  // each built out of a different motion so they never blur together on a busy
+  // field: an arc, a lash, an inward suck, a shockwave, a knit, a thread.
+  //
+  // All of them are cosmetic and driven from the simulation's own events, so
+  // nothing here can move the fingerprint.
+
+  /**
+   * THE CROSS-CLEAVE. Two crescents through the same point from opposite sides,
+   * a tenth of a second apart — the Flenser's whole read, drawn rather than
+   * implied. The stagger lives here rather than at the call site because the
+   * simulation lands one damage event per swing and should not have to know that
+   * the animation has two contacts in it.
+   */
+  cleaveArc(x: number, y: number, dir: number): void {
+    if (!this.afford(2)) return
+    for (let i = 0; i < 2; i += 1) {
+      const back = i === 1
+      const arc = this.scene.add
+        .image(x + dir * 14, y, 'fx:ring')
+        .setDepth(320)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(back ? 0xff8a72 : 0xc0392b)
+        .setScale(0.1, 0.02)
+        .setRotation((back ? -0.7 : 0.7) * dir)
+        .setAlpha(0)
+      this.scene.tweens.add({
+        targets: arc,
+        scaleX: 0.5,
+        scaleY: 0.26,
+        rotation: arc.rotation + (back ? 1.5 : -1.5) * dir,
+        alpha: { from: 0.9, to: 0 },
+        duration: 210,
+        delay: i * 100,
+        ease: 'Quad.easeOut',
+        onComplete: () => arc.destroy()
+      })
+    }
+    this.blood.emitParticleAt(x + dir * 20, y, Math.round(5 * this.quality))
+  }
+
+  /**
+   * A TENTACLE LASH. A thin fast line out and back — nothing else on the field
+   * moves in a straight line this quickly, which is what makes the Shrike's
+   * four stabs legible as four separate events.
+   */
+  lash(x: number, y: number, tx: number, ty: number): void {
+    if (!this.afford(1)) return
+    const len = Math.hypot(tx - x, ty - y)
+    const bar = this.scene.add
+      .image(x, y, 'fx:soft')
+      .setDepth(322)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xd9736a)
+      .setOrigin(0, 0.5)
+      .setRotation(Math.atan2(ty - y, tx - x))
+      .setDisplaySize(4, 3)
+      .setAlpha(0.95)
+    this.scene.tweens.add({
+      targets: bar,
+      displayWidth: len,
+      duration: 70,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: bar,
+          displayWidth: 4,
+          alpha: 0,
+          duration: 110,
+          ease: 'Quad.easeIn',
+          onComplete: () => bar.destroy()
+        })
+      }
+    })
+    this.impact(tx, ty, 0xe6dfc4, 0.7, true)
+  }
+
+  /**
+   * GORGING. Everything nearby is dragged INWARD and swallowed — the only
+   * effect in the game whose particles converge instead of spreading, which is
+   * exactly why the Monstrum reads as eating rather than exploding.
+   */
+  gorge(x: number, y: number, power = 1): void {
+    if (!this.afford(2)) return
+    for (let i = 0; i < Math.round(7 * power * this.quality); i += 1) {
+      const a = rng.range(0, Math.PI * 2)
+      const d = 30 + rng.range(0, 40) * power
+      const m = this.scene.add
+        .image(x + Math.cos(a) * d, y + Math.sin(a) * d * 0.6, 'fx:meat')
+        .setDepth(319)
+        .setTint(0xc4544a)
+        .setScale(0.7)
+        .setAlpha(0.9)
+      this.scene.tweens.add({
+        targets: m,
+        x,
+        y,
+        scale: 0.2,
+        alpha: 0,
+        duration: 300 + rng.range(0, 160),
+        ease: 'Quad.easeIn',
+        onComplete: () => m.destroy()
+      })
+    }
+    // And it swells. A short outward pulse on the body itself, so the eye is
+    // told the mass took the meat in rather than merely deleting it.
+    const swell = this.scene.add
+      .image(x, y, 'fx:soft')
+      .setDepth(316)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0x8a2a24)
+      .setScale(0.2)
+      .setAlpha(0.4)
+    this.scene.tweens.add({
+      targets: swell,
+      scale: 0.55 * power,
+      alpha: 0,
+      duration: 420,
+      ease: 'Sine.easeOut',
+      onComplete: () => swell.destroy()
+    })
+  }
+
+  /**
+   * THE BITE. A ring shockwave with a hard crunch of debris, and the screen
+   * takes a small hit — the Great Maw is the only body that gets to shake the
+   * camera on a normal attack.
+   */
+  bite(x: number, y: number, power = 1): void {
+    const ring = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(321)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xffd9b4)
+      .setScale(0.06)
+      .setAlpha(0.85)
+    this.scene.tweens.add({
+      targets: ring,
+      scale: 0.44 * power,
+      alpha: 0,
+      duration: 260,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy()
+    })
+    this.debris.emitParticleAt(x, y, Math.round(8 * power * this.quality))
+    this.blood.emitParticleAt(x, y, Math.round(10 * power * this.quality))
+    this.shake(1.6 * power, 90)
+    this.hitStop(28)
+  }
+
+  /**
+   * KNITTING. The Flesh Wall closing itself back up: short bone-coloured
+   * stitches appearing across the wound and fading, rather than a heal glow.
+   */
+  knit(x: number, y: number, height: number): void {
+    for (let i = 0; i < Math.round(5 * this.quality); i += 1) {
+      const sx = x + rng.spread(height * 0.3)
+      const sy = y - rng.range(0, height * 0.7)
+      const st = this.scene.add
+        .image(sx, sy, 'fx:bone')
+        .setDepth(320)
+        .setTint(0xe6dfc4)
+        .setRotation(rng.spread(1.2))
+        .setScale(0.5)
+        .setAlpha(0)
+      this.scene.tweens.add({
+        targets: st,
+        alpha: 0.9,
+        duration: 120,
+        delay: i * 45,
+        yoyo: true,
+        hold: 90,
+        onComplete: () => st.destroy()
+      })
+    }
+  }
+
+  /**
+   * A FEEDING THREAD. Drawn from the victim to whatever is drinking — the Widow
+   * and the Butcher. A line that shortens toward the drinker says "this is
+   * going THERE", which a heal number on its own never does.
+   */
+  siphon(fromX: number, fromY: number, toX: number, toY: number): void {
+    if (!this.afford(1)) return
+    const thread = this.scene.add
+      .image(fromX, fromY, 'fx:soft')
+      .setDepth(321)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xb8302c)
+      .setOrigin(0, 0.5)
+      .setRotation(Math.atan2(toY - fromY, toX - fromX))
+      .setDisplaySize(Math.hypot(toX - fromX, toY - fromY), 2)
+      .setAlpha(0.8)
+    this.scene.tweens.add({
+      targets: thread,
+      displayWidth: 2,
+      alpha: 0,
+      duration: 240,
+      ease: 'Quad.easeIn',
+      onComplete: () => thread.destroy()
+    })
+  }
+
+  /**
+   * THE LEAP. A ring of kicked dust at take-off and a heavier one on landing,
+   * so a Ripjaw's raid reads as two distinct impacts rather than a slide.
+   */
+  leapDust(x: number, y: number, power = 1): void {
+    this.dustPuff.emitParticleAt(x, y, Math.round(9 * power * this.quality))
+    const ring = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(300)
+      .setTint(0xbfae8a)
+      .setScale(0.05, 0.02)
+      .setAlpha(0.6)
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: 0.4 * power,
+      scaleY: 0.1 * power,
+      alpha: 0,
+      duration: 320,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy()
+    })
+  }
+
+  /**
+   * THE MAUL. A Husk does not swing a weapon — it throws its whole weight
+   * forward, jaw first. So the effect is a low forward CONE hugging the ground
+   * rather than a burst at the point of contact: the only Carnage effect with a
+   * direction and no centre.
+   */
+  maul(x: number, y: number, dir: number): void {
+    if (!this.afford(1)) return
+    for (let i = 0; i < Math.round(6 * this.quality); i += 1) {
+      const reach = 6 + i * 5
+      const g = this.scene.add
+        .image(x + dir * reach, y + rng.spread(4), 'fx:blood')
+        .setDepth(318)
+        .setTint(0x8f2420)
+        .setScale(0.75 - i * 0.06)
+        .setAlpha(0.85)
+      this.scene.tweens.add({
+        targets: g,
+        x: g.x + dir * (18 + i * 6),
+        y: g.y + 8 + i * 2,
+        scale: 0.1,
+        alpha: 0,
+        duration: 200 + i * 24,
+        ease: 'Quad.easeOut',
+        onComplete: () => g.destroy()
+      })
+    }
+    this.blood.emitParticleAt(x + dir * 16, y, Math.round(4 * this.quality))
+  }
+
+  /**
+   * RENDERING. The Carrion Choir does not heal a soldier, it builds one. A
+   * bone-white column climbs out of the ground and resolves — the only effect
+   * here that travels UPWARD, which is what separates a raising from a heal.
+   */
+  render(x: number, y: number, height: number): void {
+    const column = this.scene.add
+      .image(x, y, 'fx:soft')
+      .setDepth(317)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xd8cfae)
+      .setOrigin(0.5, 1)
+      .setDisplaySize(height * 0.5, 4)
+      .setAlpha(0.75)
+    this.scene.tweens.add({
+      targets: column,
+      displayHeight: height * 1.05,
+      alpha: 0,
+      duration: 460,
+      ease: 'Cubic.easeOut',
+      onComplete: () => column.destroy()
+    })
+    for (let i = 0; i < Math.round(5 * this.quality); i += 1) {
+      const sh = this.scene.add
+        .image(x + rng.spread(height * 0.3), y, 'fx:bone')
+        .setDepth(319)
+        .setTint(0xe6dfc4)
+        .setScale(0.45)
+        .setAlpha(0.9)
+      this.scene.tweens.add({
+        targets: sh,
+        y: y - height * (0.5 + rng.range(0, 0.5)),
+        rotation: rng.spread(2.4),
+        alpha: 0,
+        duration: 420 + rng.range(0, 180),
+        ease: 'Quad.easeOut',
+        onComplete: () => sh.destroy()
+      })
+    }
+    this.lighting?.flash(x, y - height * 0.4, 90, 0xd8cfae, 0.6)
+  }
+
+  /**
+   * THE POSSESSION. Three rings falling INWARD and DOWN onto the host from
+   * above — nothing else in the game contracts from off-screen onto a single
+   * body, and the Incarnation arriving should never be mistaken for a buff.
+   */
+  possession(x: number, y: number, height: number): void {
+    for (let i = 0; i < 3; i += 1) {
+      const ring = this.scene.add
+        .image(x, y - height * (1.6 + i * 0.5), 'fx:ring')
+        .setDepth(323)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0xff3a2c)
+        .setScale(0.9, 0.34)
+        .setAlpha(0)
+      this.scene.tweens.add({
+        targets: ring,
+        y,
+        scaleX: 0.14,
+        scaleY: 0.05,
+        alpha: 0.95,
+        duration: 300,
+        delay: i * 70,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          this.scene.tweens.add({
+            targets: ring,
+            scaleX: 0.7,
+            alpha: 0,
+            duration: 140,
+            onComplete: () => ring.destroy()
+          })
+        }
+      })
+    }
+    this.lighting?.flash(x, y - height * 0.5, 170, 0xff3a2c, 1.3)
+  }
+
+  /**
+   * A FEEDING TETHER. The Widow's version of the Butcher's thread, and it must
+   * not read as the same thing: the line HOLDS and a bead of blood crawls up it,
+   * so the drinking is visibly slow and visibly coming from above.
+   */
+  tether(fromX: number, fromY: number, toX: number, toY: number): void {
+    if (!this.afford(1)) return
+    const line = this.scene.add
+      .image(fromX, fromY, 'fx:soft')
+      .setDepth(320)
+      .setTint(0x6e1418)
+      .setOrigin(0, 0.5)
+      .setRotation(Math.atan2(toY - fromY, toX - fromX))
+      .setDisplaySize(Math.hypot(toX - fromX, toY - fromY), 2)
+      .setAlpha(0.7)
+    const bead = this.scene.add
+      .image(fromX, fromY, 'fx:blood')
+      .setDepth(321)
+      .setTint(0xd0342c)
+      .setScale(0.8)
+      .setAlpha(1)
+    this.scene.tweens.add({
+      targets: bead,
+      x: toX,
+      y: toY,
+      scale: 0.3,
+      duration: 300,
+      ease: 'Sine.easeIn',
+      onComplete: () => bead.destroy()
+    })
+    this.scene.tweens.add({
+      targets: line,
+      alpha: 0,
+      duration: 340,
+      onComplete: () => line.destroy()
+    })
+  }
+
+  /**
+   * RUMMAGING. A Bonewright working a corpse over: short low flicks of dirt and
+   * gore thrown BACKWARD between its legs, like a dog digging. Small, repeated,
+   * and deliberately unimpressive — it is a labourer, not a soldier.
+   */
+  rummage(x: number, y: number, dir: number): void {
+    if (!this.afford(1)) return
+    for (let i = 0; i < Math.round(4 * this.quality); i += 1) {
+      const d = this.scene.add
+        .image(x, y - 2, i % 2 === 0 ? 'fx:debris' : 'fx:blood')
+        .setDepth(316)
+        .setTint(i % 2 === 0 ? 0x7a6a52 : 0x8f2420)
+        .setScale(0.5)
+        .setAlpha(0.9)
+      this.scene.tweens.add({
+        targets: d,
+        x: x - dir * (10 + rng.range(0, 18)),
+        y: y - rng.range(6, 16),
+        alpha: 0,
+        scale: 0.15,
+        duration: 260 + rng.range(0, 120),
+        ease: 'Quad.easeOut',
+        onComplete: () => d.destroy()
+      })
+    }
+  }
+
+  /**
+   * OSSIFYING. A Boneling assembling itself: shards arrive on ARCS from all
+   * round and snap together, then one hard white frame. Converging like the
+   * Monstrum's gorge, but bone rather than meat, and it ends in a snap instead
+   * of a swallow — the difference between being eaten and being built.
+   */
+  ossify(x: number, y: number, height: number): void {
+    if (!this.afford(2)) return
+    for (let i = 0; i < Math.round(9 * this.quality); i += 1) {
+      const a = rng.range(0, Math.PI * 2)
+      const d = 40 + rng.range(0, 50)
+      const sh = this.scene.add
+        .image(x + Math.cos(a) * d, y + Math.sin(a) * d * 0.7, 'fx:bone')
+        .setDepth(320)
+        .setTint(0xe6dfc4)
+        .setRotation(a)
+        .setScale(0.55)
+        .setAlpha(0.9)
+      this.scene.tweens.add({
+        targets: sh,
+        x: x + rng.spread(height * 0.14),
+        y: y - height * 0.35 + rng.spread(height * 0.2),
+        rotation: a + rng.spread(3),
+        scale: 0.3,
+        alpha: 0,
+        duration: 260 + rng.range(0, 120),
+        ease: 'Back.easeIn',
+        onComplete: () => sh.destroy()
+      })
+    }
+    const snap = this.scene.add
+      .image(x, y - height * 0.4, 'fx:flash')
+      .setDepth(322)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xfff4d8)
+      .setScale(0.1)
+      .setAlpha(0)
+    this.scene.tweens.add({
+      targets: snap,
+      scale: 0.5,
+      alpha: 0.8,
+      duration: 90,
+      delay: 300,
+      yoyo: true,
+      onComplete: () => snap.destroy()
+    })
+    this.lighting?.flash(x, y - height * 0.4, 100, 0xe6dfc4, 0.8)
   }
 
   destroy(): void {

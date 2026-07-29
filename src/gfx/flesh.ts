@@ -77,20 +77,33 @@ export function fleshKit(skin: number, cloth: number, accent: number): FleshKit 
   // way toward that before anything is drawn with it. The faction still shows:
   // it decides which red.
   const muscle = mix(skin, 0x6e1f22, 0.78)
+  // KEEP THE REDS DUSTY.
+  //
+  // `ramp` adds +0.16 saturation to its two shadow steps by default. On a cool
+  // material that is a good instinct — a shadow going slightly bluer and richer
+  // is what stops it looking like grey paint. On an already-saturated red it is
+  // a disaster: the dark steps of every flesh ramp came out as hot arterial
+  // reds, measured at 78% saturation on a base of 33%, so each body picked up a
+  // fluorescent stripe wherever a shadow band fell. The reds here are meant to
+  // be old, dried and slightly brown, so the flesh ramps get almost none of it.
+  // Bone, gristle and iron keep the default — they are the cool materials the
+  // boost was designed for.
+  const dusty = 0.03
   return {
     // Dead skin, lifted well clear of the ground's value so the silhouette
     // holds, and pushed slightly green so it never reads as a healthy person.
-    hide: ramp(mix(skin, 0xcfd2bc, 0.42), { contrast: 1.1, hueShift: 0.015 }),
+    hide: ramp(mix(skin, 0xcfd2bc, 0.42), { contrast: 1.1, hueShift: 0.015, shadowSat: dusty }),
     // High contrast and a hue swing toward red at the shadow end: meat gets
     // *redder* as it gets darker, which is the whole difference between flesh
-    // and painted plastic.
-    meat: ramp(muscle, { contrast: 1.35, hueShift: -0.05 }),
-    fat: ramp(mix(muscle, 0xb08a5e, 0.62), { contrast: 0.9, hueShift: 0.02 }),
-    necrotic: ramp(mix(cloth, 0x3d0d14, 0.66), { contrast: 1.15, hueShift: -0.03 }),
+    // and painted plastic. The hue swing does that job; the saturation boost
+    // only ever overcooked it.
+    meat: ramp(muscle, { contrast: 1.35, hueShift: -0.05, shadowSat: dusty }),
+    fat: ramp(mix(muscle, 0xb08a5e, 0.62), { contrast: 0.9, hueShift: 0.02, shadowSat: dusty }),
+    necrotic: ramp(mix(cloth, 0x3d0d14, 0.66), { contrast: 1.15, hueShift: -0.03, shadowSat: dusty }),
     bone: ramp(0xc4b894, { contrast: 1.05, hueShift: 0.01 }),
     gristle: ramp(0xa89478, { contrast: 0.8 }),
-    membrane: ramp(mix(muscle, 0x8a4a52, 0.55), { contrast: 0.75 }),
-    cavity: ramp(0x2a0d12, { contrast: 0.6 }),
+    membrane: ramp(mix(muscle, 0x8a4a52, 0.55), { contrast: 0.75, shadowSat: dusty }),
+    cavity: ramp(0x2a0d12, { contrast: 0.6, shadowSat: dusty }),
     iron: ramp(0x6f6a5c, { contrast: 1.15 }),
     accent: ramp(accent, { contrast: 1.2 })
   }
@@ -160,10 +173,29 @@ export function wet(p: Pix, seed = 7, strength = 1): void {
   }
 }
 
+/**
+ * Reads one pixel as [r, g, b, a].
+ *
+ * `Pix` stores little-endian ABGR — `alpha << 24 | b << 16 | g << 8 | r` — which
+ * is what a Uint32 view of ImageData expects. This used to unpack it as if the
+ * red channel were the top byte, so it returned [a, b, g, r] under the names
+ * [r, g, b, a]. Two things followed, and both were visible on every body in the
+ * faction:
+ *
+ *  - the "is this pixel opaque" test in `wet` was really testing the RED
+ *    channel, so the top of a form was found wherever red happened to exceed 40
+ *    rather than wherever the silhouette actually began;
+ *  - the colour handed to `mix` was assembled with ALPHA in the red slot, so on
+ *    any opaque pixel red was pinned at 255 and the sheen wrote back a hot
+ *    saturated red instead of a warm highlight.
+ *
+ * That is where the fluorescent stripe along the top of every Carnage body came
+ * from — measured at 78% saturation on ramps whose reddest step is 33%.
+ */
 function unpackAt(p: Pix, x: number, y: number): [number, number, number, number] {
   if (!p.inside(x, y)) return [0, 0, 0, 0]
   const v = p.get(x, y)
-  return [(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff]
+  return [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff]
 }
 
 // ─────────────────────────────── Structure ───────────────────────────────

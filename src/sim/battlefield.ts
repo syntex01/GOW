@@ -928,7 +928,12 @@ export default class Battlefield {
       }
       // Crouched over it. The bend-down is the whole read: you can tell at a
       // glance whether a gatherer is working or walking.
-      if (slot.searchMs === 0) wright.stoop(GATHERER_SEARCH_MS)
+      if (slot.searchMs === 0) {
+        wright.stoop(GATHERER_SEARCH_MS)
+        // A labourer's effect, not a soldier's: low flicks of dirt and gore
+        // thrown out behind it while it works the body over.
+        this.vfx.rummage(slot.quarry.x, slot.quarry.y, ADVANCE_DIR[faction])
+      }
       slot.searchMs += dtMs
       if (slot.searchMs < GATHERER_SEARCH_MS) continue
       slot.searchMs = 0
@@ -940,6 +945,8 @@ export default class Battlefield {
       // a skull from one carrying a leg from across the field.
       wright.showBurden(kind)
       slot.quarry.dead = true
+      // The piece visibly goes INTO the sack rather than merely vanishing.
+      this.vfx.siphon(slot.quarry.x, slot.quarry.y - 6, wright.x, wright.centerY)
       this.vfx.impact(slot.quarry.x, slot.quarry.y - 6, SPOIL_COLOR[kind], 0.7, kind === 'meat')
       slot.quarry = null
     }
@@ -1178,7 +1185,7 @@ export default class Battlefield {
     }
     const risen = this.spawnUnit(faction, def, undefined, lane)
     risen.risen = true
-    this.vfx.impact(risen.x, risen.centerY, 0xe6dfc4, 1.2, false)
+    this.vfx.ossify(risen.x, this.groundLineFor(risen.lane), risen.def.height)
   }
 
   /** Demolition charges. The body was armed, and whatever killed it is close. */
@@ -4857,6 +4864,7 @@ export default class Battlefield {
     // everybody's. That is the risk the offer carries and the reason it is worth
     // paying into even when the board is going badly.
     host.rogue = host.faction !== faction
+    this.vfx.possession(host.x, host.centerY, host.def.height)
     this.vfx.explosion(host.x, host.centerY, host.def.height * 1.4, 0xc0392b, true)
     this.vfx.floatingLabel(
       host.x,
@@ -4923,7 +4931,7 @@ export default class Battlefield {
           u.hp = Math.min(u.maxHp, u.hp + MONSTRUM_HP_PER_BITE * worth * 1.5)
           u.damageMult += MONSTRUM_DAMAGE_PER_BITE * worth
           u.setGorge(u.gorged)
-          this.vfx.impact(meal.x, meal.y - 6, 0xc4544a, 1.2, true)
+          this.vfx.gorge(u.x, u.centerY, Math.min(2.2, 0.8 + worth * 0.5))
           break
         }
         case 'flesh_wall': {
@@ -4937,7 +4945,8 @@ export default class Battlefield {
           if (!patch) break
           patch.dead = true
           u.heal(u.maxHp * FLESH_WALL_MEND_FRACTION * (patch.worth ?? 1))
-          this.vfx.impact(patch.x, patch.y - 6, 0x9fd6a0, 0.9, true)
+          this.vfx.siphon(patch.x, patch.y - 6, u.x, u.centerY)
+          this.vfx.knit(u.x, u.centerY + u.def.height * 0.3, u.def.height)
           break
         }
         case 'flesh_wagon': {
@@ -4960,7 +4969,7 @@ export default class Battlefield {
           const risen = this.spawnUnit(u.faction, cheapest, u.x, u.lane)
           risen.hp = risen.maxHp * WAGON_RAISE_HEALTH
           risen.risen = true
-          this.vfx.impact(risen.x, risen.centerY, 0x7fd6a0, 1.4, true)
+          this.vfx.render(risen.x, this.groundLineFor(risen.lane), risen.def.height)
           this.vfx.floatingLabel(u.x, u.centerY - 40, 'RENDERED', '#9fd6a0')
           break
         }
@@ -5020,7 +5029,7 @@ export default class Battlefield {
           u.leapPhase = 1
           u.leapMs = LEAP_FLIGHT_MS
           u.chargeReady = true
-          this.vfx.footDust(u.x, this.groundLineFor(u.lane))
+          this.vfx.leapDust(u.x, this.groundLineFor(u.lane), 0.8)
           break
         }
         // ── 1 · IN THE AIR. Physics owns it; wait for the ground.
@@ -5028,6 +5037,9 @@ export default class Battlefield {
           if (u.leapMs > 0) break
           u.leapPhase = 2
           u.leapMs = LEAP_STRIKE_MS
+          // The landing is the heavier of the two rings, so the raid reads as
+          // "gone from there, arrived HERE" rather than as a long slide.
+          this.vfx.leapDust(u.x, this.groundLineFor(u.lane), 1.5)
           this.vfx.impact(u.x, this.groundLineFor(u.lane) - 8, 0xc0392b, 1.1, false)
           break
         }
@@ -5089,6 +5101,10 @@ export default class Battlefield {
       // little but the skull.
       amount = target.maxHp * 40 + 1000
       target.beheaded = true
+      // The tentacle goes out and comes back. Drawn from the Shrike rather than
+      // at the victim, because the whole point of the body is that the reach is
+      // its own — two fields, no projectile, nothing in flight to intercept.
+      this.vfx.lash(attacker.x, attacker.centerY, target.x, target.centerY - target.def.height * 0.55)
       this.vfx.impact(target.x, target.centerY, 0xe6dfc4, 1.5, true)
     }
     // The older javelin-Shrike's bonus, kept for anything else carrying it.
@@ -5133,6 +5149,42 @@ export default class Battlefield {
     if (attacker && attacker.faction !== target.faction) {
       const army = this.armyFor(attacker.faction)
       army.xp += amount * XP_PER_DAMAGE * army.modifiers.bounty
+    }
+
+    // ── THE CARNAGE SIGNATURES ──
+    //
+    // One drawn effect per body, keyed off the special the body already carries,
+    // and each built out of a DIFFERENT motion so that a lane full of Carnage
+    // still reads: an arc, a straight lash, a forward cone, a shockwave, a
+    // thread that shortens, a thread that holds. Purely cosmetic — placed ahead
+    // of `takeDamage` only so the effect and the damage number land together —
+    // and drawn against any target, so a body hitting a fortress looks like
+    // itself too, which the on-hit rider block below cannot manage.
+    if (attacker instanceof Unit && this.vfx) {
+      const dir = ADVANCE_DIR[attacker.faction]
+      const tcy = target.y + target.centerOffsetY
+      switch (attacker.def.special) {
+        case 'gravebound':
+          // A Husk throws its whole weight, jaw first. No weapon arc to draw.
+          this.vfx.maul(attacker.x + dir * attacker.def.height * 0.3, tcy, dir)
+          break
+        case 'frenzy':
+          this.vfx.cleaveArc(target.x - dir * 8, tcy, dir)
+          break
+        case 'headtaker':
+          this.vfx.lash(attacker.x, attacker.centerY, target.x, tcy)
+          break
+        case 'devour':
+          this.vfx.bite(target.x, tcy, 1 + Math.min(1, attacker.def.height / 200))
+          break
+        case 'lifesteal':
+          // The Butcher and the Widow drink the same wound and must not look
+          // like each other doing it: his thread is pulled in along the ground,
+          // hers hangs from the air and a bead crawls up it.
+          if (attacker.layer === 'air') this.vfx.tether(target.x, tcy, attacker.x, attacker.centerY)
+          else this.vfx.siphon(target.x, tcy, attacker.x, attacker.centerY)
+          break
+      }
     }
 
     target.takeDamage(amount, event.type, attacker ?? undefined, event.knockback, crit)

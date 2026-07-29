@@ -56,6 +56,18 @@ function finish(p: Pix, k: FleshKit, seed: number, sheen = 1): Canvas2D {
   return p.toCanvas() as Canvas2D
 }
 
+/**
+ * The same pass for a SMALL part. `wet` lights the top of every column and
+ * `blemish` scatters a stray pixel every thirty, which on a canvas under about
+ * twenty pixels tall stops being texture and becomes damage — it eats the
+ * silhouette the shape was carrying. So small parts get the rim and nothing else.
+ */
+function finishSmall(p: Pix, k: FleshKit, seed: number): Canvas2D {
+  wet(p, seed, 0.35)
+  rimFlesh(p, k)
+  return p.toCanvas() as Canvas2D
+}
+
 /** A soft segment with no outline — for anything inside a silhouette. */
 function softLimb(len: number, thick: number, k: FleshKit, seed: number, ramp = k.hide): PartArt {
   const draw = Math.round(len * 1.2)
@@ -496,78 +508,166 @@ function wallParts(v: UnitVisual, height: number): Record<string, PartArt> {
  * front — and the leap pose tucks all four limbs under the body and extends
  * them again, which is the shape that sells a jump.
  */
+/**
+ * THE RIPJAW'S TORSO — twenty-two pixels by fourteen.
+ *
+ * That number is the whole design constraint and the first two attempts at this
+ * body ignored it. A rib cage, a spine, three bone spurs and a loop of viscera
+ * were all being drawn into three hundred pixels, and the result was noise: at
+ * playing size the animal read as a dark blob with pink stripes through it and
+ * no discernible head, legs or direction.
+ *
+ * So the detail is gone and the SHAPE carries it. What is left is a silhouette
+ * with a shoulder hump, one hard three-band value gradient (near-black along the
+ * spine, mid flank, pale belly) and exactly two bright features: the spine ridge
+ * and a single dark shoulder socket. Everything drawn darker than the flank —
+ * the legs, the skull, the tail — separates from it for free.
+ */
 function ripjawBody(height: number, k: FleshKit): PartArt {
-  const w = art(0.66, height)
-  const h = art(0.34, height)
+  const w = art(0.62, height)
+  const h = art(0.40, height)
   const p = pad(w, h)
-  // A deep chest at the front tapering to narrow hips: a runner's body.
+  const noise = pixelNoise(741)
   for (let x = 0; x < w; x += 1) {
-    const t = x / w
-    const th = h * (0.94 - t * 0.34)
-    const mid = p.h * 0.5 + h * t * 0.1
-    for (let o = 0; o < th; o += 1) {
-      const s = o / Math.max(1, th - 1)
-      const ramp = s > 0.82 ? k.necrotic : k.hide
-      p.set(x + 2, Math.round(mid - th / 2 + o), ramp[s < 0.16 ? 1 : s < 0.5 ? 3 : s < 0.8 ? 2 : 1])
+    const t = x / Math.max(1, w - 1)
+    // A hump over the shoulder at t≈0.76 collapsing to narrow hips at the back:
+    // the weight sits over the front legs, which is what makes the jump look as
+    // though it comes from the back end.
+    const hump = Math.exp(-((t - 0.76) * (t - 0.76)) / 0.1)
+    const th = Math.max(3, Math.round(h * (0.34 + 0.58 * hump + 0.1 * t)))
+    // The belly line stays flat. All the change happens along the back.
+    const belly = Math.round(p.h * 0.86)
+    const top = belly - th
+    for (let y = top; y < belly; y += 1) {
+      const s = (y - top) / Math.max(1, th - 1)
+      // Three bands with a one-pixel jitter on the boundaries, so the gradient
+      // does not read as printed stripes.
+      const j = noise(x, 2) * 0.08
+      if (s < 0.26 + j) p.set(x + 2, y, k.necrotic[s < 0.1 ? 0 : 1])
+      else if (s > 0.8) p.set(x + 2, y, k.fat[1])
+      else p.set(x + 2, y, k.hide[s < 0.45 ? 3 : 2])
     }
   }
-  ribCage(p, 4, p.h * 0.3, w * 0.26, h * 0.4, k, 3, 1)
-  spine(p, 5, p.h * 0.26, p.w - 5, p.h * 0.34, k, 10)
-  boneSpur(p, w * 0.55, p.h * 0.26, art(0.05, height), -1.7, k)
-  boneSpur(p, w * 0.7, p.h * 0.3, art(0.04, height), -1.8, k)
-  viscera(p, w * 0.4, p.h * 0.72, art(0.06, height), k, 91)
-  return { canvas: finish(p, k, 90), origin: [0.16, 0.5] }
+  // Two features, and only two. The spine is the one bright line up there —
+  // the highest-contrast thing on the body, sitting on the darkest band.
+  spine(p, 3, p.h * 0.3, p.w - 3, p.h * 0.2, k, 12)
+  // And one dark hollow behind the shoulder, which reads as mass at any size.
+  p.ellipse(w * 0.58 + 2, p.h * 0.62, Math.max(1.2, w * 0.06), Math.max(1.2, h * 0.11), k.cavity[1])
+  boneSpur(p, w * 0.7 + 2, p.h * 0.24, art(0.07, height), -1.6, k)
+  return { canvas: finishSmall(p, k, 90), origin: [0.1, 0.62] }
 }
 
-function ripjawHead(height: number, k: FleshKit): PartArt {
-  const len = art(0.26, height)
-  const h = art(0.16, height)
+/**
+ * THE SKULL — ten pixels by seven, so it gets three marks and no more: a bony
+ * ramp for the braincase, two teeth, one socket. Drawn on the BONE ramp rather
+ * than the hide ramp, which is the only reason it separates from the shoulder
+ * behind it; the first version was the same pale tone as the flank and vanished
+ * into it completely.
+ */
+function ripjawSkull(height: number, k: FleshKit): PartArt {
+  const len = art(0.30, height)
+  const h = art(0.19, height)
   const p = pad(len, h)
-  const cy = p.h * 0.45
-  // A long jaw with the skull barely wider than it.
+  const cy = p.h * 0.5
   for (let i = 0; i < len; i += 1) {
-    const t = i / len
-    const th = Math.max(2, Math.round(h * (0.9 - t * 0.5)))
+    const t = i / Math.max(1, len - 1)
+    // A broad braincase narrowing hard into the snout.
+    const th = Math.max(2, Math.round(h * (0.98 - t * 0.6)))
+    const mid = cy - h * 0.05 * t
     for (let o = 0; o < th; o += 1) {
       const s = o / Math.max(1, th - 1)
-      p.set(2 + i, Math.round(cy - th / 2 + o), k.hide[s < 0.2 ? 1 : s > 0.74 ? 3 : 2])
+      p.set(2 + i, Math.round(mid - th / 2 + o), s > 0.72 ? k.gristle[1] : k.bone[s < 0.34 ? 3 : 2])
     }
   }
-  // A split lip and two rows of teeth all the way back.
-  for (let i = 4; i < len - 1; i += 3) {
-    p.set(2 + i, Math.round(cy + h * 0.24), k.bone[4])
-    p.set(2 + i, Math.round(cy + h * 0.34), k.bone[2])
+  // Two teeth, at the SNOUT end of the jaw line. They are the brightest pixels
+  // on the unit, which is where the eye should land.
+  const jawY = Math.round(cy + h * 0.3)
+  p.set(2 + len - 1, jawY, k.bone[4])
+  p.set(2 + len - 1 - Math.max(2, Math.round(len * 0.22)), jawY, k.bone[4])
+  // One sunk socket, back in the braincase. Not a cluster — there is no room.
+  const sock = 2 + Math.round(len * 0.2)
+  p.set(sock, Math.round(cy - h * 0.22), k.cavity[0])
+  p.set(sock, Math.round(cy - h * 0.22) + 1, k.accent[2])
+  // Origin at the BACK of the canvas: with `orient: 'right'` the art is laid out
+  // forwards from the joint, so the braincase must sit at the joint and the
+  // snout at the far end. Anchoring it at the snout instead pointed the whole
+  // head backwards over the shoulder, which is exactly what it looked like.
+  return { canvas: finishSmall(p, k, 92), origin: [2 / p.w, cy / p.h] }
+}
+
+/** The lower jaw. Nine pixels by three: a wedge and two teeth. */
+function ripjawJaw(height: number, k: FleshKit): PartArt {
+  const len = art(0.26, height)
+  const h = art(0.09, height)
+  const p = pad(len, h)
+  const cy = p.h * 0.5
+  for (let i = 0; i < len; i += 1) {
+    const t = i / Math.max(1, len - 1)
+    const th = Math.max(2, Math.round(h * (1 - t * 0.4)))
+    for (let o = 0; o < th; o += 1) {
+      p.set(2 + i, Math.round(cy - th / 2 + o), o === 0 ? k.bone[3] : k.gristle[1])
+    }
   }
-  p.ellipse(4, cy - h * 0.2, 1.6, 1.4, k.cavity[0])
-  eyeCluster(p, 5, cy - h * 0.2, 2, k, 2, 93)
-  return { canvas: finish(p, k, 92, 0.8), origin: [3 / p.w, cy / p.h] }
+  // Teeth on the mandible point UP, at the snout end, so a closed mouth
+  // interlocks with the two coming down off the skull.
+  const tipY = Math.round(cy - h * 0.4)
+  p.set(2 + len - 1, tipY, k.bone[4])
+  p.set(2 + len - 1 - Math.max(2, Math.round(len * 0.25)), tipY, k.bone[4])
+  // Hinged at the back, same as the skull, so the two run parallel.
+  return { canvas: p.toCanvas() as Canvas2D, origin: [2 / p.w, cy / p.h] }
 }
 
 const RIPJAW_SKELETON = (): Skeleton => {
   const s: Skeleton = [
-    bone('root', null, { y: -0.34, depth: 30 }),
+    // Higher than before. The first version put the root at 0.34 with legs that
+    // only reached 0.27 down once bent, so the animal hovered with its belly
+    // almost on the dirt — a long low smear rather than something coiled to
+    // jump. At 0.46 with longer legs the chest clears the ground and the jump
+    // has somewhere to come FROM.
+    bone('root', null, { y: -0.46, depth: 30 }),
     // The body is HORIZONTAL. Nothing else in the game is.
-    bone('body', 'root', { angle: -0.1, length: 0.5, part: 'body', orient: 'right', depth: 31, weights: { breathe: 1, lean: 1 } }),
-    bone('neck', 'body', { x: 0.02, y: -0.06, angle: -0.3, length: 0.08, depth: 40 }),
-    bone('head', 'neck', { angle: 0.3, part: 'head', orient: 'right', depth: 41, weights: { aim: 0.6, flinch: 1 } }),
-    // Hind legs, heavy, set well back.
-    bone('hipB', 'root', { x: -0.16, angle: Math.PI / 2, depth: 10 }),
-    bone('hindB', 'hipB', { angle: -0.4, length: 0.16, part: 'hindB', depth: 10 }),
-    bone('hockB', 'hindB', { angle: 0.9, length: 0.14, part: 'hockB', depth: 11 }),
-    bone('pawB', 'hockB', { angle: -0.5, part: 'pawB', depth: 12 }),
-    bone('hipB2', 'root', { x: -0.13, angle: Math.PI / 2, depth: 44 }),
-    bone('hindB2', 'hipB2', { angle: -0.4, length: 0.16, part: 'hindB2', depth: 44 }),
-    bone('hockB2', 'hindB2', { angle: 0.9, length: 0.14, part: 'hockB2', depth: 45 }),
-    bone('pawB2', 'hockB2', { angle: -0.5, part: 'pawB2', depth: 46 }),
+    bone('body', 'root', { angle: -0.08, length: 0.46, part: 'body', orient: 'right', depth: 31, weights: { breathe: 1, lean: 1 } }),
+    // The skull hangs straight off the front of the body, dropped below the
+    // shoulder line by a y offset rather than by an intermediate neck bone.
+    //
+    // The neck WAS a bone of its own carrying a `softLimb` part — and a softLimb
+    // is authored pointing DOWN while the bone declared `orient: 'right'`. That
+    // mismatch rotated the whole chain a quarter turn and threw the head back
+    // over the animal's own shoulder. One less joint is one less thing to get
+    // wrong, and at twenty-two pixels long there was never room to see a neck.
+    bone('head', 'body', { x: 0.02, y: 0.05, angle: 0.06, part: 'head', orient: 'right', depth: 41, weights: { aim: 0.6, flinch: 1 } }),
+    // The mandible hinges off the skull's own root, so opening the mouth swings
+    // the lower jaw alone and the teeth part instead of the whole head stretching.
+    bone('jaw', 'head', { x: -0.02, y: 0.03, angle: 0.1, part: 'jaw', orient: 'right', depth: 39, weights: { flinch: 0.6 } }),
+    // A long counterweight tail. It is what stops the silhouette ending in a
+    // blunt vertical edge at the hips, and in the bound it whips.
+    //
+    // ANGLES ON THIS RIG, measured rather than assumed (`partRotation` in
+    // rig.ts, plus a probe of the live sprite positions): a part authored
+    // pointing DOWN renders at `angle - π/2`, so angle 0 points FORWARD, π/2
+    // points straight down — which is why every hip here is π/2 — and π points
+    // BACKWARD. A tail therefore wants π, not 0.
+    bone('tailA', 'root', { x: -0.1, angle: Math.PI - 0.22, length: 0.2, part: 'tailA', depth: 22, weights: { lean: 1.4 } }),
+    bone('tailB', 'tailA', { angle: -0.2, length: 0.16, part: 'tailB', depth: 21 }),
+    bone('tailC', 'tailB', { angle: -0.26, part: 'tailC', depth: 20 }),
+    // Hind legs, heavy, set well back and longer than the fore pair.
+    bone('hipB', 'root', { x: -0.15, angle: Math.PI / 2, depth: 10 }),
+    bone('hindB', 'hipB', { angle: -0.5, length: 0.23, part: 'hindB', depth: 10 }),
+    bone('hockB', 'hindB', { angle: 1.05, length: 0.2, part: 'hockB', depth: 11 }),
+    bone('pawB', 'hockB', { angle: -0.55, part: 'pawB', depth: 12 }),
+    bone('hipB2', 'root', { x: -0.12, angle: Math.PI / 2, depth: 44 }),
+    bone('hindB2', 'hipB2', { angle: -0.5, length: 0.23, part: 'hindB2', depth: 44 }),
+    bone('hockB2', 'hindB2', { angle: 1.05, length: 0.2, part: 'hockB2', depth: 45 }),
+    bone('pawB2', 'hockB2', { angle: -0.55, part: 'pawB2', depth: 46 }),
     // Fore legs, lighter, under the chest.
-    bone('hipF', 'root', { x: 0.16, angle: Math.PI / 2, depth: 8 }),
-    bone('foreF', 'hipF', { angle: 0.2, length: 0.15, part: 'foreF', depth: 8 }),
-    bone('kneeF', 'foreF', { angle: -0.3, length: 0.13, part: 'kneeF', depth: 9 }),
-    bone('pawF', 'kneeF', { angle: 0.1, part: 'pawF', depth: 10 }),
-    bone('hipF2', 'root', { x: 0.19, angle: Math.PI / 2, depth: 48 }),
-    bone('foreF2', 'hipF2', { angle: 0.2, length: 0.15, part: 'foreF2', depth: 48 }),
-    bone('kneeF2', 'foreF2', { angle: -0.3, length: 0.13, part: 'kneeF2', depth: 49 }),
-    bone('pawF2', 'kneeF2', { angle: 0.1, part: 'pawF2', depth: 50 })
+    bone('hipF', 'root', { x: 0.17, angle: Math.PI / 2, depth: 8 }),
+    bone('foreF', 'hipF', { angle: 0.22, length: 0.2, part: 'foreF', depth: 8 }),
+    bone('kneeF', 'foreF', { angle: -0.3, length: 0.19, part: 'kneeF', depth: 9 }),
+    bone('pawF', 'kneeF', { angle: 0.08, part: 'pawF', depth: 10 }),
+    bone('hipF2', 'root', { x: 0.2, angle: Math.PI / 2, depth: 48 }),
+    bone('foreF2', 'hipF2', { angle: 0.22, length: 0.2, part: 'foreF2', depth: 48 }),
+    bone('kneeF2', 'foreF2', { angle: -0.3, length: 0.19, part: 'kneeF2', depth: 49 }),
+    bone('pawF2', 'kneeF2', { angle: 0.08, part: 'pawF2', depth: 50 })
   ]
   validateSkeleton(s, 'ripjaw')
   return s
@@ -590,7 +690,7 @@ const RIPJAW_WALK: Clip = {
         hindB2: { angle: 0.45 }, hockB2: { angle: 1.15 },
         foreF: { angle: -0.7 }, kneeF: { angle: -0.5 },
         foreF2: { angle: -0.65 }, kneeF2: { angle: -0.45 },
-        head: { angle: 0.16 }
+        head: { angle: 0.16 }, jaw: { angle: 0.18 }, tailA: { angle: 0.22 }, tailB: { angle: 0.14 }, tailC: { angle: 0.1 }
       }
     },
     {
@@ -603,7 +703,7 @@ const RIPJAW_WALK: Clip = {
         hindB2: { angle: -0.65 }, hockB2: { angle: 0.15 },
         foreF: { angle: 0.6 }, kneeF: { angle: 0.2 },
         foreF2: { angle: 0.55 }, kneeF2: { angle: 0.25 },
-        head: { angle: -0.1 }
+        head: { angle: -0.1 }, jaw: { angle: 0.34 }, tailA: { angle: -0.2 }, tailB: { angle: -0.16 }, tailC: { angle: -0.12 }
       },
       ease: 'quad'
     },
@@ -617,7 +717,7 @@ const RIPJAW_WALK: Clip = {
         hindB2: { angle: -0.25 }, hockB2: { angle: 0.65 },
         foreF: { angle: 0.2 }, kneeF: { angle: -0.2 },
         foreF2: { angle: 0.15 }, kneeF2: { angle: -0.15 },
-        head: { angle: -0.16 }
+        head: { angle: -0.16 }, jaw: { angle: 0.4 }, tailA: { angle: -0.34 }, tailB: { angle: -0.24 }, tailC: { angle: -0.18 }
       }
     },
     {
@@ -630,7 +730,7 @@ const RIPJAW_WALK: Clip = {
         hindB2: { angle: 0.25 }, hockB2: { angle: 0.85 },
         foreF: { angle: -0.3 }, kneeF: { angle: 0.1 },
         foreF2: { angle: -0.25 }, kneeF2: { angle: 0.15 },
-        head: { angle: 0.1 }
+        head: { angle: 0.1 }, jaw: { angle: 0.2 }, tailA: { angle: 0.12 }, tailB: { angle: 0.08 }, tailC: { angle: 0.06 }
       },
       ease: 'quad'
     }
@@ -644,12 +744,16 @@ const RIPJAW_ATTACK: Clip = {
   loop: false,
   ease: 'quad',
   keys: [
-    { t: 0, pose: { head: { angle: 0 }, body: { angle: 0 } } },
-    { t: 0.26, pose: { head: { angle: -0.5 }, body: { angle: -0.14 }, root: { y: -0.01 } }, ease: 'cubic' },
-    { t: 0.42, pose: { head: { angle: 0.5 }, body: { angle: 0.16 }, root: { y: 0.012 } }, ease: 'hold' },
-    { t: 0.6, pose: { head: { angle: 0.2 }, body: { angle: 0.06 } } },
-    { t: 0.74, pose: { head: { angle: 0.44 }, body: { angle: 0.12 } }, ease: 'hold' },
-    { t: 1, pose: { head: { angle: 0 }, body: { angle: 0 } }, ease: 'back' }
+    { t: 0, pose: { head: { angle: 0 }, jaw: { angle: 0.1 }, body: { angle: 0 } } },
+    // Rear back and GAPE. The mouth opening is the wind-up, not the strike.
+    { t: 0.26, pose: { head: { angle: -0.5 }, jaw: { angle: 1.15 }, body: { angle: -0.14 }, root: { y: -0.01 }, tailA: { angle: 0.3 } }, ease: 'cubic' },
+    // Slam. Head down, jaw shut on the same frame, held.
+    { t: 0.42, pose: { head: { angle: 0.5 }, jaw: { angle: -0.06 }, body: { angle: 0.16 }, root: { y: 0.012 }, tailA: { angle: -0.28 } }, ease: 'hold' },
+    // And then the shake — the thing every dog does and nothing else here does.
+    { t: 0.56, pose: { head: { angle: 0.14 }, jaw: { angle: 0.06 }, body: { angle: 0.04 }, tailA: { angle: 0.18 } } },
+    { t: 0.68, pose: { head: { angle: 0.46 }, jaw: { angle: -0.04 }, body: { angle: 0.12 }, tailA: { angle: -0.2 } }, ease: 'hold' },
+    { t: 0.8, pose: { head: { angle: 0.2 }, jaw: { angle: 0.08 }, body: { angle: 0.05 }, tailA: { angle: 0.14 } } },
+    { t: 1, pose: { head: { angle: 0 }, jaw: { angle: 0.1 }, body: { angle: 0 }, tailA: { angle: 0 } }, ease: 'back' }
   ]
 }
 
@@ -659,31 +763,39 @@ const RIPJAW_IDLE: Clip = {
   loop: true,
   ease: 'sine',
   keys: [
-    { t: 0, pose: { head: { angle: 0.04 }, body: { angle: -0.02 } } },
-    { t: 0.5, pose: { head: { angle: -0.06 }, body: { angle: 0.02 } } }
+    { t: 0, pose: { head: { angle: 0.04 }, jaw: { angle: 0.16 }, body: { angle: -0.02 }, tailA: { angle: 0.1 }, tailB: { angle: 0.14 } } },
+    { t: 0.35, pose: { head: { angle: -0.02 }, jaw: { angle: 0.3 }, body: { angle: 0 }, tailA: { angle: -0.06 }, tailB: { angle: 0.2 } } },
+    { t: 0.5, pose: { head: { angle: -0.06 }, jaw: { angle: 0.12 }, body: { angle: 0.02 }, tailA: { angle: -0.12 }, tailB: { angle: -0.08 } } },
+    { t: 0.78, pose: { head: { angle: 0 }, jaw: { angle: 0.24 }, body: { angle: 0 }, tailA: { angle: 0.04 }, tailB: { angle: -0.16 } } }
   ]
 }
 
 function ripjawParts(v: UnitVisual, height: number): Record<string, PartArt> {
   const k = fleshKit(v.skin, v.cloth, v.accent)
   const t = art(0.05, height)
-  const p: Record<string, PartArt> = {
+  // Far legs drawn on the NECROTIC ramp and near legs on the hide ramp, so the
+  // two pairs sit at visibly different depths instead of tangling into one mat
+  // of limbs under the chest.
+  return {
     body: ripjawBody(height, k),
-    head: ripjawHead(height, k),
-    hindB: softLimb(art(0.16, height), t * 1.6, k, 100, k.necrotic),
-    hockB: softLimb(art(0.14, height), t * 1.1, k, 101, k.necrotic),
+    head: ripjawSkull(height, k),
+    jaw: ripjawJaw(height, k),
+    tailA: softLimb(art(0.2, height), t * 1.1, k, 96, k.necrotic),
+    tailB: softLimb(art(0.16, height), t * 0.8, k, 97, k.necrotic),
+    tailC: softLimb(art(0.1, height), t * 0.5, k, 98, k.gristle),
+    hindB: softLimb(art(0.23, height), t * 1.5, k, 100, k.necrotic),
+    hockB: softLimb(art(0.2, height), t * 1.0, k, 101, k.necrotic),
     pawB: hoofPart(Math.round(t * 1.3), k, 102),
-    hindB2: softLimb(art(0.16, height), t * 1.7, k, 103),
-    hockB2: softLimb(art(0.14, height), t * 1.2, k, 104),
+    hindB2: softLimb(art(0.23, height), t * 1.7, k, 103),
+    hockB2: softLimb(art(0.2, height), t * 1.2, k, 104),
     pawB2: hoofPart(Math.round(t * 1.4), k, 105),
-    foreF: softLimb(art(0.15, height), t * 1.1, k, 106, k.necrotic),
-    kneeF: softLimb(art(0.13, height), t * 0.9, k, 107, k.necrotic),
+    foreF: softLimb(art(0.2, height), t * 1.0, k, 106, k.necrotic),
+    kneeF: softLimb(art(0.19, height), t * 0.85, k, 107, k.necrotic),
     pawF: hoofPart(Math.round(t * 1.1), k, 108),
-    foreF2: softLimb(art(0.15, height), t * 1.2, k, 109),
-    kneeF2: softLimb(art(0.13, height), t, k, 110),
+    foreF2: softLimb(art(0.2, height), t * 1.2, k, 109),
+    kneeF2: softLimb(art(0.19, height), t, k, 110),
     pawF2: hoofPart(Math.round(t * 1.2), k, 111)
   }
-  return p
 }
 
 // ─────────────────────────────────── WAGON ───────────────────────────────────
