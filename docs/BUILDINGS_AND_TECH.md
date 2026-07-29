@@ -289,7 +289,34 @@ tree of sixty-three, and six existing nodes repurposed rather than replaced.
 must choose the Tide or the Risen. Without that the creed simply takes both and
 becomes the strongest thing in the game.
 
-## 7. Order of work
+## 7. What shipped, and where it moved
+
+All of it is built. Three things moved between the design above and the
+simulation, each because measurement said so:
+
+**"Corpses on your half" had to become a real tally.** The gore system only
+spawns physics gibs when a soldier is DISMEMBERED — era-gated, and needing
+overkill or Butchery — so counting gibs meant the number read zero through most
+of a match and both the Charnel Yard and the Ossuary measured nothing at all.
+Deaths are now counted per half and rot at a quarter a second, so a Yard tracks
+the fighting rather than the whole match, and a body taken into a bank stops
+being a body on the ground.
+
+**The Forge was rewritten before any of this.** Measured at age four it cost
+28,688 gold and bought nothing countable — its whole payload was fortress repair
+and turrets, and turrets never reach midfield. It now takes 12/22% off every
+blow your soldiers take on your own half, which is what the defence bottleneck
+was supposed to mean.
+
+**The Great Rite's clock is in the HUD for both sides.** A five-minute silent
+countdown to a loss is not a doom clock; being loud is what you pay for the win
+condition.
+
+Everything else is as specified: the seven halls with their tier ladders, the
+sixteen new nodes, the six repointed ones, and the `charnel_rite` /
+`ossuary_rite` oath. Verified by `scratchpad/halls.mjs`, 9/9.
+
+## 8. Order of work
 
 1. **Research as a resource** — the Reliquary table and RP conversion. Nothing
    else in this document matters until research stops being purchasable.
