@@ -54,6 +54,16 @@ export default class HUDScene extends Phaser.Scene {
   private reserveButton!: Button
   private researchText!: Phaser.GameObjects.Text
   private studyText!: Phaser.GameObjects.Text
+  /**
+   * THE HARVEST STRIP.
+   *
+   * Gold has a rate and research has a rate; the harvest has neither. Its
+   * income is objects lying on the board, rotting, some of them out of reach.
+   * So it is the one economy that cannot be read off a number in the corner
+   * unless the corner is told to show the board — which is what this is.
+   * Hidden entirely until Bone Harvest is owned.
+   */
+  private harvestText!: Phaser.GameObjects.Text
   private techButton!: Button
   private techTree?: TechTree
   private basePanel?: BasePanel
@@ -157,6 +167,7 @@ export default class HUDScene extends Phaser.Scene {
     // What is on the bench, and when it lands. Research is work now, so the
     // question a commander asks is "when", not "how much have I got".
     this.studyText = label(this, 14, 90, '', { size: 11, color: 0x9a7bd4 }).setDepth(2)
+    this.harvestText = label(this, 14, 106, '', { size: 11, color: 0xcbb894 }).setDepth(2).setVisible(false)
 
     label(this, 200, 6, 'FORTRESS', { size: 11, color: UI.textDim }).setDepth(2)
     this.playerHpBar = new Bar(this, 200, 20, 250, 14, UI.player)
@@ -627,6 +638,41 @@ export default class HUDScene extends Phaser.Scene {
     this.refreshLanes()
   }
 
+  /**
+   * The harvest, said in one line.
+   *
+   * `12 MEAT 220g · 3 SKULL · 5 BONE` are the three spoils lying on YOUR half,
+   * named in the same words the floating label over a fresh corpse uses, so the
+   * two teach each other. Words rather than icons because the bitmap font has
+   * no glyph for a skull and renders one as a box. Then what the meat would pay
+   * if all of it got home — which is the number that
+   * makes decay legible, because a commander watches it fall while they are
+   * busy elsewhere. Then the frames banked toward the next Boneling, and how
+   * many sacks are still walking.
+   *
+   * Kinds the commander has not researched are greyed out rather than hidden:
+   * seeing `4☠` sitting there unusable is the argument for the Skull Tithe.
+   */
+  private refreshHarvest(): void {
+    const bf = this.battle.battlefield
+    const army = this.battle.localArmy
+    if (!army.hasTech('bone_harvest')) {
+      if (this.harvestText.visible) this.harvestText.setVisible(false)
+      return
+    }
+    const r = bf.harvestReport(this.battle.localFaction)
+    const dim = (owned: boolean, text: string): string => (owned ? text : `(${text})`)
+    const parts = [
+      `${r.meat} MEAT ${r.value}g`,
+      dim(army.hasTech('skull_tithe'), `${r.skull} SKULL`),
+      dim(army.hasTech('bone_levy'), `${r.bone} BONE`)
+    ]
+    if (army.hasTech('bone_levy')) parts.push(`LEVY ${r.bank.toFixed(1)}/${r.bankNeeds}`)
+    if (r.carried > 0) parts.push(`${r.carried} in hand`)
+    parts.push(`${r.wrights}/5 wrights`)
+    this.harvestText.setVisible(true).setText(`HARVEST  ${parts.join('  ·  ')}`)
+  }
+
   private refreshLanes(): void {
     if (this.laneRows.length === 0) return
     const bf = this.battle?.battlefield
@@ -701,6 +747,7 @@ export default class HUDScene extends Phaser.Scene {
           : 'BENCH EMPTY — pick a node (R)'
       )
       .setColor(hex(study ? 0x9a7bd4 : UI.warn))
+    this.refreshHarvest()
     if (siege > 0 && this.siegeWarned === false) {
       this.siegeWarned = true
       gameEvents.emit('hud:flash', { message: 'Supply line cut — clear your wall', tone: 'warn' })

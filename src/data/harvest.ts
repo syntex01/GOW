@@ -35,23 +35,79 @@ export const SPOIL_TEXTURE: Record<Spoil, string> = {
 }
 
 export const SPOIL_COLOR: Record<Spoil, number> = {
-  meat: 0x9e2b26,
+  // Lighter and pinker than blood (0x8e1418) and than the stains it lies on,
+  // or a cut of meat is just another splash on a field covered in them.
+  meat: 0xc4544a,
   skull: 0xe6dfc4,
   bone: 0xd8cfae
 }
 
 /**
- * How long a spoil is worth walking to before it is worth nothing.
+ * How long a spoil off a CHEAP body keeps, before anything is done about it.
  *
- * This is the load-bearing number of the whole system: existing is not the
- * same as harvested. Meat goes off fastest — it is the most plentiful and the
- * least worth chasing across the field. Bone keeps almost indefinitely, which
- * is why the Ossuary is a bank and the Bone Levy is a slow, patient thing.
+ * The load-bearing number of the whole system: existing is not the same as
+ * harvested. Deliberately short in the early game — a stone-age field goes
+ * cold in about a quarter of a minute, so the opening is a scramble and the
+ * answer to it is to fight close to your own wall rather than to out-produce
+ * anybody. Preservation research is what turns the late game into a bank.
+ *
+ * Meat goes off fastest: it is the most plentiful and the least worth chasing
+ * across the field. Bone keeps longest, which is why the Ossuary is a bank and
+ * the Bone Levy is a slow, patient thing.
  */
 export const SPOIL_TTL: Record<Spoil, number> = {
-  meat: 26_000,
-  skull: 45_000,
-  bone: 80_000
+  meat: 12_000,
+  skull: 18_000,
+  bone: 26_000
+}
+
+/**
+ * The price a spoil's worth is measured against: one age-one line soldier,
+ * which after the curve re-lay is around 250 gold. A body at this price yields
+ * spoils worth exactly one unit each, so the cheapest chaff comes in a little
+ * under one and everything above it scales from there.
+ */
+export const SPOIL_REFERENCE_COST = 250
+
+/**
+ * WHAT A BODY IS WORTH, by what it cost to field.
+ *
+ * A Gravetide is not the same harvest as a clubman and the system should not
+ * pretend otherwise — but nor is it ten times the harvest, which is what a
+ * straight ratio would say. The square root keeps a swarm's many cheap deaths
+ * the creed's bread and butter while making a dead elite genuinely worth
+ * walking out for: measured against the 250g anchor, a 200g Clubman is 0.89,
+ * a 600g Raptor Rider is 1.55 and a 2400g Gravetide is 3.10.
+ *
+ * The same number drives DECAY, so an expensive carcass is both worth more and
+ * lies around longer — you get time to go and collect the thing that is worth
+ * collecting, and none at all for the chaff out in the middle.
+ */
+export function spoilWorth(cost: number): number {
+  const raw = Math.sqrt(Math.max(1, cost) / SPOIL_REFERENCE_COST)
+  return Math.max(0.5, Math.min(5, Math.round(raw * 100) / 100))
+}
+
+/** How long one spoil off this body keeps, with preservation folded in. */
+export function spoilLife(kind: Spoil, cost: number, keep = 1): number {
+  return Math.round(SPOIL_TTL[kind] * (0.6 + 0.8 * spoilWorth(cost)) * keep)
+}
+
+/**
+ * Preservation research. Nothing here changes what a body leaves — only how
+ * long you have to go and get it, which is the one lever that turns a frantic
+ * early harvest into a late-game larder.
+ */
+export const PRESERVE_TECHS: readonly { tech: string; keep: number; name: string }[] = [
+  { tech: 'salting', keep: 1.7, name: 'Salting' },
+  { tech: 'deep_cold', keep: 1.6, name: 'The Deep Cold' }
+]
+
+export function preservation(techs: ReadonlySet<string> | undefined): number {
+  if (!techs) return 1
+  let keep = 1
+  for (const p of PRESERVE_TECHS) if (techs.has(p.tech)) keep *= p.keep
+  return keep
 }
 
 /** A sack of each, ready to be paid out. */
@@ -77,8 +133,9 @@ export const emptySack = (): Sack => ({ meat: 0, skull: 0, bone: 0 })
  *              everything, and never a skull.
  *   ENERGY     cooks the meat off the frame. Bone and a clean skull.
  *
- * The victim's armour speaks too — a heavy is mostly frame, an unarmoured
- * body is mostly meat — and a big body is worth more than a small one.
+ * The victim's armour speaks too: a heavy is mostly frame, an unarmoured body
+ * is mostly meat. What the body COST does not appear here at all — price sets
+ * the worth of each piece, never how many there are.
  */
 const BY_DAMAGE: Record<DamageType, Sack> = {
   pierce: { meat: 1, skull: 1, bone: 2 },
@@ -99,28 +156,31 @@ const BY_ARMOR: Record<ArmorType, Partial<Sack>> = {
 /**
  * The spoils one body leaves, before the ground gets any of it.
  *
+ * HOW MANY PIECES is a question about the weapon and the armour, and nothing
+ * else — so the drop table is short, flat and learnable by watching. HOW MUCH
+ * EACH PIECE IS WORTH is a separate question, answered by `spoilWorth` off the
+ * body's price. Keeping the two apart is the whole readability fix: a dead
+ * Gravetide leaves the same five or six objects a dead clubman does, so the
+ * field never turns into confetti, and each of those objects is simply worth
+ * five times more.
+ *
  * `overkillFrac` is how far past dead the killing blow carried it, in the
- * body's own max health. Past one whole bar there is not enough left of it to
- * pick up, whatever it was killed with — which is the same gate Death Throes
- * uses, and for the same reason: some blows do not leave a body.
+ * body's own max health. Past two whole bars there is not enough left of it to
+ * pick up, whatever it was killed with — the same gate Death Throes uses, and
+ * for the same reason: some blows do not leave a body.
  */
 export function spoilsOf(
   damage: DamageType,
   armor: ArmorType,
-  height: number,
   overkillFrac: number,
   mechanical: boolean
 ): Sack {
   if (mechanical) return emptySack()
   const base = BY_DAMAGE[damage]
   const extra = BY_ARMOR[armor]
-  // A Titan is worth more than a clubman, but not forty times more — the
-  // curve is deliberately flat so that a swarm's many small deaths stay the
-  // creed's bread and butter.
-  const bulk = Math.max(0.6, Math.min(2.2, height / 62))
   // Obliteration wastes it. Half at a bar of overkill, nothing past two.
   const spoilt = overkillFrac >= 2 ? 0 : Math.max(0, 1 - overkillFrac * 0.5)
-  const take = (kind: Spoil): number => Math.round((base[kind] + (extra[kind] ?? 0)) * bulk * spoilt)
+  const take = (kind: Spoil): number => Math.round((base[kind] + (extra[kind] ?? 0)) * spoilt)
   return { meat: take('meat'), skull: take('skull'), bone: take('bone') }
 }
 

@@ -36,8 +36,10 @@ import {
   SPOIL_COLOR,
   SPOIL_TECH,
   SPOIL_TEXTURE,
-  SPOIL_TTL,
   emptySack,
+  preservation,
+  spoilLife,
+  spoilWorth,
   spoilsOf,
   type Sack,
   type Spoil
@@ -108,8 +110,14 @@ interface Bonewright {
   lane: number
   /** Milliseconds until another one shuffles out of the yard. */
   respawnMs: number
-  /** What is in the sack, by kind. */
+  /** How many pieces of each kind are in the sack. */
   carried: Sack
+  /**
+   * What those pieces are WORTH, summed. A frame off a Gravetide counts as
+   * nearly five off a clubman, so a gatherer that walks out to an elite corpse
+   * comes back with a sack worth several trips to the chaff.
+   */
+  value: Sack
   /** Total pieces in the sack — the sack is full at GATHERER_BAG. */
   load: number
   /** How long it has been crouched over the current piece. */
@@ -702,11 +710,10 @@ export default class Battlefield {
   private scavenge(unit: Unit): void {
     const reach = unit.def.height * 0.7
     for (const body of this.physics.bodies) {
-      if (!body.settled || body.kind !== 'gib' || body.dead) continue
-      // Meat and offal only. A soldier cannot eat a skull, and a skull is the
-      // Tithe's alone — otherwise a wounded front line would quietly devour the
-      // research economy standing behind it.
-      if (body.spoil === 'skull' || body.spoil === 'bone') continue
+      if (!body.settled || body.dead || body.spoil !== 'meat') continue
+      // Meat only. A soldier cannot eat a skull or a femur, and the skull is
+      // the Tithe's alone — otherwise a wounded front line would quietly devour
+      // the research economy standing behind it.
       if (Math.abs(body.x - unit.x) > reach) continue
       body.dead = true
       unit.heal(unit.maxHp * 0.18 + 24)
@@ -752,7 +759,7 @@ export default class Battlefield {
     const slots = this.wrights[faction]
     // One slot per file, raised the first time the harvest runs.
     while (slots.length < LANE_COUNT) {
-      slots.push({ unit: null, lane: slots.length, respawnMs: 0, carried: emptySack(), load: 0, searchMs: 0, fleeMs: 0, lastHp: 0, quarry: null })
+      slots.push({ unit: null, lane: slots.length, respawnMs: 0, carried: emptySack(), value: emptySack(), load: 0, searchMs: 0, fleeMs: 0, lastHp: 0, quarry: null })
     }
     // Which spoils this commander has learned to pick up. Meat in the second
     // age, skulls in the third, frames in the fourth — the creed's economy
@@ -770,6 +777,7 @@ export default class Battlefield {
         if (slot.unit) {
           slot.unit = null
           slot.carried = emptySack()
+          slot.value = emptySack()
           slot.load = 0
           slot.quarry = null
           slot.respawnMs = GATHERER_RESPAWN_MS
@@ -781,6 +789,7 @@ export default class Battlefield {
           slot.unit = born
           slot.lastHp = born.hp
           slot.carried = emptySack()
+          slot.value = emptySack()
           slot.load = 0
           slot.searchMs = 0
           slot.fleeMs = 0
@@ -825,9 +834,13 @@ export default class Battlefield {
       if (slot.searchMs < GATHERER_SEARCH_MS) continue
       slot.searchMs = 0
       const kind = slot.quarry.spoil ?? 'meat'
-      slot.quarry.dead = true
       slot.carried[kind] += 1
+      slot.value[kind] += slot.quarry.worth ?? 1
       slot.load += 1
+      // The sack is visible on the way home: you can tell a gatherer carrying
+      // a skull from one carrying a leg from across the field.
+      wright.showBurden(kind)
+      slot.quarry.dead = true
       this.vfx.impact(slot.quarry.x, slot.quarry.y - 6, SPOIL_COLOR[kind], 0.7, kind === 'meat')
       slot.quarry = null
     }
@@ -849,9 +862,17 @@ export default class Battlefield {
   private dropSpoils(unit: Unit, damage: DamageType, overkillFrac: number): void {
     const kind = unit.def.visual.kind
     const mechanical = kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
-    const sack = spoilsOf(damage, unit.def.armor, unit.def.height, overkillFrac, mechanical)
+    const sack = spoilsOf(damage, unit.def.armor, overkillFrac, mechanical)
+    if (sack.meat + sack.skull + sack.bone === 0) return
     const ground = this.groundLineFor(unit.lane)
+    // Whose ground it fell on decides who could harvest it — and therefore
+    // whose preservation research keeps it. Killing deep in your own yard feeds
+    // the enemy's larder and killing in theirs feeds yours.
+    const half = this.halfOwner(unit.x)
+    const keep = preservation(this.armyFor(half).techs)
+    const worth = spoilWorth(unit.def.cost)
     for (const spoil of SPOILS) {
+      const life = spoilLife(spoil, unit.def.cost, keep)
       for (let i = 0; i < sack[spoil]; i += 1) {
         this.physics.spawn(
           'gib',
@@ -861,7 +882,9 @@ export default class Battlefield {
           -this.rng.range(40, 190),
           {
             spoil,
-            ttl: SPOIL_TTL[spoil],
+            worth,
+            ttl: life,
+            ttlMax: life,
             texture: SPOIL_TEXTURE[spoil],
             color: SPOIL_COLOR[spoil],
             size: spoil === 'skull' ? 0.9 : 1,
@@ -873,6 +896,69 @@ export default class Battlefield {
           }
         )
       }
+    }
+    // SAY WHAT FELL. The drop table is short and learnable, but only if the
+    // player is shown it — so a commander who can actually use the spoils gets
+    // one line over the body naming what it left. Shown to whoever owns the
+    // ground, because that is who can go and get it.
+    if (this.armyFor(half).hasTech('bone_harvest')) {
+      const parts: string[] = []
+      if (sack.meat) parts.push(`${sack.meat} meat`)
+      if (sack.skull) parts.push(`${sack.skull} skull`)
+      if (sack.bone) parts.push(`${sack.bone} bone`)
+      this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.62, parts.join(' '), '#cbb894')
+    }
+  }
+
+  /**
+   * What is lying on a commander's half right now, for the HUD.
+   *
+   * The harvest is the only economy in the game whose income is sitting on the
+   * board rotting, so it is the only one that cannot be read off a rate. This
+   * is what the top bar shows.
+   */
+  harvestReport(faction: Faction): {
+    meat: number
+    skull: number
+    bone: number
+    /** Gold the meat on the ground would pay if every piece got home. */
+    value: number
+    /** Frames banked toward the next Boneling, and how many it takes. */
+    bank: number
+    bankNeeds: number
+    /** Pieces currently in gatherers' sacks. */
+    carried: number
+    /** Gatherers standing. */
+    wrights: number
+  } {
+    let meat = 0
+    let skull = 0
+    let bone = 0
+    let value = 0
+    for (const b of this.physics.bodies) {
+      if (b.dead || !b.spoil || this.halfOwner(b.x) !== faction) continue
+      if (b.spoil === 'meat') meat += 1
+      else if (b.spoil === 'skull') skull += 1
+      else bone += 1
+      if (b.spoil === 'meat') value += GATHERER_PER_PIECE * (b.worth ?? 1)
+    }
+    const kiln = this.hasBuilding(faction, 'bone_kiln') ? 2 : 1
+    const ageScale = ageDef(this.armyFor(faction).age).income / AGES[1].income
+    let carried = 0
+    let wrights = 0
+    for (const slot of this.wrights[faction]) {
+      carried += slot.load
+      if (slot.unit?.alive) wrights += 1
+    }
+    return {
+      meat,
+      skull,
+      bone,
+      value: Math.round(value * kiln * ageScale),
+      bank: this.boneBank[faction],
+      bankNeeds: BONE_PER_SKELETON,
+      carried,
+      wrights
     }
   }
 
@@ -909,9 +995,11 @@ export default class Battlefield {
     slot.fleeMs = 0
     if (slot.load <= 0) return
     const army = this.armyFor(faction)
-    const sack = slot.carried
+    const sack = slot.value
     slot.carried = emptySack()
+    slot.value = emptySack()
     slot.load = 0
+    wright.showBurden(null)
     // Burn the Kiln and the harvest stops paying at all for half a minute: the
     // cost of a doctrine building is that losing it turns the rule off loudly.
     if (this.kilnShock[faction] > 0) return
@@ -923,20 +1011,20 @@ export default class Battlefield {
     const ageScale = ageDef(army.age).income / AGES[1].income
 
     if (sack.meat > 0) {
-      const paid = Math.round(sack.meat * GATHERER_PER_PIECE * kiln * ageScale)
+      const paid = Math.max(1, Math.round(sack.meat * GATHERER_PER_PIECE * kiln * ageScale))
       army.gold += paid
       this.statsFor(faction).goldEarned += paid
       this.vfx.damageNumber(wright.x, wright.centerY - 20, paid, 0xf2c14e)
     }
     if (sack.skull > 0) {
-      const learned = Math.round(sack.skull * SKULL_RESEARCH * kiln * ageScale)
+      const learned = Math.max(1, Math.round(sack.skull * SKULL_RESEARCH * kiln * ageScale))
       army.research += learned
       army.researchEarned += learned
       this.vfx.floatingLabel(wright.x, wright.centerY - 34, `+${learned} rp`, '#9fd8ff')
     }
     if (sack.bone > 0) {
       this.boneBank[faction] += sack.bone
-      this.vfx.floatingLabel(wright.x, wright.centerY - 48, `+${sack.bone} bone`, '#e6dfc4')
+      this.vfx.floatingLabel(wright.x, wright.centerY - 48, `+${sack.bone.toFixed(1)} bone`, '#e6dfc4')
       while (this.boneBank[faction] >= BONE_PER_SKELETON) {
         this.boneBank[faction] -= BONE_PER_SKELETON
         this.raiseBoneling(faction, wright.lane)
@@ -1049,7 +1137,10 @@ export default class Battlefield {
     if (!foe.hasTech('corpse_wall')) return false
     for (const body of this.physics.bodies) {
       if (!body.settled || body.dead) continue
-      if (body.kind !== 'gib' && body.kind !== 'scrap' && body.kind !== 'rubble') continue
+      // Spoils and wreckage. Torn limbs are gone in five seconds now, so a wall
+      // built out of them would blink in and out; what stops a shot is the same
+      // pile of meat and bone the gatherers are walking to.
+      if (!body.spoil && body.kind !== 'scrap' && body.kind !== 'rubble') continue
       if (Math.abs(body.x - x) > 7) continue
       if (y < body.y - 16 || y > body.y + 8) continue
       return true
@@ -1177,11 +1268,11 @@ export default class Battlefield {
     const half = this.config.worldWidth / 2
     const mine: Body[] = []
     for (const b of this.physics.bodies) {
-      if (!b.settled || b.dead || b.kind !== 'gib') continue
-      // A skull belongs to the Tithe. Everything else on the ground is fair
-      // game for the raising — including frames, which is a real competition
-      // between Necropolis and the Bone Levy and is meant to be one.
-      if (b.spoil === 'skull') continue
+      // Meat and frames. A skull belongs to the Tithe alone; everything else
+      // on the ground is fair game for the raising — which makes Necropolis and
+      // the Bone Levy genuine competitors for the same femurs, and is meant to.
+      if (!b.settled || b.dead) continue
+      if (b.spoil !== 'meat' && b.spoil !== 'bone') continue
       if (faction === 'player' ? b.x >= half : b.x < half) continue
       mine.push(b)
     }
@@ -1577,9 +1668,10 @@ export default class Battlefield {
     // long each one has been crouched over its piece. All of it decides when
     // gold arrives, and gold decides what gets built.
     for (const faction of ['player', 'enemy'] as Faction[]) {
-      mix(this.boneBank[faction])
+      mix(Math.round(this.boneBank[faction] * 100))
       for (const slot of this.wrights[faction]) {
         mix(slot.carried.meat * 100 + slot.carried.skull * 10 + slot.carried.bone)
+        mix(Math.round((slot.value.meat + slot.value.skull * 7 + slot.value.bone * 31) * 100))
         mix(Math.round(slot.searchMs))
         mix(Math.round(slot.respawnMs))
         mix(Math.round(slot.fleeMs))

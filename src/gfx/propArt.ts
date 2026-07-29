@@ -616,9 +616,17 @@ export function drawParticles(): Record<string, Canvas2D> {
   // what is lying on it: wet lumps are money, skulls are research, bone is
   // conscription.
 
-  // Meat: a lopsided lump. Deliberately not round — a circle reads as a pebble.
-  const meatP = new Pix(9, 7)
-  meatP.poly([[1, 3], [3, 0], [7, 1], [8, 4], [6, 6], [2, 6]], 0xffffff)
+  // Meat: a CUT, not a splash.
+  //
+  // A lump was the obvious drawing and the wrong one — the field is already
+  // covered in round red blood particles and round red stains, and a round red
+  // lump among them is invisible. This is a slab with a straight cut edge, a
+  // notch out of one corner and a rib line through it: angular where everything
+  // else is blobby, which is what makes it findable at a glance.
+  const meatP = new Pix(10, 7)
+  meatP.poly([[0, 1], [7, 0], [9, 3], [8, 6], [2, 6], [0, 4]], 0xffffff)
+  meatP.fill(8, 0, 2, 2, 0, 0)
+  meatP.fill(3, 2, 4, 1, 0, 0)
 
   // A skull, small enough to read at four pixels of cranium: dome, two empty
   // sockets punched back out, and a jaw narrower than the head.

@@ -33,9 +33,13 @@ import type { Faction, ReserveMode } from '../sim/types'
  * visible three-second stoop. All three move the fingerprint. v28 is the
  * three spoils: every death now leaves meat, skulls or bone on the ground
  * according to HOW it died, each with its own decay clock, and the carnage
- * gatherers carry them home for gold, research and free soldiers.
+ * gatherers carry them home for gold, research and free soldiers. v29 prices
+ * a spoil off the body's COST and lets it rot visibly on a much shorter early
+ * clock, moves every remains rule (corpse walls, Bonepickers, Necropolis) onto
+ * spoils so torn limbs are spectacle rather than economy, and adds Salting and
+ * the Deep Cold.
  */
-export const PROTOCOL_VERSION = 28
+export const PROTOCOL_VERSION = 29
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

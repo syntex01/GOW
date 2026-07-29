@@ -77,6 +77,18 @@ export interface Body {
    * Bonewright walks past them. See `data/harvest.ts`.
    */
   spoil?: 'meat' | 'skull' | 'bone'
+  /**
+   * How much this spoil is worth, relative to a piece off an age-one line
+   * soldier. Set from the price of the body it came off — see `spoilWorth`.
+   */
+  worth?: number
+  /**
+   * The `ttl` this body started with, so anything watching it can say how far
+   * through its life it is. Read by the renderer to rot a spoil visibly:
+   * a piece that is nearly worthless has to LOOK nearly worthless, or decay is
+   * a rule the player is told about rather than one they can see.
+   */
+  ttlMax?: number
   /** Frames a shrapnel body must wait before it can hit anything. */
   armTime: number
   /**
@@ -421,6 +433,7 @@ export default class PhysicsWorld {
       // it is and how long it has left decide what an army can afford.
       mix(b.spoil === 'meat' ? 1 : b.spoil === 'skull' ? 2 : b.spoil === 'bone' ? 3 : 0)
       mix(b.ttl === Infinity ? -1 : Math.round(b.ttl / 100))
+      mix(Math.round((b.worth ?? 1) * 100))
     }
     return h >>> 0
   }

@@ -2,6 +2,7 @@ import type Phaser from 'phaser'
 import type { Body } from '../sim/physics'
 import type PhysicsWorld from '../sim/physics'
 import Pix, { RES, mix, outlineTone, pixelNoise, ramp, unpack, type Ramp } from './pixel'
+import { shade } from './painter'
 
 /**
  * Draws the physics world, and the mounds it leaves behind.
@@ -445,10 +446,26 @@ export default class DebrisLayer {
     // Settled debris sinks behind the fighting so the field stays readable
     // however much of it accumulates.
     sprite.setDepth(body.settled ? this.depth - 30 : this.depth)
-    const scale = body.kind === 'gib' || body.kind === 'scrap' ? body.size : body.size * 0.5
+    let scale = body.kind === 'gib' || body.kind === 'scrap' ? body.size : body.size * 0.5
+    let alpha = body.ttl < 700 ? Math.max(0, body.ttl / 700) : 1
+    if (body.spoil && body.ttlMax) {
+      // A SPOIL ROTS WHERE YOU CAN SEE IT.
+      //
+      // Decay is the rule the whole harvest turns on, and a rule you are merely
+      // told about is not a rule you play around. A fresh piece is big and
+      // bright; a piece with seconds left is small, dull and half faded, so a
+      // commander can look at their own half and tell at a glance which heaps
+      // are still worth sending someone to.
+      //
+      // Worth shows too: a spoil off something expensive is visibly larger.
+      const left = Math.max(0, Math.min(1, body.ttl / body.ttlMax))
+      const rot = left * left
+      scale *= (0.72 + 0.5 * Math.min(1.6, body.worth ?? 1)) * (0.55 + 0.45 * rot)
+      alpha = Math.min(alpha, 0.42 + 0.58 * rot)
+      sprite.setTint(shade(body.color, -0.55 * (1 - rot)))
+    }
     sprite.setScale(scale)
-    // Short-lived debris fades out rather than blinking away.
-    sprite.setAlpha(body.ttl < 700 ? Math.max(0, body.ttl / 700) : 1)
+    sprite.setAlpha(alpha)
   }
 
   // ─────────────────────────── Corpse piles ───────────────────────────

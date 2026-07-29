@@ -102,6 +102,9 @@ const CLOSE_SLACK = 8
  * step and one arrow, and nobody ever finishes a draw.
  */
 const HOLD_MS = 600
+/** The three spoils, as the sack over a Bonewright's shoulder. */
+const BURDEN_TEXTURE = { meat: 'fx:meat', skull: 'fx:skull', bone: 'fx:bone' } as const
+const BURDEN_COLOR = { meat: 0xc4544a, skull: 0xe6dfc4, bone: 0xd8cfae } as const
 /** How long a flanker stands blocked before it asks the field for a new file. */
 const FLANK_PATIENCE_MS = 1500
 /**
@@ -1049,6 +1052,46 @@ export default class Unit implements Damageable {
     this.stoopMs = Math.max(this.stoopMs, ms)
   }
 
+  /**
+   * WHAT IS IN THE SACK, drawn over the carrier's shoulder.
+   *
+   * A gatherer walking home is the visible half of the harvest, and until this
+   * existed you could see one walking but not what it had been walking for. Now
+   * the last thing it picked up rides above it — a red lump, a skull, a femur —
+   * so a whole economy is legible from across the field without a single number.
+   */
+  showBurden(kind: 'meat' | 'skull' | 'bone' | null): void {
+    if (!kind) {
+      this.burden?.destroy()
+      this.burden = undefined
+      return
+    }
+    const key = BURDEN_TEXTURE[kind]
+    if (!this.scene.textures.exists(key)) return
+    if (!this.burden) {
+      this.burden = this.scene.add.image(this.x, this.centerY, key).setDepth(BAND.ground + 6)
+    }
+    this.burden.setTexture(key).setTint(BURDEN_COLOR[kind]).setScale(this.scaleFactor * 1.25)
+  }
+
+  private burden?: Phaser.GameObjects.Image
+
+  private updateBurdenVisual(): void {
+    if (!this.burden) return
+    if (!this.alive) {
+      this.burden.destroy()
+      this.burden = undefined
+      return
+    }
+    // Rides on the shoulder away from the way it is walking, and bobs with the
+    // gait so it reads as carried rather than as a decal.
+    this.burden.setPosition(
+      this.x - this.facing * this.def.height * 0.24,
+      this.centerY - this.def.height * 0.52 + Math.sin(this.animTime / 160) * 1.5
+    )
+    this.burden.setFlipX(this.facing < 0)
+  }
+
   heal(amount: number): void {
     if (!this.alive || this.inThroes) return
     const before = this.hp
@@ -1074,6 +1117,7 @@ export default class Unit implements Damageable {
     this.ward = 0
     this.wardSprite?.destroy()
     this.wardSprite = undefined
+    this.showBurden(null)
     this.alive = false
     this.state = 'dead'
     this.hp = 0
@@ -1291,6 +1335,15 @@ export default class Unit implements Damageable {
           faction: this.faction,
           // Only flesh bleeds, and the bigger pieces bleed for longer.
           bleed: mechanical ? 0 : heavy ? 1400 : 700,
+          // TORN LIMBS ARE SPECTACLE, NOT INCOME.
+          //
+          // They used to lie on the field forever and be the fuel every remains
+          // rule read — so a match accumulated three visually similar kinds of
+          // debris meaning three different things, and none of them was legible.
+          // The economy runs on SPOILS now: tinted, iconic, priced, decaying.
+          // These are the moment of death and nothing else, so they land, they
+          // are seen, and they go.
+          ttl: 5200,
           floor: this.groundLine
         }
       )
@@ -1548,6 +1601,7 @@ export default class Unit implements Damageable {
 
     this.handleBurst(dtMs)
     this.updateVisual(dtMs)
+    this.updateBurdenVisual()
   }
 
   /**
@@ -2186,6 +2240,8 @@ export default class Unit implements Damageable {
   }
 
   destroy(): void {
+    this.burden?.destroy()
+    this.burden = undefined
     this.wardSprite?.destroy()
     this.wardSprite = undefined
     this.container.destroy()
