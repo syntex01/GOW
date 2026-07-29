@@ -28,6 +28,7 @@ import Seat from './seat'
 import {
   BASE_RESEARCH_RATE,
   BUILDINGS_BY_ID,
+  RELIQUARY_DISCOUNT,
   RELIQUARY_RESEARCH,
   REBUILD_FRACTION,
   SEAT_PLOTS,
@@ -41,7 +42,9 @@ import {
   CHARNEL_CAP,
   CHARNEL_LINE_COST,
   CHARNEL_PER_CORPSE,
+  GRANARY_INCOME,
   FORGE_HOME_GUARD,
+  FORGE_REGEN,
   GREAT_RITE_MS,
   OSSUARY_CAPACITY,
   OSSUARY_GATHER_MS,
@@ -161,6 +164,9 @@ const PLUNDER_EXIT = 300
 
 /** Bodies that rot away per second. Half a pile in about ninety seconds. */
 const CORPSE_ROT_PER_S = 0.25
+
+/** What each building past the first of its kind pays, as a share of its own worth. */
+const STACK_FALLOFF = 0.5
 
 const SPLASH_SHIELDING = 9
 
@@ -1054,7 +1060,8 @@ export default class Battlefield {
     // A standing Reliquary makes the whole tree cheaper, which is why burning
     // one is worth a detour: it does not merely slow research, it re-prices it.
     this.refreshYard(faction)
-    const bought = army.buyTech(id as TechId)
+    // The command path BEGINS work; the bench finishes it on its own clock.
+    const bought = army.beginStudy(id as TechId) || army.buyTech(id as TechId)
     if (bought) {
       const node = TECHS_BY_ID[id]
       this.statsFor(faction).goldSpent += node.cost
@@ -1149,6 +1156,9 @@ export default class Battlefield {
       mix(army.incomeLevel)
       // Research is a resource now, so it forks a networked match if it drifts.
       mix(army.research)
+      // What is on the bench and how far through it is decides when an army
+      // changes what it can do, so both belong in the fingerprint.
+      mix(Math.round(army.studyRp))
       // The Muster Yard produces on its own clock, so that clock is sim state.
       mix(Math.round(army.autoSpawnTimer))
       // Standing orders enqueue units on their own, so both the plan and whose
@@ -2136,11 +2146,13 @@ export default class Battlefield {
         // The Forge mends the seat it stands on, but only while nothing is
         // hitting it — a repair crew is not a second health bar, it is a reason
         // to break off and come back later.
-        if (!seat.derelict && this.yardBonus(faction, 'forge') >= 0 && seat.base.alive) {
+        const forge = this.yardBonus(faction, 'forge')
+        if (!seat.derelict && forge >= 0 && seat.base.alive) {
           const quiet = !this.units.some(
             u => u.alive && u.faction !== faction && Math.abs(u.x - seat.x) < 420
           )
-          if (quiet) seat.base.hp = Math.min(seat.base.maxHp, seat.base.hp + seat.base.maxHp * 0.004 * (dtMs / 1000))
+          const rate = FORGE_REGEN[Math.min(FORGE_REGEN.length - 1, forge)]
+          if (quiet) seat.base.hp = Math.min(seat.base.maxHp, seat.base.hp + seat.base.maxHp * rate * (dtMs / 1000))
         }
         // A derelict seat cannot be repaired or rebuilt — the crews left with
         // the commander. All it can still do is send people forward.
@@ -2230,13 +2242,11 @@ export default class Battlefield {
   }
 
   yardIncome(faction: Faction): number {
-    const tier = this.yardBonus(faction, 'granary')
-    return tier < 0 ? 1 : [1.18, 1.38, 1.6][tier]
+    return 1 + this.stackedBonus(faction, 'granary', GRANARY_INCOME)
   }
 
   yardBuildSpeed(faction: Faction): number {
-    const tier = this.yardBonus(faction, 'muster')
-    return tier < 0 ? 1 : MUSTER_BUILD_SPEED[tier]
+    return 1 + this.stackedBonus(faction, 'muster', MUSTER_BUILD_SPEED)
   }
 
   /** How many soldiers this commander can have under construction at once. */
@@ -2509,7 +2519,7 @@ export default class Battlefield {
 
   yardResearchDiscount(faction: Faction): number {
     const tier = this.yardBonus(faction, 'reliquary')
-    return tier < 0 ? 1 : [0.92, 0.85, 0.78][tier]
+    return tier < 0 ? 1 : RELIQUARY_DISCOUNT[Math.min(RELIQUARY_DISCOUNT.length - 1, tier)]
   }
 
   /**
@@ -2525,6 +2535,44 @@ export default class Battlefield {
       }
     }
     return best
+  }
+
+  /**
+   * Every standing tier of a building, best first.
+   *
+   * `yardBonus` answers "what is the best one I own", which is the right
+   * question for a rule that is either on or off — a fourth turret slot, an
+   * autospawn clock. It is the WRONG question for a bonus, and it was being
+   * used for all of them: a second Granary paid nothing at all, so a commander
+   * with six plots had four of them doing no economic work whatever they put
+   * there. Blight in particular is supposed to be a wide creed and could not be.
+   */
+  private yardTiers(faction: Faction, id: string): number[] {
+    const tiers: number[] = []
+    for (const seat of this.seats[faction]) {
+      for (const plot of seat.plots) {
+        if (!plot.alive || plot.def?.id !== id) continue
+        tiers.push(plot.tier)
+      }
+    }
+    return tiers.sort((a, b) => b - a)
+  }
+
+  /**
+   * How much a whole yard of one building is worth, as a bonus over 1.
+   *
+   * The best one pays in full and every further one pays half. That makes going
+   * WIDE a real alternative to going tall without making it strictly better:
+   * two tier-1 granaries beat one tier-1, and lose to one tier-3.
+   */
+  private stackedBonus(faction: Faction, id: string, byTier: readonly number[]): number {
+    const tiers = this.yardTiers(faction, id)
+    let total = 0
+    for (let i = 0; i < tiers.length; i += 1) {
+      const value = byTier[Math.min(byTier.length - 1, tiers[i])]
+      total += i === 0 ? value : value * STACK_FALLOFF
+    }
+    return total
   }
 
   private tickArmy(army: Army, dtMs: number): void {

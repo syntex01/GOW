@@ -80,6 +80,12 @@ export function applyCommand(bf: Battlefield, faction: Faction, command: Command
     case 'ossuary':
       bf.emptyOssuary(faction)
       break
+    case 'study':
+      army.beginStudy(command.id as never)
+      break
+    case 'unstudy':
+      army.cancelStudy()
+      break
   }
 }
 

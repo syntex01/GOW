@@ -362,7 +362,7 @@ export default class Army {
   }
 
   /** Whether this army could research a node right now, and why not if not. */
-  techAvailability(id: TechId): 'owned' | 'ready' | 'locked' | 'age' | 'research' | 'demand' | 'sworn' {
+  techAvailability(id: TechId): 'owned' | 'studying' | 'ready' | 'locked' | 'age' | 'research' | 'demand' | 'sworn' {
     const node = TECHS_BY_ID[id]
     if (!node) return 'locked'
     if (this.techs.has(id)) return 'owned'
@@ -375,15 +375,87 @@ export default class Army {
     if (node.requiresAny && !node.requiresAny.some(r => this.techs.has(r))) return 'locked'
     if (this.age < node.age) return 'age'
     if (node.demand && this.deeds[node.demand.metric] < node.demand.amount) return 'demand'
-    if (this.research < this.researchCost(id)) return 'research'
+    if (this.studying === id) return 'studying'
+    // Not "can you afford it" any more — research is WORK, and you begin work
+    // you have not finished paying for. What the bank does is start you closer.
+    if (this.studying) return 'research'
     return 'ready'
   }
 
-  /** Buys a node. Returns false if it was not available, changing nothing. */
+  /**
+   * What is on the bench, and how far through it is.
+   *
+   * Research used to be a purchase: bank the points, click, own it. That made
+   * the rate a savings account and nothing else — two commanders with the same
+   * income reached the same node at the same moment whatever they had built.
+   * A node is now WORK. You commit to one, it fills at whatever rate your halls
+   * produce, and the queue in front of it is a real cost you can see.
+   */
+  studying: TechId | null = null
+  /** Points already invested in the current study. */
+  studyRp = 0
+
+  /** What fraction of the current study is done, 0–1. */
+  get studyProgress(): number {
+    if (!this.studying) return 0
+    const cost = this.researchCost(this.studying)
+    return cost <= 0 ? 1 : Math.min(1, this.studyRp / cost)
+  }
+
+  /** Seconds left on the current study at the rate this yard is producing. */
+  get studySecondsLeft(): number {
+    if (!this.studying) return 0
+    const left = Math.max(0, this.researchCost(this.studying) - this.studyRp)
+    return this.researchRate > 0 ? left / this.researchRate : Infinity
+  }
+
+  /**
+   * Puts a node on the bench.
+   *
+   * Anything banked while nothing was being studied is poured straight in, so
+   * hoarding is still worth something — it starts you closer rather than
+   * finishing you instantly.
+   */
+  beginStudy(id: TechId): boolean {
+    const state = this.techAvailability(id)
+    if (state !== 'ready' && state !== 'research') return false
+    if (this.studying === id) return false
+    // Switching benches costs you what was on the old one. Commitment is the
+    // point: a tree you can flit around is a menu, not a decision.
+    this.studying = id
+    this.studyRp = Math.min(this.research, this.researchCost(id))
+    this.research -= this.studyRp
+    return true
+  }
+
+  /** Takes the current node off the bench. What was invested in it is lost. */
+  cancelStudy(): void {
+    this.studying = null
+    this.studyRp = 0
+  }
+
+  /**
+   * COMPLETES a node. Only the bench may call this, and only once the work on
+   * it is done.
+   *
+   * It used to be the purchase, so the moment research became work it turned
+   * into a free grant: `techAvailability` says 'ready' when the prerequisites
+   * are met, which no longer has anything to do with whether you have paid.
+   * Anything that wants to START a node calls `beginStudy`.
+   */
   buyTech(id: TechId): boolean {
-    if (this.techAvailability(id) !== 'ready') return false
+    if (this.techs.has(id)) return false
+    const finished = this.studying === id && this.studyRp >= this.researchCost(id)
+    // The banked path stays for a commander who saved up before committing.
+    const banked = !this.studying && this.research >= this.researchCost(id) && this.techAvailability(id) === 'ready'
+    if (!finished && !banked) return false
     const node = TECHS_BY_ID[id]
-    this.research -= this.researchCost(id)
+    if (this.studying === id) {
+      this.studying = null
+      this.studyRp = 0
+    } else {
+      this.research = Math.max(0, this.research - this.researchCost(id))
+    }
     this.techs.add(id)
     // Stat research compounds into the army's modifiers. Units already on the
     // field keep the numbers they were built with — research equips the next
@@ -434,8 +506,16 @@ export default class Army {
     const whole = Math.floor(gained)
     this.researchCarry = gained - whole
     if (whole > 0) {
-      this.research += whole
       this.researchEarned += whole
+      // Everything produced goes into whatever is on the bench. Only an idle
+      // laboratory banks, so a commander who leaves the bench empty is wasting
+      // the rate they paid for.
+      if (this.studying) {
+        this.studyRp += whole
+        if (this.studyRp >= this.researchCost(this.studying)) this.buyTech(this.studying)
+      } else {
+        this.research += whole
+      }
     }
   }
 

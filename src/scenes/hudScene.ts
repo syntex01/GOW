@@ -3,6 +3,7 @@ import { gameEvents } from '../core/events'
 import { session } from '../core/session'
 import { ageDef } from '../data/ages'
 import { GREAT_RITE_MS } from '../data/buildings'
+import { TECHS_BY_ID } from '../data/tech'
 import { TURRET_SLOTS, turretsForAge } from '../data/turrets'
 import { morphInfoFor } from '../data/morphs'
 import type { UnitDef } from '../data/types'
@@ -52,6 +53,7 @@ export default class HUDScene extends Phaser.Scene {
   private economyButton!: Button
   private reserveButton!: Button
   private researchText!: Phaser.GameObjects.Text
+  private studyText!: Phaser.GameObjects.Text
   private techButton!: Button
   private techTree?: TechTree
   private basePanel?: BasePanel
@@ -152,6 +154,9 @@ export default class HUDScene extends Phaser.Scene {
     // be as visible as gold is — otherwise a player wonders why the tree is
     // greyed out while they are sitting on a fortune.
     this.researchText = label(this, 14, 74, '0 RP', { size: 12, color: 0xb46bff }).setDepth(2)
+    // What is on the bench, and when it lands. Research is work now, so the
+    // question a commander asks is "when", not "how much have I got".
+    this.studyText = label(this, 14, 90, '', { size: 11, color: 0x9a7bd4 }).setDepth(2)
 
     label(this, 200, 6, 'FORTRESS', { size: 11, color: UI.textDim }).setDepth(2)
     this.playerHpBar = new Bar(this, 200, 20, 250, 14, UI.player)
@@ -688,6 +693,14 @@ export default class HUDScene extends Phaser.Scene {
       .setText(siege > 0 ? `+${player.incomePerSecond.toFixed(0)}/s  SIEGED −${siege}%` : `+${player.incomePerSecond.toFixed(0)}/s`)
       .setColor(hex(siege >= 40 ? UI.bad : siege > 0 ? UI.warn : UI.textDim))
     this.researchText.setText(`${formatNumber(Math.floor(player.research))} RP  +${player.researchRate.toFixed(1)}/s`)
+    const study = player.studying ? TECHS_BY_ID[player.studying] : null
+    this.studyText
+      .setText(
+        study
+          ? `${study.name.toUpperCase()}  ${Math.round(player.studyProgress * 100)}%  ·  ${Math.ceil(player.studySecondsLeft)}s`
+          : 'BENCH EMPTY — pick a node (R)'
+      )
+      .setColor(hex(study ? 0x9a7bd4 : UI.warn))
     if (siege > 0 && this.siegeWarned === false) {
       this.siegeWarned = true
       gameEvents.emit('hud:flash', { message: 'Supply line cut — clear your wall', tone: 'warn' })

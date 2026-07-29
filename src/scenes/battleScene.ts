@@ -740,18 +740,24 @@ export default class BattleScene extends Phaser.Scene {
       gameEvents.emit('hud:flash', { message: `${node.name}: ${node.demand.label}`, tone: 'warn' })
       return false
     }
-    if (state === 'research') {
-      const need = army.researchCost(id) - Math.floor(army.research)
-      audio.play('ui_denied', 0.5)
-      gameEvents.emit('hud:flash', {
-        message: `${node.name} needs ${need} more research — raise a Reliquary`,
-        tone: 'warn'
-      })
-      return false
+    // Already on the bench: clicking it again takes it off, and what was
+    // invested is lost. Switching is meant to hurt.
+    if (state === 'studying') {
+      this.dispatch({ t: 'unstudy' })
+      audio.play('ui_click', 0.4)
+      gameEvents.emit('hud:flash', { message: `${node.name} abandoned`, tone: 'warn' })
+      return true
     }
-    this.dispatch({ t: 'tech', id })
+    // Research is work, not a purchase — you may begin a node you cannot yet
+    // afford, and the bench fills at whatever rate your halls produce.
+    const busy = army.studying ? TECHS_BY_ID[army.studying] : null
+    this.dispatch({ t: 'study', id })
     audio.play('evolve', 0.6)
-    gameEvents.emit('hud:flash', { message: `${node.name} researched`, tone: 'good' })
+    const eta = Math.ceil(army.researchCost(id) / Math.max(0.1, army.researchRate))
+    gameEvents.emit('hud:flash', {
+      message: busy ? `${node.name} replaces ${busy.name} on the bench` : `Studying ${node.name} — about ${eta}s`,
+      tone: busy ? 'warn' : 'good'
+    })
     return true
   }
 

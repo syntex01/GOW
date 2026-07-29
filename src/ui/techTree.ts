@@ -800,6 +800,20 @@ export default class TechTree {
   }
 
   /** The research button always describes the focused node, or hides. */
+  /**
+   * How long this node would take at the rate this army's halls produce.
+   *
+   * Stated in seconds rather than points, because the number a commander wants
+   * is "when", and points only answer that once you have divided them by a rate
+   * you cannot see from the node.
+   */
+  private etaFor(id: string): string {
+    const cost = this.army.researchCost(id as never)
+    const rate = Math.max(0.1, this.army.researchRate)
+    const secs = Math.ceil(cost / rate)
+    return secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`
+  }
+
   private updateBuyButton(): void {
     const node = this.focused ? TECHS_BY_ID[this.focused] : null
     if (!node) {
@@ -813,11 +827,17 @@ export default class TechTree {
         break
       case 'ready':
         this.buyBtn
-          .setText(node.kind === 'ascension' ? 'ASCEND' : `RESEARCH · ${formatNumber(this.army.researchCost(node.id))} RP`)
+          .setText(node.kind === 'ascension' ? 'BEGIN ASCENSION' : `STUDY · ${this.etaFor(node.id)}`)
+          .setEnabled(true)
+        break
+      case 'studying':
+        this.buyBtn
+          .setText(`${Math.round(this.army.studyProgress * 100)}%  ·  ABANDON`)
           .setEnabled(true)
         break
       case 'research':
-        this.buyBtn.setText(`NEEDS ${formatNumber(this.army.researchCost(node.id))} RP`).setEnabled(false)
+        // Something else is on the bench. You may take it off, and lose it.
+        this.buyBtn.setText(`SWITCH · ${this.etaFor(node.id)}`).setEnabled(true)
         break
       case 'age':
         this.buyBtn.setText(`AGE ${node.age + 1} FIRST`).setEnabled(false)
@@ -875,8 +895,10 @@ export default class TechTree {
         ? 'researched'
         : state === 'ready'
           ? 'ready to research'
-          : state === 'research'
-            ? `needs ${formatNumber(this.army.researchCost(node.id) - Math.floor(this.army.research))} more research`
+          : state === 'studying'
+            ? `on the bench — ${Math.round(this.army.studyProgress * 100)}%, about ${Math.ceil(this.army.studySecondsLeft)}s left`
+            : state === 'research'
+              ? `${formatNumber(this.army.researchCost(node.id))} RP of work — the bench is busy`
             : state === 'age'
               ? `locked until age ${node.age + 1}`
               : state === 'demand' && node.demand

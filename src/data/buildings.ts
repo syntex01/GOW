@@ -168,10 +168,19 @@ export const MUSTER_ADVANCE = 0.5
  * you can spend it, which is the only thing that makes a late-game war chest
  * translate into a late-game field.
  */
-export const MUSTER_SLOTS = [1, 2, 3] as const
+export const MUSTER_SLOTS = [2, 3, 5] as const
 
-/** Build time multiplier by Muster tier — the discount, as a rate. */
-export const MUSTER_BUILD_SPEED = [1 / 0.88, 1 / 0.78, 1 / 0.7] as const
+/**
+ * How much faster a Muster Yard builds, as a BONUS over 1, by tier.
+ *
+ * Stated as a bonus rather than a rate because the yard stacks now — the best
+ * one pays in full and each further one pays half — and bonuses add where
+ * rates would multiply into nonsense.
+ */
+export const MUSTER_BUILD_SPEED = [0.35, 0.75, 1.3] as const
+
+/** What a Granary adds to income, as a bonus over 1, by tier. */
+export const GRANARY_INCOME = [0.18, 0.38, 0.6] as const
 
 /**
  * Milliseconds between free line soldiers at the top of the ladder. Zero at
@@ -183,7 +192,7 @@ export const MUSTER_BUILD_SPEED = [1 / 0.88, 1 / 0.78, 1 / 0.7] as const
  * income of bodies, which gives a raiding force something to want besides the
  * granary.
  */
-export const MUSTER_AUTOSPAWN_MS = [0, 0, 8000] as const
+export const MUSTER_AUTOSPAWN_MS = [0, 12000, 6000] as const
 
 /**
  * How much damage a Forge takes off your soldiers while they stand on your own
@@ -199,7 +208,10 @@ export const MUSTER_AUTOSPAWN_MS = [0, 0, 8000] as const
  * It is deliberately worthless on the attack — a commander who wants to push
  * buys a Muster Yard, and one who wants to hold buys this.
  */
-export const FORGE_HOME_GUARD = [0, 0.12, 0.22] as const
+export const FORGE_HOME_GUARD = [0.14, 0.26, 0.38] as const
+
+/** How fast a Forge mends the seat it stands on, per second, by tier. */
+export const FORGE_REGEN = [0.004, 0.009, 0.016] as const
 
 // ─────────────────────────── The creed halls ───────────────────────────
 // Every number the seven halls in CREED_HALLS run on, in one place, so the
@@ -286,7 +298,17 @@ export const BASE_RESEARCH_RATE = 1
 export const RESEARCH_PER_XP = 0.04
 
 /** Research points a second, by the best Reliquary standing. -1 means none. */
-export const RELIQUARY_RESEARCH = [2.2, 4.6, 9]
+export const RELIQUARY_RESEARCH = [2.6, 6, 12]
+
+/**
+ * What a Reliquary takes off the price of a node, by tier.
+ *
+ * Only the finished hall discounts anything. The first two tiers buy SPEED and
+ * the last one buys CHEAPNESS, so the two levers never blur into "the research
+ * building is good": early Reliquaries get you there sooner, and the third one
+ * changes what you can afford to reach at all.
+ */
+export const RELIQUARY_DISCOUNT = [1, 1, 0.72] as const
 
 export const DERELICT_SPAWN_MS = 13000
 export const DERELICT_MAX_ALIVE = 3
@@ -354,9 +376,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'yard',
     color: 0xa8703c,
     tiers: [
-      { cost: 400, hp: 4600, effect: '−12% build time' },
-      { cost: 850, hp: 7200, effect: '−22% build time, and a second build slot — two at once' },
-      { cost: 1350, hp: 10800, effect: '−30%, a third slot, and a free line soldier every 8s' }
+      { cost: 400, hp: 4600, effect: '−26% build time, and a second build slot — two at once' },
+      { cost: 850, hp: 7200, effect: '−43%, a third slot, and a free line soldier every 12s' },
+      { cost: 1350, hp: 10800, effect: '−57%, FIVE slots, and a free line soldier every 6s' }
     ]
   },
   {
@@ -368,9 +390,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'spire',
     color: 0x9a7bd4,
     tiers: [
-      { cost: 380, hp: 4000, effect: '+2.2 research a second, and nodes cost 8% less' },
-      { cost: 820, hp: 6400, effect: '+4.6 RP/s, −15%, and the ability charges 12% faster' },
-      { cost: 1300, hp: 9600, effect: '+9 RP/s, −22%, and you can read the enemy commander’s creed' }
+      { cost: 380, hp: 4000, effect: '+2.6 research a second — studies finish sooner' },
+      { cost: 820, hp: 6400, effect: '+6 RP/s, and the ability charges 12% faster' },
+      { cost: 1300, hp: 9600, effect: '+12 RP/s, and every node costs 28% less' }
     ]
   },
   {
@@ -382,9 +404,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'forge',
     color: 0xc06a3a,
     tiers: [
-      { cost: 420, hp: 5400, effect: 'the fortress mends 0.4%/s while nothing is hitting it' },
-      { cost: 880, hp: 8400, effect: '+ your soldiers take 12% less damage on your own half' },
-      { cost: 1400, hp: 12400, effect: '+ 22% less, and a fourth turret slot on the wall' }
+      { cost: 420, hp: 5400, effect: 'the fortress mends 0.4%/s, and your soldiers take 14% less damage on your own half' },
+      { cost: 880, hp: 8400, effect: 'mends 0.9%/s, and 26% less' },
+      { cost: 1400, hp: 12400, effect: 'mends 1.6%/s, 38% less, and a fourth turret slot on the wall' }
     ]
   }
 ]

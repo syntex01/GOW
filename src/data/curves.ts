@@ -83,6 +83,17 @@ export const MEASURED_PG = [1, 1.353, 1.821, 2.474, 3.329] as const
  */
 const BUILD_TIME_EXPONENT = 0.35
 
+/**
+ * How much longer everything takes to build than it was authored to.
+ *
+ * A bare yard turned soldiers out fast enough that the Muster Yard was a
+ * convenience: you could keep a line up without one, so its slots bought you
+ * throughput you did not need yet. Training is now slow enough that PRODUCTION
+ * is a bottleneck in its own right — the whole point of having four of them —
+ * and the yard is the answer to it rather than a discount on it.
+ */
+export const TRAIN_TIME_SCALE = 2.4
+
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
 
 /** What the dearest unit of an age costs once the curve is laid. */
@@ -140,6 +151,6 @@ export function relayCurves(units: UnitDef[]): void {
     // points a second. Leaving it alone while multiplying health by five would
     // quietly turn a self-repairing elite into one that barely repairs at all.
     if (unit.regen) unit.regen = Math.max(1, Math.round(unit.regen * powMul))
-    unit.buildMs = Math.max(400, Math.round(unit.buildMs * Math.pow(costMul, BUILD_TIME_EXPONENT)))
+    unit.buildMs = Math.max(700, Math.round(unit.buildMs * Math.pow(costMul, BUILD_TIME_EXPONENT) * TRAIN_TIME_SCALE))
   }
 }
