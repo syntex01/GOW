@@ -695,7 +695,13 @@ export default class HUDScene extends Phaser.Scene {
     this.ageText.setText(ageDef(player.age).name).setColor(hex(AGE_ACCENT[player.age]))
     this.popText.setText(`${player.population + player.queuedPopulation()}/${player.populationCap}`)
     this.enemyGoldText.setText(formatNumber(enemy.gold))
-    this.enemyAgeText.setText(ageDef(enemy.age).name)
+    // The Reliquary's intel tier, made real. Their creed is the single most
+    // useful thing to know about an opponent — it says which plot to burn and
+    // which counter to bring — so a finished research hall reads it off them.
+    const creed = this.battle.battlefield.yardBonus(this.battle.localFaction, 'reliquary') >= 2
+      ? enemy.ascendedTo ?? enemy.dominantBranch
+      : null
+    this.enemyAgeText.setText(creed ? `${ageDef(enemy.age).name}  ·  ${String(creed).toUpperCase().replace('_', ' ')}` : ageDef(enemy.age).name)
 
     const mine = FACTION_COLOR[this.battle.localFaction]
     const theirs = FACTION_COLOR[this.battle.foeArmy.faction]

@@ -368,9 +368,9 @@ export const CORE_BUILDINGS: BuildingDef[] = [
     shape: 'spire',
     color: 0x9a7bd4,
     tiers: [
-      { cost: 380, hp: 4000, effect: 'research costs −8%' },
-      { cost: 820, hp: 6400, effect: 'research −15%, ability charges 12% faster' },
-      { cost: 1300, hp: 9600, effect: 'research −22%, and you can read the enemy commander’s creed' }
+      { cost: 380, hp: 4000, effect: '+2.2 research a second, and nodes cost 8% less' },
+      { cost: 820, hp: 6400, effect: '+4.6 RP/s, −15%, and the ability charges 12% faster' },
+      { cost: 1300, hp: 9600, effect: '+9 RP/s, −22%, and you can read the enemy commander’s creed' }
     ]
   },
   {
