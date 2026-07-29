@@ -12,6 +12,7 @@ import { TURRETS } from './data/turrets'
 import { ALL_BUILDINGS } from './data/buildings'
 import { drawBuilding } from './gfx/buildingArt'
 import { TECHS } from './data/tech'
+import { BONELING_DEF, GATHERER_DEF } from './data/harvest'
 import { escalationTiers } from './data/escalate'
 import { FACTION_UNITS } from './data/factions'
 import BattleScene from './scenes/battleScene'
@@ -69,6 +70,7 @@ function start(): void {
     __gowCosmeticRng: typeof rng
     __gowUnits: typeof UNITS_BY_ID
     __gowFactionUnits: Record<string, UnitDef>
+    __gowHarvestUnits: Record<string, UnitDef>
     __gowEscalation: typeof escalationTiers
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
     __gowLog: typeof gameLog
@@ -140,6 +142,11 @@ function start(): void {
   debug.__gowUnits = UNITS_BY_ID
   // The five paths' own soldiers, for tests that field them directly.
   debug.__gowFactionUnits = Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
+  // The two bodies the harvest raises rather than the player buying them. They
+  // are hidden from every roster, so without this hook there is no way to put a
+  // Bonewright or a Boneling on the field to look at — which is how both of them
+  // went unrendered while eleven of the creed's thirteen bodies were reviewed.
+  debug.__gowHarvestUnits = { [GATHERER_DEF.id]: GATHERER_DEF, [BONELING_DEF.id]: BONELING_DEF }
   // Every tier a growing unit reaches, so a test or a film can put all four
   // Husks on the field side by side without having to age up four times.
   debug.__gowEscalation = escalationTiers
