@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { gameEvents } from '../core/events'
 import { session } from '../core/session'
 import { ageDef } from '../data/ages'
+import { GREAT_RITE_MS } from '../data/buildings'
 import { TURRET_SLOTS, turretsForAge } from '../data/turrets'
 import { morphInfoFor } from '../data/morphs'
 import type { UnitDef } from '../data/types'
@@ -719,7 +720,19 @@ export default class HUDScene extends Phaser.Scene {
     } else if (this.battle.speed !== 1) {
       statusBits.push(`${this.battle.speed}x`)
     }
-    this.waveText.setText(statusBits.join('  ·  '))
+    // The Great Rite is a doom clock, and a doom clock nobody can see is not
+    // one. Both sides get it, in the middle of the screen, from the first
+    // second — being loud is the whole price of raising it.
+    for (const side of ['player', 'enemy'] as const) {
+      const rite = bf.greatRite[side]
+      if (rite <= 0) continue
+      const mine = side === this.battle.localFaction
+      const left = Math.max(0, Math.ceil((1 - rite) * (GREAT_RITE_MS / 1000)))
+      statusBits.push(`${mine ? 'YOUR' : 'THEIR'} GREAT RITE  ${formatTime(left * 1000)}`)
+    }
+    this.waveText
+      .setText(statusBits.join('  ·  '))
+      .setColor(hex(bf.greatRite.player > 0 || bf.greatRite.enemy > 0 ? UI.bad : UI.warn))
     this.speedButton.setText(`${this.battle.speed}x`)
 
     this.updateUnitCards()
