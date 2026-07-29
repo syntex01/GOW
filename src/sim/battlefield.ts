@@ -37,7 +37,6 @@ import {
   SPOIL_TECH,
   SPOIL_TEXTURE,
   emptySack,
-  preservation,
   spoilLife,
   spoilWorth,
   spoilsOf,
@@ -862,17 +861,16 @@ export default class Battlefield {
   private dropSpoils(unit: Unit, damage: DamageType, overkillFrac: number): void {
     const kind = unit.def.visual.kind
     const mechanical = kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
-    const sack = spoilsOf(damage, unit.def.armor, overkillFrac, mechanical)
+    // Whose ground it fell on decides who can harvest it, and therefore whose
+    // research shapes what is left. Killing deep in your own yard feeds the
+    // enemy's harvest and killing in theirs feeds yours.
+    const half = this.halfOwner(unit.x)
+    const sack = spoilsOf(damage, unit.def.armor, overkillFrac, mechanical, this.armyFor(half).techs)
     if (sack.meat + sack.skull + sack.bone === 0) return
     const ground = this.groundLineFor(unit.lane)
-    // Whose ground it fell on decides who could harvest it — and therefore
-    // whose preservation research keeps it. Killing deep in your own yard feeds
-    // the enemy's larder and killing in theirs feeds yours.
-    const half = this.halfOwner(unit.x)
-    const keep = preservation(this.armyFor(half).techs)
     const worth = spoilWorth(unit.def.cost)
     for (const spoil of SPOILS) {
-      const life = spoilLife(spoil, unit.def.cost, keep)
+      const life = spoilLife(spoil, unit.def.cost)
       for (let i = 0; i < sack[spoil]; i += 1) {
         this.physics.spawn(
           'gib',

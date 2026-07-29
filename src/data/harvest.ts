@@ -5,13 +5,13 @@ import type { UnitDef } from './types'
  * THE THREE SPOILS.
  *
  * A body is not one resource. It is meat, it is a skull, and it is a frame,
- * and Carnage learns to take them one at a time — meat in the second age,
- * skulls in the third, bone in the fourth. Each one answers a different
+ * and Carnage learns to take them one at a time — one node an age: meat with
+ * Bone Harvest, skulls with Clean Kills, frames with the Bone Levy. Each one answers a different
  * bottleneck, so the creed's economy stops being "more gold" and becomes a
  * question about which bottleneck you are currently losing to.
  *
  *   MEAT  → gold      (Bone Harvest)
- *   SKULL → research  (The Skull Tithe)
+ *   SKULL → research  (Clean Kills)
  *   BONE  → soldiers  (The Bone Levy)
  *
  * And crucially, WHAT a body leaves is decided by HOW IT DIED. See `spoilsOf`.
@@ -23,7 +23,7 @@ export const SPOILS: readonly Spoil[] = ['meat', 'skull', 'bone']
 /** Which node opens each spoil, in the order a carnage commander takes them. */
 export const SPOIL_TECH: Record<Spoil, string> = {
   meat: 'bone_harvest',
-  skull: 'skull_tithe',
+  skull: 'clean_kills',
   bone: 'bone_levy'
 }
 
@@ -49,7 +49,13 @@ export const SPOIL_COLOR: Record<Spoil, number> = {
  * harvested. Deliberately short in the early game — a stone-age field goes
  * cold in about a quarter of a minute, so the opening is a scramble and the
  * answer to it is to fight close to your own wall rather than to out-produce
- * anybody. Preservation research is what turns the late game into a bank.
+ * anybody.
+ *
+ * It slows down on its own as the war ages, without a node to buy: life scales
+ * off the dead body's PRICE, and soldiers get dearer every age. A stone-age
+ * clubman's meat is gone in fifteen seconds; a Gravetide's in nearly forty. The
+ * curve that makes an elite worth collecting is the same curve that gives you
+ * time to collect it.
  *
  * Meat goes off fastest: it is the most plentiful and the least worth chasing
  * across the field. Bone keeps longest, which is why the Ossuary is a bank and
@@ -88,26 +94,9 @@ export function spoilWorth(cost: number): number {
   return Math.max(0.5, Math.min(5, Math.round(raw * 100) / 100))
 }
 
-/** How long one spoil off this body keeps, with preservation folded in. */
-export function spoilLife(kind: Spoil, cost: number, keep = 1): number {
-  return Math.round(SPOIL_TTL[kind] * (0.6 + 0.8 * spoilWorth(cost)) * keep)
-}
-
-/**
- * Preservation research. Nothing here changes what a body leaves — only how
- * long you have to go and get it, which is the one lever that turns a frantic
- * early harvest into a late-game larder.
- */
-export const PRESERVE_TECHS: readonly { tech: string; keep: number; name: string }[] = [
-  { tech: 'salting', keep: 1.7, name: 'Salting' },
-  { tech: 'deep_cold', keep: 1.6, name: 'The Deep Cold' }
-]
-
-export function preservation(techs: ReadonlySet<string> | undefined): number {
-  if (!techs) return 1
-  let keep = 1
-  for (const p of PRESERVE_TECHS) if (techs.has(p.tech)) keep *= p.keep
-  return keep
+/** How long one spoil off this body keeps. */
+export function spoilLife(kind: Spoil, cost: number): number {
+  return Math.round(SPOIL_TTL[kind] * (0.6 + 0.8 * spoilWorth(cost)))
 }
 
 /** A sack of each, ready to be paid out. */
@@ -173,14 +162,21 @@ export function spoilsOf(
   damage: DamageType,
   armor: ArmorType,
   overkillFrac: number,
-  mechanical: boolean
+  mechanical: boolean,
+  /** Whoever owns the ground it fell on — Clean Kills changes what is left. */
+  techs?: ReadonlySet<string>
 ): Sack {
   if (mechanical) return emptySack()
   const base = BY_DAMAGE[damage]
   const extra = BY_ARMOR[armor]
+  // CLEAN KILLS. The node both produces the skulls and reads them, so a
+  // commander who takes it is choosing a weapon as much as a technology: it
+  // pays out on pierce and energy and does precisely nothing for a club.
+  const clean = (techs?.has('clean_kills') ?? false) && (damage === 'pierce' || damage === 'energy') ? 1 : 0
   // Obliteration wastes it. Half at a bar of overkill, nothing past two.
   const spoilt = overkillFrac >= 2 ? 0 : Math.max(0, 1 - overkillFrac * 0.5)
-  const take = (kind: Spoil): number => Math.round((base[kind] + (extra[kind] ?? 0)) * spoilt)
+  const take = (kind: Spoil): number =>
+    Math.round((base[kind] + (extra[kind] ?? 0) + (kind === 'skull' ? clean : 0)) * spoilt)
   return { meat: take('meat'), skull: take('skull'), bone: take('bone') }
 }
 

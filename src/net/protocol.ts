@@ -36,10 +36,12 @@ import type { Faction, ReserveMode } from '../sim/types'
  * gatherers carry them home for gold, research and free soldiers. v29 prices
  * a spoil off the body's COST and lets it rot visibly on a much shorter early
  * clock, moves every remains rule (corpse walls, Bonepickers, Necropolis) onto
- * spoils so torn limbs are spectacle rather than economy, and adds Salting and
- * the Deep Cold.
+ * spoils so torn limbs are spectacle rather than economy. v30 trims the ladder
+ * to one node an age — Bone Harvest, Clean Kills, the Bone Levy — with Clean
+ * Kills both producing the extra skull and reading it; preservation research is
+ * gone, since spoil life already scales off the dead body's price.
  */
-export const PROTOCOL_VERSION = 29
+export const PROTOCOL_VERSION = 30
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

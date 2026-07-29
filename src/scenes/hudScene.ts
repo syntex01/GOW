@@ -664,7 +664,7 @@ export default class HUDScene extends Phaser.Scene {
     const dim = (owned: boolean, text: string): string => (owned ? text : `(${text})`)
     const parts = [
       `${r.meat} MEAT ${r.value}g`,
-      dim(army.hasTech('skull_tithe'), `${r.skull} SKULL`),
+      dim(army.hasTech('clean_kills'), `${r.skull} SKULL`),
       dim(army.hasTech('bone_levy'), `${r.bone} BONE`)
     ]
     if (army.hasTech('bone_levy')) parts.push(`LEVY ${r.bank.toFixed(1)}/${r.bankNeeds}`)
