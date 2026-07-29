@@ -27,9 +27,12 @@ import type { Faction, ReserveMode } from '../sim/types'
  * that step to 460 and gave soldiers a muster line that advances as the capital
  * retreats, moving every spawn position in the game. v15 adds the fortress
  * tracks: wall health, gate width, the siege ceiling and how fast a wounded
- * fortress can work its guns.
+ * fortress can work its guns. v27 turns Bone Harvest into bodies — five
+ * gatherers per side walking a fetch-and-carry loop that puts gold on the
+ * board — replaces Pack Tactics with Death Throes, and slows Bonepickers to a
+ * visible three-second stoop. All three move the fingerprint.
  */
-export const PROTOCOL_VERSION = 26
+export const PROTOCOL_VERSION = 27
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

@@ -221,6 +221,15 @@ export interface UnitDef {
   special?: string
   /** Never shown on a command bar — summoned by another unit's special. */
   hidden?: boolean
+  /**
+   * This body is not in the war.
+   *
+   * It is stepped by its own routine rather than by the line pass, it never
+   * picks a target, it never blocks a file and it adds nothing to the press —
+   * but it is still flesh standing on the board, so the enemy can see it, shoot
+   * it and cut it down. Bone Harvest's gatherers are the only ones.
+   */
+  noncombat?: boolean
   /** Can this unit shoot air targets? Ground melee cannot. */
   hitsAir?: boolean
   /** Chance of a 2x hit. */

@@ -78,10 +78,10 @@ which is the source of truth (and what the balance harnesses sample).
 **23. The Gore Engine** — Butchery guarantees dismemberment; Bloodlust reads the soaked ground for up to +45% attack speed.
    *Beats:* attrition_grind, engaged_front · *Countered by:* ranged_standoff, peace_denial, fight_on_their_half
 
-**24. Carrion Economy** — Butchery fills your half with remains; Bone Harvest picks them for gold as long as they lie there.
+**24. Carrion Economy** — Butchery fills your half with remains; the Bonewrights walk out, sack them and carry them home for gold.
    *Beats:* greedy_macro, attrition_grind · *Countered by:* burn_the_corpses, overpressure_throw
 
-**25. Eating the Field** — Wounded soldiers eat the remains they stand over. A carpet of gibs is a hospital.
+**25. Eating the Field** — Wounded soldiers stoop over the remains they stand on and eat them, once every three seconds. A carpet of gibs is a slow hospital.
    *Beats:* attrition_grind, poke_damage · *Countered by:* burst_damage, burn_the_corpses
 
 **26. The Altar** — Carnage ground rule: mounds rise fast, refuse to heal, and soldiers on them swing +28% and hit +18%.
@@ -138,8 +138,8 @@ which is the source of truth (and what the balance harnesses sample).
 **43. The Rooted Wall** — Soldiers who hold position take 35% less and heal on blighted ground. Standing still is armour.
    *Beats:* poke_damage, attrition_grind · *Countered by:* mortar_pin, overpressure_throw
 
-**44. Pack Tactics** — Flankers wait 0.55s instead of 1.5s before taking a new file. The board never stops moving.
-   *Beats:* slow_reads, siege_park · *Countered by:* pike_front, lane_coverage
+**44. The Second Death** — Every trade you lose keeps swinging for two more seconds at double speed. A swarm that dies well out-damages one that dies quietly.
+   *Beats:* slow_reads, pike_front · *Countered by:* siege_park, grenadier_arc
 
 **45. The Iron Press** — Rear ranks press +0.15 harder and light fire stops staggering the front. The column grinds forward.
    *Beats:* poke_damage, flat_fire_line · *Countered by:* siege_on_density, penetrator_line
@@ -195,7 +195,7 @@ which is the source of truth (and what the balance harnesses sample).
 **61. The Musket Wall** — Muskets skip off nothing at their range band; the cuirassier screen holds hunters out of it.
    *Beats:* duelist_hop, swarm_press · *Countered by:* field_cannon_line, grenadier_arc
 
-**62. The Duelist's Evening** — A heavy-killing flanker (1.5× vs heavy) that never waits. Screens are food, not obstacles.
+**62. The Duelist's Evening** — A heavy-killing flanker (1.5× vs heavy) that arrives before the screen has re-formed. Screens are food, not obstacles.
    *Beats:* musket_wall, tank_wall · *Countered by:* pike_front, grenadier_arc
 
 **63. The Grenade Arc** — Lobbed explosive over cover and screens into the pile. Splash does not ask who was pressing.
@@ -237,7 +237,7 @@ which is the source of truth (and what the balance harnesses sample).
 **75. The Anchor** — The most expensive thing alive, screened by definition, healed by nanites. A moving fortress.
    *Beats:* mg_sweep, laser_wall · *Countered by:* railgun_snipe, swarm_press, evil_geometry
 
-**76. The Cleanup** — A late flanker with 1.3× vs unarmored that hops files the moment it is blocked. Backlines end here.
+**76. The Cleanup** — A late flanker with 1.3× vs unarmored, moving fast enough to take a new file before the old one closes. Backlines end here.
    *Beats:* siege_park, anti_air_line · *Countered by:* pike_front, laser_wall
 
 **77. The Tide** — Cheap regrowing swarm that bursts on death. The opponent pays for every kill twice.

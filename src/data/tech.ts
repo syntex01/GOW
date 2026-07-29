@@ -412,7 +412,7 @@ export const TECHS: TechNode[] = [
     age: 1,
     cost: 1000,
     requires: ['butchery'],
-    effect: 'Remains lying on your half are picked over for gold, steadily, for as long as they lie there.'
+    effect: 'Five small crooked things come out of your yard, one to a lane. They crouch over what is lying on your half, fill a sack, and carry it home for gold. They do not fight, they run when struck, and they are slow to replace.'
   },
   {
     id: 'bloodlust',
@@ -865,8 +865,8 @@ export const TECHS: TechNode[] = [
       'Shooters open their ranks and let the fighters through. Your melee units walk past friendly ranged troops who have halted to fire, instead of queueing behind them.'
   },
   {
-    id: 'pack_tactics',
-    name: 'Pack Tactics',
+    id: 'death_throes',
+    name: 'Death Throes',
     branch: 'carnage',
     kind: 'behaviour',
     ring: 3,
@@ -874,7 +874,7 @@ export const TECHS: TechNode[] = [
     age: 1,
     cost: 950,
     requires: ['butchery'],
-    effect: 'Your flankers stop waiting for permission: blocked for a moment, they are already in the next lane.'
+    effect: 'Nobody here is told when they have died. Killed by anything short of an obliterating blow, your soldier keeps swinging for two more seconds at DOUBLE speed — short a limb or two, and emptying onto the ground as it goes. Take both arms off it and all it can do is stagger about bleeding.'
   },
   {
     id: 'iron_line',

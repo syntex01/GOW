@@ -1331,6 +1331,16 @@ const EMBLEMS: Record<string, Emblem> = {
     skull(p, cx, cy - s * 0.2, s * 0.78, q)
     bone(p, cx - s * 0.95, cy + s * 0.85, cx + s * 0.95, cy + s * 0.7, 2, q.bone)
   },
+  death_throes: (p, cx, cy, s, q) => {
+    // Still up, and already coming apart: a skull with both arms thrown clear
+    // of it and the blood following them out.
+    burst(p, cx, cy, s * 0.95, q.flesh, 8, 0.34)
+    skull(p, cx, cy - s * 0.12, s * 0.7, q)
+    bone(p, cx - s * 1.1, cy + s * 0.2, cx - s * 0.5, cy + s * 0.95, 2, q.bone)
+    bone(p, cx + s * 1.1, cy + s * 0.15, cx + s * 0.5, cy + s * 0.95, 2, q.bone)
+    drop(p, cx - s * 0.8, cy + s * 0.6, s * 0.26, q.flesh)
+    drop(p, cx + s * 0.8, cy + s * 0.55, s * 0.26, q.flesh)
+  },
   bone_harvest: (p, cx, cy, s, q) => {
     bone(p, cx - s * 0.9, cy + s * 0.85, cx + s * 0.85, cy - s * 0.75, 2, q.bone)
     bone(p, cx + s * 0.85, cy + s * 0.85, cx - s * 0.9, cy - s * 0.75, 2, q.bone)

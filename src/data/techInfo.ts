@@ -20,8 +20,8 @@ export const TECH_MECHANICS: Record<TechId, string> = {
 
   // ── carnage ──
   butchery: 'Every kill dismembers — maximum usable remains for walls, pickers and the harvest. Side effect: your dead are too torn apart for Mind Thrall to puppet.',
-  bonepickers: 'A wounded soldier (below 92% hp) eats one nearby corpse piece every 0.5s, healing 6% of max hp + 8. Consumes the remains.',
-  bone_harvest: 'Remains lying on your half pay 0.45 gold/s each (up to 24 at once). The bodies are not consumed.',
+  bonepickers: 'A wounded soldier (below 92% hp) stoops over a nearby corpse piece every 3s and eats it, healing 6% of max hp + 8. Visible: it bends down, and the piece bursts. Consumes the remains.',
+  bone_harvest: 'Raises five Bonewrights, one per lane, who walk out, fill a sack with up to 3 corpse pieces and carry it home for 12 gold a piece. 70 hp, no attack, flees when struck, 22s to come back.',
   bloodlust: 'Blood-soaked ground grants up to +45% attack and move speed. Gore builds where things die messily.',
   flenser_rite: 'Unlocks the Flenser.',
   plague_wind: 'Every enemy you kill leaves a plague cloud: 70px, 26 damage/s, for 6s, in that lane.',
@@ -70,7 +70,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
 
   // ── lane doctrines ──
   phalanx_doctrine: 'Your phalanx-conduct units deal ×2.4 to flankers (up from ×1.85).',
-  pack_tactics: 'Your flankers switch lanes after 0.55s blocked instead of 1.5s.',
+  death_throes: 'A soldier killed with less than its own max hp of overkill stays up for 2s at 2x attack speed, minus 1-2 limbs, bleeding hard. Lose both arms and it cannot attack. Cannot be healed, and a heavy enough blow skips it entirely.',
   iron_line: 'Ranks pressing from behind add +65% damage each (up from +50%, max 4 ranks), and light hits no longer stagger your infantry.',
   plunging_volleys: 'Your ranged units can drop fire two lanes over at 32% damage when nothing closer offers itself.',
 

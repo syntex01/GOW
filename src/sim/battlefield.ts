@@ -18,6 +18,18 @@ import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
 import { TECHS_BY_ID, TECH_ORDER, type TechId } from '../data/tech'
 import { FACTION_UNITS, type FactionId } from '../data/factions'
+import {
+  GATHERER_BAG,
+  GATHERER_DEF,
+  GATHERER_FLEE_MS,
+  GATHERER_HOME_PAD,
+  GATHERER_PER_PIECE,
+  GATHERER_RANGE,
+  GATHERER_REACH,
+  GATHERER_RESPAWN_MS,
+  GATHERER_SEARCH_MS,
+  GATHERER_SWEEP
+} from '../data/harvest'
 import { TURRETS_BY_ID } from '../data/turrets'
 import { ensureUnitArt } from '../gfx/textureFactory'
 import type Vfx from '../gfx/vfx'
@@ -74,6 +86,26 @@ import PhysicsWorld, { type Body } from './physics'
 import Terrain, { RELIEF_BUCKET } from './terrain'
 import Unit, { resetUnitIds, type UnitWorld } from './unit'
 import { ADVANCE_DIR, LANE_COUNT, LANE_MID, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type ReserveMode, type TechBranchLean } from './types'
+
+/** One Bone Harvest gatherer's slot — see `Battlefield.updateHarvest`. */
+interface Bonewright {
+  /** The body currently doing the work, or null while the slot is empty. */
+  unit: Unit | null
+  /** The file this slot owns. One per lane, fixed for the match. */
+  lane: number
+  /** Milliseconds until another one shuffles out of the yard. */
+  respawnMs: number
+  /** Pieces in the sack. */
+  carried: number
+  /** How long it has been crouched over the current piece. */
+  searchMs: number
+  /** Struck: how much longer it runs for home rather than working. */
+  fleeMs: number
+  /** Last seen health, so a hit can be noticed without touching the unit. */
+  lastHp: number
+  /** The piece it is walking to. */
+  quarry: Body | null
+}
 
 export interface BattlefieldConfig {
   worldWidth: number
@@ -447,7 +479,14 @@ export default class Battlefield {
   bannersOwned: Record<Faction, number> = { player: 0, enemy: 0 }
   private bannerCarry: Record<Faction, number> = { player: 0, enemy: 0 }
   private bannerEra = -1
-  private boneCarry: Record<Faction, number> = { player: 0, enemy: 0 }
+  /**
+   * The Bonewrights. One entry per file per side, alive or waiting to be.
+   *
+   * Kept here rather than on the units themselves because the state outlives
+   * the body: a gatherer that gets cut down leaves its slot behind, and the
+   * slot is what counts the twenty-odd seconds before another one shuffles out.
+   */
+  private wrights: Record<Faction, Bonewright[]> = { player: [], enemy: [] }
   /**
    * How long the remains stay worthless after a Bone Kiln comes down. Losing a
    * doctrine building has to be felt, not merely noted — for half a minute the
@@ -632,16 +671,180 @@ export default class Battlefield {
    * removes it from the field — so the tech trades the corpse wall you might
    * have built for the health you need now.
    */
+  /**
+   * Bonepickers. A wounded soldier stoops over a piece of somebody and eats it.
+   *
+   * The unit side of this runs on a three-second clock now instead of a half
+   * second one, so each mouthful is worth three times what it used to be — the
+   * healing is halved overall, which the node could afford, and in exchange it
+   * is something you can watch a soldier do rather than a number going up.
+   * The piece bursts where it lay, and the burst stains: the creed's own
+   * Bloodlust reads that soaked ground, so feeding on your dead makes the
+   * ground you are standing on angrier.
+   */
   private scavenge(unit: Unit): void {
     const reach = unit.def.height * 0.7
     for (const body of this.physics.bodies) {
       if (!body.settled || body.kind !== 'gib' || body.dead) continue
       if (Math.abs(body.x - unit.x) > reach) continue
       body.dead = true
-      unit.heal(unit.maxHp * 0.06 + 8)
-      this.vfx.impact(body.x, body.y - 6, 0xc0392b, 0.7, true)
+      unit.heal(unit.maxHp * 0.18 + 24)
+      this.vfx.impact(body.x, body.y - 6, 0xc0392b, 1.1, true)
+      // A real splash, thrown from the simulation's own stream so both peers
+      // paint the same ground.
+      for (let i = 0; i < 7; i += 1) {
+        this.physics.spawn(
+          'blood',
+          body.x + this.rng.spread(6),
+          body.y - 6,
+          this.rng.spread(150),
+          -this.rng.range(60, 240),
+          { size: this.rng.range(0.5, 1.1), floor: body.floor }
+        )
+      }
       return
     }
+  }
+
+  /**
+   * THE BONEWRIGHTS — Bone Harvest as a thing on the board.
+   *
+   * One per file. Each one walks out of the yard, crouches over a piece of
+   * somebody, stuffs it in a sack, looks around for two more, and carries the
+   * sack home. The gold lands when the sack does.
+   *
+   * Everything about the loop is deliberately physical, because that is what
+   * gives an opponent something to do about it:
+   *
+   *  - the payout is a ROUND TRIP, so remains near your own wall are worth far
+   *    more per second than remains out in the middle;
+   *  - the gatherers are flesh, standing on the board, in the enemy's targeting
+   *    lists like anything else, with seventy health and no attack;
+   *  - and struck once, a gatherer does not fight and does not finish — it runs
+   *    for home with whatever it has, and a slot that loses its Bonewright is
+   *    empty for twenty-two seconds.
+   *
+   * Which means a raid into a carnage yard is now worth making for its own
+   * sake, and a carnage commander has a reason to keep the fighting close.
+   */
+  private updateHarvest(faction: Faction, dtMs: number): void {
+    const slots = this.wrights[faction]
+    // One slot per file, raised the first time the harvest runs.
+    while (slots.length < LANE_COUNT) {
+      slots.push({ unit: null, lane: slots.length, respawnMs: 0, carried: 0, searchMs: 0, fleeMs: 0, lastHp: 0, quarry: null })
+    }
+    const base = this.baseFor(faction)
+    const dir = ADVANCE_DIR[faction]
+    const home = base.x + dir * (base.radius + GATHERER_HOME_PAD)
+
+    for (const slot of slots) {
+      const wright = slot.unit
+      if (!wright || !wright.alive) {
+        // Whatever was in the sack is lost with the body.
+        if (slot.unit) {
+          slot.unit = null
+          slot.carried = 0
+          slot.quarry = null
+          slot.respawnMs = GATHERER_RESPAWN_MS
+        }
+        slot.respawnMs -= dtMs
+        if (slot.respawnMs <= 0) {
+          const born = this.spawnUnit(faction, GATHERER_DEF, home, slot.lane)
+          born.errandX = home
+          slot.unit = born
+          slot.lastHp = born.hp
+          slot.carried = 0
+          slot.searchMs = 0
+          slot.fleeMs = 0
+          slot.quarry = null
+        }
+        continue
+      }
+
+      // Struck. It does not finish the piece it was on and it does not stay to
+      // find out who did it: it turns round and runs, sack and all.
+      if (wright.hp < slot.lastHp) {
+        slot.fleeMs = GATHERER_FLEE_MS
+        slot.searchMs = 0
+        slot.quarry = null
+      }
+      slot.lastHp = wright.hp
+
+      if (slot.fleeMs > 0) slot.fleeMs -= dtMs
+
+      // Full sack, frightened, or nothing left worth walking to — go home.
+      const goHome = slot.fleeMs > 0 || slot.carried >= GATHERER_BAG
+      if (!goHome) {
+        if (slot.quarry && (slot.quarry.dead || !slot.quarry.settled)) slot.quarry = null
+        if (!slot.quarry) slot.quarry = this.findRemains(faction, wright.x, slot.carried > 0 ? GATHERER_SWEEP : GATHERER_RANGE)
+      }
+
+      if (goHome || !slot.quarry) {
+        wright.errandX = home
+        if (Math.abs(wright.x - home) <= 2) this.deliverSack(faction, slot, wright)
+        continue
+      }
+
+      wright.errandX = slot.quarry.x
+      if (Math.abs(wright.x - slot.quarry.x) > GATHERER_REACH) {
+        slot.searchMs = 0
+        continue
+      }
+      // Crouched over it. The bend-down is the whole read: you can tell at a
+      // glance whether a gatherer is working or walking.
+      if (slot.searchMs === 0) wright.stoop(GATHERER_SEARCH_MS)
+      slot.searchMs += dtMs
+      if (slot.searchMs < GATHERER_SEARCH_MS) continue
+      slot.searchMs = 0
+      slot.quarry.dead = true
+      slot.carried += 1
+      this.vfx.impact(slot.quarry.x, slot.quarry.y - 6, 0x8fd6a4, 0.7, true)
+      slot.quarry = null
+    }
+  }
+
+  /**
+   * The nearest settled piece of a body on this commander's own half, inside a
+   * radius. Own half only — a gatherer will not walk into the enemy's yard, and
+   * half ownership follows the live midfield, so ground you have lost stops
+   * being worth sending anyone to.
+   */
+  private findRemains(faction: Faction, fromX: number, radius: number): Body | null {
+    let best: Body | null = null
+    let bestD = radius
+    for (const body of this.physics.bodies) {
+      if (body.dead || !body.settled || body.kind !== 'gib') continue
+      if (this.halfOwner(body.x) !== faction) continue
+      const d = Math.abs(body.x - fromX)
+      if (d >= bestD) continue
+      bestD = d
+      best = body
+    }
+    return best
+  }
+
+  /**
+   * The sack comes home. Paid per piece, doubled by a standing Bone Kiln, and
+   * scaled off the age's income so a node taken in the second age is still
+   * worth having in the fifth.
+   */
+  private deliverSack(faction: Faction, slot: Bonewright, wright: Unit): void {
+    slot.fleeMs = 0
+    if (slot.carried <= 0) return
+    const army = this.armyFor(faction)
+    // Burn the Kiln and the harvest stops paying at all for half a minute: the
+    // cost of a doctrine building is that losing it turns the rule off loudly.
+    if (this.kilnShock[faction] > 0) {
+      slot.carried = 0
+      return
+    }
+    const kiln = this.hasBuilding(faction, 'bone_kiln') ? 2 : 1
+    const ageScale = ageDef(army.age).income / AGES[1].income
+    const paid = Math.round(slot.carried * GATHERER_PER_PIECE * kiln * ageScale)
+    slot.carried = 0
+    army.gold += paid
+    this.statsFor(faction).goldEarned += paid
+    this.vfx.damageNumber(wright.x, wright.centerY - 20, paid, 0xf2c14e)
   }
 
   /** Demolition charges. The body was armed, and whatever killed it is close. */
@@ -749,32 +952,9 @@ export default class Battlefield {
       // Sappers: a melee soldier that has been stuck against the front line
       // for a few seconds goes under it and comes up on the far side. It turns
       // a grinding stalemate into a flanking problem for the other player.
-      // Bone Harvest: remains on your half pay out for as long as they lie
-      // there. The bodies are not consumed — bonepickers and corpse walls
-      // still get their material.
-      if (army.hasTech('bone_harvest')) {
-        let gibs = 0
-        for (const body of this.physics.bodies) {
-          if (body.kind === 'gib' && body.settled && this.halfOwner(body.x) === faction) gibs += 1
-          if (gibs >= 24) break
-        }
-        // The Bone Kiln renders what the harvest only collects. Burn it and
-        // the remains stop paying at all for half a minute — the cost of a
-        // doctrine building is that losing it turns the rule off loudly.
-        const kilnRate = this.kilnShock[faction] > 0 ? 0 : this.hasBuilding(faction, 'bone_kiln') ? 0.9 : 0.45
-        if (this.kilnShock[faction] > 0) this.kilnShock[faction] -= dtMs
-        if (gibs > 0 && kilnRate > 0) {
-          const gained = gibs * kilnRate * (dtMs / 1000) + this.boneCarry[faction]
-          const whole = Math.floor(gained)
-          this.boneCarry[faction] = gained - whole
-          if (whole > 0) {
-            army.gold += whole
-            this.statsFor(faction).goldEarned += whole
-          }
-        } else {
-          this.boneCarry[faction] = 0
-        }
-      }
+      // Bone Harvest: the Bonewrights walk out and fetch it. See updateHarvest.
+      if (this.kilnShock[faction] > 0) this.kilnShock[faction] -= dtMs
+      if (army.hasTech('bone_harvest')) this.updateHarvest(faction, dtMs)
 
       // Autoforge: a turret blown off the wall prints itself back after
       // twenty seconds, at half strength, free of charge.
@@ -1260,6 +1440,26 @@ export default class Battlefield {
       mix(u.x * 10)
       mix(u.y * 10)
       mix(u.hp * 10)
+      // Death Throes. A body on one peer that is dying and on the other that is
+      // dead swings at double rate for two seconds on one side of the wire and
+      // not on the other, and the two never reconcile.
+      mix(Math.round(u.throesMs))
+      mix(u.armsGone ? 1 : 0)
+      // Where a gatherer is walking. It is the only body on the board whose
+      // destination is not implied by its faction, so nothing else in this loop
+      // pins it down.
+      mix(u.errandX === null ? 0 : Math.round(u.errandX))
+    }
+    // The harvest loop: sacks in hand, slots waiting to be refilled, and how
+    // long each one has been crouched over its piece. All of it decides when
+    // gold arrives, and gold decides what gets built.
+    for (const faction of ['player', 'enemy'] as Faction[]) {
+      for (const slot of this.wrights[faction]) {
+        mix(slot.carried)
+        mix(Math.round(slot.searchMs))
+        mix(Math.round(slot.respawnMs))
+        mix(Math.round(slot.fleeMs))
+      }
     }
     mix(this.projectiles.length)
     // The ground and what stands on it change outcomes, so they are part of
@@ -2761,9 +2961,10 @@ export default class Battlefield {
     this.player.population = playerUnits.reduce(upkeep, 0)
     this.enemy.population = enemyUnits.reduce(upkeep, 0)
     // Deeds only ever go one way, so that a demand once met stays met.
+    const fighters = (list: Unit[]): number => list.reduce((n, u) => n + (u.def.noncombat ? 0 : 1), 0)
     for (const [army, count, base] of [
-      [this.player, playerUnits.length, this.playerBase],
-      [this.enemy, enemyUnits.length, this.enemyBase]
+      [this.player, fighters(playerUnits), this.playerBase],
+      [this.enemy, fighters(enemyUnits), this.enemyBase]
     ] as const) {
       army.deeds.peakArmy = Math.max(army.deeds.peakArmy, count)
       army.deeds.goldEarned = this.statsFor(army.faction).goldEarned
@@ -2932,6 +3133,13 @@ export default class Battlefield {
 
     for (let i = 0; i < order.length; i += 1) {
       const unit = order[i]
+      // A gatherer is not in the line. It takes no press, blocks nobody, picks
+      // no target and leaves no front edge behind it — it is walked by
+      // `updateHarvest` and merely stepped here so it animates and draws.
+      if (unit.def.noncombat) {
+        unit.update(dtMs, null, null)
+        continue
+      }
       // The weight of the press. Only the front rank of a column can physically
       // reach the enemy, so a melee squad otherwise delivers the damage of one
       // man however many you bought, while every soldier in a ranged squad
@@ -3530,11 +3738,16 @@ export default class Battlefield {
     // Stand the soldier somewhere on the width of the battle path.
     // Deterministic from spawn order, so both peers stage every man alike.
     unit.setStage(unit.layer === 'ground' ? ((unit.seq * 2654435761) >>> 0) % 13 : 0)
-    const stats = this.statsFor(faction)
-    stats.unitsBuilt += 1
-    stats.goldSpent += def.cost
-    army.deeds.built += 1
-    audio.play('spawn', 0.3)
+    // A gatherer is not a soldier and must not be counted as one — it never
+    // cost anything, it was never queued, and letting it into the tallies would
+    // quietly satisfy the deeds that gate the deep research.
+    if (!def.noncombat) {
+      const stats = this.statsFor(faction)
+      stats.unitsBuilt += 1
+      stats.goldSpent += def.cost
+      army.deeds.built += 1
+      audio.play('spawn', 0.3)
+    }
     return unit
   }
 
@@ -3779,7 +3992,9 @@ export default class Battlefield {
     // meant "corpses on your half" read zero through most of a match, and the
     // Charnel Yard and the Ossuary both measured nothing. A death is a body
     // whether or not it came apart.
-    this.corpsePile[this.halfOwner(unit.x)] += 1
+    // A dead gatherer is not fuel. Counting it would make the harvest feed the
+    // Charnel Yard and the Ossuary off its own losses, in a loop.
+    if (!unit.def.noncombat) this.corpsePile[this.halfOwner(unit.x)] += 1
     // Release the outpost's standing count, so a seat whose three soldiers are
     // killed starts sending again rather than going quiet for the rest of the
     // match.
@@ -3797,7 +4012,11 @@ export default class Battlefield {
     this.statsFor(winner).goldEarned += unit.def.bounty
     this.statsFor(unit.faction).unitsLost += 1
     this.armyFor(winner).deeds.kills += 1
-    this.armyFor(unit.faction).deeds.losses += 1
+    // A gatherer is not one of your own for the purposes of the deeds. Losing
+    // Bonewrights is a running cost of the harvest, not a sacrifice — counting
+    // them would let Necropolis's "lose 25" and the ascension's "lose 60" be
+    // paid off by simply owning the node that raises them.
+    if (!unit.def.noncombat) this.armyFor(unit.faction).deeds.losses += 1
     this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.4, `+${unit.def.bounty}`, '#f2c14e')
     audio.play('coin', 0.25)
     this.onUnitKilled?.(winner)

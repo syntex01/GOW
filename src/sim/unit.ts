@@ -102,8 +102,40 @@ const CLOSE_SLACK = 8
  * step and one arrow, and nobody ever finishes a draw.
  */
 const HOLD_MS = 600
+/** How long a flanker stands blocked before it asks the field for a new file. */
+const FLANK_PATIENCE_MS = 1500
+/**
+ * How often a wounded Bonepicker stoops for a mouthful, and how long the stoop
+ * lasts. Slow on purpose: the healing is now something you watch happen rather
+ * than a number ticking up, so it has to be legible at the pace of a fight.
+ */
+const BONEPICKER_MS = 3000
+const BONEPICKER_STOOP_MS = 620
 /** Knockback impulse below which a hit hurts but does not interrupt. */
 const STAGGER_FLOOR = 60
+/**
+ * DEATH THROES — the carnage node that will not admit a soldier has died.
+ *
+ * Held here rather than on the def because it is a property of the RESEARCH,
+ * not of any one soldier: everything you field does this once the node is in.
+ */
+/** How long a body keeps fighting after the blow that killed it. */
+const THROES_MS = 2000
+/** Attack rate multiplier while it is happening. Twice as fast, exactly. */
+const THROES_HASTE = 2
+/**
+ * How much health a body has left to be shot off it during the throes.
+ *
+ * The node promises two seconds, so this has to be generous enough that an
+ * ordinary exchange does not cut it to a quarter of a second — measured, a
+ * fifth of a bar meant a body in a five-on-five scrum lasted about two hundred
+ * milliseconds, which is not a mechanic, it is a flicker. At three fifths it
+ * survives a normal trade and still dies early to a side that decides to spend
+ * its volley finishing a corpse, which is the counter-play worth keeping.
+ */
+const THROES_POOL = 0.6
+/** How often a body in throes throws blood while it is emptying itself. */
+const THROES_BLEED_MS = 130
 /** How fast knockback resistance bleeds off, in stacks per second. */
 const KNOCK_RECOVERY = 1.6
 /**
@@ -168,6 +200,21 @@ export default class Unit implements Damageable {
   readonly layer: Layer
   readonly armor: ArmorType
   readonly dir: 1 | -1
+  /**
+   * Which way the art is turned. Normally the way the army is going; a body on
+   * an errand — a Bonewright carrying a sack back to the wall — turns round.
+   * Purely cosmetic, and derived from simulation state, so it never enters the
+   * fingerprint.
+   */
+  facing: 1 | -1 = 1
+  /**
+   * A destination that replaces the advance rule outright.
+   *
+   * Set only on `noncombat` bodies. A soldier marches at the enemy because that
+   * is what the advance is; a gatherer walks to a specific piece of ground and
+   * then walks back, so it needs somewhere to be told about.
+   */
+  errandX: number | null = null
 
   x: number
   y: number
@@ -223,8 +270,35 @@ export default class Unit implements Damageable {
    * the direction the blow came from.
    */
   private overkill = 0
+  /**
+   * The same measurement, unclamped and in units of the soldier's own max hp.
+   *
+   * `overkill` is capped at 2 because everything that reads it — how far the
+   * pieces are thrown, how much blood comes out — saturates anyway. Death
+   * Throes needs to tell "one jab too many" from "a shell", and at the cap
+   * those are the same number.
+   */
+  private overkillFrac = 0
   private lastHitType: DamageType = 'blunt'
   private lastHitDir = 0
+
+  /**
+   * Death Throes. Milliseconds this body has left on its feet after dying.
+   *
+   * While this is running the soldier is `alive` in every sense the rest of the
+   * simulation cares about — it holds its file, it swings, it can be shot — but
+   * it is already dead, so nothing may heal it and it may not enter the state
+   * twice.
+   */
+  throesMs = 0
+  private throesSpent = false
+  private throesBleed = 0
+  /** Both arms are off. It can walk and bleed; it cannot swing. */
+  armsGone = false
+
+  get inThroes(): boolean {
+    return this.throesMs > 0
+  }
 
   /** Horizontal knockback velocity, decays with friction. */
   vx = 0
@@ -416,6 +490,8 @@ export default class Unit implements Damageable {
 
   private frenzy = 1
   private scavengeTimer = 0
+  /** Milliseconds left of a Bonepicker's stoop — the animation reads this. */
+  private stoopMs = 0
 
   /** Sappers: how long this soldier has been stuck against the enemy line. */
   burrowTimer = 0
@@ -518,6 +594,7 @@ export default class Unit implements Damageable {
     this.layer = def.layer
     this.armor = def.armor
     this.dir = ADVANCE_DIR[faction]
+    this.facing = this.dir
     this.world = world
 
     this.hp = def.hp
@@ -800,9 +877,17 @@ export default class Unit implements Damageable {
       const h = this.world.reliefAt?.(x, this.lane) ?? 0
       return h > 0 ? Math.min(27, h * 1.5) : Math.max(-12, h)
     }
-    const lift = surface(this.x)
+    let lift = surface(this.x)
     const slope = (surface(this.x + 14) - surface(this.x - 14)) / 28
-    const tilt = Math.max(-0.16, Math.min(0.16, -Math.atan(slope) * 0.55))
+    let tilt = Math.max(-0.16, Math.min(0.16, -Math.atan(slope) * 0.55))
+    // A Bonepicker's stoop. Folded in here so both draw paths — rigged and
+    // sprite-stack — get it for nothing: the soldier drops and leans forward
+    // over whatever it is eating, then straightens up again.
+    if (this.stoopMs > 0) {
+      const t = 1 - Math.abs(this.stoopMs / BONEPICKER_STOOP_MS - 0.5) * 2
+      lift -= this.def.height * 0.2 * t
+      tilt += 0.5 * t
+    }
     const blend = Math.min(1, dtMs / 110)
     this.visualLift += (lift - this.visualLift) * blend
     this.visualTilt += (tilt - this.visualTilt) * blend
@@ -880,7 +965,11 @@ export default class Unit implements Damageable {
     if (source) this.lastHitDir = Math.sign(this.x - source.x) || -this.dir
     // Overkill as a fraction of the unit's own health: how far past dead the
     // blow carried it, which is a better measure of violence than raw damage.
-    if (this.hp <= 0) this.overkill = Math.min(2, (reduced - Math.max(0, before)) / Math.max(1, this.maxHp * 0.5))
+    if (this.hp <= 0) {
+      const past = reduced - Math.max(0, before)
+      this.overkillFrac = past / Math.max(1, this.maxHp)
+      this.overkill = Math.min(2, past / Math.max(1, this.maxHp * 0.5))
+    }
     this.flashTimer = FLASH_MS
 
     const color = type === 'energy' ? 0x9fe8ff : type === 'explosive' ? 0xffa640 : 0xffe08a
@@ -940,8 +1029,13 @@ export default class Unit implements Damageable {
     this.stagger = Math.max(this.stagger, 420)
   }
 
+  /** Bend this body over the ground for a moment. Purely something to look at. */
+  stoop(ms = BONEPICKER_STOOP_MS): void {
+    this.stoopMs = Math.max(this.stoopMs, ms)
+  }
+
   heal(amount: number): void {
-    if (!this.alive) return
+    if (!this.alive || this.inThroes) return
     const before = this.hp
     this.hp = Math.min(this.maxHp, this.hp + amount)
     if (this.hp > before) {
@@ -952,6 +1046,10 @@ export default class Unit implements Damageable {
 
   kill(killer?: Damageable): void {
     if (!this.alive) return
+    // DEATH THROES. The body has not been told. It loses a limb or two to the
+    // blow that killed it and then goes on fighting for two seconds, and only
+    // when that runs out does the rest of this method happen.
+    if (this.tryThroes(killer)) return
     // The ward reknits on a kill. It is the whole reason a warded screen holds
     // a file rather than merely surviving the first exchange in it.
     if (killer instanceof Unit && killer.wardMax > 0 && killer.alive) killer.ward = killer.wardMax
@@ -1010,6 +1108,120 @@ export default class Unit implements Damageable {
     } else {
       this.bleedOut(mechanical)
       this.playDeathAnimation(mechanical)
+    }
+  }
+
+  /**
+   * DEATH THROES — two more seconds, taken out of the enemy.
+   *
+   * Returns true when the body has been put into its throes and the real death
+   * must be deferred. The gate is the honest one: how far past dead the killing
+   * blow carried it, measured in its own max health. A jab, an arrow, one more
+   * swing of a club — the body has not registered it and keeps working. A
+   * shell, a boulder, a Titan's fist — there is nothing left standing to argue
+   * with, and that is the counter to the whole node.
+   *
+   * Machines are excluded. A wrecked chassis does not get angry.
+   */
+  private tryThroes(killer?: Damageable): boolean {
+    if (this.throesSpent || !(this.techs?.has('death_throes') ?? false)) return false
+    if (this.layer !== 'ground') return false
+    const kind = this.def.visual.kind
+    if (kind !== 'humanoid' && kind !== 'rider') return false
+    if (this.overkillFrac > 1) return false
+
+    this.throesSpent = true
+    this.throesMs = THROES_MS
+    this.throesBleed = 0
+    // Something is left to shoot off it, so a side that keeps firing into the
+    // corpse still ends this early. It is two seconds of swings, not a shield.
+    this.hp = Math.max(1, this.maxHp * THROES_POOL)
+    this.state = 'engage'
+    this.severLimbs()
+    this.world.vfx.gore(this.x, this.centerY, 1.4)
+    this.world.vfx.floatingLabel(this.x, this.centerY - this.def.height * 0.7, 'still up', '#c0392b')
+    void killer
+    return true
+  }
+
+  /**
+   * The blow took something with it. Arms only — a rig walking on half a leg
+   * reads as a bug rather than as an atrocity, and the arms are where the
+   * mechanic lives anyway.
+   */
+  private severLimbs(): void {
+    const front = ['upperArmF', 'foreArmF', 'handF', 'weapon']
+    const back = ['upperArmB', 'foreArmB', 'handB']
+    // A heavier blow takes both. Anything gentler takes one, and usually the
+    // off hand — most bodies in throes are still swinging, which is the point.
+    const both = this.overkillFrac > 0.6
+    const groups = both ? [front, back] : this.world.rng.chance(0.35) ? [front] : [back]
+    let lostWeapon = both
+    for (const group of groups) {
+      if (group === front) lostWeapon = true
+      for (const name of group) this.throwLimb(name)
+    }
+    // Losing the weapon hand is losing the weapon. What is left can walk into
+    // the enemy and bleed on them, and that is all.
+    this.armsGone = lostWeapon
+  }
+
+  /** One rigged part, taken off the body and thrown as a physics gib. */
+  private throwLimb(name: string): void {
+    const part = this.parts[name]
+    if (!part || !part.visible) return
+    const rand = this.world.rng
+    const away = this.lastHitDir || -this.dir
+    // Same rule as `dismember`: the spawn point comes from the SIMULATION's
+    // stream, never off the animated sprite, whose bone chain runs on
+    // transcendentals that are not bit-identical across engines.
+    const scatter = this.def.height * 0.3
+    this.world.physics.spawn(
+      'gib',
+      this.x + rand.spread(scatter) * this.dir,
+      this.y - this.def.height * 0.55 + rand.spread(scatter * 0.6),
+      away * rand.range(60, 190) + rand.spread(60),
+      -rand.range(80, 260),
+      {
+        texture: part.texture.key,
+        originX: part.originX,
+        originY: part.originY,
+        flip: this.dir < 0,
+        rot: part.rotation,
+        spin: rand.spread(9),
+        mass: 0.9,
+        size: this.scaleFactor,
+        color: part.tintTopLeft ?? 0xffffff,
+        faction: this.faction,
+        bleed: 900,
+        floor: this.groundLine
+      }
+    )
+    part.setVisible(false)
+  }
+
+  /** Counts the throes down, empties the body onto the ground, then ends it. */
+  private stepThroes(dtMs: number): void {
+    this.throesMs -= dtMs
+    this.throesBleed -= dtMs
+    if (this.throesBleed <= 0) {
+      this.throesBleed = THROES_BLEED_MS
+      const rand = this.world.rng
+      for (let i = 0; i < 2; i += 1) {
+        this.world.physics.spawn(
+          'blood',
+          this.x + rand.spread(this.def.height * 0.2),
+          this.centerY - rand.range(0, this.def.height * 0.3),
+          rand.spread(120),
+          -rand.range(20, 140),
+          { size: rand.range(0.5, 1), floor: this.groundLine }
+        )
+      }
+    }
+    if (this.throesMs <= 0) {
+      this.throesMs = 0
+      this.hp = 0
+      this.kill()
     }
   }
 
@@ -1216,12 +1428,19 @@ export default class Unit implements Damageable {
       this.container.setPosition(this.x, this.y + this.stageY - this.visualLift)
       return
     }
-    if (this.def.regen) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
+    // Death Throes runs before anything that could put health back: a body
+    // that has already died does not regenerate, does not take a mend and
+    // cannot be scavenged back onto its feet. It only empties.
+    if (this.throesMs > 0) {
+      this.stepThroes(dtMs)
+      if (!this.alive) return
+    }
+    if (this.def.regen && !this.inThroes) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
     if (this.lungeMs > 0) this.lungeMs -= dt * 1000
     // Spore Touch: what a Shaman mends keeps mending.
     if (this.mendMs > 0) {
       this.mendMs -= dt * 1000
-      this.hp = Math.min(this.maxHp, this.hp + this.mendRate * dt)
+      if (!this.inThroes) this.hp = Math.min(this.maxHp, this.hp + this.mendRate * dt)
     }
 
     this.frenzy =
@@ -1236,10 +1455,19 @@ export default class Unit implements Damageable {
     // The carnage banner rally: fury for the garrison holding the flag.
     this.frenzy *= 1 + this.bannerZeal
     // Bonepickers feed on what is lying around them while they are hurt.
-    if (this.techs?.has('bonepickers') && this.hp < this.maxHp * 0.92) {
+    //
+    // It used to happen four times a second and entirely in the numbers: a
+    // wounded soldier standing on a heap simply had a health bar that went up.
+    // Now it is an ACT — the soldier stoops, the piece bursts, and the ground
+    // gets messier — and because you can see it, it is on a clock you can read.
+    if (this.stoopMs > 0) this.stoopMs -= dtMs
+    if (this.techs?.has('bonepickers') && this.hp < this.maxHp * 0.92 && !this.inThroes) {
       this.scavengeTimer -= dtMs
       if (this.scavengeTimer <= 0) {
-        this.scavengeTimer = 500
+        this.scavengeTimer = BONEPICKER_MS
+        // The bend-down is what the animation reads; the world decides whether
+        // there was actually anything down there to eat.
+        this.stoopMs = BONEPICKER_STOOP_MS
         this.world.scavenge?.(this)
       }
     }
@@ -1298,7 +1526,8 @@ export default class Unit implements Damageable {
       // that outranged them by 30. It still slows the charge, so a heavy blow
       // reads as a heavy blow.
       const pace = staggered ? dt * STAGGER_ADVANCE : dt
-      if (this.overrun()) this.giveGround(pace)
+      if (this.errandX !== null) this.walkTo(this.errandX, pace)
+      else if (this.overrun()) this.giveGround(pace)
       else this.advance(pace, blockerX)
     }
 
@@ -1346,6 +1575,24 @@ export default class Unit implements Damageable {
     this.stepPhase += Math.abs(step)
   }
 
+  /**
+   * Walk to a place rather than at an enemy. Queues against nothing and blocks
+   * nothing — a gatherer threads through the line it is scavenging behind.
+   */
+  private walkTo(x: number, dt: number): void {
+    const step = this.def.speed * this.speedMult * dt
+    const gap = x - this.x
+    if (Math.abs(gap) <= step) {
+      this.x = x
+      return
+    }
+    const way = gap > 0 ? 1 : -1
+    this.facing = way
+    this.x += way * step
+    this.stepPhase += step
+    this.blockedMs = 0
+  }
+
   private advance(dt: number, blockerX: number | null): void {
     // An open road is an invitation: a flanker in an enemy-free file rides it.
     const raid = this.raiding || this.lungeMs > 0 ? 1.3 : 1
@@ -1360,10 +1607,8 @@ export default class Unit implements Damageable {
         // enough, it asks the field for a clear adjacent lane and takes it.
         // The rule is fixed and the clock is simulation time, so both peers
         // watch the same soldier make the same decision at the same tick.
-        // Pack Tactics cuts the patience to almost nothing.
         this.blockedMs += dt * 1000
-        const patience = this.techs?.has('pack_tactics') ? 550 : 1500
-        if (this.def.flanker && this.blockedMs > patience) this.world.requestFlank?.(this)
+        if (this.def.flanker && this.blockedMs > FLANK_PATIENCE_MS) this.world.requestFlank?.(this)
         return
       }
     }
@@ -1375,17 +1620,23 @@ export default class Unit implements Damageable {
   private tryAttack(target: Damageable, dtMs: number): void {
     void dtMs
     if (this.attackCooldown > 0) return
+    // No arms, no argument. A body in its throes that lost the weapon hand can
+    // still walk into the line and hold a file; it cannot swing at anything.
+    if (this.armsGone) return
     const attack = this.def.attack
 
     const frenzied =
       this.def.special === 'frenzy' ? 1 + Math.min(0.64, this.kills * 0.08) : 1
+    // Twice as fast while it is dying. Nothing else about the blow changes —
+    // the node buys swings, not damage.
+    const haste = this.frenzy * frenzied * (this.inThroes ? THROES_HASTE : 1)
     if (attack.kind === 'heal' || attack.kind === 'aura') {
-      this.attackCooldown = this.def.attackMs / (this.frenzy * frenzied)
+      this.attackCooldown = this.def.attackMs / haste
       this.onHealPulse?.(this)
       return
     }
 
-    this.attackCooldown = this.def.attackMs / (this.frenzy * frenzied)
+    this.attackCooldown = this.def.attackMs / haste
     this.swing = 1
 
     if (attack.kind === 'projectile' && attack.burst) {
@@ -1454,7 +1705,7 @@ export default class Unit implements Damageable {
     }
 
     // Facing: flip the whole container.
-    this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
+    this.container.setScale(this.scaleFactor * this.facing, this.scaleFactor)
     this.updateGroundRide(dtMs)
     this.container.setPosition(this.x, this.y + this.stageY - this.visualLift)
     this.container.setRotation(this.visualTilt * this.dir)
@@ -1717,7 +1968,7 @@ export default class Unit implements Damageable {
     const R = RES
     const height = this.def.height
 
-    this.container.setScale(this.scaleFactor * this.dir, this.scaleFactor)
+    this.container.setScale(this.scaleFactor * this.facing, this.scaleFactor)
     // A soldier stands on whatever the war has made of the ground: up on the
     // mounds, down into the craters. Purely visual — ballistics and reach stay
     // on the flat sim line, so the balance measurements keep their meaning.
