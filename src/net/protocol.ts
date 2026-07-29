@@ -30,9 +30,12 @@ import type { Faction, ReserveMode } from '../sim/types'
  * fortress can work its guns. v27 turns Bone Harvest into bodies — five
  * gatherers per side walking a fetch-and-carry loop that puts gold on the
  * board — replaces Pack Tactics with Death Throes, and slows Bonepickers to a
- * visible three-second stoop. All three move the fingerprint.
+ * visible three-second stoop. All three move the fingerprint. v28 is the
+ * three spoils: every death now leaves meat, skulls or bone on the ground
+ * according to HOW it died, each with its own decay clock, and the carnage
+ * gatherers carry them home for gold, research and free soldiers.
  */
-export const PROTOCOL_VERSION = 27
+export const PROTOCOL_VERSION = 28
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

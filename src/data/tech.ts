@@ -82,7 +82,10 @@ export interface TechNode {
    *
    * Keep a new node inside its creed's channel. If a ring outgrows its channel,
    * widen that channel and shift the ones below it — do not borrow a row from
-   * the neighbour.
+   * the neighbour. Carnage's channel was widened to rows 0-3 for the Skull
+   * Tithe and the Bone Levy; the two nodes that were squatting on row 3
+   * (`plate_lines`, `grand_forge`) moved into their own creeds' channels,
+   * where they should have been.
    */
   row: number
   /** Earliest age this can be researched. */
@@ -865,6 +868,30 @@ export const TECHS: TechNode[] = [
       'Shooters open their ranks and let the fighters through. Your melee units walk past friendly ranged troops who have halted to fire, instead of queueing behind them.'
   },
   {
+    id: 'skull_tithe',
+    name: 'The Skull Tithe',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 4,
+    row: 3,
+    age: 2,
+    cost: 1800,
+    requires: ['bone_harvest'],
+    effect: 'Your gatherers start taking the heads as well, and what they carry home is read rather than sold. Skulls come off bodies killed CLEANLY — a spear, a bolt, a beam. Clubs leave nothing to tithe.'
+  },
+  {
+    id: 'bone_levy',
+    name: 'The Bone Levy',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 5,
+    row: 3,
+    age: 3,
+    cost: 2600,
+    requires: ['skull_tithe'],
+    effect: 'Frames carried home are stacked, and four of them stand up as a Boneling and walk out on their own. Bone comes off what you kill cleanly and off what you kill in armour — and unlike meat, bone keeps.'
+  },
+  {
     id: 'death_throes',
     name: 'Death Throes',
     branch: 'carnage',
@@ -1034,14 +1061,14 @@ export const STAT_TECHS: TechNode[] = [
   stat('outriders', 'Outriders', 'core', 4, 12, 3, 1600, ['forced_march'], 'unitSpeed', 1.15, 'Screening elements ahead of the line. Everything moves up faster.'),
 
   // Ring 5 — heavy, late, and priced like it.
-  stat('plate_lines', 'Plate Lines', 'engineering', 5, 3, 3, 2300, ['tempering', 'masonry'], 'toughness', 1.18, 'Standardised plate, produced in quantity for once.'),
+  stat('plate_lines', 'Plate Lines', 'engineering', 5, 19, 3, 2300, ['tempering', 'masonry'], 'toughness', 1.18, 'Standardised plate, produced in quantity for once.'),
   stat('heavy_powder', 'Heavy Powder', 'ordnance', 5, 4, 4, 2600, ['marksmanship', 'shrapnel'], 'unitDamage', 1.12, 'A coarser, angrier mix. Everything you fire hits appreciably harder.'),
   stat('citadel', 'Citadel', 'engineering', 5, 12, 4, 2700, ['masonry'], 'baseHp', 1.3, 'The fortress is now the strongest thing on the field by a distance.'),
   stat('logistics', 'War Logistics', 'core', 5, 13, 4, 2600, ['deep_stores', 'levy'], 'income', 1.25, 'The whole apparatus behind the line finally works.'),
   stat('zeal', 'Zeal', 'occult', 5, 14, 4, 2500, ['war_drums', 'tribute'], 'abilityRate', 1.3, 'They want to use it. Your ability charges faster again.'),
 
   // Ring 6 — the last stat nodes, alongside the deep behaviours.
-  stat('grand_forge', 'Grand Forge', 'core', 6, 3, 4, 3400, ['heavy_powder', 'honed_edges'], 'unitDamage', 1.12, 'Everything your army carries is made in one place now, and made well.'),
+  stat('grand_forge', 'Grand Forge', 'core', 6, 14, 4, 3400, ['heavy_powder', 'honed_edges'], 'unitDamage', 1.12, 'Everything your army carries is made in one place now, and made well.'),
   stat('grand_armoury', 'Grand Armoury', 'core', 6, 4, 4, 3400, ['plate_lines', 'tempering'], 'unitHp', 1.22, 'Full kit, issued to everyone, replaced when it fails.'),
   stat('war_economy', 'War Economy', 'core', 6, 12, 4, 3600, ['logistics', 'citadel'], 'income', 1.3, 'Nothing is produced that is not for this. Income one last time.'),
   stat('total_mobilisation', 'Total Mobilisation', 'core', 6, 13, 4, 3600, ['logistics', 'outriders'], 'buildSpeed', 1.28, 'Everyone who can hold something is holding something.')

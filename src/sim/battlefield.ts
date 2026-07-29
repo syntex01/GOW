@@ -19,6 +19,8 @@ import type { TurretDef, UnitDef, WeaponVisual } from '../data/types'
 import { TECHS_BY_ID, TECH_ORDER, type TechId } from '../data/tech'
 import { FACTION_UNITS, type FactionId } from '../data/factions'
 import {
+  BONELING_DEF,
+  BONE_PER_SKELETON,
   GATHERER_BAG,
   GATHERER_DEF,
   GATHERER_FLEE_MS,
@@ -28,8 +30,19 @@ import {
   GATHERER_REACH,
   GATHERER_RESPAWN_MS,
   GATHERER_SEARCH_MS,
-  GATHERER_SWEEP
+  GATHERER_SWEEP,
+  SKULL_RESEARCH,
+  SPOILS,
+  SPOIL_COLOR,
+  SPOIL_TECH,
+  SPOIL_TEXTURE,
+  SPOIL_TTL,
+  emptySack,
+  spoilsOf,
+  type Sack,
+  type Spoil
 } from '../data/harvest'
+import { AGE_POWER_SCALE } from '../data/units'
 import { TURRETS_BY_ID } from '../data/turrets'
 import { ensureUnitArt } from '../gfx/textureFactory'
 import type Vfx from '../gfx/vfx'
@@ -95,8 +108,10 @@ interface Bonewright {
   lane: number
   /** Milliseconds until another one shuffles out of the yard. */
   respawnMs: number
-  /** Pieces in the sack. */
-  carried: number
+  /** What is in the sack, by kind. */
+  carried: Sack
+  /** Total pieces in the sack — the sack is full at GATHERER_BAG. */
+  load: number
   /** How long it has been crouched over the current piece. */
   searchMs: number
   /** Struck: how much longer it runs for home rather than working. */
@@ -487,6 +502,8 @@ export default class Battlefield {
    * slot is what counts the twenty-odd seconds before another one shuffles out.
    */
   private wrights: Record<Faction, Bonewright[]> = { player: [], enemy: [] }
+  /** Frames carried home and not yet stood up. Four make a Boneling. */
+  private boneBank: Record<Faction, number> = { player: 0, enemy: 0 }
   /**
    * How long the remains stay worthless after a Bone Kiln comes down. Losing a
    * doctrine building has to be felt, not merely noted — for half a minute the
@@ -686,6 +703,10 @@ export default class Battlefield {
     const reach = unit.def.height * 0.7
     for (const body of this.physics.bodies) {
       if (!body.settled || body.kind !== 'gib' || body.dead) continue
+      // Meat and offal only. A soldier cannot eat a skull, and a skull is the
+      // Tithe's alone — otherwise a wounded front line would quietly devour the
+      // research economy standing behind it.
+      if (body.spoil === 'skull' || body.spoil === 'bone') continue
       if (Math.abs(body.x - unit.x) > reach) continue
       body.dead = true
       unit.heal(unit.maxHp * 0.18 + 24)
@@ -731,8 +752,13 @@ export default class Battlefield {
     const slots = this.wrights[faction]
     // One slot per file, raised the first time the harvest runs.
     while (slots.length < LANE_COUNT) {
-      slots.push({ unit: null, lane: slots.length, respawnMs: 0, carried: 0, searchMs: 0, fleeMs: 0, lastHp: 0, quarry: null })
+      slots.push({ unit: null, lane: slots.length, respawnMs: 0, carried: emptySack(), load: 0, searchMs: 0, fleeMs: 0, lastHp: 0, quarry: null })
     }
+    // Which spoils this commander has learned to pick up. Meat in the second
+    // age, skulls in the third, frames in the fourth — the creed's economy
+    // widens with it rather than merely getting bigger.
+    const army = this.armyFor(faction)
+    const wants = SPOILS.filter(s => army.hasTech(SPOIL_TECH[s]))
     const base = this.baseFor(faction)
     const dir = ADVANCE_DIR[faction]
     const home = base.x + dir * (base.radius + GATHERER_HOME_PAD)
@@ -743,7 +769,8 @@ export default class Battlefield {
         // Whatever was in the sack is lost with the body.
         if (slot.unit) {
           slot.unit = null
-          slot.carried = 0
+          slot.carried = emptySack()
+          slot.load = 0
           slot.quarry = null
           slot.respawnMs = GATHERER_RESPAWN_MS
         }
@@ -753,7 +780,8 @@ export default class Battlefield {
           born.errandX = home
           slot.unit = born
           slot.lastHp = born.hp
-          slot.carried = 0
+          slot.carried = emptySack()
+          slot.load = 0
           slot.searchMs = 0
           slot.fleeMs = 0
           slot.quarry = null
@@ -773,10 +801,10 @@ export default class Battlefield {
       if (slot.fleeMs > 0) slot.fleeMs -= dtMs
 
       // Full sack, frightened, or nothing left worth walking to — go home.
-      const goHome = slot.fleeMs > 0 || slot.carried >= GATHERER_BAG
+      const goHome = slot.fleeMs > 0 || slot.load >= GATHERER_BAG
       if (!goHome) {
         if (slot.quarry && (slot.quarry.dead || !slot.quarry.settled)) slot.quarry = null
-        if (!slot.quarry) slot.quarry = this.findRemains(faction, wright.x, slot.carried > 0 ? GATHERER_SWEEP : GATHERER_RANGE)
+        if (!slot.quarry) slot.quarry = this.findRemains(faction, wright.x, slot.load > 0 ? GATHERER_SWEEP : GATHERER_RANGE, wants)
       }
 
       if (goHome || !slot.quarry) {
@@ -796,10 +824,55 @@ export default class Battlefield {
       slot.searchMs += dtMs
       if (slot.searchMs < GATHERER_SEARCH_MS) continue
       slot.searchMs = 0
+      const kind = slot.quarry.spoil ?? 'meat'
       slot.quarry.dead = true
-      slot.carried += 1
-      this.vfx.impact(slot.quarry.x, slot.quarry.y - 6, 0x8fd6a4, 0.7, true)
+      slot.carried[kind] += 1
+      slot.load += 1
+      this.vfx.impact(slot.quarry.x, slot.quarry.y - 6, SPOIL_COLOR[kind], 0.7, kind === 'meat')
       slot.quarry = null
+    }
+  }
+
+  /**
+   * WHAT A BODY LEAVES BEHIND.
+   *
+   * Not a fixed drop: the spoils are decided by how the soldier died, which is
+   * decided by what you chose to kill it with. Spears and beams leave skulls
+   * and frames, blades and clubs leave meat, and a shell leaves a stain. So a
+   * carnage commander picks their economy out of the same decision they were
+   * already making about the counter web — and picks it again every time the
+   * matchup forces a different weapon into their hand.
+   *
+   * The pieces land where the body did, on somebody's half, and start rotting
+   * immediately. Existing is not the same as harvested.
+   */
+  private dropSpoils(unit: Unit, damage: DamageType, overkillFrac: number): void {
+    const kind = unit.def.visual.kind
+    const mechanical = kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
+    const sack = spoilsOf(damage, unit.def.armor, unit.def.height, overkillFrac, mechanical)
+    const ground = this.groundLineFor(unit.lane)
+    for (const spoil of SPOILS) {
+      for (let i = 0; i < sack[spoil]; i += 1) {
+        this.physics.spawn(
+          'gib',
+          unit.x + this.rng.spread(unit.def.height * 0.3),
+          unit.centerY,
+          this.rng.spread(150),
+          -this.rng.range(40, 190),
+          {
+            spoil,
+            ttl: SPOIL_TTL[spoil],
+            texture: SPOIL_TEXTURE[spoil],
+            color: SPOIL_COLOR[spoil],
+            size: spoil === 'skull' ? 0.9 : 1,
+            spin: this.rng.spread(7),
+            // Only meat trails. A skull rolling across a field is not bleeding.
+            bleed: spoil === 'meat' ? 900 : 0,
+            faction: unit.faction,
+            floor: ground
+          }
+        )
+      }
     }
   }
 
@@ -809,11 +882,15 @@ export default class Battlefield {
    * half ownership follows the live midfield, so ground you have lost stops
    * being worth sending anyone to.
    */
-  private findRemains(faction: Faction, fromX: number, radius: number): Body | null {
+  private findRemains(faction: Faction, fromX: number, radius: number, wants: Spoil[]): Body | null {
+    if (wants.length === 0) return null
     let best: Body | null = null
     let bestD = radius
     for (const body of this.physics.bodies) {
       if (body.dead || !body.settled || body.kind !== 'gib') continue
+      // Torn-off limbs are scenery. A gatherer only walks to a spoil, and only
+      // to one this commander has learned to do something with.
+      if (!body.spoil || !wants.includes(body.spoil)) continue
       if (this.halfOwner(body.x) !== faction) continue
       const d = Math.abs(body.x - fromX)
       if (d >= bestD) continue
@@ -830,21 +907,63 @@ export default class Battlefield {
    */
   private deliverSack(faction: Faction, slot: Bonewright, wright: Unit): void {
     slot.fleeMs = 0
-    if (slot.carried <= 0) return
+    if (slot.load <= 0) return
     const army = this.armyFor(faction)
+    const sack = slot.carried
+    slot.carried = emptySack()
+    slot.load = 0
     // Burn the Kiln and the harvest stops paying at all for half a minute: the
     // cost of a doctrine building is that losing it turns the rule off loudly.
-    if (this.kilnShock[faction] > 0) {
-      slot.carried = 0
-      return
-    }
+    if (this.kilnShock[faction] > 0) return
+
     const kiln = this.hasBuilding(faction, 'bone_kiln') ? 2 : 1
+    // Gold and research both have to keep pace with the age or a node taken in
+    // the second age is decoration by the fifth. Frames do not — a body is a
+    // body, and the Levy's ceiling is meant to be how much you can carry.
     const ageScale = ageDef(army.age).income / AGES[1].income
-    const paid = Math.round(slot.carried * GATHERER_PER_PIECE * kiln * ageScale)
-    slot.carried = 0
-    army.gold += paid
-    this.statsFor(faction).goldEarned += paid
-    this.vfx.damageNumber(wright.x, wright.centerY - 20, paid, 0xf2c14e)
+
+    if (sack.meat > 0) {
+      const paid = Math.round(sack.meat * GATHERER_PER_PIECE * kiln * ageScale)
+      army.gold += paid
+      this.statsFor(faction).goldEarned += paid
+      this.vfx.damageNumber(wright.x, wright.centerY - 20, paid, 0xf2c14e)
+    }
+    if (sack.skull > 0) {
+      const learned = Math.round(sack.skull * SKULL_RESEARCH * kiln * ageScale)
+      army.research += learned
+      army.researchEarned += learned
+      this.vfx.floatingLabel(wright.x, wright.centerY - 34, `+${learned} rp`, '#9fd8ff')
+    }
+    if (sack.bone > 0) {
+      this.boneBank[faction] += sack.bone
+      this.vfx.floatingLabel(wright.x, wright.centerY - 48, `+${sack.bone} bone`, '#e6dfc4')
+      while (this.boneBank[faction] >= BONE_PER_SKELETON) {
+        this.boneBank[faction] -= BONE_PER_SKELETON
+        this.raiseBoneling(faction, wright.lane)
+      }
+    }
+  }
+
+  /**
+   * Four frames, stood up and pointed at the enemy.
+   *
+   * Scaled off the same per-age power curve every other soldier rides, so a
+   * levy raised in the last age is chaff for THAT age rather than a stone-age
+   * relic walking into a laser battery.
+   */
+  private raiseBoneling(faction: Faction, lane: number): void {
+    const army = this.armyFor(faction)
+    const k = AGE_POWER_SCALE[Math.max(0, Math.min(AGE_POWER_SCALE.length - 1, army.age))]
+    const def: UnitDef = {
+      ...BONELING_DEF,
+      id: `${BONELING_DEF.id}@${army.age}`,
+      age: army.age,
+      hp: Math.round(BONELING_DEF.hp * k),
+      damage: Math.round(BONELING_DEF.damage * k)
+    }
+    const risen = this.spawnUnit(faction, def, undefined, lane)
+    risen.risen = true
+    this.vfx.impact(risen.x, risen.centerY, 0xe6dfc4, 1.2, false)
   }
 
   /** Demolition charges. The body was armed, and whatever killed it is close. */
@@ -1059,6 +1178,10 @@ export default class Battlefield {
     const mine: Body[] = []
     for (const b of this.physics.bodies) {
       if (!b.settled || b.dead || b.kind !== 'gib') continue
+      // A skull belongs to the Tithe. Everything else on the ground is fair
+      // game for the raising — including frames, which is a real competition
+      // between Necropolis and the Bone Levy and is meant to be one.
+      if (b.spoil === 'skull') continue
       if (faction === 'player' ? b.x >= half : b.x < half) continue
       mine.push(b)
     }
@@ -1454,8 +1577,9 @@ export default class Battlefield {
     // long each one has been crouched over its piece. All of it decides when
     // gold arrives, and gold decides what gets built.
     for (const faction of ['player', 'enemy'] as Faction[]) {
+      mix(this.boneBank[faction])
       for (const slot of this.wrights[faction]) {
-        mix(slot.carried)
+        mix(slot.carried.meat * 100 + slot.carried.skull * 10 + slot.carried.bone)
         mix(Math.round(slot.searchMs))
         mix(Math.round(slot.respawnMs))
         mix(Math.round(slot.fleeMs))
@@ -3994,7 +4118,14 @@ export default class Battlefield {
     // whether or not it came apart.
     // A dead gatherer is not fuel. Counting it would make the harvest feed the
     // Charnel Yard and the Ossuary off its own losses, in a loop.
-    if (!unit.def.noncombat) this.corpsePile[this.halfOwner(unit.x)] += 1
+    if (!unit.def.noncombat) {
+      this.corpsePile[this.halfOwner(unit.x)] += 1
+      // What this body leaves on the ground, decided by how it died. Dropped
+      // for BOTH sides to walk to — the spoils belong to whoever's half they
+      // land on, so killing deep in your own yard feeds the enemy's harvest
+      // and killing in theirs feeds yours.
+      this.dropSpoils(unit, unit.lastDamageType, unit.lastOverkill)
+    }
     // Release the outpost's standing count, so a seat whose three soldiers are
     // killed starts sending again rather than going quiet for the rest of the
     // match.

@@ -69,6 +69,14 @@ export interface Body {
   size: number
   /** Set when the body has been consumed and should be reaped. */
   dead: boolean
+  /**
+   * What a carnage gatherer would call this: meat, a skull, or a frame.
+   *
+   * Only set on the pieces a death deliberately leaves behind — the rig parts
+   * thrown by a dismemberment are scenery and terrain, not spoils, and a
+   * Bonewright walks past them. See `data/harvest.ts`.
+   */
+  spoil?: 'meat' | 'skull' | 'bone'
   /** Frames a shrapnel body must wait before it can hit anything. */
   armTime: number
   /**
@@ -409,6 +417,10 @@ export default class PhysicsWorld {
       mix(Math.round(b.x))
       mix(Math.round(b.y))
       mix(b.settled ? 1 : 0)
+      // A spoil is worth gold, research or a soldier, and it expires. Both what
+      // it is and how long it has left decide what an army can afford.
+      mix(b.spoil === 'meat' ? 1 : b.spoil === 'skull' ? 2 : b.spoil === 'bone' ? 3 : 0)
+      mix(b.ttl === Infinity ? -1 : Math.round(b.ttl / 100))
     }
     return h >>> 0
   }

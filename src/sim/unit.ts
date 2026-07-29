@@ -283,6 +283,21 @@ export default class Unit implements Damageable {
   private lastHitDir = 0
 
   /**
+   * The killing blow, for whoever has to clean up afterwards.
+   *
+   * The spoils a body leaves are decided by how it died — a spear leaves a
+   * skull, a club leaves meat, a shell leaves a stain — so the death handler
+   * needs both of these, and neither is otherwise readable from outside.
+   */
+  get lastDamageType(): DamageType {
+    return this.lastHitType
+  }
+
+  get lastOverkill(): number {
+    return this.overkillFrac
+  }
+
+  /**
    * Death Throes. Milliseconds this body has left on its feet after dying.
    *
    * While this is running the soldier is `alive` in every sense the rest of the

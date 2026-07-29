@@ -608,7 +608,41 @@ export function drawParticles(): Record<string, Canvas2D> {
   rainP.fill(0, 0, 1, 11, 0xffffff)
   rainP.fill(1, 2, 1, 9, 0xffffff)
 
+  // ── The three spoils ──
+  //
+  // Drawn as white masks and tinted at spawn, like every other particle here.
+  // What matters is that the three are distinguishable at a glance from across
+  // the field, because a carnage commander reads their half of the board by
+  // what is lying on it: wet lumps are money, skulls are research, bone is
+  // conscription.
+
+  // Meat: a lopsided lump. Deliberately not round — a circle reads as a pebble.
+  const meatP = new Pix(9, 7)
+  meatP.poly([[1, 3], [3, 0], [7, 1], [8, 4], [6, 6], [2, 6]], 0xffffff)
+
+  // A skull, small enough to read at four pixels of cranium: dome, two empty
+  // sockets punched back out, and a jaw narrower than the head.
+  const skullP = new Pix(9, 9)
+  skullP.ellipse(4, 3.5, 4, 3.6, 0xffffff)
+  skullP.fill(2, 6, 5, 2, 0xffffff)
+  skullP.fill(2, 3, 2, 2, 0, 0)
+  skullP.fill(5, 3, 2, 2, 0, 0)
+  skullP.set(4, 5, 0, 0)
+  skullP.set(3, 8, 0, 0)
+  skullP.set(5, 8, 0, 0)
+
+  // A femur: a shaft with a knob on each end, drawn lying down.
+  const boneP = new Pix(15, 6)
+  boneP.fill(3, 2, 9, 2, 0xffffff)
+  boneP.ellipse(2, 1.5, 2, 1.5, 0xffffff)
+  boneP.ellipse(2, 4, 2, 1.5, 0xffffff)
+  boneP.ellipse(12.5, 1.5, 2, 1.5, 0xffffff)
+  boneP.ellipse(12.5, 4, 2, 1.5, 0xffffff)
+
   return {
+    meat: doneChunky(meatP),
+    skull: doneChunky(skullP),
+    bone: doneChunky(boneP),
     soft: doneChunky(softP),
     spark: doneChunky(sparkP),
     smoke: doneChunky(smokeP),

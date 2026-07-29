@@ -21,7 +21,9 @@ export const TECH_MECHANICS: Record<TechId, string> = {
   // ── carnage ──
   butchery: 'Every kill dismembers — maximum usable remains for walls, pickers and the harvest. Side effect: your dead are too torn apart for Mind Thrall to puppet.',
   bonepickers: 'A wounded soldier (below 92% hp) stoops over a nearby corpse piece every 3s and eats it, healing 6% of max hp + 8. Visible: it bends down, and the piece bursts. Consumes the remains.',
-  bone_harvest: 'Raises five Bonewrights, one per lane, who walk out, fill a sack with up to 3 corpse pieces and carry it home for 12 gold a piece. 70 hp, no attack, flees when struck, 22s to come back.',
+  bone_harvest: 'Raises five Bonewrights, one per lane, who walk out, sack up to 3 spoils and carry them home. MEAT pays 12 gold each. 70 hp, no attack, flees when struck, 22s to come back. Meat rots in 26s — what you cannot reach, you do not get.',
+  skull_tithe: 'Bonewrights now also carry SKULLS, worth 9 research each. Skulls come off clean kills — pierce, energy — and never off blunt or explosive. They keep for 45s.',
+  bone_levy: 'Bonewrights now also carry BONE, and every 4 delivered stand up as a free Boneling. Bone comes off pierce and energy kills and off heavy armour, and keeps for 80s.',
   bloodlust: 'Blood-soaked ground grants up to +45% attack and move speed. Gore builds where things die messily.',
   flenser_rite: 'Unlocks the Flenser.',
   plague_wind: 'Every enemy you kill leaves a plague cloud: 70px, 26 damage/s, for 6s, in that lane.',
