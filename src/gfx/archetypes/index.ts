@@ -2,6 +2,7 @@ import type { UnitVisual } from '../../data/types'
 import { footmanArchetype } from './footman'
 import { flyerArchetype, vehicleArchetype, walkerArchetype } from './machine'
 import { carnageFootArchetype } from './carnageFoot'
+import { carnageHorrorArchetype } from './carnageHorror'
 import { beastArchetype, riderArchetype } from './rider'
 import type { Archetype, ArchetypeBuild } from './types'
 
@@ -21,6 +22,7 @@ export const ARCHETYPES: Archetype[] = [
   // and this has to be asked first or the footman claims them for being
   // vaguely humanoid.
   carnageFootArchetype,
+  carnageHorrorArchetype,
   // Beast claims a humanoid carrying a beast chassis, so it has to be asked
   // before the footman, which would otherwise swallow it.
   beastArchetype,

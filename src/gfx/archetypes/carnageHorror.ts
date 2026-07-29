@@ -1,0 +1,960 @@
+import type { UnitVisual } from '../../data/types'
+import type { Canvas2D } from '../painter'
+import Pix, { RES, pixelNoise } from '../pixel'
+import { bone, validateSkeleton, type Clip, type Skeleton } from '../rig'
+import {
+  blemish,
+  boneSpur,
+  claw,
+  eyeCluster,
+  fleshKit,
+  fleshMass,
+  maw,
+  pustule,
+  ribCage,
+  rimFlesh,
+  spine,
+  suture,
+  viscera,
+  wet,
+  wingMembrane,
+  type FleshKit
+} from '../flesh'
+import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
+
+/**
+ * THE CARNAGE HORRORS — the bodies that are not bipeds at all.
+ *
+ * The bipeds in `carnageFoot.ts` are still recognisably built from a person.
+ * These are not. Each one is a different answer to "what if you stopped
+ * pretending a soldier has to have a head at one end and legs at the other":
+ *
+ *   MONSTRUM   a mass on many small legs, mouth on top, that grows as it eats
+ *   MAW        almost entirely jaws, with a body as an afterthought behind them
+ *   FLESHWALL  architecture. No legs. It breathes and it inches
+ *   RIPJAW     a quadruped built to leave the ground
+ *   WAGON      a cart of viscera, hauled by things in harness
+ *   WIDOW      a ribcage that learned to fly
+ *
+ * They share the flesh vocabulary and nothing else — no common skeleton, no
+ * shared clip, and in three cases no legs in the usual sense. What holds them
+ * together as one army is the material, which is the right thing to share.
+ */
+
+export type HorrorPlan = 'monstrum' | 'maw' | 'fleshwall' | 'ripjaw' | 'wagon' | 'widow'
+
+const art = (fraction: number, height: number): number => Math.max(1, Math.round(fraction * height * RES))
+
+function pad(w: number, h: number): Pix {
+  return new Pix(Math.max(2, Math.round(w) + 4), Math.max(2, Math.round(h) + 4))
+}
+
+function finish(p: Pix, k: FleshKit, seed: number, sheen = 1): Canvas2D {
+  wet(p, seed, sheen)
+  blemish(p, k, seed)
+  rimFlesh(p, k)
+  return p.toCanvas() as Canvas2D
+}
+
+/** A soft segment with no outline — for anything inside a silhouette. */
+function softLimb(len: number, thick: number, k: FleshKit, seed: number, ramp = k.hide): PartArt {
+  const draw = Math.round(len * 1.2)
+  const p = pad(thick * 2.2, draw)
+  const cx = p.w / 2
+  const noise = pixelNoise(seed * 977 + 5)
+  for (let i = 0; i < draw; i += 1) {
+    const t = i / Math.max(1, draw - 1)
+    const wid = Math.max(1, Math.round(thick * (1.05 - t * 0.5) * (0.94 + noise(i, 3) * 0.14)))
+    for (let o = 0; o < wid; o += 1) {
+      const s = wid <= 1 ? 0.6 : o / (wid - 1)
+      const shade = s < 0.14 ? 0 : s < 0.34 ? 1 : s < 0.68 ? 2 : s < 0.88 ? 3 : 2
+      p.set(Math.round(cx - wid / 2 + o), 2 + i, ramp[shade])
+    }
+  }
+  p.ellipse(cx, 3, thick * 0.5, thick * 0.42, k.bone[2])
+  return { canvas: p.toCanvas() as Canvas2D, origin: [cx / p.w, 2 / p.h] }
+}
+
+// ──────────────────────────────── MONSTRUM ────────────────────────────────
+
+/**
+ * THE MONSTRUM — a stomach that grew legs.
+ *
+ * Its whole silhouette is one enormous sagging mass with a feeding mouth on TOP
+ * of it, carried on six small mismatched legs that are far too short for what
+ * they are holding up. The read is meant to be "that should not be able to
+ * move", and then it does, in a centipede ripple where the legs fire in a wave
+ * along the body instead of alternating in pairs.
+ *
+ * It eats and it KEEPS what it eats, so the mass is drawn with growth rings and
+ * half-digested things pressing out from inside it.
+ */
+function monstrumBody(height: number, k: FleshKit): PartArt {
+  const w = art(0.86, height)
+  const h = art(0.56, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  const cy = p.h * 0.56
+  // A sagging bag, wider at the bottom than the top — it is full.
+  fleshMass(p, cx, cy, w * 0.48, h * 0.44, k.hide, 3, 7)
+  fleshMass(p, cx - w * 0.1, cy + h * 0.16, w * 0.4, h * 0.3, k.fat, 5, 5)
+  // Growth rings: seams where it has swollen past its own skin.
+  for (let i = 0; i < 4; i += 1) {
+    const t = 0.24 + i * 0.16
+    suture(p, cx - w * 0.4, cy - h * 0.3 + h * t * 0.8, cx + w * 0.38, cy - h * 0.24 + h * t * 0.8, k)
+  }
+  // Things pressing out from inside: a hand, a ribcage, a face.
+  ribCage(p, cx + w * 0.16, cy - h * 0.16, w * 0.24, h * 0.26, k, 3, 1)
+  for (let i = 0; i < 5; i += 1) {
+    pustule(p, cx - w * 0.34 + i * w * 0.14, cy + h * 0.26 + (i % 2) * 4, 2.4 + (i % 3), k)
+  }
+  boneSpur(p, cx - w * 0.42, cy - h * 0.1, art(0.09, height), -2.5, k)
+  boneSpur(p, cx + w * 0.44, cy, art(0.07, height), -0.6, k)
+  // THE FEEDING MOUTH, on the top surface where a back should be.
+  maw(p, cx + w * 0.04, cy - h * 0.38, w * 0.2, h * 0.13, k, 11, 9)
+  eyeCluster(p, cx + w * 0.3, cy - h * 0.3, w * 0.08, k, 5, 13)
+  viscera(p, cx - w * 0.2, cy + h * 0.42, art(0.1, height), k, 17)
+  viscera(p, cx + w * 0.22, cy + h * 0.4, art(0.08, height), k, 19)
+  return { canvas: finish(p, k, 3), origin: [cx / p.w, (cy + h * 0.44) / p.h] }
+}
+
+const MONSTRUM_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.2, depth: 30 }),
+    bone('body', 'root', { angle: -Math.PI / 2, length: 0.3, part: 'body', orient: 'up', depth: 31, weights: { breathe: 1, lean: 0.6 } })
+  ]
+  // SIX LEGS, front to back, each on its own beat. Three per side, mismatched
+  // lengths so the wave never looks like a machine.
+  const at = [-0.3, -0.12, 0.06, 0.24, 0.4, -0.42]
+  at.forEach((x, i) => {
+    const back = i % 2 === 1
+    s.push(bone(`hip${i}`, 'root', { x, y: back ? -0.02 : 0.02, angle: Math.PI / 2, depth: back ? 8 : 44 }))
+    s.push(bone(`thigh${i}`, `hip${i}`, { length: 0.11 + (i % 3) * 0.012, part: `thigh${i}`, depth: back ? 8 : 44 }))
+    s.push(bone(`shin${i}`, `thigh${i}`, { angle: 0.5, length: 0.1, part: `shin${i}`, depth: back ? 9 : 45 }))
+    s.push(bone(`foot${i}`, `shin${i}`, { angle: -0.5, part: `foot${i}`, depth: back ? 10 : 46 }))
+  })
+  validateSkeleton(s, 'monstrum')
+  return s
+}
+
+/** The ripple: each leg fires a sixth of a cycle after the one in front. */
+function rippleWalk(legs: number, duration: number): Clip {
+  const keys = []
+  const steps = 6
+  for (let s = 0; s < steps; s += 1) {
+    const pose: Record<string, { angle?: number; y?: number }> = {
+      body: { angle: Math.sin((s / steps) * Math.PI * 2) * 0.05 },
+      root: { y: Math.abs(Math.sin((s / steps) * Math.PI * 2)) * -0.008 }
+    }
+    for (let i = 0; i < legs; i += 1) {
+      // Phase offset per leg: the wave travels along the body.
+      const ph = ((s / steps) - i / legs + 1) % 1
+      pose[`thigh${i}`] = { angle: Math.sin(ph * Math.PI * 2) * 0.5 }
+      pose[`shin${i}`] = { angle: 0.4 + Math.max(0, Math.cos(ph * Math.PI * 2)) * 0.6 }
+    }
+    keys.push({ t: s / steps, pose })
+  }
+  return { name: 'walk', duration, loop: true, ease: 'sine', keys }
+}
+
+/** It does not swing anything. It falls on you and the mouth does the work. */
+const MONSTRUM_ATTACK: Clip = {
+  name: 'attack',
+  duration: 900,
+  loop: false,
+  ease: 'quad',
+  keys: [
+    { t: 0, pose: { body: { angle: 0 }, root: { y: 0 } } },
+    // It rears — the whole mass lifts off the front legs.
+    { t: 0.3, pose: { body: { angle: -0.3, stretch: 1.08 }, root: { y: -0.05 }, thigh0: { angle: -0.7 }, thigh2: { angle: -0.5 } }, ease: 'cubic' },
+    // And drops. Hard cut.
+    { t: 0.46, pose: { body: { angle: 0.34, stretch: 0.94 }, root: { y: 0.03 }, thigh0: { angle: 0.6 }, thigh2: { angle: 0.4 } }, ease: 'hold' },
+    { t: 0.7, pose: { body: { angle: 0.16, stretch: 1.02 }, root: { y: 0 } }, ease: 'back' },
+    { t: 1, pose: { body: { angle: 0 }, root: { y: 0 } } }
+  ]
+}
+
+/** Idle: it is digesting. The mass swells and settles, the legs shuffle. */
+const MONSTRUM_IDLE: Clip = {
+  name: 'idle',
+  duration: 3800,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { body: { stretch: 1 }, root: { y: 0 } } },
+    { t: 0.45, pose: { body: { stretch: 1.05 }, root: { y: -0.008 } } },
+    { t: 0.7, pose: { body: { stretch: 0.98 }, root: { y: 0.004 } } }
+  ]
+}
+
+function monstrumParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const parts: Record<string, PartArt> = { body: monstrumBody(height, k) }
+  for (let i = 0; i < 6; i += 1) {
+    const back = i % 2 === 1
+    const r = back ? k.necrotic : k.hide
+    parts[`thigh${i}`] = softLimb(art(0.11, height), art(0.045, height), k, 20 + i, r)
+    parts[`shin${i}`] = softLimb(art(0.1, height), art(0.035, height), k, 30 + i, r)
+    parts[`foot${i}`] = hoofPart(art(0.035, height), k, 40 + i)
+  }
+  return parts
+}
+
+function hoofPart(size: number, k: FleshKit, seed: number): PartArt {
+  const p = pad(size * 3, size * 2)
+  const cx = p.w / 2
+  p.ellipse(cx, 3, size * 0.8, size * 0.6, k.hide[1])
+  claw(p, cx, 3, size * 1.3, k)
+  blemish(p, k, seed, 0.02)
+  return { canvas: p.toCanvas() as Canvas2D, origin: [cx / p.w, 2 / p.h] }
+}
+
+// ─────────────────────────────────── MAW ───────────────────────────────────
+
+/**
+ * THE GREAT MAW — a mouth that grew a body to carry it.
+ *
+ * Two enormous mandibles hinged at the front, taking up two thirds of the
+ * silhouette, with a stunted torso behind them and two legs underneath doing
+ * their best. The attack is a LUNGE-BITE: the jaws snap forward PAST the body,
+ * which is only possible because they are rigged ahead of the root rather than
+ * on a head at the end of a neck.
+ */
+function mawJaw(height: number, k: FleshKit, upper: boolean): PartArt {
+  const len = art(0.44, height)
+  const h = art(0.16, height)
+  const p = pad(len, h)
+  const cy = upper ? p.h - 3 : 3
+  // A tapering blade of jaw, thicker at the hinge.
+  for (let i = 0; i < len; i += 1) {
+    const t = i / len
+    const th = Math.max(2, Math.round(h * (0.9 - t * 0.55)))
+    for (let o = 0; o < th; o += 1) {
+      const y = upper ? cy - o : cy + o
+      const s = o / Math.max(1, th - 1)
+      p.set(2 + i, y, k.hide[s < 0.2 ? 1 : s > 0.72 ? 3 : 2])
+    }
+  }
+  // Teeth along the biting edge, angled back so nothing gets out.
+  for (let i = 3; i < len - 2; i += Math.max(3, Math.round(h * 0.4))) {
+    const t = i / len
+    const tl = Math.max(2, Math.round(h * (0.5 - t * 0.25)))
+    for (let j = 0; j < tl; j += 1) {
+      const y = upper ? cy + j : cy - j
+      p.set(2 + i - Math.round(j * 0.4), y, k.bone[j === 0 ? 2 : 4])
+    }
+  }
+  // Gum line and the hinge knuckle.
+  p.ellipse(3, cy + (upper ? -h * 0.3 : h * 0.3), h * 0.34, h * 0.3, k.necrotic[1])
+  return { canvas: finish(p, k, upper ? 51 : 52, 0.8), origin: [3 / p.w, cy / p.h] }
+}
+
+function mawBody(height: number, k: FleshKit): PartArt {
+  const w = art(0.34, height)
+  const h = art(0.4, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  fleshMass(p, cx, p.h * 0.5, w * 0.44, h * 0.44, k.hide, 61, 5)
+  ribCage(p, cx - w * 0.1, p.h * 0.28, w * 0.4, h * 0.34, k, 3, 1)
+  spine(p, cx - w * 0.3, p.h * 0.2, cx - w * 0.24, p.h * 0.8, k, 7)
+  // A gullet: a second throat behind the jaws, so the bite goes somewhere.
+  maw(p, cx + w * 0.26, p.h * 0.42, w * 0.14, h * 0.1, k, 7, 63)
+  viscera(p, cx, p.h * 0.86, art(0.09, height), k, 65)
+  return { canvas: finish(p, k, 60), origin: [cx / p.w, (p.h - 2) / p.h] }
+}
+
+const MAW_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.28, depth: 30 }),
+    bone('body', 'root', { angle: -Math.PI / 2 + 0.4, length: 0.26, part: 'body', orient: 'up', depth: 20, weights: { breathe: 1, lean: 0.8 } }),
+    // The jaw hinge sits FORWARD of the body, at the front of the silhouette.
+    bone('hinge', 'body', { x: -0.04, y: 0.12, depth: 50 }),
+    bone('jawUpper', 'hinge', { angle: -0.34, part: 'jawUpper', orient: 'right', depth: 52, weights: { aim: 0.5 } }),
+    bone('jawLower', 'hinge', { angle: 0.4, part: 'jawLower', orient: 'right', depth: 51, weights: { aim: 0.5 } }),
+    bone('hipF', 'root', { x: 0.03, angle: Math.PI / 2, depth: 44 }),
+    bone('thighF', 'hipF', { length: 0.15, part: 'thighF', depth: 44 }),
+    bone('shinF', 'thighF', { angle: 0.55, length: 0.14, part: 'shinF', depth: 45 }),
+    bone('footF', 'shinF', { angle: -0.55, part: 'footF', depth: 46 }),
+    bone('hipB', 'root', { x: -0.04, angle: Math.PI / 2, depth: 8 }),
+    bone('thighB', 'hipB', { length: 0.15, part: 'thighB', depth: 8 }),
+    bone('shinB', 'thighB', { angle: 0.55, length: 0.14, part: 'shinB', depth: 9 }),
+    bone('footB', 'shinB', { angle: -0.55, part: 'footB', depth: 10 })
+  ]
+  validateSkeleton(s, 'maw')
+  return s
+}
+
+/** A heavy two-beat plod, the jaws swinging loose because nothing holds them. */
+const MAW_WALK: Clip = {
+  name: 'walk',
+  duration: 950,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { root: { y: 0.012 }, body: { angle: 0.06 }, thighB: { angle: -0.4 }, shinB: { angle: 0.3 }, thighF: { angle: 0.3 }, shinF: { angle: 0.5 }, jawUpper: { angle: -0.1 }, jawLower: { angle: 0.16 } } },
+    { t: 0.25, pose: { root: { y: -0.016 }, body: { angle: 0 }, thighB: { angle: 0 }, shinB: { angle: 0.7 }, thighF: { angle: 0 }, shinF: { angle: 0.2 }, jawUpper: { angle: 0.08 }, jawLower: { angle: -0.06 } } },
+    { t: 0.5, pose: { root: { y: 0.012 }, body: { angle: 0.06 }, thighB: { angle: 0.3 }, shinB: { angle: 0.5 }, thighF: { angle: -0.4 }, shinF: { angle: 0.3 }, jawUpper: { angle: -0.12 }, jawLower: { angle: 0.18 } } },
+    { t: 0.75, pose: { root: { y: -0.016 }, body: { angle: 0 }, thighB: { angle: 0 }, shinB: { angle: 0.2 }, thighF: { angle: 0 }, shinF: { angle: 0.7 }, jawUpper: { angle: 0.06 }, jawLower: { angle: -0.04 } } }
+  ]
+}
+
+/**
+ * THE LUNGE-BITE. The jaws gape wide, the body throws itself forward, and the
+ * jaws slam shut PAST the front of the body — which is the whole reason they are
+ * hinged forward of the root instead of on a neck.
+ */
+const MAW_ATTACK: Clip = {
+  name: 'attack',
+  duration: 820,
+  loop: false,
+  ease: 'quad',
+  keys: [
+    { t: 0, pose: { jawUpper: { angle: -0.1 }, jawLower: { angle: 0.14 }, body: { angle: 0 }, root: { x: 0 } } },
+    // Gape. Nearly ninety degrees of mouth.
+    { t: 0.3, pose: { jawUpper: { angle: -0.85 }, jawLower: { angle: 0.9 }, body: { angle: -0.2 }, root: { x: -0.03 } }, ease: 'cubic' },
+    // Snap, and the body goes with it.
+    { t: 0.46, pose: { jawUpper: { angle: 0.16 }, jawLower: { angle: -0.14 }, body: { angle: 0.3 }, root: { x: 0.06 } }, ease: 'hold' },
+    // Worry it — a second smaller shake with the mouth shut.
+    { t: 0.62, pose: { jawUpper: { angle: 0.06 }, jawLower: { angle: -0.04 }, body: { angle: 0.14 }, root: { x: 0.04 } } },
+    { t: 0.78, pose: { jawUpper: { angle: 0.18 }, jawLower: { angle: -0.16 }, body: { angle: 0.24 }, root: { x: 0.05 } }, ease: 'hold' },
+    { t: 1, pose: { jawUpper: { angle: -0.1 }, jawLower: { angle: 0.14 }, body: { angle: 0 }, root: { x: 0 } }, ease: 'back' }
+  ]
+}
+
+const MAW_IDLE: Clip = {
+  name: 'idle',
+  duration: 3200,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { jawUpper: { angle: -0.06 }, jawLower: { angle: 0.1 }, body: { angle: 0.02 } } },
+    // It breathes through the mouth, because it has nothing else.
+    { t: 0.5, pose: { jawUpper: { angle: -0.24 }, jawLower: { angle: 0.28 }, body: { angle: 0.06 } } }
+  ]
+}
+
+function mawParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const thick = art(0.06, height)
+  return {
+    body: mawBody(height, k),
+    jawUpper: mawJaw(height, k, true),
+    jawLower: mawJaw(height, k, false),
+    thighF: softLimb(art(0.15, height), thick * 1.4, k, 70),
+    shinF: softLimb(art(0.14, height), thick * 1.1, k, 71),
+    footF: hoofPart(Math.round(thick * 1.4), k, 72),
+    thighB: softLimb(art(0.15, height), thick * 1.3, k, 73, k.necrotic),
+    shinB: softLimb(art(0.14, height), thick, k, 74, k.necrotic),
+    footB: hoofPart(Math.round(thick * 1.3), k, 75)
+  }
+}
+
+// ───────────────────────────────── FLESHWALL ─────────────────────────────────
+
+/**
+ * THE FLESH WALL — architecture, not a soldier.
+ *
+ * No legs at all. It is a slab of fused bodies standing on stubby buttresses of
+ * grown bone, three files wide, with mouths and faces pressed out of its surface
+ * where the seams did not take. Its "walk" is an INCH: the whole mass leans,
+ * the buttresses re-grip, and it arrives a little closer without ever taking a
+ * step. Its idle is a slow breath that swells the entire silhouette, which is
+ * the single most alive thing on the board.
+ */
+function wallSlab(height: number, k: FleshKit): PartArt {
+  const w = art(0.62, height)
+  const h = art(0.9, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  const noise = pixelNoise(8123)
+  // The slab: a wall of fused torsos, drawn as columns so the surface is uneven.
+  for (let x = 0; x < w; x += 1) {
+    const t = x / w
+    const top = 2 + Math.round(h * (0.04 + noise(x, 3) * 0.06))
+    const bot = p.h - 3 - Math.round(h * noise(x, 7) * 0.03)
+    for (let y = top; y < bot; y += 1) {
+      const s = (x / w) * 0.6 + (1 - (y - top) / Math.max(1, bot - top)) * 0.4
+      const ramp = noise(Math.floor(x / 5), Math.floor(y / 7) + 11) > 0.7 ? k.meat : k.hide
+      p.set(x + 2, y, ramp[s < 0.2 ? 1 : s < 0.5 ? 2 : s < 0.8 ? 3 : 2])
+    }
+    void t
+  }
+  // The bodies it is made of: ribcages and faces pressed out of the surface.
+  for (let i = 0; i < 5; i += 1) {
+    const bx = 4 + (i % 3) * w * 0.32 + (i > 2 ? w * 0.16 : 0)
+    const by = p.h * (0.16 + (i % 4) * 0.19)
+    ribCage(p, bx, by, w * 0.22, h * 0.14, k, 3, 1)
+  }
+  for (let i = 0; i < 4; i += 1) {
+    suture(p, 3, p.h * (0.2 + i * 0.2), p.w - 3, p.h * (0.24 + i * 0.2), k)
+  }
+  // Mouths, all over it, at different sizes. It is still hungry.
+  maw(p, cx - w * 0.24, p.h * 0.34, w * 0.1, h * 0.05, k, 7, 21)
+  maw(p, cx + w * 0.2, p.h * 0.58, w * 0.12, h * 0.06, k, 9, 22)
+  maw(p, cx + w * 0.02, p.h * 0.8, w * 0.08, h * 0.04, k, 6, 23)
+  eyeCluster(p, cx - w * 0.1, p.h * 0.5, w * 0.16, k, 7, 24)
+  for (let i = 0; i < 7; i += 1) pustule(p, 5 + (i * w) / 7, p.h * (0.3 + (i % 3) * 0.22), 2 + (i % 3), k)
+  boneSpur(p, 4, p.h * 0.28, art(0.06, height), -2.7, k)
+  boneSpur(p, p.w - 4, p.h * 0.4, art(0.05, height), -0.5, k)
+  return { canvas: finish(p, k, 20, 0.85), origin: [cx / p.w, (p.h - 3) / p.h] }
+}
+
+function buttress(height: number, k: FleshKit, seed: number): PartArt {
+  const w = art(0.1, height)
+  const h = art(0.14, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  // A stubby root of grown bone and gristle, splayed at the base.
+  for (let y = 0; y < h; y += 1) {
+    const t = y / h
+    const wid = Math.max(2, Math.round(w * (0.5 + t * 0.5)))
+    for (let o = 0; o < wid; o += 1) {
+      const s = o / Math.max(1, wid - 1)
+      p.set(Math.round(cx - wid / 2 + o), 2 + y, k.gristle[s < 0.2 ? 1 : s > 0.75 ? 3 : 2])
+    }
+  }
+  claw(p, cx, h, Math.round(w * 0.6), k)
+  blemish(p, k, seed, 0.02)
+  return { canvas: p.toCanvas() as Canvas2D, origin: [cx / p.w, 2 / p.h] }
+}
+
+const WALL_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.1, depth: 30 }),
+    bone('slab', 'root', { angle: -Math.PI / 2, length: 0.8, part: 'slab', orient: 'up', depth: 31, weights: { breathe: 1, flinch: 0.4 } })
+  ]
+  // Four buttresses, not legs. They re-grip rather than step.
+  ;[-0.22, -0.07, 0.08, 0.23].forEach((x, i) => {
+    s.push(bone(`stub${i}`, 'root', { x, angle: Math.PI / 2, length: 0.1, part: `stub${i}`, depth: i % 2 === 0 ? 44 : 8 }))
+  })
+  validateSkeleton(s, 'fleshwall')
+  return s
+}
+
+/**
+ * THE INCH. Not a walk — a lean, a re-grip, and a settle. The buttresses take
+ * turns letting go, and the whole slab tilts a degree and a half either way.
+ */
+const WALL_WALK: Clip = {
+  name: 'walk',
+  duration: 1900,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { slab: { angle: -0.03, stretch: 1 }, root: { y: 0 }, stub0: { angle: 0.1 }, stub1: { angle: -0.06 }, stub2: { angle: 0.08 }, stub3: { angle: -0.04 } } },
+    // Lean forward, front pair bearing it.
+    { t: 0.3, pose: { slab: { angle: 0.05, stretch: 1.02 }, root: { y: -0.006 }, stub0: { angle: -0.16 }, stub1: { angle: 0.2 }, stub2: { angle: -0.12 }, stub3: { angle: 0.18 } } },
+    // The back pair let go and re-plant. This is the only "step" it takes.
+    { t: 0.58, pose: { slab: { angle: 0.02, stretch: 0.98 }, root: { y: 0.006 }, stub0: { angle: 0.22 }, stub1: { angle: -0.18 }, stub2: { angle: 0.2 }, stub3: { angle: -0.14 } }, ease: 'quad' },
+    { t: 0.82, pose: { slab: { angle: -0.04, stretch: 1.01 }, root: { y: -0.002 }, stub0: { angle: 0.04 }, stub1: { angle: 0.02 }, stub2: { angle: 0.02 }, stub3: { angle: 0.04 } } }
+  ]
+}
+
+/** It does not attack so much as press. The whole slab bulges forward. */
+const WALL_ATTACK: Clip = {
+  name: 'attack',
+  duration: 1100,
+  loop: false,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { slab: { angle: 0, stretch: 1 } } },
+    { t: 0.34, pose: { slab: { angle: -0.08, stretch: 0.95 } }, ease: 'cubic' },
+    { t: 0.52, pose: { slab: { angle: 0.14, stretch: 1.1 }, root: { y: 0.008 } }, ease: 'hold' },
+    { t: 0.78, pose: { slab: { angle: 0.04, stretch: 1.02 } }, ease: 'back' },
+    { t: 1, pose: { slab: { angle: 0, stretch: 1 } } }
+  ]
+}
+
+/** The breath. Enormous, slow, and the reason it reads as alive. */
+const WALL_IDLE: Clip = {
+  name: 'idle',
+  duration: 4600,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { slab: { stretch: 1 }, root: { y: 0 } } },
+    { t: 0.42, pose: { slab: { stretch: 1.045 }, root: { y: -0.007 } } },
+    { t: 0.72, pose: { slab: { stretch: 0.985 }, root: { y: 0.003 } } }
+  ]
+}
+
+function wallParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const parts: Record<string, PartArt> = { slab: wallSlab(height, k) }
+  for (let i = 0; i < 4; i += 1) parts[`stub${i}`] = buttress(height, k, 80 + i)
+  return parts
+}
+
+// ─────────────────────────────────── RIPJAW ───────────────────────────────────
+
+/**
+ * THE RIPJAW — a quadruped built to leave the ground.
+ *
+ * Low slung, deep chested, hind legs far heavier than the front ones, and a head
+ * that is mostly jaw carried out in front of the shoulders rather than above
+ * them. Its gallop is a four-beat bound — both hind feet together, then both
+ * front — and the leap pose tucks all four limbs under the body and extends
+ * them again, which is the shape that sells a jump.
+ */
+function ripjawBody(height: number, k: FleshKit): PartArt {
+  const w = art(0.66, height)
+  const h = art(0.34, height)
+  const p = pad(w, h)
+  // A deep chest at the front tapering to narrow hips: a runner's body.
+  for (let x = 0; x < w; x += 1) {
+    const t = x / w
+    const th = h * (0.94 - t * 0.34)
+    const mid = p.h * 0.5 + h * t * 0.1
+    for (let o = 0; o < th; o += 1) {
+      const s = o / Math.max(1, th - 1)
+      const ramp = s > 0.82 ? k.necrotic : k.hide
+      p.set(x + 2, Math.round(mid - th / 2 + o), ramp[s < 0.16 ? 1 : s < 0.5 ? 3 : s < 0.8 ? 2 : 1])
+    }
+  }
+  ribCage(p, 4, p.h * 0.3, w * 0.26, h * 0.4, k, 3, 1)
+  spine(p, 5, p.h * 0.26, p.w - 5, p.h * 0.34, k, 10)
+  boneSpur(p, w * 0.55, p.h * 0.26, art(0.05, height), -1.7, k)
+  boneSpur(p, w * 0.7, p.h * 0.3, art(0.04, height), -1.8, k)
+  viscera(p, w * 0.4, p.h * 0.72, art(0.06, height), k, 91)
+  return { canvas: finish(p, k, 90), origin: [0.16, 0.5] }
+}
+
+function ripjawHead(height: number, k: FleshKit): PartArt {
+  const len = art(0.26, height)
+  const h = art(0.16, height)
+  const p = pad(len, h)
+  const cy = p.h * 0.45
+  // A long jaw with the skull barely wider than it.
+  for (let i = 0; i < len; i += 1) {
+    const t = i / len
+    const th = Math.max(2, Math.round(h * (0.9 - t * 0.5)))
+    for (let o = 0; o < th; o += 1) {
+      const s = o / Math.max(1, th - 1)
+      p.set(2 + i, Math.round(cy - th / 2 + o), k.hide[s < 0.2 ? 1 : s > 0.74 ? 3 : 2])
+    }
+  }
+  // A split lip and two rows of teeth all the way back.
+  for (let i = 4; i < len - 1; i += 3) {
+    p.set(2 + i, Math.round(cy + h * 0.24), k.bone[4])
+    p.set(2 + i, Math.round(cy + h * 0.34), k.bone[2])
+  }
+  p.ellipse(4, cy - h * 0.2, 1.6, 1.4, k.cavity[0])
+  eyeCluster(p, 5, cy - h * 0.2, 2, k, 2, 93)
+  return { canvas: finish(p, k, 92, 0.8), origin: [3 / p.w, cy / p.h] }
+}
+
+const RIPJAW_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.34, depth: 30 }),
+    // The body is HORIZONTAL. Nothing else in the game is.
+    bone('body', 'root', { angle: -0.1, length: 0.5, part: 'body', orient: 'right', depth: 31, weights: { breathe: 1, lean: 1 } }),
+    bone('neck', 'body', { x: 0.02, y: -0.06, angle: -0.3, length: 0.08, depth: 40 }),
+    bone('head', 'neck', { angle: 0.3, part: 'head', orient: 'right', depth: 41, weights: { aim: 0.6, flinch: 1 } }),
+    // Hind legs, heavy, set well back.
+    bone('hipB', 'root', { x: -0.16, angle: Math.PI / 2, depth: 10 }),
+    bone('hindB', 'hipB', { angle: -0.4, length: 0.16, part: 'hindB', depth: 10 }),
+    bone('hockB', 'hindB', { angle: 0.9, length: 0.14, part: 'hockB', depth: 11 }),
+    bone('pawB', 'hockB', { angle: -0.5, part: 'pawB', depth: 12 }),
+    bone('hipB2', 'root', { x: -0.13, angle: Math.PI / 2, depth: 44 }),
+    bone('hindB2', 'hipB2', { angle: -0.4, length: 0.16, part: 'hindB2', depth: 44 }),
+    bone('hockB2', 'hindB2', { angle: 0.9, length: 0.14, part: 'hockB2', depth: 45 }),
+    bone('pawB2', 'hockB2', { angle: -0.5, part: 'pawB2', depth: 46 }),
+    // Fore legs, lighter, under the chest.
+    bone('hipF', 'root', { x: 0.16, angle: Math.PI / 2, depth: 8 }),
+    bone('foreF', 'hipF', { angle: 0.2, length: 0.15, part: 'foreF', depth: 8 }),
+    bone('kneeF', 'foreF', { angle: -0.3, length: 0.13, part: 'kneeF', depth: 9 }),
+    bone('pawF', 'kneeF', { angle: 0.1, part: 'pawF', depth: 10 }),
+    bone('hipF2', 'root', { x: 0.19, angle: Math.PI / 2, depth: 48 }),
+    bone('foreF2', 'hipF2', { angle: 0.2, length: 0.15, part: 'foreF2', depth: 48 }),
+    bone('kneeF2', 'foreF2', { angle: -0.3, length: 0.13, part: 'kneeF2', depth: 49 }),
+    bone('pawF2', 'kneeF2', { angle: 0.1, part: 'pawF2', depth: 50 })
+  ]
+  validateSkeleton(s, 'ripjaw')
+  return s
+}
+
+/** A four-beat bound: hind pair together, then fore pair, with a flight phase. */
+const RIPJAW_WALK: Clip = {
+  name: 'walk',
+  duration: 560,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    {
+      // Gather: hind feet planted under the body, back arched.
+      t: 0,
+      pose: {
+        root: { y: 0.012 },
+        body: { angle: -0.16 },
+        hindB: { angle: 0.5 }, hockB: { angle: 1.2 },
+        hindB2: { angle: 0.45 }, hockB2: { angle: 1.15 },
+        foreF: { angle: -0.7 }, kneeF: { angle: -0.5 },
+        foreF2: { angle: -0.65 }, kneeF2: { angle: -0.45 },
+        head: { angle: 0.16 }
+      }
+    },
+    {
+      // Drive: hind legs extend, body straightens, front reaches out.
+      t: 0.25,
+      pose: {
+        root: { y: -0.03 },
+        body: { angle: 0.04 },
+        hindB: { angle: -0.7 }, hockB: { angle: 0.1 },
+        hindB2: { angle: -0.65 }, hockB2: { angle: 0.15 },
+        foreF: { angle: 0.6 }, kneeF: { angle: 0.2 },
+        foreF2: { angle: 0.55 }, kneeF2: { angle: 0.25 },
+        head: { angle: -0.1 }
+      },
+      ease: 'quad'
+    },
+    {
+      // Flight. Nothing touching.
+      t: 0.45,
+      pose: {
+        root: { y: -0.05 },
+        body: { angle: 0.12 },
+        hindB: { angle: -0.3 }, hockB: { angle: 0.6 },
+        hindB2: { angle: -0.25 }, hockB2: { angle: 0.65 },
+        foreF: { angle: 0.2 }, kneeF: { angle: -0.2 },
+        foreF2: { angle: 0.15 }, kneeF2: { angle: -0.15 },
+        head: { angle: -0.16 }
+      }
+    },
+    {
+      // Fore feet land and take it.
+      t: 0.7,
+      pose: {
+        root: { y: 0.016 },
+        body: { angle: -0.06 },
+        hindB: { angle: 0.2 }, hockB: { angle: 0.9 },
+        hindB2: { angle: 0.25 }, hockB2: { angle: 0.85 },
+        foreF: { angle: -0.3 }, kneeF: { angle: 0.1 },
+        foreF2: { angle: -0.25 }, kneeF2: { angle: 0.15 },
+        head: { angle: 0.1 }
+      },
+      ease: 'quad'
+    }
+  ]
+}
+
+/** The bite, taken on the run — head down, shoulders into it, one shake. */
+const RIPJAW_ATTACK: Clip = {
+  name: 'attack',
+  duration: 520,
+  loop: false,
+  ease: 'quad',
+  keys: [
+    { t: 0, pose: { head: { angle: 0 }, body: { angle: 0 } } },
+    { t: 0.26, pose: { head: { angle: -0.5 }, body: { angle: -0.14 }, root: { y: -0.01 } }, ease: 'cubic' },
+    { t: 0.42, pose: { head: { angle: 0.5 }, body: { angle: 0.16 }, root: { y: 0.012 } }, ease: 'hold' },
+    { t: 0.6, pose: { head: { angle: 0.2 }, body: { angle: 0.06 } } },
+    { t: 0.74, pose: { head: { angle: 0.44 }, body: { angle: 0.12 } }, ease: 'hold' },
+    { t: 1, pose: { head: { angle: 0 }, body: { angle: 0 } }, ease: 'back' }
+  ]
+}
+
+const RIPJAW_IDLE: Clip = {
+  name: 'idle',
+  duration: 2200,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { head: { angle: 0.04 }, body: { angle: -0.02 } } },
+    { t: 0.5, pose: { head: { angle: -0.06 }, body: { angle: 0.02 } } }
+  ]
+}
+
+function ripjawParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const t = art(0.05, height)
+  const p: Record<string, PartArt> = {
+    body: ripjawBody(height, k),
+    head: ripjawHead(height, k),
+    hindB: softLimb(art(0.16, height), t * 1.6, k, 100, k.necrotic),
+    hockB: softLimb(art(0.14, height), t * 1.1, k, 101, k.necrotic),
+    pawB: hoofPart(Math.round(t * 1.3), k, 102),
+    hindB2: softLimb(art(0.16, height), t * 1.7, k, 103),
+    hockB2: softLimb(art(0.14, height), t * 1.2, k, 104),
+    pawB2: hoofPart(Math.round(t * 1.4), k, 105),
+    foreF: softLimb(art(0.15, height), t * 1.1, k, 106, k.necrotic),
+    kneeF: softLimb(art(0.13, height), t * 0.9, k, 107, k.necrotic),
+    pawF: hoofPart(Math.round(t * 1.1), k, 108),
+    foreF2: softLimb(art(0.15, height), t * 1.2, k, 109),
+    kneeF2: softLimb(art(0.13, height), t, k, 110),
+    pawF2: hoofPart(Math.round(t * 1.2), k, 111)
+  }
+  return p
+}
+
+// ─────────────────────────────────── WAGON ───────────────────────────────────
+
+/**
+ * THE FLESH WAGON — a vat on wheels, hauled by things in harness.
+ *
+ * The only Carnage body with a machine in it, and the machine is the worst part:
+ * two big spoked wheels, a tub of viscera slung between them, and a crane arm
+ * over the back that lifts remains in. The wheels turn, the tub sloshes, the
+ * crane bobs — three separate rhythms, none of them a walk cycle.
+ */
+function wagonTub(height: number, k: FleshKit): PartArt {
+  const w = art(0.5, height)
+  const h = art(0.3, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  // A slat tub, bound with iron.
+  for (let x = 0; x < w; x += 1) {
+    for (let y = 0; y < h; y += 1) {
+      const s = (x % 5) / 5
+      p.set(x + 2, y + 2, k.necrotic[s < 0.2 ? 1 : s > 0.7 ? 3 : 2])
+    }
+  }
+  p.fill(2, 2, w, 1, k.iron[3])
+  p.fill(2, 2 + Math.round(h * 0.5), w, 1, k.iron[2])
+  p.fill(2, p.h - 3, w, 1, k.iron[1])
+  // What is in it, standing proud of the rim.
+  for (let i = 0; i < 6; i += 1) {
+    fleshMass(p, 4 + (i * (w - 8)) / 5, 3 + h * 0.14, w * 0.09, h * 0.13, k.meat, 120 + i, 3)
+  }
+  eyeCluster(p, cx, 4, w * 0.16, k, 4, 127)
+  return { canvas: finish(p, k, 120, 0.9), origin: [cx / p.w, (p.h - 3) / p.h] }
+}
+
+function wagonWheel(height: number, k: FleshKit): PartArt {
+  const r = art(0.17, height)
+  const p = pad(r * 2, r * 2)
+  const cx = p.w / 2
+  const cy = p.h / 2
+  p.ellipseFrame(cx, cy, r, r, k.iron[1])
+  p.ellipseFrame(cx, cy, r - 1, r - 1, k.iron[3])
+  // Spokes of long bone.
+  for (let i = 0; i < 7; i += 1) {
+    const a = (i / 7) * Math.PI * 2
+    p.thickLine(cx, cy, cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1), 1, k.bone[2])
+  }
+  p.ellipse(cx, cy, r * 0.2, r * 0.2, k.iron[2])
+  return { canvas: p.toCanvas() as Canvas2D, origin: [0.5, 0.5] }
+}
+
+function wagonCrane(height: number, k: FleshKit): PartArt {
+  const len = art(0.3, height)
+  const p = pad(len, art(0.06, height))
+  const cy = p.h / 2
+  p.fill(2, cy - 1, len, 2, k.bone[2])
+  p.fill(2, cy - 1, len, 1, k.bone[4])
+  // A hook of bone at the far end, and a hanging chain of gristle.
+  claw(p, 2 + len - 2, cy, Math.round(p.h * 0.4), k)
+  return { canvas: p.toCanvas() as Canvas2D, origin: [2 / p.w, cy / p.h] }
+}
+
+const WAGON_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.2, depth: 30 }),
+    bone('tub', 'root', { angle: -Math.PI / 2, length: 0.26, part: 'tub', orient: 'up', depth: 31, weights: { breathe: 0.6 } }),
+    bone('wheelB', 'root', { x: -0.14, y: 0.02, part: 'wheelB', depth: 8 }),
+    bone('wheelF', 'root', { x: 0.16, y: 0.02, part: 'wheelF', depth: 48 }),
+    bone('mast', 'tub', { y: -0.02, angle: -0.2, length: 0.06, depth: 20 }),
+    bone('crane', 'mast', { angle: -0.5, part: 'crane', orient: 'right', depth: 21 }),
+    // Two haulers in harness at the front. Just torsos and legs — they are not
+    // going anywhere else.
+    bone('haulHip', 'root', { x: 0.3, angle: Math.PI / 2, depth: 44 }),
+    bone('haulLeg', 'haulHip', { length: 0.12, part: 'haulLeg', depth: 44 }),
+    bone('haulShin', 'haulLeg', { angle: 0.4, length: 0.11, part: 'haulShin', depth: 45 }),
+    bone('haulHip2', 'root', { x: 0.34, angle: Math.PI / 2, depth: 6 }),
+    bone('haulLeg2', 'haulHip2', { length: 0.12, part: 'haulLeg2', depth: 6 }),
+    bone('haulShin2', 'haulLeg2', { angle: 0.4, length: 0.11, part: 'haulShin2', depth: 7 })
+  ]
+  validateSkeleton(s, 'wagon')
+  return s
+}
+
+/** Wheels turn, tub rocks, crane bobs, haulers trudge — four rhythms. */
+const WAGON_WALK: Clip = {
+  name: 'walk',
+  duration: 1000,
+  loop: true,
+  ease: 'linear',
+  keys: [
+    { t: 0, pose: { wheelB: { angle: 0 }, wheelF: { angle: 0 }, tub: { angle: -0.02 }, crane: { angle: 0.04 }, haulLeg: { angle: -0.4 }, haulShin: { angle: 0.3 }, haulLeg2: { angle: 0.4 }, haulShin2: { angle: 0.1 } } },
+    { t: 0.25, pose: { wheelB: { angle: 1.57 }, wheelF: { angle: 1.57 }, tub: { angle: 0.02 }, crane: { angle: -0.06 }, haulLeg: { angle: 0 }, haulShin: { angle: 0.6 }, haulLeg2: { angle: 0 }, haulShin2: { angle: 0.2 } } },
+    { t: 0.5, pose: { wheelB: { angle: 3.14 }, wheelF: { angle: 3.14 }, tub: { angle: -0.02 }, crane: { angle: 0.05 }, haulLeg: { angle: 0.4 }, haulShin: { angle: 0.1 }, haulLeg2: { angle: -0.4 }, haulShin2: { angle: 0.3 } } },
+    { t: 0.75, pose: { wheelB: { angle: 4.71 }, wheelF: { angle: 4.71 }, tub: { angle: 0.02 }, crane: { angle: -0.04 }, haulLeg: { angle: 0 }, haulShin: { angle: 0.2 }, haulLeg2: { angle: 0 }, haulShin2: { angle: 0.6 } } }
+  ]
+}
+
+/** The crane swings out, dips, and hauls something up into the tub. */
+const WAGON_ATTACK: Clip = {
+  name: 'attack',
+  duration: 1400,
+  loop: false,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { crane: { angle: 0 }, tub: { angle: 0 } } },
+    { t: 0.24, pose: { crane: { angle: 0.8 }, tub: { angle: -0.04 } }, ease: 'quad' },
+    { t: 0.44, pose: { crane: { angle: 1.15 } }, ease: 'hold' },
+    { t: 0.7, pose: { crane: { angle: -0.35 }, tub: { angle: 0.06 } }, ease: 'cubic' },
+    { t: 0.86, pose: { crane: { angle: -0.15 }, tub: { angle: -0.03 } }, ease: 'back' },
+    { t: 1, pose: { crane: { angle: 0 }, tub: { angle: 0 } } }
+  ]
+}
+
+const WAGON_IDLE: Clip = {
+  name: 'idle',
+  duration: 3000,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { tub: { angle: -0.015 }, crane: { angle: 0.03 } } },
+    { t: 0.5, pose: { tub: { angle: 0.015 }, crane: { angle: -0.03 } } }
+  ]
+}
+
+function wagonParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const t = art(0.045, height)
+  return {
+    tub: wagonTub(height, k),
+    wheelB: wagonWheel(height, k),
+    wheelF: wagonWheel(height, k),
+    crane: wagonCrane(height, k),
+    haulLeg: softLimb(art(0.12, height), t, k, 130, k.necrotic),
+    haulShin: softLimb(art(0.11, height), t * 0.85, k, 131, k.necrotic),
+    haulLeg2: softLimb(art(0.12, height), t * 1.05, k, 132),
+    haulShin2: softLimb(art(0.11, height), t * 0.9, k, 133)
+  }
+}
+
+// ─────────────────────────────────── WIDOW ───────────────────────────────────
+
+/**
+ * THE CARRION WIDOW — a ribcage that learned to fly.
+ *
+ * No fuselage: the body IS a hanging cage of bone with the organs still in it,
+ * and the wings are membranes stretched on arm bones far too long for the body.
+ * Everything below the cage trails — legs, viscera, a tail of gut — so it reads
+ * as suspended rather than as flying, which is the difference between this and
+ * an aircraft.
+ */
+function widowCage(height: number, k: FleshKit): PartArt {
+  const w = art(0.3, height)
+  const h = art(0.42, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  // A hanging cage, open at the front, with a heart in it.
+  ribCage(p, 3, 3, w - 2, h * 0.7, k, 4, 1)
+  spine(p, cx, 3, cx, p.h * 0.8, k, 8)
+  fleshMass(p, cx, p.h * 0.38, w * 0.16, h * 0.12, k.meat, 141, 3)
+  // A collar of skull at the top where the neck used to be.
+  p.ellipse(cx, 4, w * 0.2, h * 0.06, k.bone[2])
+  eyeCluster(p, cx, 5, w * 0.14, k, 3, 142)
+  viscera(p, cx, p.h * 0.72, Math.round(h * 0.24), k, 143)
+  return { canvas: finish(p, k, 140, 0.9), origin: [cx / p.w, 0.14] }
+}
+
+function widowWing(height: number, k: FleshKit, seed: number): PartArt {
+  const span = art(0.5, height)
+  const drop = art(0.24, height)
+  const p = pad(span, drop + 4)
+  wingMembrane(p, 2, 3, span - 1, drop, k, seed)
+  return { canvas: p.toCanvas() as Canvas2D, origin: [2 / p.w, 3 / p.h] }
+}
+
+const WIDOW_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.5, depth: 30 }),
+    bone('cage', 'root', { angle: Math.PI / 2, length: 0.36, part: 'cage', orient: 'up', depth: 31, weights: { breathe: 1, flinch: 1 } }),
+    // Wings hinge at the top of the cage and sweep back — one near, one far.
+    bone('wingF', 'root', { x: -0.02, y: 0.02, angle: -0.2, part: 'wingF', orient: 'right', depth: 48 }),
+    bone('wingB', 'root', { x: -0.04, y: -0.02, angle: -0.2, part: 'wingB', orient: 'right', depth: 8 }),
+    // Trailing legs. They never touch anything.
+    bone('legF', 'cage', { x: 0.02, y: 0.05, angle: -0.2, length: 0.14, part: 'legF', depth: 44 }),
+    bone('legF2', 'legF', { angle: 0.3, length: 0.12, part: 'legF2', depth: 45 }),
+    bone('legB', 'cage', { x: 0.02, y: -0.05, angle: -0.1, length: 0.13, part: 'legB', depth: 6 }),
+    bone('legB2', 'legB', { angle: 0.35, length: 0.11, part: 'legB2', depth: 7 })
+  ]
+  validateSkeleton(s, 'widow')
+  return s
+}
+
+/**
+ * The beat. Slow, deep, and the body RISES ON THE UPSTROKE and sinks on the
+ * down — the opposite of what people expect, and what makes big wings read as
+ * carrying weight. The legs trail a beat behind everything.
+ */
+const WIDOW_WALK: Clip = {
+  name: 'walk',
+  duration: 700,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { wingF: { angle: -0.9 }, wingB: { angle: -0.8 }, root: { y: -0.02 }, cage: { angle: 0.06 }, legF: { angle: 0.2 }, legB: { angle: 0.16 } } },
+    { t: 0.3, pose: { wingF: { angle: 0.55 }, wingB: { angle: 0.5 }, root: { y: 0.024 }, cage: { angle: -0.05 }, legF: { angle: -0.16 }, legB: { angle: -0.12 } }, ease: 'quad' },
+    { t: 0.55, pose: { wingF: { angle: 0.7 }, wingB: { angle: 0.64 }, root: { y: 0.014 }, cage: { angle: 0 }, legF: { angle: 0.24 }, legB: { angle: 0.2 } } },
+    { t: 0.8, pose: { wingF: { angle: -0.5 }, wingB: { angle: -0.44 }, root: { y: -0.014 }, cage: { angle: 0.04 }, legF: { angle: 0.1 }, legB: { angle: 0.06 } }, ease: 'cubic' }
+  ]
+}
+
+/** A stoop: wings fold, it drops onto the target, wings flare to stop. */
+const WIDOW_ATTACK: Clip = {
+  name: 'attack',
+  duration: 640,
+  loop: false,
+  ease: 'quad',
+  keys: [
+    { t: 0, pose: { wingF: { angle: -0.3 }, wingB: { angle: -0.26 }, cage: { angle: 0 } } },
+    { t: 0.24, pose: { wingF: { angle: 1.1 }, wingB: { angle: 1.05 }, cage: { angle: 0.2 }, root: { y: 0.03 } }, ease: 'cubic' },
+    { t: 0.42, pose: { wingF: { angle: 1.3 }, wingB: { angle: 1.24 }, cage: { angle: 0.34 }, root: { y: 0.05 } }, ease: 'hold' },
+    { t: 0.66, pose: { wingF: { angle: -1.1 }, wingB: { angle: -1 }, cage: { angle: -0.1 }, root: { y: -0.02 } }, ease: 'back' },
+    { t: 1, pose: { wingF: { angle: -0.3 }, wingB: { angle: -0.26 }, cage: { angle: 0 }, root: { y: 0 } } }
+  ]
+}
+
+const WIDOW_IDLE: Clip = WIDOW_WALK
+
+function widowParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const t = art(0.04, height)
+  return {
+    cage: widowCage(height, k),
+    wingF: widowWing(height, k, 150),
+    wingB: widowWing(height, k, 151),
+    legF: softLimb(art(0.14, height), t, k, 152),
+    legF2: softLimb(art(0.12, height), t * 0.8, k, 153),
+    legB: softLimb(art(0.13, height), t * 0.9, k, 154, k.necrotic),
+    legB2: softLimb(art(0.11, height), t * 0.75, k, 155, k.necrotic)
+  }
+}
+
+// ─────────────────────────────── Registration ───────────────────────────────
+
+interface PlanSpec {
+  skeleton: () => Skeleton
+  parts: (v: UnitVisual, height: number) => Record<string, PartArt>
+  clips: Record<ClipName, Clip>
+  muzzle: [number, number]
+}
+
+const PLANS: Record<HorrorPlan, PlanSpec> = {
+  monstrum: {
+    skeleton: MONSTRUM_SKELETON,
+    parts: monstrumParts,
+    clips: { idle: MONSTRUM_IDLE, walk: rippleWalk(6, 900), attack: MONSTRUM_ATTACK },
+    muzzle: [0.2, -0.4]
+  },
+  maw: { skeleton: MAW_SKELETON, parts: mawParts, clips: { idle: MAW_IDLE, walk: MAW_WALK, attack: MAW_ATTACK }, muzzle: [0.42, -0.34] },
+  fleshwall: { skeleton: WALL_SKELETON, parts: wallParts, clips: { idle: WALL_IDLE, walk: WALL_WALK, attack: WALL_ATTACK }, muzzle: [0.2, -0.5] },
+  ripjaw: { skeleton: RIPJAW_SKELETON, parts: ripjawParts, clips: { idle: RIPJAW_IDLE, walk: RIPJAW_WALK, attack: RIPJAW_ATTACK }, muzzle: [0.4, -0.36] },
+  wagon: { skeleton: WAGON_SKELETON, parts: wagonParts, clips: { idle: WAGON_IDLE, walk: WAGON_WALK, attack: WAGON_ATTACK }, muzzle: [0.28, -0.3] },
+  widow: { skeleton: WIDOW_SKELETON, parts: widowParts, clips: { idle: WIDOW_IDLE, walk: WIDOW_WALK, attack: WIDOW_ATTACK }, muzzle: [0.14, -0.1] }
+}
+
+export const CARNAGE_HORROR_PLANS = Object.keys(PLANS) as HorrorPlan[]
+
+export const carnageHorrorArchetype: Archetype = {
+  id: 'carnage-horror',
+  claims: v => v.plan !== undefined && PLANS[v.plan as HorrorPlan] !== undefined,
+  build(v: UnitVisual, height: number): ArchetypeBuild {
+    const spec = PLANS[v.plan as HorrorPlan]
+    if (!spec) throw new Error(`no carnage horror plan for ${String(v.plan)}`)
+    return { skeleton: spec.skeleton(), parts: spec.parts(v, height), clips: spec.clips, height, muzzle: spec.muzzle }
+  }
+}

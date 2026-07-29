@@ -205,7 +205,7 @@ export const FACTION_UNITS: UnitDef[] = [
       weapon: 'none',
       helmet: 'hood',
       bulk: 1.3
-    })
+    , plan: 'wagon'})
   },
   // ───────────────────────────── Cyborgs ─────────────────────────────
   {
@@ -941,7 +941,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { unarmored: 1.75, light: 1.45 },
     harvest: { meat: 2 },
     description: 'A rider on something that was also someone. It goes through chaff like a comb, and leaves the field wet.',
-    visual: look('nekrotics', { kind: 'rider', torso: 'fur', weapon: 'axe', helmet: 'horns' })
+    visual: look('nekrotics', { kind: 'rider', torso: 'fur', weapon: 'axe', helmet: 'horns' , plan: 'ripjaw'})
   },
   {
     id: 'nk_butcher',
@@ -1041,7 +1041,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'flesh_wall',
     attack: { kind: 'melee', knockback: 220 },
     description: 'It was grown, not raised. Three files of it, and it knits itself back together out of whatever is lying nearby.',
-    visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 2.1 })
+    visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 2.1 , plan: 'fleshwall'})
   },
   {
     // THE MONSTRUM. It eats the field and it does not stop growing.
@@ -1076,7 +1076,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { unarmored: 1.3, light: 1.2 },
     harvest: { meat: 1 },
     description: 'Feed it. That is the entire instruction. Everything it swallows it keeps, and you can watch it keep it.',
-    visual: look('nekrotics', { kind: 'mech', chassis: 'beast', torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.5 })
+    visual: look('nekrotics', { kind: 'mech', chassis: 'beast', torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.5 , plan: 'monstrum'})
   },
   {
     // THE GREAT MAW. A factory for the harvest, pointed the wrong way.
@@ -1110,7 +1110,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 400, splash: 150 },
     harvest: { meat: 2, bone: 1 },
     description: 'A mouth on legs, and a very long tongue. What goes in comes out on your side of the field.',
-    visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'horns', bulk: 1.9 })
+    visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'horns', bulk: 1.9 , plan: 'maw'})
   },
   {
     // THE INCARNATION OF SLAUGHTER. Not a body — a standing offer.
@@ -1169,7 +1169,7 @@ export const FACTION_UNITS: UnitDef[] = [
     hitsAir: true,
     attack: { kind: 'projectile', projectile: 'bolt', speed: 900, gravity: 0, spread: 0.05, knockback: 60 },
     description: 'The carnage answer to the sky: it feeds on what it strikes, and it strikes the weakest first.',
-    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'bare', weapon: 'saber', bulk: 1.05 })
+    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'bare', weapon: 'saber', bulk: 1.05 , plan: 'widow'})
   },
   {
     id: 'ch_petardier',
