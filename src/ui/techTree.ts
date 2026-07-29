@@ -46,7 +46,7 @@ import { Button, formatNumber, hex, label, panel } from './widgets'
  */
 
 const COL_W = 254
-const ROW_H = 120
+const ROW_H = 92
 /** The art is authored small and shown at a whole multiple, as pixel art must be. */
 const ART = 2
 
@@ -365,7 +365,6 @@ export default class TechTree {
    */
   private slots = new Map<TechId, number>()
   private rowCount = 0
-
   private assignSlots(): void {
     for (let ring = 0; ring <= MAX_RING; ring += 1) {
       const nodes = TECHS.filter(t => t.ring === ring).sort((a, b) => a.row - b.row || (a.id < b.id ? -1 : 1))
