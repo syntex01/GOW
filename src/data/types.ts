@@ -98,6 +98,24 @@ export type AttackSpec =
   | { kind: 'heal'; amount: number; radius: number }
   | { kind: 'aura'; damageReduction: number; radius: number }
 
+/**
+ * What a drill gives one soldier. Every field is a RULE the simulation reads,
+ * not a number on a card — a drill that only multiplied a stat would be a stat
+ * node wearing a unit's name.
+ */
+export interface UnitDrill {
+  /** Picks targets in its own file AND either side, at the cross-file penalty. */
+  wideShot?: boolean
+  /** Long enough in the haft to strike over the rank standing in front. */
+  overhead?: boolean
+  /** A one-instance absorb, in points. Refills when this soldier kills. */
+  ward?: number
+  /** Steps a file to reach an unescorted shooter it has drawn level with. */
+  pounce?: boolean
+  /** Health a second its heals leave behind on the target, and for how long. */
+  mend?: { perSecond: number; ms: number }
+}
+
 export interface UnitDef {
   id: string
   name: string
@@ -144,6 +162,16 @@ export interface UnitDef {
   aura?: { damageReduction: number; radius: number }
   /** Multiplier applied when this unit attacks the listed armour classes. */
   bonusVs?: Partial<Record<ArmorType, number>>
+  /**
+   * A drill this soldier has been put through — see `src/data/drills.ts`.
+   *
+   * Written onto the def by research rather than authored on the unit, so the
+   * flags below are all absent until the node behind them is finished. They
+   * live on the DEF rather than being read from the army's tech set at the
+   * point of use so that morphs, veterancy and the roster cards all carry them
+   * for free: anything holding a def is holding the drilled version of it.
+   */
+  drill?: UnitDrill
   /**
    * A flanker blocked behind its own line will move itself to a clear
    * adjacent lane rather than wait. Fixed rule, no input — the knight's move.

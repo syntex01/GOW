@@ -176,6 +176,25 @@ const SPLASH_SHIELDING = 9
 /** What share of a weapon's shove the blast carries, as against a direct hit. */
 const SPLASH_KNOCKBACK = 0.4
 
+/**
+ * How far ahead a raider will look for an unescorted shooter to change file
+ * onto. Short on purpose: this is a pounce onto something it has already drawn
+ * level with, not a charge across the board.
+ */
+const POUNCE_REACH = 200
+
+/**
+ * How close a fighter has to stand to a shooter to be counted as its escort.
+ *
+ * This is the answer the counter web already wanted to give: a gun line with
+ * somebody posted over it is not free, and the way to stop cavalry eating your
+ * slingers is to put a body next to them rather than to out-range it.
+ */
+const ESCORT_GUARD = 150
+
+/** How long a raider runs at raiding pace after committing to a pounce. */
+const POUNCE_LUNGE_MS = 1400
+
 /** How far back a rank still counts as pressing into the fight ahead of it. */
 const PRESS_REACH = 105
 /** Extra share of a blow contributed by each supporting rank. */
@@ -2709,6 +2728,54 @@ export default class Battlefield {
   }
 
   /**
+   * BEAST SENSE — the knight's move, aimed.
+   *
+   * A raider already leaves the queue when something blocks it, but it leaves
+   * for whichever file happens to be emptiest. This teaches it what it is
+   * actually hunting: a shooter one file over, level with its own shoulder,
+   * with nobody standing between it and the shooter's own line. That is the
+   * one thing on the board a cavalry unit is strictly better at killing than
+   * anything else, and before this it could only find it by accident.
+   *
+   * Deliberately narrow. One file either side, a short window along the road,
+   * and only against a target that is genuinely unescorted — a gun line with a
+   * screen or a spear wall in front of it is safe, which is exactly the answer
+   * the counter web already wanted to give.
+   */
+  private tryPounce(unit: Unit, enemyLanes: Unit[][]): void {
+    if (!unit.def.drill?.pounce || !unit.alive || unit.layer !== 'ground') return
+    const dir = ADVANCE_DIR[unit.faction]
+    let best: { lane: number; dist: number } | null = null
+    for (const lane of [unit.lane - 1, unit.lane + 1]) {
+      if (lane < 0 || lane >= LANE_COUNT) continue
+      for (const prey of enemyLanes[lane]) {
+        if (!prey.alive || prey.layer !== 'ground') continue
+        if (prey.def.attack.kind === 'melee') continue
+        // Level with it, or barely short of it: this is a pounce, not a charge
+        // across the field.
+        const dx = (prey.x - unit.x) * dir
+        if (dx < -40 || dx > POUNCE_REACH) continue
+        // Escorted? Anything of theirs that fights hand to hand, standing
+        // close to the prey in the prey's own file.
+        //
+        // Measured from the PREY, not from the raider. Judging it by "is the
+        // guard between him and me" meant the escort stopped counting the
+        // moment the raider drew level with it — so a spearman posted in front
+        // of a slinger protected it for about a second and then stopped, which
+        // is not what a guard is.
+        const escorted = enemyLanes[lane].some(
+          g => g.alive && g !== prey && g.def.attack.kind === 'melee' && Math.abs(g.x - prey.x) < ESCORT_GUARD
+        )
+        if (escorted) continue
+        if (!best || dx < best.dist) best = { lane, dist: dx }
+      }
+    }
+    if (!best) return
+    unit.setLane(best.lane)
+    unit.lungeMs = POUNCE_LUNGE_MS
+  }
+
+  /**
    * Aegis-style auras grant nearby allies flat damage reduction. A unit may
    * carry one as a property and still fight; the older form, where the aura
    * occupied the attack slot, is still honoured.
@@ -2801,6 +2868,7 @@ export default class Battlefield {
         }
         unit.raiding = clear
       }
+      this.tryPounce(unit, enemyLanes)
       const target = this.pickTarget(unit, enemyLanes, enemyAir, enemyBase)
       unit.update(dtMs, blocker, target)
       if (unit.layer === 'ground' && unit.alive) {
@@ -3021,6 +3089,19 @@ export default class Battlefield {
       // machine whose own shoulder is in the next lane.
       for (const l of unit.lanes) gather(enemyLanes[l], own)
       if (!melee) gather(enemyAir, own)
+      // LOOSE STONES: a sling does not much care which file it is thrown into.
+      // The files either side join the primary pool rather than being a
+      // fallback for when this one is empty, so a gun line can CONCENTRATE
+      // instead of merely helping out while idle. The cross-file penalty is
+      // untouched — what is bought is reach, not power.
+      const wide = new Set<Damageable>()
+      if (unit.def.drill?.wideShot && !melee) {
+        const before = own.length
+        for (const l of [unit.lane - 1, unit.lane + 1]) {
+          if (l >= 0 && l < LANE_COUNT) gather(enemyLanes[l], own)
+        }
+        for (let i = before; i < own.length; i += 1) wide.add(own[i].target)
+      }
       // The gate is only reachable from the middle three files, at ANY range.
       // Everything else in the yard is a building, and only from the flanks.
       if (this.canReachGate(unit)) gather([enemyBase], own)
@@ -3028,7 +3109,11 @@ export default class Battlefield {
         gather(this.derelictBlockers(OPPOSITE[unit.faction], l), own)
         gather(this.standingBuildings(OPPOSITE[unit.faction], l), own)
       }
-      if (own.length > 0) return pickFrom(own)
+      if (own.length > 0) {
+        const picked = pickFrom(own)
+        if (wide.has(picked)) unit.crossLaneShot = 1
+        return picked
+      }
       if (!melee) {
         // Spill into the lane next door, at a price. A gun line can help its
         // neighbour, but it can never hold two lanes for the cost of one.
@@ -3557,7 +3642,17 @@ export default class Battlefield {
     wounded
       .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)
       .slice(0, 3)
-      .forEach(ally => ally.heal(attack.amount * share(ally)))
+      .forEach(ally => {
+        ally.heal(attack.amount * share(ally))
+        // Spore Touch: a lump sum is only worth anything to somebody already
+        // nearly dead. What keeps working changes what a healer is FOR — the
+        // line stops wearing down instead of being patched after it has.
+        const mend = unit.def.drill?.mend
+        if (mend) {
+          ally.mendRate = Math.max(ally.mendRate, mend.perSecond * share(ally))
+          ally.mendMs = Math.max(ally.mendMs, mend.ms)
+        }
+      })
     unit.markHealPulse()
   }
 

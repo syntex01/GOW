@@ -282,6 +282,29 @@ export default class Unit implements Damageable {
   private knockStacks = 0
   /** How long this soldier has been pressed against its own line, in ms. */
   private blockedMs = 0
+
+  /**
+   * A bound ward: a flat pool that drinks part of ONE blow rather than shaving
+   * every blow. Refills when this soldier kills — see `drills.ts`.
+   *
+   * Deliberately flat rather than a percentage. The Bonecrusher is a screen,
+   * so its job is to eat the biggest thing pointed at the line; an absorb that
+   * blunts one heavy hit does that, where a percentage would just make it
+   * quietly better against chip damage it was already surviving.
+   */
+  ward = 0
+  wardMax = 0
+  /**
+   * A raider mid-pounce. Brief, and only ever set by Beast Sense.
+   *
+   * Without it the drill was aim without legs: a raptor still spent six
+   * seconds walking into a gun line's teeth to reach the file it had picked,
+   * and arrived dead. The lunge is what makes the decision pay.
+   */
+  lungeMs = 0
+  /** Health a second left behind by a Shaman's hands, and how long is left of it. */
+  mendRate = 0
+  mendMs = 0
   /** Lanes the current shot crosses: 0 own file, 1 next door, 2 plunging. */
   crossLaneShot = 0
   /**
@@ -474,6 +497,8 @@ export default class Unit implements Damageable {
 
     this.hp = def.hp
     this.maxHp = def.hp
+    this.ward = def.drill?.ward ?? 0
+    this.wardMax = this.ward
     this.radius = def.height * 0.24 * (def.visual.bulk ?? 1)
     this.centerOffsetY = -def.height * 0.5
 
@@ -813,7 +838,17 @@ export default class Unit implements Damageable {
     const shared = !hexed && this.linked > 0 ? 1 - Math.min(0.4, this.linked * 0.14) : 1
     // Rooted: a soldier that has not moved is dug in, and it shows.
     const dugIn = hexed ? 1 : 1 - Math.min(0.35, (this.rooting / 4000) * 0.35)
-    const reduced = (amount * mult * (1 - (hexed ? 0 : this.auraShield)) * shared * dugIn) / this.toughness
+    let reduced = (amount * mult * (1 - (hexed ? 0 : this.auraShield)) * shared * dugIn) / this.toughness
+    // The ward drinks its share of this blow and is spent by it. A hex unmakes
+    // every other barrier in the game, so it unmakes this one too.
+    let warded = false
+    if (!hexed && this.ward > 0) {
+      const drunk = Math.min(this.ward, reduced)
+      this.ward -= drunk
+      reduced -= drunk
+      warded = true
+      this.world.vfx.impact(this.x, this.centerY, 0xb46bff, 0.9, false)
+    }
     const before = this.hp
     this.hp -= reduced
     this.lastHitType = type
@@ -828,6 +863,10 @@ export default class Unit implements Damageable {
     this.world.vfx.impact(this.x, this.centerY, color, Math.min(2, reduced / 60 + 0.5), organic)
     this.world.vfx.damageNumber(this.x, this.centerY - this.def.height * 0.35, reduced, mult > 1.15 ? 0xffd166 : 0xffffff, mult > 1.3)
 
+    // A soldier behind a standing ward is not moved by anything. This is half
+    // of what the ward is for: a gun line used to walk a screen backwards for
+    // the whole engagement, and a screen that can be pushed is not a screen.
+    if (knockback > 0 && warded && this.ward > 0) knockback = 0
     if (knockback > 0) {
       // Diminishing returns. Massed light fire used to pin a line in place
       // forever: every pebble set the stagger timer and added its own shove, so
@@ -888,6 +927,15 @@ export default class Unit implements Damageable {
 
   kill(killer?: Damageable): void {
     if (!this.alive) return
+    // The ward reknits on a kill. It is the whole reason a warded screen holds
+    // a file rather than merely surviving the first exchange in it.
+    if (killer instanceof Unit && killer.wardMax > 0 && killer.alive) killer.ward = killer.wardMax
+    // A dead soldier is dropped from the aura pass, so nothing would come back
+    // to clear its glow — take it down here rather than leaving it burning
+    // over a corpse.
+    this.ward = 0
+    this.wardSprite?.destroy()
+    this.wardSprite = undefined
     this.alive = false
     this.state = 'dead'
     this.hp = 0
@@ -1128,6 +1176,12 @@ export default class Unit implements Damageable {
       return
     }
     if (this.def.regen) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
+    if (this.lungeMs > 0) this.lungeMs -= dt * 1000
+    // Spore Touch: what a Shaman mends keeps mending.
+    if (this.mendMs > 0) {
+      this.mendMs -= dt * 1000
+      this.hp = Math.min(this.maxHp, this.hp + this.mendRate * dt)
+    }
 
     this.frenzy =
       this.techs?.has('bloodlust') && this.layer === 'ground'
@@ -1253,7 +1307,7 @@ export default class Unit implements Damageable {
 
   private advance(dt: number, blockerX: number | null): void {
     // An open road is an invitation: a flanker in an enemy-free file rides it.
-    const raid = this.raiding ? 1.3 : 1
+    const raid = this.raiding || this.lungeMs > 0 ? 1.3 : 1
     const step = this.def.speed * this.speedMult * this.frenzy * raid * (this.miredFor > 0 ? 0.35 : 1) * dt * this.dir
     const nextX = this.x + step
     if (blockerX !== null) {
@@ -1773,6 +1827,7 @@ export default class Unit implements Damageable {
 
   /** Shows a shimmering barrier around units protected by an Aegis Bearer. */
   setAuraVisual(active: boolean): void {
+    this.updateWardVisual()
     if (active && !this.auraSprite) {
       this.auraSprite = this.scene.add
         .image(this.x, this.centerY, 'fx:soft')
@@ -1793,7 +1848,39 @@ export default class Unit implements Damageable {
 
   private auraSprite?: Phaser.GameObjects.Image
 
+  /**
+   * The bound ward, as a slight purple glow.
+   *
+   * Deliberately dim, and deliberately gone the moment the ward is spent: the
+   * whole tactical point is that an opponent can look at a Bonecrusher and
+   * tell whether the first heavy blow has already been paid for.
+   */
+  private wardSprite?: Phaser.GameObjects.Image
+
+  private updateWardVisual(): void {
+    const lit = this.alive && this.ward > 0
+    if (lit && !this.wardSprite) {
+      this.wardSprite = this.scene.add
+        .image(this.x, this.centerY, 'fx:soft')
+        .setDepth(BAND.ground - 4)
+        .setTint(0xb46bff)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDisplaySize(this.def.height * 1.35, this.def.height * 1.55)
+    } else if (!lit && this.wardSprite) {
+      this.wardSprite.destroy()
+      this.wardSprite = undefined
+    }
+    if (this.wardSprite) {
+      this.wardSprite.setPosition(this.x, this.centerY)
+      // Fades with what is left in it, so a half-spent ward reads as one.
+      const share = this.wardMax > 0 ? this.ward / this.wardMax : 0
+      this.wardSprite.setAlpha(0.06 + share * (0.12 + Math.sin(this.animTime / 300) * 0.04))
+    }
+  }
+
   destroy(): void {
+    this.wardSprite?.destroy()
+    this.wardSprite = undefined
     this.container.destroy()
     this.shadow.destroy()
     this.teamRing.destroy()

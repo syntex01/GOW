@@ -1,6 +1,7 @@
 import type { ArmorType, UnitRole } from '../sim/types'
 import type { AttackSpec, UnitDef, UnitVisual } from './types'
 import type { TechBranch, TechId } from './tech'
+import { drilledDef } from './drills'
 
 /**
  * Unit morphs.
@@ -409,17 +410,21 @@ function leadingLine(techs: ReadonlySet<string>): { line: MorphLine; stages: Mor
  */
 export function morphedDef(base: UnitDef, techs: ReadonlySet<string>): UnitDef {
   const lead = leadingLine(techs)
-  if (!lead) return base
+  // Drills are applied whether or not the army leans anywhere, and they are
+  // applied LAST so that a doctrine multiplier lands on the drilled numbers
+  // rather than the other way round — the reading everyone expects is "a
+  // quarter off the clubman", not "a quarter off what the clubman used to be".
+  if (!lead) return drilledDef(base, techs)
   const key = `${base.id}@${lead.line.branch}${lead.stages.length}`
   const cached = morphCache.get(key)
-  if (cached) return cached
+  if (cached) return drilledDef(cached, techs, base.id)
 
   let def: UnitDef = base
   for (const stage of lead.stages) {
     if (stage.roles && !stage.roles.includes(base.role)) continue
     def = applyStage(def, stage)
   }
-  if (def === base) return base
+  if (def === base) return drilledDef(base, techs)
 
   const top = lead.stages[lead.stages.length - 1]
   def = {
@@ -438,7 +443,7 @@ export function morphedDef(base: UnitDef, techs: ReadonlySet<string>): UnitDef {
     baseId: base.id,
     baseName: base.name
   })
-  return def
+  return drilledDef(def, techs, base.id)
 }
 
 /** Applies morphs across a whole roster in place of the base defs. */

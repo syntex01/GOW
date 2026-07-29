@@ -229,6 +229,91 @@ export const TECHS: TechNode[] = [
     effect: 'Somebody remembered the words. Something on the other end is listening for them.'
   },
 
+  // ── Ring 1 — the drills: one soldier each, one creed's door each ──
+  //
+  // Cheap, available from the opening minute, and each one is the first step
+  // on a creed's road as well as a real change to a unit you already own. They
+  // are not exclusive with anything: taking one only means you walked in
+  // through that creed's door, not that you closed the others.
+  //
+  // The first age's counter web is built on these six. Every one of them
+  // sharpens an edge that already existed rather than adding a new one —
+  // see docs/BUILDINGS_AND_TECH.md.
+  {
+    id: 'loose_stones',
+    name: 'Loose Stones',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 1,
+    row: 3,
+    age: 0,
+    cost: 340,
+    requires: ['powder_discipline'],
+    effect:
+      'Slingers pick their mark one file to either side instead of only helping out when their own is empty. The cross-file price still stands.'
+  },
+  {
+    id: 'mob_rule',
+    name: 'Mob Rule',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 1,
+    row: 0,
+    age: 0,
+    cost: 320,
+    requires: ['field_stripping'],
+    effect: 'Nobody counts the clubmen. They cost a quarter less and come off the pad quicker.'
+  },
+  {
+    id: 'long_hafts',
+    name: 'Long Hafts',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 1,
+    row: 5,
+    age: 0,
+    cost: 360,
+    requires: ['field_stripping'],
+    effect: 'Bone Spearmen get most of a metre more haft, and fight from the second rank over the man in front.'
+  },
+  {
+    id: 'ward_of_bone',
+    name: 'Ward of Bone',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 1,
+    row: 6,
+    age: 0,
+    cost: 380,
+    requires: ['old_rites'],
+    effect:
+      'A bound ward on every Bonecrusher: it drinks the first 400 of any single blow, refuses to be shoved, and reknits whenever he kills.'
+  },
+  {
+    id: 'spore_touch',
+    name: 'Spore Touch',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 1,
+    row: 8,
+    age: 0,
+    cost: 340,
+    requires: ['old_rites'],
+    effect: 'What a Shaman mends keeps mending — a slow knit that runs for nine seconds after his hands leave.'
+  },
+  {
+    id: 'beast_sense',
+    name: 'Beast Sense',
+    branch: 'core',
+    kind: 'behaviour',
+    ring: 1,
+    row: 10,
+    age: 0,
+    cost: 340,
+    requires: ['field_stripping'],
+    effect: 'Raptors read an unguarded gun line one file over and take it, instead of waiting to be let through.'
+  },
+
   // ──────────── Ring 2 — the directions appear, still cross-linked ─────────
   {
     id: 'butchery',
@@ -239,7 +324,7 @@ export const TECHS: TechNode[] = [
     row: 0,
     age: 0,
     cost: 650,
-    requires: ['field_stripping'],
+    requires: ['field_stripping', 'mob_rule'],
     effect: 'Everything your soldiers kill comes apart, however it died. A dismembered body counts DOUBLE toward a Charnel Yard, so taking this is choosing to make the field messier on purpose.'
   },
   {
@@ -263,7 +348,7 @@ export const TECHS: TechNode[] = [
     row: 3,
     age: 1,
     cost: 800,
-    requires: ['powder_discipline'],
+    requires: ['powder_discipline', 'loose_stones'],
     effect: 'Flat shots that strike armour at a shallow angle skip off it and keep going.'
   },
   {
@@ -275,7 +360,7 @@ export const TECHS: TechNode[] = [
     row: 5,
     age: 1,
     cost: 750,
-    requires: ['field_stripping', 'powder_discipline'],
+    requires: ['field_stripping', 'powder_discipline', 'long_hafts'],
     effect: 'Wreckage that comes to rest on the field is stripped for gold where it lies.'
   },
   {
@@ -287,7 +372,7 @@ export const TECHS: TechNode[] = [
     row: 6,
     age: 1,
     cost: 700,
-    requires: ['old_rites'],
+    requires: ['old_rites', 'ward_of_bone'],
     effect: 'Units finish building instantly. The time is taken out of your fortress instead.'
   },
   {
@@ -299,7 +384,7 @@ export const TECHS: TechNode[] = [
     row: 8,
     age: 1,
     cost: 720,
-    requires: ['old_rites'],
+    requires: ['old_rites', 'spore_touch'],
     effect: 'Your dead burst. What comes out of them settles on the ground and stays there, hostile.'
   },
 

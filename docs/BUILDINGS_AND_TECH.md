@@ -72,6 +72,64 @@ commander who ages all the way up has raised at most six buildings on their
 final seat — and every doctrine building competes for the same ground. Nobody
 gets all four core buildings at tier 3 *and* their creed's signature.
 
+### The six drills — the first age's counter web
+
+Six cheap ring-1 nodes, available from the opening minute. Each changes ONE
+soldier, and each is the first step on one creed's road — so the first real
+decision of a match is which of your six you want to be good at, and that
+decision is also the first step toward what your army becomes. None of them is
+exclusive with anything: taking Mob Rule does not close Ordnance, it only means
+you walked in through Carnage's door. The five creed gates (`butchery`,
+`ricochet`, `salvage`, `blood_pact`, `spore_cloud`) each now hang off their own
+drill, uniformly, so no creed got cheaper or dearer relative to another.
+
+| node | creed | soldier | what it does |
+|---|---|---|---|
+| **Loose Stones** | Ordnance | Slinger | picks its mark one file either side, at the cross-file price — not only when its own file is empty |
+| **Mob Rule** | Carnage | Clubman | a little cheaper, and much quicker off the pad |
+| **Long Hafts** | Engineering | Bone Spearman | 64px → 118px of haft: a third rank that fights over both men in front |
+| **Ward of Bone** | The Occult | Bonecrusher | a 340-point one-instance absorb that refuses knockback and reknits on a kill |
+| **Beast Sense** | core | Raptor Rider | reads an *unescorted* shooter one file over and lunges onto it |
+| **Spore Touch** | Blight | Shaman | his heals leave 7hp/s behind for nine seconds |
+
+They live in `src/data/drills.ts` and are written onto the unit DEF rather than
+checked against the tech set wherever they are used, so a doctrine morph, a
+mid-match veteran promotion and the card on the bottom bar all read the same
+drilled soldier.
+
+#### What it did to the web, measured
+
+Equal gold, five files, six repeats each direction. Edge = surviving gold
+difference over budget; +1.00 is a wipe with no losses.
+
+| matchup | bare | drilled |
+|---|---|---|
+| Clubman vs Slinger | +0.29 | +0.29 |
+| Clubman vs Bone Spearman | +0.04 | **−0.27** |
+| Clubman vs Bonecrusher | +0.15 | **−0.06** |
+| Slinger vs Raptor Rider | +0.92 | **+0.41** |
+| Bone Spearman vs Bonecrusher | −0.26 | **+0.39** |
+| Bone Spearman vs Raptor Rider | +0.95 | +0.95 |
+| Slinger vs Bone Spearman | +1.00 | +1.00 |
+
+Four edges that were one-sided or meaningless became real decisions, and the
+Raptor's worst matchup halved. Two things did not move, and both are named
+rather than buried: the Bone Spearman still hard-counters cavalry by design,
+and **the Slinger still wipes the spear wall and the screen outright** — the
+first age's real balance problem, which Loose Stones makes slightly worse
+rather than better.
+
+#### The mob-bonus cliff
+
+Mob Rule's discount is small on purpose. A swarm hits a third harder against
+anything costing **three times its own price per body**. A 200g Clubman against
+a 560g Bonecrusher is at 2.8× — just under. Take a quarter off and he is at
+3.29× — just over, and the bonus switches on: measured, Clubman over Bonecrusher
+went **+0.15 → +0.65 on nothing but a price tag**. Twenty gold either side of
+187 is the difference between a counter and a rout. So the price stays on the
+safe side of the cliff and the drill pays out in build time instead, which is
+what a swarm wants anyway.
+
 ### Passage of Lines — a formation rule, in the shared root
 
 `passage_of_lines`, core, ring 3, age 2, 900 RP, behind `drill_yard` — the same
