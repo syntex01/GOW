@@ -245,7 +245,8 @@ export const GATHERER_DEF: UnitDef = {
     helmet: 'none',
     torso: 'bare',
     weapon: 'none',
-    bulk: 0.78
+    bulk: 0.78,
+    plan: 'bonewright'
   }
 }
 
@@ -297,7 +298,8 @@ export const BONELING_DEF: UnitDef = {
     helmet: 'none',
     torso: 'bare',
     weapon: 'axe',
-    bulk: 0.86
+    bulk: 0.86,
+    plan: 'boneling'
   }
 }
 

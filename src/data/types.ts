@@ -56,6 +56,15 @@ export interface UnitVisual {
   machine?: 'catapult' | 'cannon' | 'mortar'
   /** Extra silhouette width multiplier — bulky units read better when wider. */
   bulk?: number
+  /**
+   * An explicit BODY PLAN, overriding every heuristic in the archetype registry.
+   *
+   * The other factions are people and machines, and `kind` plus `chassis` is
+   * enough to say which. Carnage is neither: a Flesh Wall and a Monstrum are
+   * both "a big thing on the ground" and share nothing else, so their plans are
+   * named rather than inferred. See `gfx/archetypes/carnageFoot.ts`.
+   */
+  plan?: string
 }
 
 export type ProjectileId =

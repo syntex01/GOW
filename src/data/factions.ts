@@ -137,7 +137,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'gravebound',
     attack: { kind: 'melee', knockback: 50 },
     description: 'It was someone. A quarter of them refuse to stay down the first time.',
-    visual: look('nekrotics', { torso: 'bare', weapon: 'axe', helmet: 'none' })
+    visual: look('nekrotics', { torso: 'bare', weapon: 'axe', helmet: 'none' , plan: 'husk'})
   },
   {
     id: 'nk_flenser',
@@ -166,7 +166,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { unarmored: 1.85, light: 1.5 },
     harvest: { meat: 3 },
     description: 'Kills in a wide arc, and every kill quickens the next swing. Feed it and regret it. What it leaves is barely a body.',
-    visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.25 })
+    visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.25 , plan: 'flenser'})
   },
   {
     id: 'nk_carrion',
@@ -966,7 +966,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'lifesteal',
     attack: { kind: 'melee', knockback: 200 },
     description: 'Drinks two fifths of every wound it opens. Starving it is the only argument it hears.',
-    visual: look('nekrotics', { helmet: 'kettle', torso: 'coat', weapon: 'axe', bulk: 1.4 })
+    visual: look('nekrotics', { helmet: 'kettle', torso: 'coat', weapon: 'axe', bulk: 1.4 , plan: 'butcher'})
   },
   {
     id: 'nk_shrike',
@@ -1000,7 +1000,7 @@ export const FACTION_UNITS: UnitDef[] = [
     special: 'headtaker',
     attack: { kind: 'melee', knockback: 70 },
     description: 'Tentacles with beaks on the end. It picks whoever is closest to finished and takes the head off them.',
-    visual: look('nekrotics', { torso: 'coat', weapon: 'tentacle', helmet: 'hood', bulk: 1.05 })
+    visual: look('nekrotics', { torso: 'coat', weapon: 'tentacle', helmet: 'hood', bulk: 1.05 , plan: 'shrike'})
   },
   {
     // ══════════════════════ AGE FOUR — THE RENDERING ══════════════════════
