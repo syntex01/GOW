@@ -72,6 +72,31 @@ commander who ages all the way up has raised at most six buildings on their
 final seat — and every doctrine building competes for the same ground. Nobody
 gets all four core buildings at tier 3 *and* their creed's signature.
 
+### Passage of Lines — a formation rule, in the shared root
+
+`passage_of_lines`, core, ring 3, age 2, 900 RP, behind `drill_yard` — the same
+shelf as Phalanx Doctrine, because it is the same kind of thing: research that
+changes how a file is fought rather than what stands in it.
+
+A file is a queue. Everyone closes up behind the rank in front, which is what
+puts archers behind the shield wall instead of shooting through its back — and
+which also means a fighter bought after a line of shooters spends the fight
+walking behind them. With this node the shooters open their ranks: a **melee**
+unit walks through friendly **ranged** units that have **halted with something
+in their sights**, and reaches the front.
+
+Three deliberate limits, so it is a formation rule and not a "phase through
+everything" button:
+
+- Fighters never pass fighters. A shield wall is still a wall.
+- A shooter who is still walking, or has nothing to shoot at, is a body in the
+  way like anyone else. Only a rank that has stopped to fire can open.
+- It is one-way: shooters do not gain the right to walk through the line.
+
+It sits in `core` on purpose. It fixes a frustration every commander has, so
+locking it to one creed would leave four of five still stuck behind their own
+archers.
+
 ### Evolution: a seat only carries what a seat that size can carry
 
 Plots were the only thing an age-up bought, which left an obvious degenerate

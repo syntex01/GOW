@@ -2668,12 +2668,19 @@ export default class Battlefield {
 
     for (let lane = 0; lane < LANE_COUNT; lane += 1) {
       this.applyAuras(player.seen[lane], enemy.seen[lane])
-      this.stepSide(player.lanes[lane], enemy.seen, enemy.air, this.enemyBase, dtMs)
-      this.stepSide(enemy.lanes[lane], player.seen, player.air, this.playerBase, dtMs)
     }
-    // Air rides above the lanes: it queues against nothing and sees everything.
-    this.stepSide(player.air, enemy.seen, enemy.air, this.enemyBase, dtMs)
-    this.stepSide(enemy.air, player.seen, player.air, this.playerBase, dtMs)
+    // One pass per side, not one per file.
+    //
+    // Stepping file by file meant the queue was built from the file a soldier
+    // is CENTRED on, while the ground it occupies can be three files wide. A
+    // Titan spanning files 1–3 blocked only file 2: measured, soldiers in
+    // files 1 and 3 walked 732px clean through it. Marching the whole side in
+    // one pass, with a separate front edge remembered for each file, is what
+    // makes "is anything in my way" mean the same thing as "am I standing on
+    // it". Air rides above all of it and is carried in the same pass — it
+    // queues against nothing, so it needs no special call.
+    this.stepSide(playerUnits, enemy.seen, enemy.air, this.enemyBase, dtMs)
+    this.stepSide(enemyUnits, player.seen, player.air, this.playerBase, dtMs)
   }
 
   /**
@@ -2738,7 +2745,13 @@ export default class Battlefield {
     const dir = units.length > 0 ? ADVANCE_DIR[units[0].faction] : 1
     // Walk the sorted list from the front so each unit knows who is ahead of it.
     const order = dir === 1 ? [...units].reverse() : units
-    let aheadX: number | null = null
+    // The rear edge of the frontmost soldier stepped so far, remembered PER
+    // FILE — a soldier three files wide leaves its edge in all three.
+    const aheadX: (number | null)[] = Array.from({ length: LANE_COUNT }, () => null)
+    // The same edge, but counting only ranks a fighter cannot simply walk
+    // through. With Passage of Lines a shooter who has halted to fire opens up
+    // and lets the melee past, so it stops appearing in this one — see below.
+    const aheadSolid: (number | null)[] = Array.from({ length: LANE_COUNT }, () => null)
 
     for (let i = 0; i < order.length; i += 1) {
       const unit = order[i]
@@ -2747,14 +2760,35 @@ export default class Battlefield {
       // man however many you bought, while every soldier in a ranged squad
       // shoots. The ranks crowding up behind a fighter put their shoulders into
       // the blow, which is what makes buying the second twenty worth anything.
+      //
+      // Counted only among soldiers who SHARE GROUND with this one. The pass
+      // now walks the whole side rather than one file, so without that test a
+      // rank would be shoved by the four files either side of it.
       let support = 0
       const cap = unit.def.conduct === 'swarm' ? MAX_PRESS + 2 : MAX_PRESS
       for (let j = i + 1; j < order.length && support < cap; j += 1) {
         if (Math.abs(order[j].x - unit.x) > PRESS_REACH) break
+        if (!order[j].lanes.some(l => unit.lanes.includes(l))) continue
         support += 1
       }
       unit.press = 1 + support * (unit.techs?.has('iron_line') ? PRESS_BONUS + 0.15 : PRESS_BONUS)
-      const blocker = unit.layer === 'air' ? null : aheadX
+      // Whichever file's front edge stops this soldier first — the nearest one
+      // ahead across every file it stands in.
+      //
+      // A fighter with Passage of Lines reads the SOLID edge instead: the
+      // shooters who have halted to fire step aside for it. Without the tech
+      // both edges are the same number and nothing changes.
+      const filtersThrough =
+        unit.layer !== 'air' && unit.def.attack.kind === 'melee' && (unit.techs?.has('passage_of_lines') ?? false)
+      const edges = filtersThrough ? aheadSolid : aheadX
+      let blocker: number | null = null
+      if (unit.layer !== 'air') {
+        for (const l of unit.lanes) {
+          const edge = edges[l]
+          if (edge === null) continue
+          if (blocker === null || edge * dir < blocker * dir) blocker = edge
+        }
+      }
       if (unit.def.flanker) {
         // An open file ahead is a road: raiders ride it a third faster.
         let clear = true
@@ -2772,7 +2806,13 @@ export default class Battlefield {
       if (unit.layer === 'ground' && unit.alive) {
         this.stopAtTheWall(unit)
         this.updatePlunder(unit, target, dtMs)
-        aheadX = unit.x - dir * (unit.radius + 2)
+        const edge = unit.x - dir * (unit.radius + 2)
+        for (const l of unit.lanes) aheadX[l] = edge
+        // A shooter that has stopped and has something in its sights is a rank
+        // that can open. Anything else — a fighter, a machine, a shooter still
+        // walking — is a body in the way whatever you have researched.
+        const opensUp = unit.def.attack.kind !== 'melee' && unit.target !== null
+        if (!opensUp) for (const l of unit.lanes) aheadSolid[l] = edge
       }
     }
   }

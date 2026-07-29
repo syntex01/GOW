@@ -53,6 +53,23 @@ export default class MenuScene extends Phaser.Scene {
     audio.setIntensity(0.18)
     audio.startMusic(this.paradeAge)
 
+    // Which build this actually is, in the corner.
+    //
+    // Not decoration. A stale service worker once served players the previous
+    // bundle on every launch, so a build could land, be installed, and still
+    // show the version before it — and there was no way to tell from inside the
+    // game which one you were looking at. Now there is.
+    const build = (globalThis as { __gowBuild?: string }).__gowBuild ?? 'dev'
+    this.add
+      .text(cam.width - 10, cam.height - 8, `build ${build}`, {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#3d4a63'
+      })
+      .setOrigin(1, 1)
+      .setDepth(9000)
+      .setScrollFactor(0)
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup())
 
     this.input.keyboard?.on('keydown-ESC', () => {

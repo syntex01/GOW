@@ -754,6 +754,19 @@ export const TECHS: TechNode[] = [
     effect: 'Braced spears read a charge before it lands. Your phalanx units punish flankers far harder.'
   },
   {
+    id: 'passage_of_lines',
+    name: 'Passage of Lines',
+    branch: 'core',
+    kind: 'behaviour',
+    ring: 3,
+    row: 2,
+    age: 1,
+    cost: 900,
+    requires: ['drill_yard'],
+    effect:
+      'Shooters open their ranks and let the fighters through. Your melee units walk past friendly ranged troops who have halted to fire, instead of queueing behind them.'
+  },
+  {
     id: 'pack_tactics',
     name: 'Pack Tactics',
     branch: 'carnage',
