@@ -90,9 +90,17 @@ export function fleshKit(skin: number, cloth: number, accent: number): FleshKit 
   // boost was designed for.
   const dusty = 0.03
   return {
-    // Dead skin, lifted well clear of the ground's value so the silhouette
-    // holds, and pushed slightly green so it never reads as a healthy person.
-    hide: ramp(mix(skin, 0xcfd2bc, 0.42), { contrast: 1.1, hueShift: 0.015, shadowSat: dusty }),
+    // Dead skin, pushed slightly green so it never reads as a healthy person.
+    //
+    // The base sits in the MIDDLE of the value range on purpose. It used to be
+    // mixed most of the way to a near-white (lightness 0.73), and `ramp` scales
+    // its highlight offsets by `1 - l` — so at 0.73 the top three steps came out
+    // as #bbc3b0, #c9d0c2 and #d8ddd4, three tones with almost nothing between
+    // them. Every body was therefore flat no matter how carefully it was shaded:
+    // the whole usable range was hiding in steps 0 and 1, and anything drawn on
+    // the lit side of a form had nowhere to go. At 0.53 all five steps are
+    // distinct, and the mid is still comfortably lighter than the dirt.
+    hide: ramp(mix(skin, 0x6d7358, 0.5), { contrast: 1.15, hueShift: 0.015, shadowSat: dusty }),
     // High contrast and a hue swing toward red at the shadow end: meat gets
     // *redder* as it gets darker, which is the whole difference between flesh
     // and painted plastic. The hue swing does that job; the saturation boost

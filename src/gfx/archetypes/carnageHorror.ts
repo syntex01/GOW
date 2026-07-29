@@ -373,41 +373,108 @@ function mawParts(v: UnitVisual, height: number): Record<string, PartArt> {
  * step. Its idle is a slow breath that swells the entire silhouette, which is
  * the single most alive thing on the board.
  */
+/**
+ * THE SLAB — fifty-nine pixels by eighty-five, so unlike the small bodies this
+ * one can afford detail. The first version squandered it.
+ *
+ * What was wrong, precisely: the shading picked ramp steps 1, 2 and 3 out of five
+ * and never touched 0 or 4, so the whole face lived inside the middle of the
+ * value range and had nowhere to go; the surface texture switched ramps on a
+ * `noise(floor(x/5), floor(y/7))` test, which is a grid of five-by-seven
+ * rectangles and reads as patterned wallpaper; and five rib cages, four sutures,
+ * three mouths, an eye cluster and seven pustules were scattered at even
+ * intervals with no size hierarchy, so none of them was a feature. A rectangle
+ * of evenly-spaced confetti at a single value. A rug on legs.
+ *
+ * Rebuilt around three ideas:
+ *
+ *  1. IT IS MASONRY. Five horizontal COURSES of fused torsos with a hard dark
+ *     mortar seam between them. Big shapes stated first, in the full 0..4 range.
+ *  2. THE LIGHT COMES FROM ABOVE. A real vertical gradient — near-white along the
+ *     top course, near-black in the last one — and each course individually lit
+ *     on its own top edge and shadowed under its own belly, so the courses read
+ *     as separate slabs of meat rather than as bands of paint.
+ *  3. THE SILHOUETTE IS NOT A RECTANGLE. It batters — wider at the base than the
+ *     top — and the top edge is broken by the shoulders and skulls of whatever
+ *     went into the last course.
+ *
+ * Only three accents survive, and they differ in size by a factor of four so the
+ * eye has somewhere to land: one big mouth low down, one cluster of faces at
+ * centre height, and bone breaking out of the top line.
+ */
 function wallSlab(height: number, k: FleshKit): PartArt {
   const w = art(0.62, height)
   const h = art(0.9, height)
   const p = pad(w, h)
   const cx = p.w / 2
   const noise = pixelNoise(8123)
-  // The slab: a wall of fused torsos, drawn as columns so the surface is uneven.
-  for (let x = 0; x < w; x += 1) {
-    const t = x / w
-    const top = 2 + Math.round(h * (0.04 + noise(x, 3) * 0.06))
-    const bot = p.h - 3 - Math.round(h * noise(x, 7) * 0.03)
-    for (let y = top; y < bot; y += 1) {
-      const s = (x / w) * 0.6 + (1 - (y - top) / Math.max(1, bot - top)) * 0.4
-      const ramp = noise(Math.floor(x / 5), Math.floor(y / 7) + 11) > 0.7 ? k.meat : k.hide
-      p.set(x + 2, y, ramp[s < 0.2 ? 1 : s < 0.5 ? 2 : s < 0.8 ? 3 : 2])
+  const COURSES = 5
+  const courseH = h / COURSES
+
+  // The batter: half a pixel of inset per row up, so the wall leans in as it
+  // rises. Plus a per-column wobble, because nothing here was quarried.
+  const inset = (y: number): number => {
+    const up = 1 - y / Math.max(1, h)
+    return w * 0.09 * up
+  }
+
+  for (let y = 0; y < h; y += 1) {
+    const course = Math.min(COURSES - 1, Math.floor(y / courseH))
+    // Where in its own course this row falls: 0 at the top of the course, 1 at
+    // the bottom. This is what makes each course a separate rounded mass.
+    const inCourse = (y - course * courseH) / courseH
+    const left = Math.round(inset(y) + noise(y, 31) * 1.6)
+    const right = w - Math.round(inset(y) + noise(y, 37) * 1.6)
+    // The top course is broken by whatever is sticking out of it.
+    if (course === 0) {
+      const crest = Math.round(courseH * 0.55 * noise(Math.floor(y * 0.7), 41))
+      if (y < crest) continue
     }
-    void t
+    for (let x = left; x < right; x += 1) {
+      // Vertical light: the top of the wall catches the sky, the base is in its
+      // own shadow. This is the term the old version did not have at all.
+      const sky = 1 - y / Math.max(1, h - 1)
+      // Each course lit on its own upper surface and dark under its belly.
+      const form = 1 - Math.abs(inCourse - 0.28) * 1.5
+      // And a horizontal turn, so the wall has a near side and a far side.
+      const turn = 1 - Math.abs((x - left) / Math.max(1, right - left) - 0.62) * 1.1
+      const v = sky * 0.52 + form * 0.32 + turn * 0.16 + noise(x, y) * 0.06
+      // The full range, ends included.
+      const step = v < 0.26 ? 0 : v < 0.42 ? 1 : v < 0.58 ? 2 : v < 0.76 ? 3 : 4
+      // Torsos, not tiles: the ramp is chosen per BODY. Six or so bodies to a
+      // course, shifted by an odd amount each course so no two rows line up —
+      // at three bodies a course it split each row into a big pale half and a
+      // big red half, which is two-tone blocks, not a wall of corpses.
+      const span = Math.max(3, Math.round(w * 0.16))
+      const body = Math.floor((x + course * 5 + (course % 2) * 3) / span)
+      const ramp = noise(body, course * 7 + 5) > 0.6 ? k.meat : k.hide
+      p.set(x + 2, y + 2, ramp[step])
+      // MORTAR. A hard dark line in the last two rows of every course, which is
+      // the single change that stops the face reading as one flat plane.
+      if (inCourse > 0.9) p.set(x + 2, y + 2, k.cavity[step > 2 ? 2 : 1])
+    }
   }
-  // The bodies it is made of: ribcages and faces pressed out of the surface.
-  for (let i = 0; i < 5; i += 1) {
-    const bx = 4 + (i % 3) * w * 0.32 + (i > 2 ? w * 0.16 : 0)
-    const by = p.h * (0.16 + (i % 4) * 0.19)
-    ribCage(p, bx, by, w * 0.22, h * 0.14, k, 3, 1)
+
+  // One rib cage per course, sized to its course and offset so they do not line
+  // up into a column — the bodies in a wall do not stack tidily.
+  for (let i = 0; i < COURSES; i += 1) {
+    const bx = 4 + ((i * 2 + 1) % 5) * w * 0.19
+    const by = 2 + (i + 0.36) * courseH
+    ribCage(p, bx, by, w * 0.2, courseH * 0.46, k, 3, 1)
   }
-  for (let i = 0; i < 4; i += 1) {
-    suture(p, 3, p.h * (0.2 + i * 0.2), p.w - 3, p.h * (0.24 + i * 0.2), k)
+  // Three accents, and they differ in size by a factor of four.
+  //
+  // THE MOUTH — low, wide, and the largest single feature on the wall.
+  maw(p, cx + w * 0.06, 2 + courseH * 3.55, w * 0.26, courseH * 0.34, k, 13, 22)
+  // THE FACES — a cluster at centre height, a quarter the size of the mouth.
+  eyeCluster(p, cx - w * 0.22, 2 + courseH * 2.3, w * 0.13, k, 6, 24)
+  // THE BONE — breaking out of the top line, so the crest is not just noise.
+  boneSpur(p, cx - w * 0.3, 2 + courseH * 0.5, art(0.09, height), -1.9, k)
+  boneSpur(p, cx + w * 0.18, 2 + courseH * 0.32, art(0.07, height), -1.5, k)
+  // A few pustules only where the light already is, so they read as raised.
+  for (let i = 0; i < 3; i += 1) {
+    pustule(p, cx + w * (0.1 - i * 0.16), 2 + courseH * (1.3 + i * 0.9), 2 + (i % 2), k)
   }
-  // Mouths, all over it, at different sizes. It is still hungry.
-  maw(p, cx - w * 0.24, p.h * 0.34, w * 0.1, h * 0.05, k, 7, 21)
-  maw(p, cx + w * 0.2, p.h * 0.58, w * 0.12, h * 0.06, k, 9, 22)
-  maw(p, cx + w * 0.02, p.h * 0.8, w * 0.08, h * 0.04, k, 6, 23)
-  eyeCluster(p, cx - w * 0.1, p.h * 0.5, w * 0.16, k, 7, 24)
-  for (let i = 0; i < 7; i += 1) pustule(p, 5 + (i * w) / 7, p.h * (0.3 + (i % 3) * 0.22), 2 + (i % 3), k)
-  boneSpur(p, 4, p.h * 0.28, art(0.06, height), -2.7, k)
-  boneSpur(p, p.w - 4, p.h * 0.4, art(0.05, height), -0.5, k)
   return { canvas: finish(p, k, 20, 0.85), origin: [cx / p.w, (p.h - 3) / p.h] }
 }
 
