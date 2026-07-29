@@ -85,9 +85,9 @@ drill, uniformly, so no creed got cheaper or dearer relative to another.
 
 | node | creed | soldier | what it does |
 |---|---|---|---|
-| **Loose Stones** | Ordnance | Slinger | picks its mark one file either side, at the cross-file price — not only when its own file is empty |
+| **Loose Stones** | Ordnance | Slinger | lifts his `noSpill`: with his own file clear he looses into the one next door, at the cross-file price |
 | **Mob Rule** | Carnage | Clubman | a little cheaper, and much quicker off the pad |
-| **Long Hafts** | Engineering | Bone Spearman | 64px → 118px of haft: a third rank that fights over both men in front |
+| **Long Hafts** | Engineering | Bone Spearman | 64px → 118px of haft: fights from the **second** rank, over the one man in front |
 | **Ward of Bone** | The Occult | Bonecrusher | a 340-point one-instance absorb that refuses knockback and reknits on a kill |
 | **Beast Sense** | core | Raptor Rider | reads an *unescorted* shooter one file over and lunges onto it |
 | **Spore Touch** | Blight | Shaman | his heals leave 7hp/s behind for nine seconds |
@@ -97,6 +97,31 @@ checked against the tech set wherever they are used, so a doctrine morph, a
 mid-match veteran promotion and the card on the bottom bar all read the same
 drilled soldier.
 
+#### Only the front rank fights
+
+Two of these are exceptions to a rule the simulation was not enforcing. The
+press comment has always read *"only the front rank of a column can physically
+reach the enemy… the ranks crowding up behind put their shoulders into the
+blow"* — that is what `press` **is**. But a rank that was already being counted
+as a shoulder was also swinging its own weapon, so a deep file got paid twice.
+
+So melee now needs a clear front to bring a weapon to bear, and the depth is
+counted as a **chain** — each man measured against the one in front of him,
+not against the man at the back. **Long Hafts is the single exception**: one man
+in front, and the spearman fights over him. Two is a crowd. Measured on a
+four-deep file against a harmless anvil: 1 of 4 ranks ever swings untrained,
+exactly 2 of 4 with the drill.
+
+Shooters are untouched — they loose over the men in front, which is the whole
+reason to stand behind them.
+
+Likewise the spill: a shooter helping the file next door once its own is clear
+is the general rule, and the Slinger is where that rule is **earned**. He is
+authored `noSpill`; Loose Stones lifts it. Letting him pick a mark next door
+while his own file was still busy was tried first and is the wrong shape — it
+hands a gun line the ability to concentrate on one file from three, and the
+age-one Slinger already beats everything.
+
 #### What it did to the web, measured
 
 Equal gold, five files, six repeats each direction. Edge = surviving gold
@@ -104,13 +129,13 @@ difference over budget; +1.00 is a wipe with no losses.
 
 | matchup | bare | drilled |
 |---|---|---|
-| Clubman vs Slinger | +0.29 | +0.29 |
-| Clubman vs Bone Spearman | +0.04 | **−0.27** |
-| Clubman vs Bonecrusher | +0.15 | **−0.06** |
-| Slinger vs Raptor Rider | +0.92 | **+0.41** |
-| Bone Spearman vs Bonecrusher | −0.26 | **+0.39** |
+| Clubman vs Slinger | +0.28 | +0.26 |
+| Clubman vs Bone Spearman | +0.03 | **−0.27** |
+| Clubman vs Bonecrusher | +0.17 | **−0.06** |
+| Slinger vs Raptor Rider | +0.90 | **+0.46** |
+| Bone Spearman vs Bonecrusher | −0.18 | **+0.34** |
 | Bone Spearman vs Raptor Rider | +0.95 | +0.95 |
-| Slinger vs Bone Spearman | +1.00 | +1.00 |
+| Slinger vs Bone Spearman | +0.98 | +0.99 |
 
 Four edges that were one-sided or meaningless became real decisions, and the
 Raptor's worst matchup halved. Two things did not move, and both are named

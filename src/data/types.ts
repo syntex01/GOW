@@ -104,7 +104,10 @@ export type AttackSpec =
  * node wearing a unit's name.
  */
 export interface UnitDrill {
-  /** Picks targets in its own file AND either side, at the cross-file penalty. */
+  /**
+   * Lifts `noSpill`: this shooter may loose into the file either side once its
+   * own has nothing left standing in it, at the cross-file penalty.
+   */
   wideShot?: boolean
   /** Long enough in the haft to strike over the rank standing in front. */
   overhead?: boolean
@@ -172,6 +175,16 @@ export interface UnitDef {
    * for free: anything holding a def is holding the drilled version of it.
    */
   drill?: UnitDrill
+  /**
+   * This shooter fights its own file and nothing else, ever, until something
+   * teaches it otherwise.
+   *
+   * Spilling into the file next door when your own is empty is the general
+   * rule for shooters. A soldier carrying a sling and a bag of river stones is
+   * where that rule is EARNED rather than given: untrained, he throws at what
+   * is in front of him, and Loose Stones is what widens his eye.
+   */
+  noSpill?: boolean
   /**
    * A flanker blocked behind its own line will move itself to a clear
    * adjacent lane rather than wait. Fixed rule, no input — the knight's move.

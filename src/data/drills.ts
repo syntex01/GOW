@@ -37,15 +37,20 @@ interface Drill {
 export const DRILLS: Drill[] = [
   {
     // ── ORDNANCE ──────────────────────────────────────────────────────────
-    // A sling is a thrown weapon, and a thrown weapon does not care much which
-    // file it is thrown into. The gun line already spills one file over when
-    // its own is empty; this lets it CHOOSE, which is the difference between
-    // "helps out when idle" and "concentrates". The cross-file penalty stays,
-    // so what is bought is reach and not power.
+    // A slinger starts out throwing at whatever is in front of him and nothing
+    // else — he is authored `noSpill`. This lifts it: with his own file clear,
+    // he looses into the one next door at the usual cross-file price.
+    //
+    // Written as an unlock rather than a widening on purpose. Letting him pick
+    // a mark in the next file WHILE his own was occupied was tried, and it is
+    // the wrong shape: it hands a gun line the ability to concentrate on one
+    // file from three, and the age-one Slinger is already the unit that beats
+    // everything. Helping the neighbour once your own front is clear is help;
+    // choosing your target from three files is dominance.
     tech: 'loose_stones',
     unit: 'slinger',
     set: { wideShot: true },
-    note: 'Picks its mark one file either side, at the usual cross-file price.'
+    note: 'With his own file clear, he looses into the one next door.'
   },
   {
     // ── CARNAGE ───────────────────────────────────────────────────────────
@@ -72,14 +77,15 @@ export const DRILLS: Drill[] = [
   },
   {
     // ── ENGINEERING ───────────────────────────────────────────────────────
-    // Reach is the spear's entire idea, and 64px of it was barely more than a
-    // sword: the second rank of a spear wall stood there holding a stick. At
-    // 118 he fights over the man in front, which is what a spear wall IS.
+    // Reach is the spear's entire idea. Only the front rank of a file can bring
+    // a weapon to bear — that is what `press` already assumes — so a spearman
+    // behind anyone was a man holding a stick. This is the exception: one man
+    // in front, and he fights over him. Two is a crowd.
     tech: 'long_hafts',
     unit: 'spearman',
     mult: { range: 1.84 },
     set: { overhead: true },
-    note: 'Long enough to fight from the second rank, over the man in front.'
+    note: 'Fights from the second rank, over the one man standing in front of him.'
   },
   {
     // ── THE OCCULT ────────────────────────────────────────────────────────

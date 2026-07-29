@@ -250,7 +250,7 @@ export const TECHS: TechNode[] = [
     cost: 340,
     requires: ['powder_discipline'],
     effect:
-      'Slingers pick their mark one file to either side instead of only helping out when their own is empty. The cross-file price still stands.'
+      'Slingers stop throwing only at what is in front of them. With their own file clear they loose into the one next door, at the cross-file price.'
   },
   {
     id: 'mob_rule',
@@ -274,7 +274,7 @@ export const TECHS: TechNode[] = [
     age: 0,
     cost: 360,
     requires: ['field_stripping'],
-    effect: 'Bone Spearmen get most of a metre more haft, and fight from the second rank over the man in front.'
+    effect: 'Bone Spearmen get most of a metre more haft. Only a front rank can bring a weapon to bear — these fight from the second, over the one man in front of them.'
   },
   {
     id: 'ward_of_bone',

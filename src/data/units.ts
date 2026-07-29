@@ -74,7 +74,8 @@ export const UNITS: UnitDef[] = [
       knockback: 30,
       muzzle: [10, -26]
     },
-    description: 'Lobs river stones in a high arc. Outranges every early melee.',
+    noSpill: true,
+    description: 'Lobs river stones in a high arc. Outranges every early melee. Throws only at his own file until taught better.',
     visual: {
       kind: 'humanoid',
       skin: 0xd39a6e,

@@ -302,6 +302,31 @@ export default class Unit implements Damageable {
    * and arrived dead. The lunge is what makes the decision pay.
    */
   lungeMs = 0
+
+  /**
+   * How many friendly soldiers are packed in ahead of this one in its file.
+   * Set by the battlefield each step; 0 means it is the front rank.
+   */
+  ranksAhead = 0
+
+  /**
+   * Whether this soldier can physically bring its weapon to bear from where it
+   * is standing.
+   *
+   * The press rule has always been written as "only the front rank of a column
+   * can physically reach the enemy, and the ranks behind put their shoulders
+   * into the blow" — that is what `press` IS. The simulation never enforced the
+   * first half of it, so a rank that was already being counted as a shoulder
+   * was ALSO swinging its own weapon, and a deep file got paid twice.
+   *
+   * A shooter is unaffected: it looses over the men in front, which is the
+   * whole reason to stand behind them.
+   */
+  private canBringToBear(): boolean {
+    if (this.def.attack.kind !== 'melee') return true
+    // Long hafts reach over exactly one man. Two is a crowd.
+    return this.ranksAhead <= (this.def.drill?.overhead ? 1 : 0)
+  }
   /** Health a second left behind by a Shaman's hands, and how long is left of it. */
   mendRate = 0
   mendMs = 0
@@ -1242,7 +1267,7 @@ export default class Unit implements Damageable {
     const staggered = this.stagger > 0
 
     if (this.holdMs > 0) this.holdMs -= dtMs
-    if (nearest && this.distanceTo(nearest) <= this.reach && this.formedUp(blockerX)) {
+    if (nearest && this.distanceTo(nearest) <= this.reach && this.formedUp(blockerX) && this.canBringToBear()) {
       this.state = 'engage'
       if (!staggered) this.tryAttack(nearest, dtMs)
     } else {

@@ -195,6 +195,15 @@ const ESCORT_GUARD = 150
 /** How long a raider runs at raiding pace after committing to a pounce. */
 const POUNCE_LUNGE_MS = 1400
 
+/**
+ * How close in front of a soldier another of his own has to be standing before
+ * he counts as being BEHIND him rather than beside him.
+ *
+ * Deliberately tighter than the press window. A man half a step back is in the
+ * scrum and lending weight; a man a whole body-length back is queueing.
+ */
+const RANK_DEPTH = 52
+
 /** How far back a rank still counts as pressing into the fight ahead of it. */
 const PRESS_REACH = 105
 /** Extra share of a blow contributed by each supporting rank. */
@@ -2839,6 +2848,25 @@ export default class Battlefield {
         support += 1
       }
       unit.press = 1 + support * (unit.techs?.has('iron_line') ? PRESS_BONUS + 0.15 : PRESS_BONUS)
+      // And the other half of the same picture: how many of its own are packed
+      // in AHEAD of it. Same window as the press, and shared-ground only, so
+      // the two numbers describe one scrum rather than two different ones.
+      // Walked as a CHAIN — each man measured against the one in front of him,
+      // not against me. Measuring everyone against me broke the count at the
+      // second rank, because the third man up is more than a rank away even
+      // though there is an unbroken press between us, and a file four deep
+      // reported everybody as standing second.
+      let ahead = 0
+      let refX = unit.x
+      for (let j = i - 1; j >= 0; j -= 1) {
+        const other = order[j]
+        if (other.layer !== 'ground' || !other.alive) continue
+        if (!other.lanes.some(l => unit.lanes.includes(l))) continue
+        if (Math.abs(other.x - refX) > RANK_DEPTH) break
+        ahead += 1
+        refX = other.x
+      }
+      unit.ranksAhead = ahead
       // Whichever file's front edge stops this soldier first — the nearest one
       // ahead across every file it stands in.
       //
@@ -3089,19 +3117,6 @@ export default class Battlefield {
       // machine whose own shoulder is in the next lane.
       for (const l of unit.lanes) gather(enemyLanes[l], own)
       if (!melee) gather(enemyAir, own)
-      // LOOSE STONES: a sling does not much care which file it is thrown into.
-      // The files either side join the primary pool rather than being a
-      // fallback for when this one is empty, so a gun line can CONCENTRATE
-      // instead of merely helping out while idle. The cross-file penalty is
-      // untouched — what is bought is reach, not power.
-      const wide = new Set<Damageable>()
-      if (unit.def.drill?.wideShot && !melee) {
-        const before = own.length
-        for (const l of [unit.lane - 1, unit.lane + 1]) {
-          if (l >= 0 && l < LANE_COUNT) gather(enemyLanes[l], own)
-        }
-        for (let i = before; i < own.length; i += 1) wide.add(own[i].target)
-      }
       // The gate is only reachable from the middle three files, at ANY range.
       // Everything else in the yard is a building, and only from the flanks.
       if (this.canReachGate(unit)) gather([enemyBase], own)
@@ -3109,12 +3124,11 @@ export default class Battlefield {
         gather(this.derelictBlockers(OPPOSITE[unit.faction], l), own)
         gather(this.standingBuildings(OPPOSITE[unit.faction], l), own)
       }
-      if (own.length > 0) {
-        const picked = pickFrom(own)
-        if (wide.has(picked)) unit.crossLaneShot = 1
-        return picked
-      }
-      if (!melee) {
+      if (own.length > 0) return pickFrom(own)
+      // A shooter whose own file is clear helps its neighbour — unless it has
+      // never been taught to. LOOSE STONES is what lifts that.
+      const maySpill = !unit.def.noSpill || (unit.def.drill?.wideShot ?? false)
+      if (!melee && maySpill) {
         // Spill into the lane next door, at a price. A gun line can help its
         // neighbour, but it can never hold two lanes for the cost of one.
         const spill: { target: Damageable; dist: number }[] = []
