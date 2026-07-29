@@ -1026,8 +1026,24 @@ export default class Unit implements Damageable {
 
     for (const [name, part] of Object.entries(this.parts)) {
       if (!part.visible) continue
-      const worldX = this.x + part.x * this.scaleFactor * this.dir
-      const worldY = this.y + part.y * this.scaleFactor
+      // Deterministic spawn coordinates, from the simulation's own stream.
+      //
+      // These used to be read straight off the ANIMATED sprite part —
+      // `part.x`/`part.y` are written by the rig, whose bone chain and IK run on
+      // Math.sin, cos, atan2, acos and hypot. Those are not bit-identical
+      // between engines, which is the entire reason `sim/dmath.ts` exists, and
+      // `physics.hash()` mixes every gib's rounded position. So a body coming
+      // apart put a Chrome-shaped number and an Android-WebView-shaped number
+      // into the fingerprint, and a cross-platform match forked on the first
+      // dismemberment. This was the door the transcendentals came back in
+      // through.
+      //
+      // The visual is unchanged — the body still carries the part's texture,
+      // origin and rotation. Only WHERE the physics thinks it started is now
+      // the simulation's business rather than the animation's.
+      const scatter = this.def.height * 0.42
+      const worldX = this.x + rand.spread(scatter) * this.dir
+      const worldY = this.y - this.def.height * 0.5 + rand.spread(scatter * 0.7)
       const heavy = name === 'torso' || name === 'body' || name === 'mount'
       physics.spawn(
         mechanical ? 'scrap' : 'gib',

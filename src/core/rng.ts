@@ -9,6 +9,19 @@ export class Rng {
     this.state = seed >>> 0 || 1
   }
 
+  /**
+   * Where this stream currently stands.
+   *
+   * Folded into the match fingerprint so that a divergence in how many draws
+   * each peer has taken is caught on the NEXT tick, rather than lying dormant
+   * until one of those draws happens to move a hashed quantity. A stream that
+   * has forked is a match that has forked; there is no reason to wait for the
+   * consequence.
+   */
+  get position(): number {
+    return this.state
+  }
+
   /** Uniform float in [0, 1). */
   next(): number {
     this.state = (this.state + 0x6d2b79f5) >>> 0

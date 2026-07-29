@@ -139,6 +139,20 @@ export function relayCurves(units: UnitDef[]): void {
     const t = bandPosition(unit)
     const target = LINE_COST * Math.pow(eliteCost(age) / LINE_COST, t)
     const cost = Math.max(LINE_COST, Math.round(target / 10) * 10)
+    // A SUMMONED unit is authored at cost 0 — nobody buys it, something makes
+    // it. Dividing the new price by that gave `costMul = Infinity`, and every
+    // stat below it followed: the Drone Host's gnat and the Archmage's shade
+    // both loaded with Infinity health and Infinity damage, which made them
+    // unkillable and made them one-shot anything they touched.
+    //
+    // It also blinded the desync detector. `stateHash` quantises with
+    // `Math.round(v) | 0`, and `Infinity | 0` is 0 — so once either of those
+    // walked the field, the army's gold, xp and every one of those units' hp
+    // hashed as a constant zero and real divergence in them stopped being
+    // detectable at all.
+    //
+    // Something that is never bought has no price to re-lay, so leave it alone.
+    if (unit.cost <= 0) continue
     const costMul = cost / unit.cost
     const powMul = (targetPowerPerGold(age, t) / MEASURED_PG[age]) * costMul
 

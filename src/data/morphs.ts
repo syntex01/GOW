@@ -415,7 +415,18 @@ export function morphedDef(base: UnitDef, techs: ReadonlySet<string>): UnitDef {
   // rather than the other way round — the reading everyone expects is "a
   // quarter off the clubman", not "a quarter off what the clubman used to be".
   if (!lead) return drilledDef(base, techs)
-  const key = `${base.id}@${lead.line.branch}${lead.stages.length}`
+  // Keyed on WHICH stages are owned, not merely how many.
+  //
+  // A count is only sufficient if stage k always hard-requires stage k-1, and
+  // Ordnance breaks that: `ashfall` hangs off `torchbearer_doctrine` and never
+  // requires `overpressure`, so {ricochet, overpressure} and {ricochet,
+  // ashfall} are both legal, both length 2, and both used to collide on
+  // `clubman@ordnance2`. They are not close — one turns melee into thrown
+  // charges at range 190, the other stays melee at 43 and changes the unit's
+  // collision radius. The cache is module-level and outlives a match, so the
+  // loser was whichever def happened to be derived first, in either peer's
+  // page, in any earlier game.
+  const key = `${base.id}@${lead.line.branch}:${lead.stages.map(s => s.tech).join('+')}`
   const cached = morphCache.get(key)
   if (cached) return drilledDef(cached, techs, base.id)
 

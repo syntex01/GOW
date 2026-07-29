@@ -73,7 +73,7 @@ import Projectile, { ballisticAngle } from './projectile'
 import PhysicsWorld, { type Body } from './physics'
 import Terrain, { RELIEF_BUCKET } from './terrain'
 import Unit, { resetUnitIds, type UnitWorld } from './unit'
-import { ADVANCE_DIR, LANE_COUNT, LANE_MID, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type TechBranchLean } from './types'
+import { ADVANCE_DIR, LANE_COUNT, LANE_MID, LANE_Y, OPPOSITE, type Damageable, type DamageType, type Faction, type ReserveMode, type TechBranchLean } from './types'
 
 export interface BattlefieldConfig {
   worldWidth: number
@@ -202,6 +202,9 @@ const POUNCE_LUNGE_MS = 1400
  * Deliberately tighter than the press window. A man half a step back is in the
  * scrum and lending weight; a man a whole body-length back is queueing.
  */
+/** Fixed order for the reserve modes, so the fingerprint reads one the same way on both peers. */
+const RESERVE_ORDER: ReserveMode[] = ['none', 'age', 'elite', 'rush']
+
 const RANK_DEPTH = 52
 
 /** How far back a rank still counts as pressing into the fight ahead of it. */
@@ -1211,11 +1214,41 @@ export default class Battlefield {
       mix(army.tracks.ramparts * 100 + army.tracks.barbican * 10 + army.tracks.cellars)
       // Owned behaviours change how the simulation runs, so they are part of
       // the fingerprint — packed as a bitmask over a stable order.
+      // Packed across as many words as the tree needs.
+      //
+      // This was one 32-bit word and `1 << i`, and JavaScript's shift takes its
+      // count MOD 32 — so with sixty-odd nodes every bit carried two or three
+      // techs and most of the tree was invisible to the fingerprint. Two armies
+      // owning different research could hash identically for the rest of the
+      // match, which is the worst possible failure in a detector: silence.
       let techBits = 0
       for (let i = 0; i < TECH_ORDER.length; i += 1) {
-        if (army.hasTech(TECH_ORDER[i])) techBits |= 1 << i
+        if (army.hasTech(TECH_ORDER[i])) techBits |= 1 << i % 32
+        if (i % 32 === 31) {
+          mix(techBits)
+          techBits = 0
+        }
       }
       mix(techBits)
+      // What is on the bench, not merely how far through it is. Two commanders
+      // benched on different nodes at the same progress were indistinguishable
+      // until one of them finished and granted a tech the other lacked.
+      mix(army.studying ? TECH_ORDER.indexOf(army.studying) + 1 : 0)
+      // The ability gate. `consumeAbility` accepts or refuses the SAME
+      // replicated command on this value, so a drift across 1.0 has one peer
+      // firing a full barrage and the other firing nothing.
+      mix(Math.round(army.abilityCharge * 1000))
+      // Rush collapses the entire build queue every tick; the holds set the
+      // floor the standing orders will not spend below.
+      mix(RESERVE_ORDER.indexOf(army.reserveMode) + 1)
+      // The queue's CONTENTS, not just its depth — same depth, different
+      // soldiers, different lanes and different completion times all hashed
+      // the same before this.
+      for (const entry of army.queue) {
+        mix(Math.round(entry.remainingMs))
+        mix(entry.lane + 8)
+      }
+      for (const o of army.orders) mix(o.id.length * 32 + o.lane)
     }
     mix(this.playerBase.hp * 10)
     mix(this.enemyBase.hp * 10)
@@ -1239,6 +1272,33 @@ export default class Battlefield {
         for (const b of seat.plots) for (const part of b.hashParts()) mix(part)
       }
     }
+    // Fire, plague and spore patches damage units every tick, mire them and
+    // freeze terrain. A patch that exists on one peer and not the other is a
+    // continuous invisible damage stream.
+    mix(this.zones.length)
+    for (const zone of this.zones) {
+      mix(Math.round(zone.x))
+      mix(Math.round(zone.ttl))
+      mix(Math.round(zone.radius))
+      mix(zone.lane * 8 + (zone.faction === 'player' ? 0 : 1))
+    }
+    // Where the shells actually are. Only the COUNT was fingerprinted, so two
+    // peers with the same number of rounds in the air but different
+    // trajectories agreed right up until those rounds landed somewhere else.
+    for (const p of this.projectiles) {
+      mix(Math.round(p.x))
+      mix(Math.round(p.y))
+    }
+    // Work the simulation has promised to do later. Divergence in the schedule
+    // is divergence in the future.
+    mix(this.pending.length)
+    for (const entry of this.pending) mix(Math.round(entry.at))
+    // The seeded stream's own position — the single most valuable thing in
+    // here. Once two peers have drawn a different NUMBER of times, every later
+    // roll differs; catching that on the next tick instead of on the next
+    // visible consequence is the difference between a diagnosable desync and a
+    // mystery forty seconds downstream.
+    mix(this.rng.position | 0)
     mix(Math.round(this.quarryBank.player * 100))
     mix(Math.round(this.quarryBank.enemy * 100))
     for (const banner of this.banners) {
@@ -1251,9 +1311,50 @@ export default class Battlefield {
     return h >>> 0
   }
 
+  /**
+   * Work the simulation has promised to do later, on the SIMULATION's clock.
+   *
+   * Every ability in the game used to schedule itself with
+   * `scene.time.delayedCall` — Phaser's render clock. That clock is not the
+   * simulation's: `LockstepDriver` runs between zero and four ticks per frame
+   * off an accumulator, and runs none at all while it waits on the other peer's
+   * input. So a barrage's shells landed on whichever tick each machine's frame
+   * timing happened to put them on, and the two peers applied the same damage
+   * at different moments to different units.
+   *
+   * Worse, those callbacks drew from `this.rng` — the SEEDED stream shared with
+   * crit rolls, hit spread and spawn jitter. An Arrow Storm is 46 shells and 92
+   * draws taken out of band, so after one ability the two peers disagreed on
+   * every subsequent roll in the match, not merely on the barrage.
+   *
+   * Entries fire in insertion order among equal due times, which is what keeps
+   * the draw order itself reproducible.
+   */
+  private pending: { at: number; run: () => void }[] = []
+
+  /** Runs `fn` once the simulation clock has advanced `inMs` further. */
+  private schedule(inMs: number, run: () => void): void {
+    this.pending.push({ at: this.elapsedMs + Math.max(0, inMs), run })
+  }
+
+  private runScheduled(): void {
+    if (this.pending.length === 0) return
+    // Collected before running, because a scheduled call may schedule more and
+    // must not be able to run its own children within the same tick.
+    const due: (() => void)[] = []
+    const keep: { at: number; run: () => void }[] = []
+    for (const entry of this.pending) {
+      if (entry.at <= this.elapsedMs) due.push(entry.run)
+      else keep.push(entry)
+    }
+    this.pending = keep
+    for (const run of due) run()
+  }
+
   /** One fixed-length slice of simulation. */
   private simulate(dtMs: number): void {
     this.elapsedMs += dtMs
+    this.runScheduled()
     this.statsByFaction.player.durationMs = this.elapsedMs
     this.statsByFaction.enemy.durationMs = this.elapsedMs
     this.world.speedScale = this.speedScale
@@ -4581,7 +4682,7 @@ export default class Battlefield {
   ): void {
     this.vfx.flash(color, 260, 0.28)
     for (let i = 0; i < count; i += 1) {
-      this.scene.time.delayedCall(i * intervalMs, () => {
+      this.schedule(i * intervalMs, () => {
         if (this.finished) return
         const t = count === 1 ? 0.5 : i / (count - 1)
         const x = Phaser.Math.Linear(from, to, t) + this.rng.spread(90)
@@ -4617,7 +4718,7 @@ export default class Battlefield {
   private rollingBarrage(faction: Faction, from: number, to: number, count: number, damage: number, color: number): void {
     this.vfx.flash(color, 300, 0.3)
     for (let i = 0; i < count; i += 1) {
-      this.scene.time.delayedCall(i * 140, () => {
+      this.schedule(i * 140, () => {
         if (this.finished) return
         const x = Phaser.Math.Linear(from, to, i / Math.max(1, count - 1)) + this.rng.spread(40)
         const y = this.config.groundY - 18
@@ -4648,8 +4749,17 @@ export default class Battlefield {
       onComplete: () => plane.destroy()
     })
 
+    // Where the bomber IS at the moment each bomb leaves it, computed rather
+    // than read off the sprite. `plane.x` is a tween value interpolated from
+    // accumulated FRAME deltas, so two peers sampling it 360ms into a 2300ms
+    // run released twelve bombs at twelve different world positions.
+    const runStart = from - dir * 300
+    const runEnd = to + dir * 400
     for (let i = 0; i < 12; i += 1) {
-      this.scene.time.delayedCall(360 + i * 130, () => {
+      const releaseMs = 360 + i * 130
+      const along = Math.max(0, Math.min(1, releaseMs / 2300))
+      const bombX = runStart + (runEnd - runStart) * along
+      this.schedule(releaseMs, () => {
         if (this.finished) return
         this.equipProjectile(
           new Projectile(
@@ -4657,8 +4767,8 @@ export default class Battlefield {
             {
               faction,
               projectile: 'bomb',
-              x: plane.x,
-              y: plane.y + 12,
+              x: bombX,
+              y: y + 12,
               vx: dir * 200,
               vy: 40,
               gravity: 900,
@@ -4684,7 +4794,7 @@ export default class Battlefield {
     this.vfx.shake(0.008, 2400)
 
     for (let i = 0; i <= steps; i += 1) {
-      this.scene.time.delayedCall(i * 88, () => {
+      this.schedule(i * 88, () => {
         if (this.finished) {
           beam.destroy()
           return
