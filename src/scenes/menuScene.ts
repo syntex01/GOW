@@ -181,6 +181,18 @@ export default class MenuScene extends Phaser.Scene {
     })
   }
 
+  /**
+   * Starts a battle with no AI, no scarcity, and F8 to take the other side.
+   *
+   * A plain skirmish underneath, so every rule the real game runs on is the
+   * rule the workbench runs on — the only differences are the ones the sandbox
+   * flag names.
+   */
+  private launchSandbox(): void {
+    session.start({ mode: 'skirmish', difficulty: save.settings.difficulty, sandbox: true })
+    this.scene.start('BattleScene')
+  }
+
   private buildMain(): void {
     const cam = this.cameras.main
     const cx = cam.width / 2
@@ -204,7 +216,7 @@ export default class MenuScene extends Phaser.Scene {
       })
     )
 
-    const entries: { text: string; sub: string; accent: number; view: View | 'multiplayer' }[] = [
+    const entries: { text: string; sub: string; accent: number; view: View | 'multiplayer' | 'sandbox' }[] = [
       { text: 'CAMPAIGN', sub: '12 missions', accent: UI.gold, view: 'campaign' },
       { text: 'ENDLESS SIEGE', sub: 'survive the waves', accent: UI.bad, view: 'endless' },
       { text: 'QUICK BATTLE', sub: 'one-off skirmish', accent: UI.player, view: 'skirmish' },
@@ -212,6 +224,7 @@ export default class MenuScene extends Phaser.Scene {
       { text: 'ARMORY', sub: 'unit codex', accent: UI.accent, view: 'codex' },
       { text: 'ACHIEVEMENTS', sub: `${this.unlockedCount()}/${ACHIEVEMENTS.length}`, accent: UI.good, view: 'achievements' },
       { text: 'HOW TO PLAY', sub: 'controls & rules', accent: UI.xp, view: 'howto' },
+      { text: 'SANDBOX', sub: 'no limits, both sides', accent: 0x30d5c8, view: 'sandbox' },
       { text: 'SETTINGS', sub: 'audio & graphics', accent: UI.panelEdge, view: 'settings' }
     ]
 
@@ -235,6 +248,9 @@ export default class MenuScene extends Phaser.Scene {
         fontSize: entry.text.length > 12 ? 18 : 21,
         onClick: () => {
           if (entry.view === 'multiplayer') this.launchMultiplayer()
+          // The workbench starts straight away — there is nothing to configure
+          // when neither scarcity nor an opponent is in play.
+          else if (entry.view === 'sandbox') this.launchSandbox()
           else this.showView(entry.view)
         }
       })

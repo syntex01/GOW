@@ -211,6 +211,15 @@ export interface MatchSetup {
   seed?: number
   /** Set for peer-to-peer matches; absent means play against the AI. */
   netRole?: 'host' | 'guest'
+  /**
+   * The workbench: no opponent, no scarcity, and either side is yours.
+   *
+   * Gold and research are topped up every tick for BOTH commanders, the AI is
+   * not attached at all, and F8 hands you the other side of the field. It
+   * exists so a matchup can be set up deliberately instead of waited for —
+   * which is how most of this game's balance questions actually get answered.
+   */
+  sandbox?: boolean
 }
 
 export const ENDLESS_WAVE_SECONDS = 45

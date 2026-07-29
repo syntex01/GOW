@@ -55,6 +55,13 @@ export const AIR_Y = 240
 const CAMERA_ZOOM = 1.0
 /** Vertical scroll that puts the ground line just above the command bar. */
 const CAMERA_SCROLL_Y = 0
+/**
+ * What a sandbox commander is handed, and re-handed whenever it runs low.
+ *
+ * Large enough that nothing is ever unaffordable, small enough to read as a
+ * number on the bar rather than as scientific notation.
+ */
+const SANDBOX_PURSE = 5_000_000
 
 /** The playable battle: world, simulation, camera work and mode rules. */
 export default class BattleScene extends Phaser.Scene {
@@ -120,6 +127,16 @@ export default class BattleScene extends Phaser.Scene {
    * networked match commands 'enemy' in the shared world.
    */
   localFaction: Faction = 'player'
+
+  /**
+   * The workbench. No AI, no scarcity, and either side is yours.
+   *
+   * Everything a balance question needs and nothing it does not: both
+   * commanders' purses and research are topped up every tick, nobody is driving
+   * the opposition, and F8 hands you the other half of the field so a matchup
+   * can be BUILT rather than waited for.
+   */
+  sandbox = false
   /** Present only in peer-to-peer matches. */
   lockstep?: LockstepDriver
 
@@ -189,8 +206,12 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     gameLog.log('match', `battle starting: mode=${setup.mode} netRole=${setup.netRole ?? 'solo'} seed=${this.matchSeed} difficulty=${setup.netRole ? 'ignored (networked)' : setup.difficulty} pop cap age0=${this.battlefield.player.populationCap}`)
-    // A networked match has two humans; nobody is driving the AI.
-    if (!setup.netRole) {
+    this.sandbox = setup.sandbox === true
+    // A networked match has two humans; nobody is driving the AI. Neither does
+    // the sandbox — an opponent playing itself while you are trying to set a
+    // matchup up is noise, and you can take that side yourself whenever you
+    // want to see it answer.
+    if (!setup.netRole && !this.sandbox) {
       this.ai = new AiController(this.battlefield, profile, (this.matchSeed ^ 0x9e3779b9) >>> 0)
     }
     this.background.setAge(this.battlefield.player.age)
@@ -506,6 +527,8 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-H', () => this.emptyOssuary())
     // The black box, on demand: F9 downloads this session's debug log.
     keyboard.on('keydown-F9', () => gameLog.download())
+    // The workbench: take the other side of the field.
+    keyboard.on('keydown-F8', () => this.swapSide())
     // The whole of placement: pick the file the next piece will walk.
     const LANE_KEYS = ['Z', 'X', 'C', 'V', 'B']
     LANE_KEYS.forEach((key, lane) => keyboard.on(`keydown-${key}`, () => this.setLane(lane)))
@@ -665,6 +688,57 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   /** Cycles what the standing orders refuse to spend. */
+  /**
+   * Keeps both purses and both benches full while the sandbox is running.
+   *
+   * A ceiling rather than a flat assignment, so a click that spends still shows
+   * a number going down for the moment before it refills — reading `9e9` in the
+   * corner tells you nothing about whether a purchase actually went through.
+   * Research is topped the same way, so any node can be started at once.
+   */
+  private topUpSandbox(): void {
+    if (!this.sandbox) return
+    for (const faction of ['player', 'enemy'] as const) {
+      const army = this.battlefield.armyFor(faction)
+      if (army.gold < SANDBOX_PURSE / 2) army.gold = SANDBOX_PURSE
+      if (army.research < SANDBOX_PURSE / 2) army.research = SANDBOX_PURSE
+      if (army.studying) army.studyRp = Math.max(army.studyRp, army.researchCost(army.studying))
+      army.xp = Math.max(army.xp, army.xpToAdvance)
+    }
+  }
+
+  /**
+   * Hands you the other side of the field.
+   *
+   * Everything the HUD, the input and the camera read hangs off `localFaction`
+   * already — it is how a networked guest commands the far half — so taking the
+   * opposition is a matter of moving that one value and telling the interface
+   * to look again.
+   */
+  swapSide(): void {
+    if (!this.sandbox) return
+    this.localFaction = OPPOSITE[this.localFaction]
+    this.localLane = 2
+    // `pan` moves the camera's CENTRE, where `setScroll` sets its top-left, so
+    // the target has to be offset by half a screen or the swap lands half a
+    // viewport short of where the opening shot of that side would be.
+    const cam = this.cameras.main
+    const half = cam.width / 2
+    cam.pan(
+      this.localFaction === 'player' ? half : WORLD_WIDTH - half,
+      CAMERA_SCROLL_Y + cam.height / 2,
+      420,
+      'Sine.easeInOut'
+    )
+    // The HUD re-reads `localArmy` on its next sync, so nothing has to be told
+    // to rebuild — it only has to be told WHICH side it is now looking at.
+    gameEvents.emit('hud:flash', {
+      message: this.localFaction === 'player' ? 'COMMANDING THE LEFT' : 'COMMANDING THE RIGHT',
+      tone: 'info'
+    })
+    gameLog.log('match', `sandbox: now commanding ${this.localFaction}`)
+  }
+
   cycleReserve(): void {
     const order: ReserveMode[] = ['none', 'age', 'elite']
     const next = order[(order.indexOf(this.localArmy.reserveMode) + 1) % order.length]
@@ -1003,6 +1077,7 @@ export default class BattleScene extends Phaser.Scene {
     } else {
       this.battlefield.update(delta)
       this.ai?.update(delta * this.battlefield.speedScale)
+      this.topUpSandbox()
     }
     this.updateCamera(delta)
     this.updateMusicIntensity()
