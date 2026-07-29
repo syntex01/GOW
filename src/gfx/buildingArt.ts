@@ -613,6 +613,197 @@ export function drawBuilding(def: BuildingDef, tier: number, creed = 'none'): Ca
       }
       break
     }
+    // ── the creed halls: seven silhouettes, one per line of play ──
+
+    // A slaughterhouse. Open-fronted, hung with rails, and draining.
+    case 'charnel': {
+      const w = Math.round(32 + growth * 16)
+      const h = Math.round(15 + growth * 7)
+      const b = body(w, h)
+      // The open front is the whole read: you can see what is inside.
+      p.fill(b.x + 3, b.y + 3, w - 6, h - 3, dark[0])
+      // Rails across the opening, and what is hanging off them.
+      for (let r = 0; r < 2; r += 1) {
+        const ry = b.y + 4 + r * Math.round((h - 6) / 2)
+        p.fill(b.x + 3, ry, w - 6, 1, stone[3])
+        for (let i = 0; i < 4; i += 1) {
+          const hx = b.x + 6 + i * Math.round((w - 12) / 3)
+          const hl = 3 + Math.round(n(i + r * 4, 3) * 3)
+          p.fill(hx, ry + 1, 2, hl, trim[2])
+          p.set(hx, ry + hl, trim[1])
+        }
+      }
+      roof(p, b.x - 3, w + 6, b.y - 4, 4, trim)
+      // The channel it all runs into, out the front, on the ground.
+      p.fill(b.x + 2, ground - 2, w - 4, 2, trim[1])
+      break
+    }
+
+    // A bone bank: arched niches, stacked, under a low dome.
+    case 'ossuary': {
+      const w = Math.round(24 + growth * 12)
+      const h = Math.round(24 + growth * 14)
+      const b = body(w, h, stone)
+      const cols = 3
+      const rows = Math.max(2, Math.round(h / 8))
+      for (let c = 0; c < cols; c += 1) {
+        for (let r = 0; r < rows; r += 1) {
+          const nx = b.x + 3 + c * Math.round((w - 6) / cols)
+          const ny = b.y + 3 + r * Math.round((h - 5) / rows)
+          const nw = Math.max(3, Math.round((w - 6) / cols) - 2)
+          p.fill(nx, ny, nw, 4, dark[0])
+          // The pale ends of them, packed in and facing out.
+          for (let i = 0; i < nw; i += 2) p.set(nx + i, ny + 1, trim[3])
+          p.fill(nx, ny - 1, nw, 1, stone[3])
+        }
+      }
+      // A low dome rather than a roofline — this is a vault, not a shed.
+      for (let j = 0; j < 5; j += 1) {
+        const dw = w - j * 3
+        p.fill(b.x + Math.round((w - dw) / 2), b.y - 1 - j, dw, 1, stone[2 + (j % 2)])
+      }
+      break
+    }
+
+    // A gun park: a poured casemate with barrels out of it.
+    case 'battery': {
+      const w = Math.round(30 + growth * 14)
+      const h = Math.round(13 + growth * 6)
+      const b = body(w, h, stone)
+      // Sandbag revetment along the base, which is what says emplacement.
+      for (let i = 0; i < w; i += 5) {
+        p.fill(b.x + i, ground - 5, 5, 3, dark[2])
+        p.fill(b.x + i + 1, ground - 5, 3, 1, stone[3])
+      }
+      // Embrasure, then the casemate roof, THEN the barrels — a gun that is
+      // drawn before its own roof is a gun nobody can see.
+      p.fill(b.x + 3, b.y + 2, w - 6, 4, dark[0])
+      roof(p, b.x - 2, w + 4, b.y - 3, 3, dark)
+      const barrels = 1 + Math.round(growth * 1.4)
+      for (let g = 0; g < barrels; g += 1) {
+        const bx = b.x + 5 + g * 13
+        const by = b.y + 4
+        for (let i = 0; i < 20; i += 1) {
+          const yy = by - Math.round(i * 0.62)
+          p.set(bx + i, yy, stone[i > 15 ? 1 : 3])
+          p.set(bx + i, yy + 1, dark[1])
+        }
+        // Muzzle, and the recoil cradle it sits in.
+        p.fill(bx + 18, by - 12, 3, 3, stone[1])
+        p.set(bx + 20, by - 12, trim[4])
+        p.fill(bx - 1, by, 4, 3, dark[2])
+      }
+      break
+    }
+
+    // A laboratory: clean block, lit windows, a lantern roof and a mast.
+    case 'hall': {
+      const w = Math.round(26 + growth * 14)
+      const h = Math.round(22 + growth * 12)
+      const b = body(w, h, stone)
+      for (let r = 0; r < Math.max(2, Math.round(h / 7)); r += 1) {
+        const wy = b.y + 4 + r * 6
+        if (wy > b.y + h - 4) break
+        for (let c = 0; c < Math.max(2, Math.round(w / 7)); c += 1) {
+          const wx = b.x + 3 + c * 6
+          if (wx > b.x + w - 5) break
+          p.fill(wx, wy, 3, 3, dark[0])
+          // Everything here is lit, all night, which is the whole advantage.
+          p.fill(wx, wy, 3, 2, trim[3])
+          p.set(wx + 1, wy + 1, trim[4])
+        }
+      }
+      // A glazed lantern on top instead of a roof, and an aerial off it.
+      const lw = Math.round(w * 0.5)
+      const lx = b.x + Math.round((w - lw) / 2)
+      p.fill(lx, b.y - 6, lw, 6, dark[1])
+      p.fill(lx + 1, b.y - 5, lw - 2, 4, trim[2])
+      for (let j = 0; j < 8; j += 1) p.set(lx + Math.round(lw / 2), b.y - 7 - j, stone[2])
+      p.set(lx + Math.round(lw / 2), b.y - 15, trim[4])
+      break
+    }
+
+    // A ring drawn on the ground. Low, wide, and lit from inside.
+    case 'circle': {
+      const w = Math.round(30 + growth * 18)
+      const x0 = Math.round((CELL - w) / 2)
+      // The ring itself, in perspective — an ellipse, not a disc.
+      const rh = Math.round(6 + growth * 4)
+      for (let i = 0; i < w; i += 1) {
+        const t = (i / (w - 1)) * 2 - 1
+        const dy = Math.round(Math.sqrt(Math.max(0, 1 - t * t)) * rh)
+        p.set(x0 + i, ground - 3 - dy, trim[3])
+        p.set(x0 + i, ground - 3 + dy, trim[2])
+      }
+      // Sigils inside it, and candles standing around the rim.
+      for (let i = 0; i < 6; i += 1) {
+        const sx = x0 + 6 + Math.round(n(i, 7) * (w - 12))
+        p.set(sx, ground - 3 - Math.round(n(i, 2) * 3), trim[4])
+      }
+      for (let i = 0; i < 5; i += 1) {
+        const cx2 = x0 + 2 + i * Math.round((w - 4) / 4)
+        for (let j = 0; j < 5; j += 1) p.set(cx2, ground - 4 - j, stone[2])
+        p.set(cx2, ground - 10, trim[4])
+        p.set(cx2, ground - 11, trim[3])
+      }
+      break
+    }
+
+    // The doom clock: an obelisk with a ring turning near the top.
+    case 'rite': {
+      const w = Math.round(12 + growth * 6)
+      const h = Math.round(40 + growth * 10)
+      const b = body(w, h, stone)
+      // Courses up the shaft, so the height reads as built rather than drawn.
+      for (let j = 4; j < h; j += 5) p.fill(b.x, b.y + j, w, 1, dark[2])
+      // The ring, wide enough to overhang the shaft on both sides.
+      const rw = w + 14
+      const rx = b.x - 7
+      const ry = b.y + 6
+      for (let i = 0; i < rw; i += 1) {
+        const t = (i / (rw - 1)) * 2 - 1
+        const dy = Math.round(Math.sqrt(Math.max(0, 1 - t * t)) * 5)
+        p.set(rx + i, ry - dy, trim[3])
+        p.set(rx + i, ry + dy, trim[2])
+      }
+      // A point of light at the top, which is the part everyone watches.
+      p.fill(b.x + Math.round(w / 2) - 1, b.y - 4, 3, 4, trim[4])
+      p.set(b.x + Math.round(w / 2), b.y - 6, trim[4])
+      break
+    }
+
+    // A breeding pit: sunken, wet, and moving.
+    case 'pool': {
+      const w = Math.round(30 + growth * 16)
+      const x0 = Math.round((CELL - w) / 2)
+      const rh = Math.round(7 + growth * 4)
+      // The raised rim first, so the fluid sits INSIDE something.
+      for (let i = 0; i < w; i += 1) {
+        const t = (i / (w - 1)) * 2 - 1
+        const dy = Math.round(Math.sqrt(Math.max(0, 1 - t * t)) * rh)
+        p.set(x0 + i, ground - 4 - dy, stone[2])
+        p.set(x0 + i, ground - 4 + dy, stone[1])
+      }
+      // The fluid, filling it, a shade brighter toward the middle.
+      for (let i = 2; i < w - 2; i += 1) {
+        const t = (i / (w - 1)) * 2 - 1
+        const dy = Math.round(Math.sqrt(Math.max(0, 1 - t * t)) * (rh - 2))
+        for (let j = -dy; j <= dy; j += 1) p.set(x0 + i, ground - 4 + j, trim[Math.abs(j) < 2 ? 3 : 2])
+      }
+      // Things breaking the surface, and fronds around the edge.
+      for (let i = 0; i < 6; i += 1) {
+        const bx = x0 + 5 + Math.round(n(i, 5) * (w - 10))
+        p.set(bx, ground - 4 - Math.round(n(i, 8) * 3), trim[4])
+      }
+      for (let i = 0; i < 4; i += 1) {
+        const fx = x0 + 3 + i * Math.round((w - 6) / 3)
+        const fh = 5 + Math.round(n(i, 11) * 5)
+        for (let j = 0; j < fh; j += 1) p.set(fx + Math.round(j * 0.3), ground - 6 - j, dark[2])
+        p.set(fx + Math.round(fh * 0.3), ground - 6 - fh, trim[3])
+      }
+      break
+    }
+
     default: {
       const b = body(Math.round(22 + growth * 10), Math.round(20 + growth * 10))
       roof(p, b.x - 2, b.w + 4, b.y - 5, 5, trim)

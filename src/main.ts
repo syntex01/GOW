@@ -9,6 +9,7 @@ import type { UnitDef } from './data/types'
 import { UNITS_BY_ID } from './data/units'
 import { TURRETS } from './data/turrets'
 import { ALL_BUILDINGS } from './data/buildings'
+import { drawBuilding } from './gfx/buildingArt'
 import { TECHS } from './data/tech'
 import { FACTION_UNITS } from './data/factions'
 import BattleScene from './scenes/battleScene'
@@ -92,7 +93,13 @@ function start(): void {
       excludes?: string[]
     }[]
     __gowAges: { name: string; income: number; evolveCost: number; baseHp: number }[]
+    __gowBuildingArt: typeof drawBuilding
+    __gowBuildingDefs: Record<string, (typeof ALL_BUILDINGS)[number]>
   }
+  // The building art and its definitions, so a harness can composite a yard's
+  // worth of silhouettes without standing them on a battlefield first.
+  debug.__gowBuildingArt = drawBuilding
+  debug.__gowBuildingDefs = Object.fromEntries(ALL_BUILDINGS.map(b => [b.id, b]))
   debug.__gowAges = AGES.map(a => ({ name: a.name, income: a.income, evolveCost: a.evolveCost, baseHp: a.baseHp }))
   debug.__gowLog = gameLog
   debug.__gowTurrets = TURRETS.map(t => t.id)
