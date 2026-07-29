@@ -119,6 +119,9 @@ export default class AiController {
     if (this.bf.finished) return
     this.timer -= dtMs
     this.turretCooldown -= dtMs
+    // Savings accrue on the sim's clock, not on the reaction clock — a sharper
+    // commander thinks more often, it does not earn more often.
+    this.updateSavings(dtMs)
     if (this.timer > 0) return
     this.timer = this.profile.reactionMs
 
@@ -127,6 +130,17 @@ export default class AiController {
     // A cut supply line is as urgent as a cracked wall: both mean the game is
     // being lost somewhere the commander is not looking.
     this.pressure = Math.max(1 - base.hp / base.maxHp, army.siege)
+    // Recomputed once a reaction window rather than every tick: the savings
+    // rule reads it, and a second of lag on "am I being swamped" is cheaper
+    // than counting the whole field fifty times a second.
+    let own = 0
+    let foes = 0
+    for (const u of this.bf.units) {
+      if (!u.alive) continue
+      if (u.faction === 'enemy') own += 1
+      else foes += 1
+    }
+    this.swamped = own * 2 < foes
 
     // One strategic decision per reaction window — but the queue is never left
     // idle for it. Returning after the first thing it did meant a commander who
@@ -199,6 +213,105 @@ export default class AiController {
     return true
   }
 
+  /**
+   * Gold set aside for the next age. A savings account, not a spending rule.
+   *
+   * Without one the AI sat in a poverty trap. Every path that spends — units,
+   * turrets, buildings — took whatever was in the treasury the moment it
+   * arrived, so the balance never rose above a couple of hundred gold. It could
+   * therefore never afford an age-up, never afford the Granary that would have
+   * fixed the income that would have paid for one, and never afford a turret.
+   * Measured over eight minutes at Veteran it finished the match still in age
+   * one holding 3,723 experience against a requirement of 700 — never once
+   * short of the RIGHT to advance, and short of the fee on every single second
+   * of the match. A budgeting failure wearing an ageing failure's clothes.
+   *
+   * The obvious fix — hold back the whole fee until you can pay it — is worse,
+   * and measurably so: at age one the fee is 1,800 against 16 gold a second, so
+   * a commander banking it outright fields nothing for two minutes and is dead
+   * inside three. Tried, measured, discarded.
+   *
+   * What a person actually does is save a SHARE OF INCOME. A fixed slice of
+   * every coin goes to the future and the rest keeps the line fed, so the army
+   * never goes to zero and the fund still fills — faster once a Granary is up,
+   * which is the connection that makes economy worth building in the first
+   * place. The account drains back into the war the moment the fortress comes
+   * under real pressure, because nobody saves while losing the field.
+   */
+  private saved = 0
+
+  /**
+   * Whether the player has so many more bodies on the field that development
+   * is no longer a plan.
+   *
+   * Deliberately not "any deficit". Tried as `own < foes` and measured: against
+   * a reference rush the AI is behind on the count from the thirtieth second
+   * onward and never catches up, so the fund never started once and the match
+   * played out exactly as it had before any of this — never leaving age one.
+   * Being a soldier or two down is an ordinary skirmish. Being swamped is the
+   * emergency, and only that empties the account.
+   */
+  private swamped = false
+
+  private updateSavings(dtMs: number): void {
+    const army = this.bf.enemy
+    if (army.age >= MAX_AGE) {
+      this.saved = 0
+      return
+    }
+    const calm = Math.max(0, Math.min(1, (0.7 - this.pressure) / 0.45))
+    // Being swamped is a reason to stop saving before the wall is even touched.
+    if (calm <= 0 || this.swamped) {
+      this.saved = 0
+      return
+    }
+    const share = 0.28 + this.profile.evolveEagerness * 0.34
+    this.saved += army.incomePerSecond * (dtMs / 1000) * share * calm
+    // Never hoard past what it is saving for, never claim money that is not
+    // there, and give back whatever the pressure of the moment says it cannot
+    // afford to keep.
+    //
+    // Deliberately NOT also floored at the price of one soldier. That was tried
+    // — "the fund may never take the coin that would have been the next body" —
+    // and it is self-defeating: the army spends the treasury back down below a
+    // soldier's price every single window, so `gold - lineCost` is almost always
+    // negative and the account can never open. Measured, the AI won its matches
+    // outright, thirteen bodies to one, and still finished in age one holding
+    // 12,635 experience against a requirement of 700. Rate-limiting the fund to
+    // a share of income is what leaves room for the line; a floor just closes
+    // the account.
+    this.saved = Math.min(this.saved, this.developmentGoal() * calm, army.gold)
+  }
+
+  /**
+   * The one thing the fund is currently for.
+   *
+   * The first Granary comes before the first age. Saving for an age on a bare
+   * yard is saving at the wrong rate: the building costs a fraction of the fee,
+   * pays for itself in about two minutes, and makes every coin banked after it
+   * worth more. Measured unopposed with the order reversed, the AI reached age
+   * two four minutes in still earning its opening 16 gold a second, having
+   * never once been able to afford the thing that would have raised it.
+   */
+  private developmentGoal(): number {
+    const army = this.bf.enemy
+    if (!this.bf.hasBuilding('enemy', 'granary')) {
+      const def = BUILDINGS_BY_ID.granary
+      if (def) return buildingCost(def, 0, army.age)
+    }
+    return army.age >= MAX_AGE ? 0 : army.evolveCost
+  }
+
+  /** Whether the fund is still saving for its first Granary rather than an age. */
+  private get savingForYard(): boolean {
+    return !this.bf.hasBuilding('enemy', 'granary')
+  }
+
+  /** What it may spend on soldiers and stone — everything but the current goal. */
+  private get spendable(): number {
+    return Math.max(0, this.bf.enemy.gold - this.saved)
+  }
+
   private considerEvolve(): boolean {
     const army = this.bf.enemy
     if (army.age >= MAX_AGE) return false
@@ -209,7 +322,9 @@ export default class AiController {
     ).length
     if (enemiesClose > 4 && this.rng.next() > this.profile.evolveEagerness) return false
     if (this.rng.next() > this.profile.evolveEagerness) return false
-    return this.bf.evolve('enemy')
+    if (!this.bf.evolve('enemy')) return false
+    this.saved = 0
+    return true
   }
 
   /**
@@ -228,6 +343,14 @@ export default class AiController {
     const ownUnits = this.bf.units.filter(u => u.alive && u.faction === 'enemy').length
     if (ownUnits < 3) return false
     if (this.pressure >= 0.4) return false
+    // Being outnumbered is not yet "pressure" — the wall is still untouched and
+    // the supply line still open — but it is the last moment at which spending
+    // on economy is a plan rather than a concession. Against a rush the AI was
+    // laying a Granary at forty seconds, arriving at the fight a soldier down,
+    // and never getting the tempo back: the siege rule then cut the very income
+    // it had just bought. Develop from a position, not into one.
+    const foes = this.bf.units.filter(u => u.alive && u.faction === 'player').length
+    if (ownUnits < foes) return false
     const seat = this.bf.activeSeat('enemy')
 
     // Rubble first. A razed granary is a hole in the income that costs less to
@@ -270,7 +393,10 @@ export default class AiController {
       const plot = seat.plots[target]
       const tier = plot.alive && plot.def ? plot.tier + 1 : 0
       if (tier >= def.tiers.length || tier > ceiling) continue
-      if (army.gold < buildingCost(def, tier, army.age) * margin) continue
+      // The building the fund is FOR draws on the whole treasury; everything
+      // after it queues behind the next age like any other purchase.
+      const purse = this.savingForYard && id === 'granary' ? army.gold : this.spendable
+      if (purse < buildingCost(def, tier, army.age) * margin) continue
       if (this.bf.buildOnPlot('enemy', target, id)) return true
     }
 
@@ -308,7 +434,7 @@ export default class AiController {
     const freeSlot = base.slots.findIndex(s => !s.def)
     if (freeSlot < 0) return false
 
-    const affordable = turretsForAge(army.age).filter(t => t.cost <= army.gold * this.profile.turretBias * 3)
+    const affordable = turretsForAge(army.age).filter(t => t.cost <= this.spendable * this.profile.turretBias * 3)
     if (affordable.length === 0) return false
 
     // Anti-air becomes mandatory the moment the player flies something.
@@ -342,8 +468,14 @@ export default class AiController {
     const reserve = outnumbered ? 0 : (1 - this.profile.aggression) * 320 * (1 + army.age)
     if (army.gold < reserve && this.pressure < 0.5) return
 
+    // Soldiers come out of what is left after the war chest — except when the
+    // lane is empty, which is an emergency no amount of saving survives.
+    const budget = own === 0 ? army.gold : this.spendable
+    const within = roster.filter(def => def.cost <= budget)
+    if (within.length === 0) return
+
     const pick =
-      this.rng.next() < this.profile.counterPlay ? this.pickCounter(roster) : this.pickAffordableBest(roster)
+      this.rng.next() < this.profile.counterPlay ? this.pickCounter(within) : this.pickAffordableBest(within)
     if (pick) this.bf.queueUnit('enemy', pick.id, this.pickLane())
   }
 
