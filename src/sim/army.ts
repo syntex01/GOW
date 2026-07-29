@@ -6,7 +6,7 @@ import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import { LANE_COUNT, type Faction, type ReserveMode } from './types'
 import { powi } from './dmath'
-import { BASE_RESEARCH_RATE, RESEARCH_PER_GOLD, RESEARCH_PER_XP, RESEARCH_RING_STEP } from '../data/buildings'
+import { BASE_RESEARCH_RATE, CHARNEL_LINE_COST, RESEARCH_PER_GOLD, RESEARCH_PER_XP, RESEARCH_RING_STEP } from '../data/buildings'
 import { TRACKS_BY_ID, trackCost, type FortressTrackId } from '../data/fortress'
 import { OATHS, TECHS_BY_ID, UNLOCKABLE_UNIT_IDS, type DeedKey, type TechId } from '../data/tech'
 
@@ -166,6 +166,16 @@ export default class Army {
   researchDiscount = 1
   /** Units that may be under construction simultaneously. See `MUSTER_SLOTS`. */
   buildSlots = 1
+  /**
+   * What a Charnel Yard is currently worth: how much faster a LINE soldier is
+   * built, and how much damage the bodies on your half are adding to him.
+   * Written by the battlefield every tick, like the rest of the yard, because
+   * both halves of it move — the second one every time somebody dies.
+   */
+  charnelBuild = 1
+  charnelDamage = 0
+  /** Whether the Yard is finished enough to sharpen the Butcher as well. */
+  charnelElite = false
   /** Milliseconds between free line soldiers, or 0 where nothing autospawns. */
   autoSpawnMs = 0
   /** Public so the state hash can see it — it is simulation state like any other. */
@@ -576,10 +586,21 @@ export default class Army {
     this.queue.push({
       def,
       lane: Math.max(0, Math.min(4, Math.round(lane))),
-      remainingMs: def.buildMs / (this.modifiers.buildSpeed * this.yardBuildSpeed),
-      totalMs: def.buildMs / (this.modifiers.buildSpeed * this.yardBuildSpeed)
+      remainingMs: def.buildMs / (this.modifiers.buildSpeed * this.yardBuildSpeed * this.charnelRate(def)),
+      totalMs: def.buildMs / (this.modifiers.buildSpeed * this.yardBuildSpeed * this.charnelRate(def))
     })
     return true
+  }
+
+  /**
+   * The Charnel Yard's build bonus, but only for the cheap end of the bar.
+   *
+   * A yard full of butchers does not make a Titan faster; it makes bodies
+   * faster. Anything up to two and a half times the line price counts, which
+   * is the swarm half of the roster and nothing above it.
+   */
+  private charnelRate(def: UnitDef): number {
+    return def.cost <= CHARNEL_LINE_COST ? this.charnelBuild : 1
   }
 
   /** Cancels the last queued unit and refunds its cost. */

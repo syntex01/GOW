@@ -1,4 +1,5 @@
 import { AGES } from './ages'
+import { LINE_COST } from './curves'
 import type { TechId } from './tech'
 
 /**
@@ -200,6 +201,52 @@ export const MUSTER_AUTOSPAWN_MS = [0, 0, 8000] as const
  */
 export const FORGE_HOME_GUARD = [0, 0.12, 0.22] as const
 
+// ─────────────────────────── The creed halls ───────────────────────────
+// Every number the seven halls in CREED_HALLS run on, in one place, so the
+// panel text below and the simulation cannot drift apart.
+
+/** Charnel Yard: how much faster line units are built, by tier. */
+export const CHARNEL_BUILD_SPEED = [1.35, 1.5, 1.65] as const
+/** Damage a single body on your half adds to a line unit, and the ceiling. */
+export const CHARNEL_PER_CORPSE = 0.004
+export const CHARNEL_CAP = [0, 0.4, 0.75] as const
+/** How dear a unit may be and still count as "line" for the Yard. */
+export const CHARNEL_LINE_COST = LINE_COST * 2.5
+
+/** Ossuary: how many bodies it holds, by tier. */
+export const OSSUARY_CAPACITY = [12, 30, 60] as const
+/** How often it collects a body off your half. */
+export const OSSUARY_GATHER_MS = 1400
+
+/** Battery: reload, damage, and reach, by tier. */
+export const BATTERY_RELOAD_MS = [6000, 4500, 3000] as const
+export const BATTERY_DAMAGE = [120, 190, 260] as const
+export const BATTERY_REACH = [1500, 2600, 4200] as const
+export const BATTERY_SPLASH = 120
+/** Shells per volley. The top tier grows a second barrel. */
+export const BATTERY_BARRELS = [1, 1, 2] as const
+
+/** Research Hall: points a second, by tier. */
+export const RESEARCH_HALL_RATE = [1.8, 4.0, 8.0] as const
+/** What a FRONT plot multiplies that by — and what Forward Doctrine raises it to. */
+export const RESEARCH_HALL_FORWARD = 1.5
+export const RESEARCH_HALL_FORWARD_DOCTRINE = 2
+/** Perpetual Engine: how often a standing Hall permanently improves the army, and by how much. */
+export const PERPETUAL_ENGINE_MS = 20000
+export const PERPETUAL_ENGINE_GAIN = 0.005
+
+/** Summoning Circle: how long the rite takes, and what steps out. */
+export const SUMMON_RITE_MS = [45000, 75000, 120000] as const
+export const SUMMON_UNIT = ['dc_shade', 'dc_reaper', 'dc_pale_king'] as const
+
+/** The Great Rite: five minutes, in the open, and then the match is over. */
+export const GREAT_RITE_MS = 300000
+
+/** Spawning Pool: how often a growth crawls out, by tier. */
+export const SPAWN_POOL_MS = [10000, 7000, 5000] as const
+export const SPAWN_POOL_UNIT = 'hb_sporeling'
+
+
 /**
  * How often a superseded seat sends out a soldier, and how many of its own may
  * be alive at once. Slow, capped, and — because it can only ever make what it
@@ -270,6 +317,9 @@ export interface BuildingDef {
     | 'silo' | 'yard' | 'spire' | 'forge' | 'kiln' | 'vat'
     | 'magazine' | 'mast' | 'pit' | 'bed' | 'root' | 'redoubt' | 'palisade'
     | 'line' | 'chapel' | 'thrall'
+    // The creed halls: a slaughterhouse, a bone bank, a gun park, a laboratory,
+    // a ring drawn on the ground, a doom clock, and a breeding pit.
+    | 'charnel' | 'ossuary' | 'battery' | 'hall' | 'circle' | 'rite' | 'pool'
   color: number
   /** Which faces this may be raised on. Defences only, out in front. */
   faces: PlotFace[]
@@ -513,7 +563,142 @@ export const DEFENCE_BUILDINGS: BuildingDef[] = [
   }
 ]
 
-export const ALL_BUILDINGS: BuildingDef[] = [...CORE_BUILDINGS, ...DEFENCE_BUILDINGS, ...DOCTRINE_BUILDINGS]
+/**
+ * The creed halls.
+ *
+ * The ten doctrine buildings above bend a rule the creed already had. These
+ * seven are the reason a commander's HALF OF THE BOARD looks like their creed:
+ * a Carnage yard is a slaughterhouse, an Ordnance yard is a gun park, an
+ * Engineering yard is a laboratory it cannot afford to lose. They are the only
+ * doctrine buildings with a tier ladder, because each one is a whole line of
+ * play rather than a single rule flipped on.
+ *
+ * See docs/BUILDINGS_AND_TECH.md for why each creed wants the core four in a
+ * different order.
+ */
+export const CREED_HALLS: BuildingDef[] = [
+  // ───────────────────────────── CARNAGE ─────────────────────────────
+  {
+    id: 'charnel_yard',
+    name: 'Charnel Yard',
+    kind: 'doctrine',
+    faces: ['flank', 'rear'],
+    branch: 'carnage',
+    requires: 'charnel_rite',
+    blurb: 'The line goes out faster because nobody here is being careful.',
+    shape: 'charnel',
+    color: 0xa8d18c,
+    tiers: [
+      { cost: 900, hp: 7400, effect: 'Line units build 35% faster.' },
+      { cost: 1900, hp: 11000, effect: '+50% instead, and every body lying on your half adds 0.4% damage to your line units, up to +40%.' },
+      { cost: 3100, hp: 15000, effect: '+65%, the corpse bonus caps at +75%, and it reaches the Butcher too.' }
+    ]
+  },
+  {
+    id: 'ossuary',
+    name: 'Ossuary',
+    kind: 'doctrine',
+    faces: ['rear'],
+    branch: 'carnage',
+    requires: 'ossuary_rite',
+    blurb: 'Every one of them is still on the roll. They are simply not needed yet.',
+    shape: 'ossuary',
+    color: 0x8fd6a4,
+    tiers: [
+      { cost: 1100, hp: 8200, effect: 'Banks up to 12 bodies from your half. A Resurrection Vat draws from the bank before the ground.' },
+      { cost: 2200, hp: 12000, effect: 'Banks 30, and what is banked never rots.' },
+      { cost: 3600, hp: 16000, effect: 'Banks 60, and you may EMPTY IT AT WILL: everything in it rises at once.' }
+    ]
+  },
+
+  // ──────────────────────────── ORDNANCE ─────────────────────────────
+  {
+    id: 'battery',
+    name: 'Battery',
+    kind: 'doctrine',
+    faces: ['rear'],
+    branch: 'ordnance',
+    requires: 'emplacement',
+    blurb: 'Artillery that is architecture. It does not march and it does not stop.',
+    shape: 'battery',
+    color: 0xc9713d,
+    tiers: [
+      { cost: 1000, hp: 6600, effect: 'Shells the field every 6s for 120 splash damage, out to midfield.' },
+      { cost: 2100, hp: 9800, effect: 'Every 4.5s for 190, reaching their muster line.' },
+      { cost: 3400, hp: 13000, effect: 'Every 3s for 260, a SECOND BARREL, and the range to touch their gate.' }
+    ]
+  },
+
+  // ─────────────────────────── ENGINEERING ───────────────────────────
+  {
+    id: 'research_hall',
+    name: 'Research Hall',
+    kind: 'doctrine',
+    faces: ['front', 'flank', 'rear'],
+    branch: 'engineering',
+    requires: 'field_lab',
+    blurb: 'Everything here is written down. That is the entire advantage.',
+    shape: 'hall',
+    color: 0x5ce1ff,
+    tiers: [
+      { cost: 900, hp: 6000, effect: '+1.8 RP/s. Half again as much on a FRONT plot.' },
+      { cost: 1900, hp: 9000, effect: '+4.0 RP/s.' },
+      { cost: 3200, hp: 12500, effect: '+8.0 RP/s, and with the Perpetual Engine it makes your whole army permanently better every 20s while it stands.' }
+    ]
+  },
+
+  // ──────────────────────────── THE OCCULT ───────────────────────────
+  {
+    id: 'summoning_circle',
+    name: 'Summoning Circle',
+    kind: 'doctrine',
+    faces: ['front', 'flank', 'rear'],
+    branch: 'occult',
+    requires: 'binding_circle',
+    blurb: 'It is not hidden. Hiding it would defeat the purpose.',
+    shape: 'circle',
+    color: 0xb46bff,
+    tiers: [
+      { cost: 1200, hp: 5000, effect: 'A 45s rite, then it consumes itself and a lesser demon steps out.' },
+      { cost: 2400, hp: 7000, effect: '75s, and what steps out is greater.' },
+      { cost: 4000, hp: 9000, effect: '120s, and an archdemon: the strongest single thing anyone can field.' }
+    ]
+  },
+  {
+    id: 'great_rite',
+    name: 'The Great Rite',
+    kind: 'doctrine',
+    faces: ['rear'],
+    branch: 'occult',
+    requires: 'the_ninth_hour',
+    blurb: 'Five minutes. Everyone can see the clock, including them.',
+    shape: 'rite',
+    color: 0xd94fd0,
+    tiers: [
+      { cost: 9000, hp: 14000, effect: 'Five minutes, in the open. If it finishes, you have won outright. There is never more than one.' }
+    ]
+  },
+
+  // ────────────────────────────── BLIGHT ─────────────────────────────
+  {
+    id: 'spawning_pool',
+    name: 'Spawning Pool',
+    kind: 'doctrine',
+    faces: ['flank', 'rear'],
+    branch: 'blight',
+    requires: 'spawning_rite',
+    blurb: 'It does not ask what you can afford this second.',
+    shape: 'pool',
+    color: 0xd98ec4,
+    tiers: [
+      { cost: 850, hp: 7800, effect: 'A free growth every 10s.' },
+      { cost: 1800, hp: 11500, effect: 'Every 7s.' },
+      { cost: 3000, hp: 15500, effect: 'Every 5s, and they come out already paired.' }
+    ]
+  }
+]
+
+export const ALL_BUILDINGS: BuildingDef[] = [...CORE_BUILDINGS, ...DEFENCE_BUILDINGS, ...DOCTRINE_BUILDINGS, ...CREED_HALLS]
 
 export const BUILDINGS_BY_ID: Record<string, BuildingDef> = Object.fromEntries(
   ALL_BUILDINGS.map(b => [b.id, b])

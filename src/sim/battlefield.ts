@@ -32,7 +32,29 @@ import {
   REBUILD_FRACTION,
   SEAT_PLOTS,
   MUSTER_ADVANCE,
+  BATTERY_BARRELS,
+  BATTERY_DAMAGE,
+  BATTERY_REACH,
+  BATTERY_RELOAD_MS,
+  BATTERY_SPLASH,
+  CHARNEL_BUILD_SPEED,
+  CHARNEL_CAP,
+  CHARNEL_LINE_COST,
+  CHARNEL_PER_CORPSE,
   FORGE_HOME_GUARD,
+  GREAT_RITE_MS,
+  OSSUARY_CAPACITY,
+  OSSUARY_GATHER_MS,
+  PERPETUAL_ENGINE_GAIN,
+  PERPETUAL_ENGINE_MS,
+  RESEARCH_HALL_FORWARD,
+  RESEARCH_HALL_FORWARD_DOCTRINE,
+  RESEARCH_HALL_RATE,
+  SPAWN_POOL_MS,
+  SPAWN_POOL_UNIT,
+  SUMMON_RITE_MS,
+  SUMMON_UNIT,
+  type PlotFace,
   MUSTER_AUTOSPAWN_MS,
   MUSTER_BUILD_SPEED,
   MUSTER_SLOTS,
@@ -137,6 +159,9 @@ const PLUNDER_REFUND = 0.4
 /** How far past the edge of the board a departing soldier walks before he is gone. */
 const PLUNDER_EXIT = 300
 
+/** Bodies that rot away per second. Half a pile in about ninety seconds. */
+const CORPSE_ROT_PER_S = 0.25
+
 const SPLASH_SHIELDING = 9
 
 /** What share of a weapon's shove the blast carries, as against a direct hit. */
@@ -158,6 +183,9 @@ function auraOf(def: UnitDef): { damageReduction: number; radius: number } | nul
 
 /** Path unit defs by id, for the specials that summon their own kind. */
 const FACTION_UNITS_BY_ID: Record<string, UnitDef> = Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
+
+/** Neutral and creed rosters together — what a building may summon or hatch. */
+const ALL_UNIT_DEFS: Record<string, UnitDef> = { ...UNITS_BY_ID, ...FACTION_UNITS_BY_ID }
 
 function emptyStats(): MatchStats {
   return {
@@ -1126,6 +1154,16 @@ export default class Battlefield {
       // Standing orders enqueue units on their own, so both the plan and whose
       // turn it is in the rotation decide what the field looks like.
       mix(army.orderCursor)
+      mix(Math.round(this.corpsePile[army.faction]))
+      // The creed halls run on their own clocks and produce on them, so every
+      // clock is simulation state that has to match across a networked match.
+      for (const seat of this.seats[army.faction]) {
+        for (const plot of seat.plots) {
+          if (!plot.alive || !plot.def) continue
+          mix(Math.round(plot.workMs / 50))
+          mix(plot.banked)
+        }
+      }
       for (const o of army.orders) mix(o.lane + 8)
       // Fortress tracks change wall health, gate width, siege ceiling and gun
       // rate — all sim, all divergent if the two peers disagree.
@@ -1182,6 +1220,7 @@ export default class Battlefield {
     // The siege is read BEFORE income is paid, so a wall full of enemies costs
     // you this tick's gold rather than last tick's.
     this.updateSiege()
+    this.updateCreedHalls(dtMs)
     this.updateMurderHoles(dtMs)
     this.tickArmy(this.player, dtMs)
     this.tickArmy(this.enemy, dtMs)
@@ -2143,6 +2182,10 @@ export default class Battlefield {
     army.yardBuildSpeed = this.yardBuildSpeed(faction)
     army.buildSlots = this.yardBuildSlots(faction)
     army.autoSpawnMs = this.yardAutoSpawnMs(faction)
+    const charnel = this.charnelBonus(faction)
+    army.charnelBuild = charnel.build
+    army.charnelDamage = charnel.damage
+    army.charnelElite = charnel.elite
     army.researchDiscount = this.yardResearchDiscount(faction)
     army.researchRate = this.yardResearchRate(faction)
     // The doctrine buildings are asked about from inside per-unit and per-kill
@@ -2160,6 +2203,19 @@ export default class Battlefield {
 
   /** What each side has standing, by building id. Maintained by refreshYard. */
   private readonly standing: Record<Faction, Set<string>> = { player: new Set(), enemy: new Set() }
+
+  /**
+   * How far along each side's Great Rite is, 0–1. Read by the HUD, because a
+   * doom clock nobody can see is not a doom clock.
+   */
+  readonly greatRite: Record<Faction, number> = { player: 0, enemy: 0 }
+
+  /**
+   * How many bodies are lying on each half. Fed by every death and rotting
+   * steadily, so a Charnel Yard rewards a fresh slaughter rather than a tally
+   * of the whole match.
+   */
+  readonly corpsePile: Record<Faction, number> = { player: 0, enemy: 0 }
 
   /**
    * Whether a commander has this building up and unburned anywhere.
@@ -2209,13 +2265,246 @@ export default class Battlefield {
    */
   yardResearchRate(faction: Faction): number {
     let rate = BASE_RESEARCH_RATE
+    const doctrine = this.armyFor(faction).hasTech('forward_doctrine')
     for (const seat of this.seats[faction]) {
       for (const plot of seat.plots) {
-        if (!plot.alive || plot.def?.id !== 'reliquary') continue
-        rate += RELIQUARY_RESEARCH[Math.min(RELIQUARY_RESEARCH.length - 1, plot.tier)]
+        if (!plot.alive || !plot.def) continue
+        if (plot.def.id === 'reliquary') {
+          rate += RELIQUARY_RESEARCH[Math.min(RELIQUARY_RESEARCH.length - 1, plot.tier)]
+          continue
+        }
+        if (plot.def.id !== 'research_hall') continue
+        // A Hall out in FRONT of the gate produces more, which is the whole
+        // Engineering bargain: put the most precious thing you own in the one
+        // place on the board everybody can reach, and let them see it there.
+        const forward = this.plotFace(seat, plot.plot) === 'front'
+        const bonus = forward ? (doctrine ? RESEARCH_HALL_FORWARD_DOCTRINE : RESEARCH_HALL_FORWARD) : 1
+        rate += RESEARCH_HALL_RATE[Math.min(RESEARCH_HALL_RATE.length - 1, plot.tier)] * bonus
       }
     }
     return rate
+  }
+
+  /** Which face of its seat a plot sits on, or null if the index is stale. */
+  private plotFace(seat: Seat, plot: number): PlotFace | null {
+    return SEAT_PLOTS[seat.generation]?.[plot]?.face ?? null
+  }
+
+  /**
+   * Everything the seven creed halls do on a clock.
+   *
+   * Kept in one place rather than sprinkled through the tick because they share
+   * a shape — a building with a timer that produces something when it fills —
+   * and because every one of them is simulation state that has to be identical
+   * on both peers.
+   */
+  private updateCreedHalls(dtMs: number): void {
+    for (const faction of ['player', 'enemy'] as const) {
+      // Bodies rot. Half of a pile is gone in about a minute and a half, so
+      // what a Charnel Yard is worth tracks the fighting rather than the clock.
+      this.corpsePile[faction] = Math.max(0, this.corpsePile[faction] - (dtMs / 1000) * CORPSE_ROT_PER_S)
+      const army = this.armyFor(faction)
+      for (const seat of this.seats[faction]) {
+        if (seat.derelict) continue
+        for (const plot of seat.plots) {
+          if (!plot.alive || !plot.def) continue
+          switch (plot.def.id) {
+            case 'battery':
+              this.tickBattery(faction, plot, dtMs)
+              break
+            case 'summoning_circle':
+              this.tickSummon(faction, plot, dtMs)
+              break
+            case 'great_rite':
+              this.tickGreatRite(faction, plot, dtMs)
+              break
+            case 'spawning_pool':
+              this.tickSpawningPool(faction, plot, dtMs)
+              break
+            case 'ossuary':
+              this.tickOssuary(faction, plot, dtMs)
+              break
+            case 'research_hall':
+              // Perpetual Engine: a Hall that survives stops being a research
+              // building and becomes a ratchet. Uncapped on purpose — it is
+              // ascension-gated and it dies with the building.
+              if (!army.hasTech('perpetual_engine')) break
+              plot.workMs += dtMs
+              if (plot.workMs < PERPETUAL_ENGINE_MS) break
+              plot.workMs -= PERPETUAL_ENGINE_MS
+              army.modifiers.unitDamage *= 1 + PERPETUAL_ENGINE_GAIN
+              army.modifiers.unitHp *= 1 + PERPETUAL_ENGINE_GAIN
+              this.vfx.floatingLabel(plot.x, plot.y - 90, 'engine', '#5ce1ff')
+              break
+            default:
+              break
+          }
+        }
+      }
+    }
+  }
+
+  /** Artillery that is architecture: it reloads, it fires, it never moves. */
+  private tickBattery(faction: Faction, plot: Building, dtMs: number): void {
+    const tier = Math.min(BATTERY_RELOAD_MS.length - 1, plot.tier)
+    plot.workMs += dtMs
+    if (plot.workMs < BATTERY_RELOAD_MS[tier]) return
+    plot.workMs -= BATTERY_RELOAD_MS[tier]
+    const dir = ADVANCE_DIR[faction]
+    const foes = OPPOSITE[faction]
+    // Counter-Battery: shoot their works before their soldiers. It is the
+    // stated answer to a mirror, where two gun parks otherwise trade forever.
+    const counter = this.armyFor(faction).hasTech('counter_battery')
+    const pool: Damageable[] = counter
+      ? [...this.liveBuildings(foes), ...this.standingBases(foes), ...this.units.filter(u => u.faction === foes)]
+      : [...this.units.filter(u => u.faction === foes), ...this.liveBuildings(foes), ...this.standingBases(foes)]
+    for (let barrel = 0; barrel < BATTERY_BARRELS[tier]; barrel += 1) {
+      let best: Damageable | null = null
+      for (const t of pool) {
+        if (!t.alive) continue
+        if ((t.x - plot.x) * dir <= 0) continue
+        if (Math.abs(t.x - plot.x) > BATTERY_REACH[tier]) continue
+        // Nearest to the muzzle, so a battery walks its fire up the field
+        // rather than sniping whatever happens to be first in the array.
+        if (!best || Math.abs(t.x - plot.x) < Math.abs(best.x - plot.x)) best = t
+      }
+      if (!best) return
+      const aimX = best.x + barrel * 60 * dir
+      this.vfx.explosion(aimX, this.config.groundY - 20, BATTERY_SPLASH, 0xffa640, true)
+      this.applySplash(aimX, this.config.groundY - 20, BATTERY_SPLASH, faction, {
+        amount: BATTERY_DAMAGE[tier],
+        type: 'explosive',
+        knockback: 220
+      })
+    }
+    audio.play('explosion', 0.35)
+  }
+
+  /**
+   * A rite that consumes its own building.
+   *
+   * The Circle is deliberately fragile for its price: it is not a building you
+   * defend with the building, it is one you defend with your army, and the
+   * enemy can see exactly how long they have.
+   */
+  private tickSummon(faction: Faction, plot: Building, dtMs: number): void {
+    const tier = Math.min(SUMMON_RITE_MS.length - 1, plot.tier)
+    plot.workMs += dtMs
+    if (plot.workMs < SUMMON_RITE_MS[tier]) return
+    const def = ALL_UNIT_DEFS[SUMMON_UNIT[tier]]
+    if (def) {
+      const unit = this.spawnUnit(faction, def, plot.x, LANE_MID)
+      unit.freeUpkeep = true
+      this.vfx.explosion(plot.x, plot.y - 40, 140, 0xb46bff, true)
+    }
+    // It consumes itself. That is the cost, and it is why the Circle is a
+    // commitment rather than a permanent engine.
+    plot.raze()
+    this.refreshYard(faction)
+    this.onSeatChanged?.(faction)
+  }
+
+  /** Five minutes, in the open. If it finishes, the match is over. */
+  private tickGreatRite(faction: Faction, plot: Building, dtMs: number): void {
+    plot.workMs += dtMs
+    this.greatRite[faction] = Math.min(1, plot.workMs / GREAT_RITE_MS)
+    if (plot.workMs < GREAT_RITE_MS) return
+    this.endMatch(faction === 'player')
+  }
+
+  /** It produces on its own, forever, and does not ask what you can afford. */
+  private tickSpawningPool(faction: Faction, plot: Building, dtMs: number): void {
+    const tier = Math.min(SPAWN_POOL_MS.length - 1, plot.tier)
+    plot.workMs += dtMs
+    if (plot.workMs < SPAWN_POOL_MS[tier]) return
+    plot.workMs -= SPAWN_POOL_MS[tier]
+    const def = ALL_UNIT_DEFS[SPAWN_POOL_UNIT]
+    if (!def) return
+    // The top tier sends them out already paired, which is what feeds
+    // Amalgamation without the commander having to shepherd anything.
+    const pairs = tier >= 2 ? 2 : 1
+    for (let i = 0; i < pairs; i += 1) {
+      const unit = this.spawnUnit(faction, def, undefined, LANE_MID)
+      unit.freeUpkeep = true
+      unit.x -= ADVANCE_DIR[faction] * i * 16
+    }
+  }
+
+  /**
+   * Bodies stop being litter and start being savings.
+   *
+   * It collects slowly and on its own clock so that a commander who is winning
+   * fights fills it and one who is not does not — and the tier-3 release is the
+   * path's entire payoff, which is why it is a button rather than a trickle.
+   */
+  private tickOssuary(faction: Faction, plot: Building, dtMs: number): void {
+    const cap = OSSUARY_CAPACITY[Math.min(OSSUARY_CAPACITY.length - 1, plot.tier)]
+    plot.workMs += dtMs
+    if (plot.workMs < OSSUARY_GATHER_MS) return
+    plot.workMs -= OSSUARY_GATHER_MS
+    if (plot.banked >= cap) return
+    if (this.corpsePile[faction] < 1) return
+    // It takes them off the ground: a body in the bank is not also a body a
+    // Charnel Yard can count.
+    this.corpsePile[faction] -= 1
+    plot.banked += 1
+  }
+
+  /**
+   * Empties an Ossuary: everything in it stands up at once.
+   *
+   * Only the top tier may do it, and only once it has something to spend —
+   * a button that puts sixty soldiers on the field in one second, after two
+   * minutes of saving, is the whole reason to take the Risen over the Tide.
+   */
+  /** How many bodies this commander has banked, across every finished Ossuary. */
+  ossuaryBanked(faction: Faction): number {
+    let n = 0
+    for (const seat of this.seats[faction]) {
+      for (const plot of seat.plots) {
+        if (plot.alive && plot.def?.id === 'ossuary' && plot.tier >= 2) n += plot.banked
+      }
+    }
+    return n
+  }
+
+  emptyOssuary(faction: Faction): number {
+    let raised = 0
+    for (const seat of this.seats[faction]) {
+      for (const plot of seat.plots) {
+        if (!plot.alive || plot.def?.id !== 'ossuary' || plot.tier < 2) continue
+        const def = ALL_UNIT_DEFS[rosterForAge(this.armyFor(faction).age)[0]?.id ?? '']
+        if (!def) continue
+        for (let i = 0; i < plot.banked; i += 1) {
+          const unit = this.spawnUnit(faction, def, plot.x, i % LANE_COUNT)
+          unit.freeUpkeep = true
+          raised += 1
+        }
+        plot.banked = 0
+        this.vfx.explosion(plot.x, plot.y - 40, 180, 0x8fd6a4, true)
+      }
+    }
+    return raised
+  }
+
+  /**
+   * What a Charnel Yard is worth to a line soldier right now: the build speed
+   * it grants, and the damage every body lying on your half adds to it.
+   */
+  charnelBonus(faction: Faction): { build: number; damage: number; elite: boolean } {
+    const tier = this.yardBonus(faction, 'charnel_yard')
+    if (tier < 0) return { build: 1, damage: 0, elite: false }
+    const cap = CHARNEL_CAP[Math.min(CHARNEL_CAP.length - 1, tier)]
+    let damage = 0
+    if (cap > 0) {
+      // Butchery makes a dismembered body count double — taking it is choosing
+      // to make the field messier on purpose, and this is where that pays.
+      const double = this.armyFor(faction).hasTech('butchery') ? 2 : 1
+      damage = Math.min(cap, this.corpsePile[faction] * double * CHARNEL_PER_CORPSE)
+    }
+    // Only the finished Yard sharpens the champion. Up to then the bonus is
+    // for the bodies you can afford to lose, which is the point of the path.
+    return { build: CHARNEL_BUILD_SPEED[Math.min(CHARNEL_BUILD_SPEED.length - 1, tier)], damage, elite: tier >= 2 }
   }
 
   yardResearchDiscount(faction: Faction): number {
@@ -2990,6 +3279,10 @@ export default class Battlefield {
       unit.def.damage *
       unit.damageMult *
       army.modifiers.unitDamage *
+      // The Charnel Yard: every body lying on your own half makes the line
+      // that walks over it hit harder. Only the line — a Yard full of butchers
+      // does not sharpen a Titan.
+      (1 + (unit.def.cost <= CHARNEL_LINE_COST || (army.charnelElite && unit.def.id === 'nk_butcher') ? army.charnelDamage : 0)) *
       this.escalation *
       // Full strength in your own file, half next door, a third two over —
       // supporting fire, never coverage of two lanes for the price of one.
@@ -3176,6 +3469,14 @@ export default class Battlefield {
   }
 
   private handleUnitDeath = (unit: Unit, killer?: Damageable): void => {
+    // Bodies lying on a half, counted rather than inferred.
+    //
+    // The gore system only spawns physics gibs when a soldier is DISMEMBERED,
+    // which is era-gated and needs overkill or Butchery — so counting gibs
+    // meant "corpses on your half" read zero through most of a match, and the
+    // Charnel Yard and the Ossuary both measured nothing. A death is a body
+    // whether or not it came apart.
+    this.corpsePile[this.halfOwner(unit.x)] += 1
     // Release the outpost's standing count, so a seat whose three soldiers are
     // killed starts sending again rather than going quiet for the rest of the
     // match.

@@ -497,6 +497,7 @@ export default class BattleScene extends Phaser.Scene {
     keyboard.on('keydown-U', () => gameEvents.emit('hud:base', undefined))
     keyboard.on('keydown-R', () => gameEvents.emit('hud:tech', undefined))
     keyboard.on('keydown-G', () => this.cycleReserve())
+    keyboard.on('keydown-H', () => this.emptyOssuary())
     // The black box, on demand: F9 downloads this session's debug log.
     keyboard.on('keydown-F9', () => gameLog.download())
     // The whole of placement: pick the file the next piece will walk.
@@ -636,6 +637,25 @@ export default class BattleScene extends Phaser.Scene {
         : `${def.name} on repeat · ${LANE_NAMES[lane]}`,
       tone: standing ? 'warn' : 'good'
     })
+  }
+
+  /**
+   * Empties every finished Ossuary you hold.
+   *
+   * Deliberately all of them at once and deliberately a single key: after two
+   * minutes of saving, the moment you choose is the decision, and asking which
+   * building would turn a payoff into paperwork.
+   */
+  emptyOssuary(): void {
+    const banked = this.battlefield.ossuaryBanked(this.localFaction)
+    if (banked <= 0) {
+      audio.play('ui_denied', 0.5)
+      gameEvents.emit('hud:flash', { message: 'Nothing banked yet', tone: 'warn' })
+      return
+    }
+    this.dispatch({ t: 'ossuary' })
+    audio.play('ui_click', 0.4)
+    gameEvents.emit('hud:flash', { message: `THE RISEN — ${banked} stand up`, tone: 'good' })
   }
 
   /** Cycles what the standing orders refuse to spend. */

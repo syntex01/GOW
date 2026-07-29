@@ -77,6 +77,9 @@ export function applyCommand(bf: Battlefield, faction: Faction, command: Command
     case 'reserve':
       army.reserveMode = command.mode
       break
+    case 'ossuary':
+      bf.emptyOssuary(faction)
+      break
   }
 }
 

@@ -240,7 +240,7 @@ export const TECHS: TechNode[] = [
     age: 0,
     cost: 650,
     requires: ['field_stripping'],
-    effect: 'Everything your soldiers kill comes apart, however it died. The field fills with bodies.'
+    effect: 'Everything your soldiers kill comes apart, however it died. A dismembered body counts DOUBLE toward a Charnel Yard, so taking this is choosing to make the field messier on purpose.'
   },
   {
     id: 'bonepickers',
@@ -551,7 +551,7 @@ export const TECHS: TechNode[] = [
     cost: 2700,
     requires: ['plague_wind', 'flenser_rite'],
     excludes: ['necropolis'],
-    effect: 'Remains on the ground stop enemy shots. Pile up enough dead and they become cover.'
+    effect: 'The piled dead are terrain: a mound of them soaks a quarter of every shot crossing its file. Pile up enough and the ground itself is holding your line.'
   },
   {
     id: 'penetrator',
@@ -578,7 +578,7 @@ export const TECHS: TechNode[] = [
     cost: 3300,
     requires: ['torchbearer_doctrine'],
     excludes: ['penetrator'],
-    effect: 'Fire on the ground spreads outward on its own and takes far longer to burn out.'
+    effect: 'Fire spreads on its own and burns far longer — and burning ground is a place rather than a wound: anything crossing it is a third slower and cannot aim.'
   },
   {
     id: 'emp',
@@ -607,7 +607,7 @@ export const TECHS: TechNode[] = [
   },
   {
     id: 'aegis',
-    name: 'Aegis Link',
+    name: 'The Lattice',
     branch: 'engineering',
     kind: 'behaviour',
     ring: 5,
@@ -616,7 +616,7 @@ export const TECHS: TechNode[] = [
     cost: 1900,
     requires: ['demolition', 'nanite_field'],
     excludes: ['emp'],
-    effect: 'Soldiers standing together share what they take. Break the formation and it stops.'
+    effect: 'The Lattice: your defensive buildings and turrets carry each other, sharing everything that lands on any of them. The line breaks all at once or not at all.'
   },
   {
     id: 'hexer_pact',
@@ -629,7 +629,7 @@ export const TECHS: TechNode[] = [
     cost: 2100,
     requires: ['evil_eye'],
     unlocks: 'dc_hexer',
-    effect: 'Fields the Hexer: points at something, and it stops being structurally certain.'
+    effect: 'Fields the Hexer: points at something and it stops being structurally certain. Its blast hits harder for every extra body caught in it — the stated answer to a swarm.'
   },
   {
     id: 'black_sun',
@@ -737,7 +737,7 @@ export const TECHS: TechNode[] = [
     cost: 4000,
     requires: ['deep_roots'],
     unlocks: 'hb_titanbloom',
-    effect: 'Fields the Titan Bloom: throws its own fruiting bodies, which burst on the way down.'
+    effect: 'The top of the merge ladder: a third amalgamation stops summing and produces a Titan Bloom instead, which throws its own fruiting bodies.'
   },
 
   // ── Lane doctrines: research that changes how a file is fought ──
@@ -936,6 +936,227 @@ export const STAT_TECHS: TechNode[] = [
   stat('total_mobilisation', 'Total Mobilisation', 'core', 6, 13, 4, 3600, ['logistics', 'outriders'], 'buildSpeed', 1.28, 'Everyone who can hold something is holding something.')
 ]
 
+
+/**
+ * The doctrine buildings' gates, and the deep nodes each creed is actually
+ * built around.
+ *
+ * Everything here exists to make a creed's YARD look different rather than just
+ * its roster: a Carnage half is a slaughterhouse, an Ordnance half is a gun
+ * park, an Engineering half is a laboratory it cannot afford to lose. Kept in
+ * one block, after the main tree, because they are the layer that turns the
+ * outworks into an identity — see docs/BUILDINGS_AND_TECH.md.
+ */
+const DOCTRINE_TECHS: TechNode[] = [
+  // ───────────────────────────── CARNAGE ─────────────────────────────
+  {
+    id: 'charnel_rite',
+    name: 'Charnel Rite',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 4,
+    row: 1,
+    age: 2,
+    cost: 1900,
+    requires: ['bone_harvest'],
+    excludes: ['ossuary_rite'],
+    effect: 'Lets you raise a Charnel Yard. The Tide and the Risen are two readings of the same creed and you may only hold one.'
+  },
+  {
+    id: 'ossuary_rite',
+    name: 'Ossuary Rite',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 5,
+    row: 1,
+    age: 3,
+    cost: 2900,
+    requires: ['necropolis'],
+    excludes: ['charnel_rite'],
+    effect: 'Lets you raise an Ossuary. Bodies stop being litter and start being savings.'
+  },
+  {
+    id: 'the_hunger',
+    name: 'The Hunger',
+    branch: 'carnage',
+    kind: 'behaviour',
+    ring: 5,
+    row: 2,
+    age: 3,
+    cost: 3100,
+    requires: ['bloodlust'],
+    effect: 'As your own army thins, what is left of it gets faster and hits harder — up to half again as fast once you are down to nothing.'
+  },
+  {
+    id: 'the_butcher',
+    name: 'The Butcher',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 6,
+    row: 1,
+    age: 4,
+    cost: 5200,
+    requires: ['flenser_rite'],
+    unlocks: 'nk_butcher',
+    effect: 'A champion that never stops growing: every kill is permanent damage and health, with no ceiling, and you can watch it happen.'
+  },
+
+  // ──────────────────────────── ORDNANCE ─────────────────────────────
+  {
+    id: 'gun_line',
+    name: 'Gun Line',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 3,
+    row: 3,
+    age: 2,
+    cost: 1300,
+    requires: ['powder_discipline'],
+    effect: 'Shooters in the same file steady each other: +8% damage for every friendly gun beside them, up to +64%. Stack a lane or do not bother.'
+  },
+  {
+    id: 'emplacement',
+    name: 'Emplacement',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 4,
+    row: 3,
+    age: 2,
+    cost: 2000,
+    requires: ['shrapnel'],
+    effect: 'Lets you raise a Battery — artillery that is architecture rather than a soldier, and cannot be moved once it is poured.'
+  },
+  {
+    id: 'forward_magazine',
+    name: 'Forward Magazine',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 4,
+    row: 4,
+    age: 3,
+    cost: 2400,
+    requires: ['overpressure'],
+    effect: 'The Magazine may stand out in FRONT of the gate, and goes up twice as hard when it goes. A liability you site deliberately.'
+  },
+  {
+    id: 'counter_battery',
+    name: 'Counter-Battery',
+    branch: 'ordnance',
+    kind: 'behaviour',
+    ring: 5,
+    row: 3,
+    age: 3,
+    cost: 3300,
+    requires: ['emplacement'],
+    effect: 'Your batteries shoot at their buildings before their soldiers. The answer to a mirror match.'
+  },
+
+  // ─────────────────────────── ENGINEERING ───────────────────────────
+  {
+    id: 'field_lab',
+    name: 'Field Laboratory',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 3,
+    row: 5,
+    age: 1,
+    cost: 1200,
+    requires: ['salvage'],
+    effect: 'Lets you raise a Research Hall. Knowledge stops being a side effect of the yard and becomes the point of it.'
+  },
+  {
+    id: 'forward_doctrine',
+    name: 'Forward Doctrine',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 4,
+    row: 5,
+    age: 2,
+    cost: 2200,
+    requires: ['field_lab'],
+    effect: 'A Research Hall on a FRONT plot produces double instead of half again. Put the most precious thing you own where everyone can reach it.'
+  },
+  {
+    id: 'perpetual_engine',
+    name: 'Perpetual Engine',
+    branch: 'engineering',
+    kind: 'behaviour',
+    ring: 7,
+    row: 5,
+    age: 4,
+    cost: 7000,
+    requires: ['field_lab'],
+    requiresAny: ['ascend_cyborgs'],
+    effect: 'Every Research Hall you still hold makes your whole army permanently better, every twenty seconds, forever. This is why Engineering runs at ascension.'
+  },
+
+  // ──────────────────────────── THE OCCULT ───────────────────────────
+  {
+    id: 'binding_circle',
+    name: 'Binding Circle',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 4,
+    row: 7,
+    age: 2,
+    cost: 2300,
+    requires: ['sacrament'],
+    effect: 'Lets you draw a Summoning Circle. It takes time, it consumes itself, and everyone on the field can see how far along it is.'
+  },
+  {
+    id: 'the_ninth_hour',
+    name: 'The Ninth Hour',
+    branch: 'occult',
+    kind: 'behaviour',
+    ring: 7,
+    row: 7,
+    age: 4,
+    cost: 7600,
+    requires: ['binding_circle'],
+    requiresAny: ['ascend_circle'],
+    effect: 'Lets you begin the Great Rite: five minutes, in the open, and if it finishes you have won. There is no second one.'
+  },
+
+  // ────────────────────────────── BLIGHT ─────────────────────────────
+  {
+    id: 'spawning_rite',
+    name: 'Spawning Rite',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 3,
+    row: 9,
+    age: 1,
+    cost: 1100,
+    requires: ['spore_cloud'],
+    effect: 'Lets you dig a Spawning Pool. It produces on its own, forever, and it does not ask what you can afford.'
+  },
+  {
+    id: 'amalgamation',
+    name: 'Amalgamation',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 4,
+    row: 9,
+    age: 2,
+    cost: 2100,
+    requires: ['sporeling_bloom'],
+    effect: 'Three of your growths that touch become one thing with all their health and half again their damage. What it becomes can merge again.'
+  },
+  {
+    id: 'the_spread',
+    name: 'The Spread',
+    branch: 'blight',
+    kind: 'behaviour',
+    ring: 5,
+    row: 9,
+    age: 3,
+    cost: 3200,
+    requires: ['verdant_tide'],
+    effect: 'Your blight crawls toward their fortress by itself and eats at it when it arrives. Slow, unstoppable, and visible from the first second.'
+  }
+]
+
+TECHS.push(...DOCTRINE_TECHS)
 
 TECHS.push(...STAT_TECHS)
 

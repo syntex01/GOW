@@ -30,6 +30,15 @@ export default class Building implements Damageable {
   maxHp = 0
   /** The age this structure was raised in — what its health is measured against. */
   builtInAge = 0
+  /**
+   * A general-purpose clock for the creed halls: a Battery's reload, a
+   * Summoning Circle's rite, the Great Rite's five minutes, a Spawning Pool's
+   * next growth. One field rather than four because no building has ever
+   * needed two at once, and it is simulation state either way.
+   */
+  workMs = 0
+  /** What an Ossuary is holding. Bodies, not gold. */
+  banked = 0
   alive = false
   radius = 34
   centerOffsetY = -34

@@ -29,7 +29,7 @@ import type { Faction, ReserveMode } from '../sim/types'
  * tracks: wall health, gate width, the siege ceiling and how fast a wounded
  * fortress can work its guns.
  */
-export const PROTOCOL_VERSION = 19
+export const PROTOCOL_VERSION = 20
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing
@@ -56,6 +56,9 @@ export type Command =
   // hundred times, so it has to cross the wire like any other decision.
   | { t: 'order'; id: string; lane: number }
   | { t: 'reserve'; mode: ReserveMode }
+  // Emptying an Ossuary. A button, not a trickle: it is the Risen path's whole
+  // payoff and the moment has to be chosen.
+  | { t: 'ossuary' }
 
 /** One tick's worth of a peer's intent, plus an optional integrity check. */
 export interface TickMessage {
