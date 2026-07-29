@@ -325,6 +325,49 @@ export default class Unit implements Damageable {
   /** Both arms are off. It can walk and bleed; it cannot swing. */
   armsGone = false
 
+  /**
+   * Gold's worth of enemy this soldier has personally killed.
+   *
+   * The Incarnation of Slaughter auditions on it: the most expensive melee body
+   * to kill three times its own price gets taken. Counted per soldier, in the
+   * victims' per-head price, so a squad card cannot inflate it.
+   */
+  slain = 0
+  /**
+   * POSSESSED. Milliseconds this body has left as the Incarnation, and the
+   * accelerating bleed that is going to end it.
+   */
+  incarnateMs = 0
+  incarnateFor = 0
+  get incarnate(): boolean {
+    return this.incarnateMs > 0
+  }
+  /**
+   * The Incarnation took somebody else's soldier. It no longer knows whose side
+   * it was on and will swing at the nearest living thing, friend or otherwise.
+   */
+  rogue = false
+  /** Permanent growth a Monstrum has eaten its way into, for the read. */
+  gorged = 0
+  /**
+   * Shared clock for the bodies that work on what is lying around them — the
+   * Monstrum's bite, the Flesh Wall's mending, the Flesh Wagon's rendering. One
+   * field because no unit is more than one of those things.
+   */
+  eatTimer = 0
+
+  /**
+   * A Monstrum wears its meals. The rig is scaled up as it feeds, so an
+   * opponent can see how badly they have fed it from across the field — the
+   * growth is the warning, and it has to be legible before it is lethal.
+   */
+  setGorge(total: number): void {
+    const grow = Math.min(0.85, total * 0.014)
+    this.gorgeScale = 1 + grow
+  }
+
+  private gorgeScale = 1
+
   get inThroes(): boolean {
     return this.throesMs > 0
   }
@@ -1010,8 +1053,14 @@ export default class Unit implements Damageable {
     // A soldier behind a standing ward is not moved by anything. This is half
     // of what the ward is for: a gun line used to walk a screen backwards for
     // the whole engagement, and a screen that can be pushed is not a screen.
-    if (knockback > 0 && warded && this.ward > 0) knockback = 0
-    if (knockback > 0) {
+    if (knockback !== 0 && warded && this.ward > 0) knockback = 0
+    if (knockback !== 0) {
+      // A NEGATIVE shove is a PULL. The Great Maw does not push things away
+      // from itself; it drags them in, which is the whole reason it is a threat
+      // rather than a slow gun. A dragged body is not thrown, so it never goes
+      // airborne — it just loses the argument about where it is standing.
+      const pull = knockback < 0
+      knockback = Math.abs(knockback)
       // Diminishing returns. Massed light fire used to pin a line in place
       // forever: every pebble set the stagger timer and added its own shove, so
       // a front rank under fire from twenty slingers spent most of each second
@@ -1022,8 +1071,8 @@ export default class Unit implements Damageable {
       const raw = (knockback / Math.max(0.4, this.def.mass)) * 1.6 / (1 + this.knockStacks)
       const impulse = Math.min(raw, Math.max(120, this.def.speed * KNOCK_SPEED_CAP))
       this.knockStacks = Math.min(6, this.knockStacks + 1)
-      this.vx += -this.dir * impulse
-      if (impulse > 150 && this.layer === 'ground') {
+      this.vx += (pull ? this.dir : -this.dir) * impulse
+      if (!pull && impulse > 150 && this.layer === 'ground') {
         this.vy = -Math.min(560, impulse * 1.5)
         this.airborne = true
       }
@@ -1792,7 +1841,7 @@ export default class Unit implements Damageable {
     }
 
     // Facing: flip the whole container.
-    this.container.setScale(this.scaleFactor * this.facing, this.scaleFactor)
+    this.container.setScale(this.scaleFactor * this.facing * this.gorgeScale, this.scaleFactor * this.gorgeScale)
     this.updateGroundRide(dtMs)
     this.container.setPosition(this.x, this.y + this.stageY - this.visualLift)
     this.container.setRotation(this.visualTilt * this.dir)
@@ -2055,7 +2104,7 @@ export default class Unit implements Damageable {
     const R = RES
     const height = this.def.height
 
-    this.container.setScale(this.scaleFactor * this.facing, this.scaleFactor)
+    this.container.setScale(this.scaleFactor * this.facing * this.gorgeScale, this.scaleFactor * this.gorgeScale)
     // A soldier stands on whatever the war has made of the ground: up on the
     // mounds, down into the craters. Purely visual — ballistics and reach stay
     // on the flat sim line, so the balance measurements keep their meaning.

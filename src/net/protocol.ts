@@ -41,9 +41,14 @@ import type { Faction, ReserveMode } from '../sim/types'
  * Kills both producing the extra skull and reading it; preservation research is
  * gone, since spoil life already scales off the dead body's price. v31 rebuilds
  * Butchery: +10% crit chance, and a body finished by a CRITICAL comes apart
- * completely instead of every kill bursting regardless.
+ * completely instead of every kill bursting regardless. v32 reworks the Carnage
+ * roster: age-two anti-chaff butchers that produce flesh, the Carrion Choir
+ * rebuilt as a rendering wagon that raises bodies out of spoils, and an age four
+ * of Flesh Wall, Monstrum, Great Maw and the Incarnation of Slaughter — which
+ * can possess the OPPONENT's best melee soldier, so a disagreement about it is
+ * a disagreement about the whole match.
  */
-export const PROTOCOL_VERSION = 31
+export const PROTOCOL_VERSION = 32
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

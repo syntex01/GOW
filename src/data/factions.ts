@@ -157,105 +157,52 @@ export const FACTION_UNITS: UnitDef[] = [
     height: 84,
     special: 'frenzy',
     attack: { kind: 'melee', knockback: 190, splash: 60 },
-    bonusVs: { unarmored: 1.6, light: 1.4 },
-    description: 'Kills in a wide arc, and every kill quickens the next swing. Feed it and regret it.',
+    // The other half of the age-two pair: a wide cleave that exists to erase
+    // massed light infantry and render it down where it stands.
+    bonusVs: { unarmored: 1.85, light: 1.5 },
+    harvest: { meat: 3 },
+    description: 'Kills in a wide arc, and every kill quickens the next swing. Feed it and regret it. What it leaves is barely a body.',
     visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.25 })
-  },
-  {
-    id: 'nk_ossuary',
-    name: 'Ossuary Walker',
-    age: 4,
-    role: 'tank',
-    layer: 'ground',
-    cost: 2100,
-    buildMs: 5600,
-    hp: 5400,
-    armor: 'heavy',
-    damage: 310,
-    damageType: 'blunt',
-    attackMs: 1400,
-    range: 62,
-    speed: 26,
-    mass: 6,
-    bounty: 798,
-    xp: 694,
-    pop: 3,
-    conduct: 'screen',
-    height: 118,
-    special: 'bone_rampart',
-    attack: { kind: 'melee', knockback: 300, splash: 90 },
-    regen: 22,
-    description: 'A walking reliquary. When it finally falls, it falls as a rampart of bone.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'club', helmet: 'horns', chassis: 'legs', bulk: 1.5 })
   },
   {
     id: 'nk_carrion',
     name: 'Carrion Choir',
     age: 3,
-    role: 'ranged',
+    role: 'support',
     layer: 'ground',
     cost: 780,
     buildMs: 3300,
-    hp: 900,
-    armor: 'unarmored',
-    damage: 240,
-    damageType: 'energy',
-    attackMs: 1800,
-    range: 340,
-    speed: 34,
-    mass: 1.2,
+    hp: 1600,
+    armor: 'light',
+    damage: 0,
+    damageType: 'blunt',
+    attackMs: 2600,
+    range: 190,
+    speed: 40,
+    mass: 4,
     bounty: 296,
     xp: 258,
     pop: 2,
-    height: 74,
-    hitsAir: true,
-    special: 'plague_shot',
-    attack: {
-      kind: 'projectile',
-      projectile: 'plasmaball',
-      speed: 620,
-      gravity: 0,
-      spread: 0.05,
-      knockback: 70,
-      splash: 70
-    },
-    description: 'Lobs bile that keeps killing where it lands. The ground remembers its work.',
-    visual: look('nekrotics', { helmet: 'kettle', torso: 'coat', weapon: 'sling', cape: true, bulk: 1.1 })
+    height: 78,
+    // THE FLESH WAGON. Carnage's answer to the medic, and it is not a medic.
+    //
+    // It mends the line like any healer, but its real job is the second one:
+    // it stops over the spoils lying on your own ground, renders them down, and
+    // puts a body back in the file. That is the creed's healer — not somebody
+    // who keeps a soldier alive, somebody who replaces him out of the last one.
+    special: 'flesh_wagon',
+    attack: { kind: 'heal', amount: 150, radius: 190 },
+    description: 'A rendering cart with a choir riding on it. It mends what it can and rebuilds what it cannot, out of whatever is lying about.',
+    visual: look('nekrotics', {
+      kind: 'vehicle',
+      chassis: 'wheels',
+      machine: 'catapult',
+      torso: 'coat',
+      weapon: 'none',
+      helmet: 'hood',
+      bulk: 1.3
+    })
   },
-  {
-    id: 'nk_gravetide',
-    name: 'Gravetide',
-    age: 4,
-    role: 'siege',
-    layer: 'ground',
-    cost: 2400,
-    buildMs: 5800,
-    hp: 1900,
-    armor: 'light',
-    damage: 700,
-    damageType: 'explosive',
-    attackMs: 4400,
-    range: 460,
-    speed: 22,
-    mass: 5,
-    bounty: 912,
-    xp: 793,
-    pop: 3,
-    height: 96,
-    special: 'raise_tide',
-    attack: {
-      kind: 'projectile',
-      projectile: 'mortar',
-      speed: 620,
-      gravity: 620,
-      spread: 0.05,
-      knockback: 280,
-      splash: 150
-    },
-    description: 'Siege that recruits: a quarter of what its shells kill stands back up a Husk.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'horns', chassis: 'legs', bulk: 1.5 })
-  },
-
   // ───────────────────────────── Cyborgs ─────────────────────────────
   {
     id: 'cy_gnat',
@@ -980,7 +927,13 @@ export const FACTION_UNITS: UnitDef[] = [
     flanker: true,
     special: 'charge',
     attack: { kind: 'melee', knockback: 120 },
-    description: 'A rider on something that was also someone. The first bite after it arrives is the one that matters.',
+    // ANTI-CHAFF, and a flesh producer. The age-two pair are the creed's answer
+    // to a screen of cheap bodies and its main source of income at the same
+    // time: they are built to open unarmoured things up, and what they open up
+    // is what the Bonewrights carry home.
+    bonusVs: { unarmored: 1.75, light: 1.45 },
+    harvest: { meat: 2 },
+    description: 'A rider on something that was also someone. It goes through chaff like a comb, and leaves the field wet.',
     visual: look('nekrotics', { kind: 'rider', torso: 'fur', weapon: 'axe', helmet: 'horns' })
   },
   {
@@ -1035,32 +988,146 @@ export const FACTION_UNITS: UnitDef[] = [
     visual: look('nekrotics', { torso: 'fur', weapon: 'bow', helmet: 'hood' })
   },
   {
-    id: 'nk_abattoir',
-    name: 'The Abattoir',
+    // ══════════════════════ AGE FOUR — THE RENDERING ══════════════════════
+    //
+    // The last age of Carnage is not four bigger soldiers. It is four different
+    // relationships with the meat on the ground: one that hides behind it, one
+    // that eats it, one that manufactures it, and one that is not a body at all.
+
+    // THE FLESH WALL. Architecture, grown rather than built.
+    //
+    // Three files wide, nearly immobile, and it does not really fight — it
+    // stands in front of what does. Its whole trick is that it repairs itself
+    // out of whatever is lying around it, so a carnage commander who has been
+    // fighting on their own ground has a wall that will not stop mending, and
+    // one who has pushed out into a clean field has a slab of meat with a
+    // timer on it.
+    id: 'nk_fleshwall',
+    name: 'Flesh Wall',
     age: 4,
     role: 'tank',
     layer: 'ground',
-    cost: 2600,
-    buildMs: 5800,
-    hp: 7200,
+    cost: 2300,
+    buildMs: 6000,
+    hp: 9600,
     armor: 'heavy',
-    damage: 420,
+    damage: 180,
     damageType: 'blunt',
-    attackMs: 1700,
-    range: 54,
-    speed: 30,
-    mass: 9,
-    bounty: 988,
-    xp: 860,
+    attackMs: 2000,
+    range: 58,
+    speed: 12,
+    mass: 12,
+    bounty: 874,
+    xp: 760,
     pop: 3,
-    height: 210,
-    // The top of the elite curve is a minute of income and is meant to read
-    // as a different KIND of object, not a bigger soldier. Three files wide,
-    // and tall enough that the men beside it come up to its knee.
+    height: 190,
     laneSpan: 3,
-    attack: { kind: 'melee', knockback: 520, splash: 120 },
-    description: 'A rendering plant that lost patience. Its blows do not kill so much as relocate, violently.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'club', helmet: 'none', chassis: 'legs', bulk: 1.7 })
+    conduct: 'screen',
+    special: 'flesh_wall',
+    attack: { kind: 'melee', knockback: 220 },
+    description: 'It was grown, not raised. Three files of it, and it knits itself back together out of whatever is lying nearby.',
+    visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 2.1 })
+  },
+  {
+    // THE MONSTRUM. It eats the field and it does not stop growing.
+    //
+    // Deliberately underwhelming on the card: a Monstrum bought into a clean
+    // field is a bad elite. Walk it across a slaughter and every piece it
+    // swallows is PERMANENT — damage, health and silhouette all climb, with no
+    // ceiling, and the growth is visible from across the board. It is the
+    // creed's whole thesis made into one object: the dead are a resource, and
+    // this is what happens when something eats enough of them.
+    id: 'nk_monstrum',
+    name: 'Monstrum',
+    age: 4,
+    role: 'melee',
+    layer: 'ground',
+    cost: 2100,
+    buildMs: 5600,
+    hp: 3400,
+    armor: 'light',
+    damage: 300,
+    damageType: 'slash',
+    attackMs: 1100,
+    range: 62,
+    speed: 46,
+    mass: 7,
+    bounty: 798,
+    xp: 694,
+    pop: 3,
+    height: 120,
+    special: 'monstrum',
+    attack: { kind: 'melee', knockback: 300, splash: 90 },
+    bonusVs: { unarmored: 1.3, light: 1.2 },
+    harvest: { meat: 1 },
+    description: 'Feed it. That is the entire instruction. Everything it swallows it keeps, and you can watch it keep it.',
+    visual: look('nekrotics', { kind: 'mech', chassis: 'beast', torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.5 })
+  },
+  {
+    // THE GREAT MAW. A factory for the harvest, pointed the wrong way.
+    //
+    // It does not push and it barely moves. It DRAGS — everything in reach is
+    // pulled toward it instead of being knocked away — and whatever dies in its
+    // mouth is rendered onto YOUR half of the field no matter where on the
+    // board it was standing. Every other unit in the game turns your gold into
+    // damage. This one turns their army into your economy.
+    id: 'nk_maw',
+    name: 'The Great Maw',
+    age: 4,
+    role: 'siege',
+    layer: 'ground',
+    cost: 2900,
+    buildMs: 6400,
+    hp: 4200,
+    armor: 'heavy',
+    damage: 520,
+    damageType: 'slash',
+    attackMs: 1800,
+    range: 210,
+    speed: 18,
+    mass: 11,
+    bounty: 1102,
+    xp: 958,
+    pop: 4,
+    height: 200,
+    laneSpan: 3,
+    special: 'devour',
+    attack: { kind: 'melee', knockback: 400, splash: 150 },
+    harvest: { meat: 2, bone: 1 },
+    description: 'A mouth on legs, and a very long tongue. What goes in comes out on your side of the field.',
+    visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'horns', bulk: 1.9 })
+  },
+  {
+    // THE INCARNATION OF SLAUGHTER. Not a body — a standing offer.
+    //
+    // Buying this card does not put anything on the field. It pays into the
+    // Incarnation, and the Incarnation waits for somebody on the board to earn
+    // it: the most expensive melee soldier to kill three times its own price
+    // inside half a minute gets possessed, whoever it belongs to. See
+    // `Battlefield.updateIncarnation`.
+    id: 'nk_incarnation',
+    name: 'Incarnation of Slaughter',
+    age: 4,
+    role: 'melee',
+    layer: 'ground',
+    cost: 1200,
+    buildMs: 4000,
+    hp: 1,
+    armor: 'unarmored',
+    damage: 0,
+    damageType: 'slash',
+    attackMs: 1000,
+    range: 0,
+    speed: 0,
+    mass: 1,
+    bounty: 0,
+    xp: 0,
+    pop: 0,
+    height: 60,
+    invest: 'incarnation',
+    attack: { kind: 'melee', knockback: 0 },
+    description: 'Nothing arrives. Something starts watching for whoever kills best, and takes them.',
+    visual: look('nekrotics', { torso: 'robe', weapon: 'none', helmet: 'horns', cape: true, bulk: 1.1 })
   },
   {
     id: 'nk_widow',

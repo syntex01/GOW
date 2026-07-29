@@ -153,6 +153,10 @@ export function relayCurves(units: UnitDef[]): void {
     //
     // Something that is never bought has no price to re-lay, so leave it alone.
     if (unit.cost <= 0) continue
+    // An INVESTMENT card is not a soldier and has no power to re-lay. Its price
+    // is the tempo of the mechanic behind it — the Incarnation's audition — and
+    // that is authored deliberately rather than derived from a band position.
+    if (unit.invest) continue
     const costMul = cost / unit.cost
     const powMul = (targetPowerPerGold(age, t) / MEASURED_PG[age]) * costMul
 

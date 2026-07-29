@@ -226,6 +226,69 @@ const CORPSE_ROT_PER_S = 0.25
 /** Critical chance Butchery adds to everything a commander fields. */
 const BUTCHERY_CRIT = 0.1
 
+/**
+ * THE INCARNATION OF SLAUGHTER.
+ *
+ * It is not a soldier you buy — it is a standing offer you pay into. Every
+ * purchase is one INVESTMENT. Once anything is invested, the Incarnation opens
+ * a thirty-second audition, watches the whole board, and at the end of it takes
+ * the most expensive MELEE body that killed three times its own price. Whoever
+ * it belongs to. A possessed enemy soldier stops knowing whose side it was on.
+ *
+ * What it gets: everything doubled, plus a tenth again per investment, and
+ * lifesteal — against a bleed that accelerates until it kills the host in about
+ * half a minute. Then the next audition, sooner for every investment made.
+ *
+ * At thirty investments the audition stops asking for the three-times deed: the
+ * strongest melee body on the board is simply taken, every thirty seconds,
+ * forever.
+ */
+const INCARNATION_WINDOW_MS = 30_000
+/** How long a host survives the possession, on average, before the bleed wins. */
+const INCARNATION_LIFE_MS = 30_000
+/** Kill value a host must have earned, as a multiple of its own price. */
+const INCARNATION_DEED = 3
+/** A host may not cost more than this multiple of the gold paid in. */
+const INCARNATION_REACH = 2
+/** Investments after which the audition stops asking and simply takes. */
+const INCARNATION_ALWAYS = 30
+/** Floor on the gap between possessions, however much has been paid in. */
+const INCARNATION_MIN_GAP_MS = 4000
+
+/**
+ * THE MONSTRUM's appetite. Every bite is permanent, so the numbers are small
+ * and the ceiling is the field: a Monstrum walked across a real slaughter can
+ * end a match twice the thing you paid for, and one bought into clean ground is
+ * a mediocre elite that stays mediocre.
+ */
+const MONSTRUM_BITE_MS = 700
+const MONSTRUM_HP_PER_BITE = 130
+const MONSTRUM_DAMAGE_PER_BITE = 0.045
+
+/** The Flesh Wall's mending: slower than a bite, and only ever out of meat. */
+const FLESH_WALL_MEND_MS = 900
+const FLESH_WALL_MEND_FRACTION = 0.02
+
+/** The Flesh Wagon: how much it renders down, how often, and into what. */
+const WAGON_RAISE_MS = 5200
+const WAGON_RAISE_COST = 5
+const WAGON_REACH = 230
+const WAGON_RAISE_HEALTH = 0.6
+
+/** One commander's standing offer. */
+interface Incarnation {
+  /** Times the card has been bought. */
+  invested: number
+  /** Gold paid in, which is what caps how expensive a host may be. */
+  gold: number
+  /** The unit currently possessed, by simulation id. */
+  hostId: number | null
+  /** Milliseconds left in the current audition, or until the next one opens. */
+  clockMs: number
+  /** True while the clock is counting down an audition rather than a cooldown. */
+  auditioning: boolean
+}
+
 
 const SPLASH_SHIELDING = 9
 
@@ -513,6 +576,16 @@ export default class Battlefield {
   private wrights: Record<Faction, Bonewright[]> = { player: [], enemy: [] }
   /** Frames carried home and not yet stood up. Four make a Boneling. */
   private boneBank: Record<Faction, number> = { player: 0, enemy: 0 }
+  /**
+   * The Incarnation of Slaughter, per commander.
+   *
+   * Per commander rather than one global entity: two carnage armies each get
+   * their own offer, and each can only ever have one host walking at a time.
+   */
+  private incarnation: Record<Faction, Incarnation> = {
+    player: { invested: 0, gold: 0, hostId: null, clockMs: 0, auditioning: false },
+    enemy: { invested: 0, gold: 0, hostId: null, clockMs: 0, auditioning: false }
+  }
   /**
    * How long the remains stay worthless after a Bone Kiln comes down. Losing a
    * doctrine building has to be felt, not merely noted — for half a minute the
@@ -860,24 +933,34 @@ export default class Battlefield {
    * The pieces land where the body did, on somebody's half, and start rotting
    * immediately. Existing is not the same as harvested.
    */
-  private dropSpoils(unit: Unit, damage: DamageType, overkillFrac: number): void {
+  private dropSpoils(unit: Unit, damage: DamageType, overkillFrac: number, killer?: Damageable): void {
     const kind = unit.def.visual.kind
     const mechanical = kind === 'vehicle' || kind === 'mech' || kind === 'aircraft'
     // Whose ground it fell on decides who can harvest it, and therefore whose
     // research shapes what is left. Killing deep in your own yard feeds the
     // enemy's harvest and killing in theirs feeds yours.
-    const half = this.halfOwner(unit.x)
+    const butcher = killer instanceof Unit ? killer : null
+    // THE GREAT MAW renders what it eats onto its OWNER's ground, wherever the
+    // body actually was. Everything else leaves the pieces where they fell.
+    const devoured = butcher?.def.special === 'devour'
+    const half = devoured ? butcher.faction : this.halfOwner(unit.x)
     const sack = spoilsOf(damage, unit.def.armor, overkillFrac, mechanical, this.armyFor(half).techs)
+    // Some soldiers are built to feed the harvest and say so on their card.
+    if (butcher?.def.harvest && !mechanical) {
+      for (const spoil of SPOILS) sack[spoil] += butcher.def.harvest[spoil] ?? 0
+    }
     if (sack.meat + sack.skull + sack.bone === 0) return
-    const ground = this.groundLineFor(unit.lane)
+    const dropX = devoured ? this.musterX(half) : unit.x
+    const dropLane = devoured ? butcher.lane : unit.lane
+    const ground = this.groundLineFor(dropLane)
     const worth = spoilWorth(unit.def.cost)
     for (const spoil of SPOILS) {
       const life = spoilLife(spoil, unit.def.cost)
       for (let i = 0; i < sack[spoil]; i += 1) {
         this.physics.spawn(
           'gib',
-          unit.x + this.rng.spread(unit.def.height * 0.3),
-          unit.centerY,
+          dropX + this.rng.spread(unit.def.height * 0.3),
+          devoured ? ground - 40 : unit.centerY,
           this.rng.spread(150),
           -this.rng.range(40, 190),
           {
@@ -906,7 +989,7 @@ export default class Battlefield {
       if (sack.meat) parts.push(`${sack.meat} meat`)
       if (sack.skull) parts.push(`${sack.skull} skull`)
       if (sack.bone) parts.push(`${sack.bone} bone`)
-      this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.62, parts.join(' '), '#cbb894')
+      this.vfx.floatingLabel(dropX, (devoured ? ground - 60 : unit.centerY) - unit.def.height * 0.62, parts.join(' '), '#cbb894')
     }
   }
 
@@ -1659,6 +1742,15 @@ export default class Battlefield {
       // not on the other, and the two never reconcile.
       mix(Math.round(u.throesMs))
       mix(u.armsGone ? 1 : 0)
+      // The Incarnation is the one rule in the game that can take the OPPONENT's
+      // most valuable soldier, so a peer that disagrees about who is possessed
+      // disagrees about the whole match. Its clock, its host and what the host
+      // has personally killed all decide the next possession.
+      mix(Math.round(u.incarnateMs))
+      mix(u.rogue ? 1 : 0)
+      mix(Math.round(u.slain))
+      mix(Math.round(u.gorged * 100))
+      mix(Math.round(u.eatTimer))
       // Where a gatherer is walking. It is the only body on the board whose
       // destination is not implied by its faction, so nothing else in this loop
       // pins it down.
@@ -1669,6 +1761,12 @@ export default class Battlefield {
     // gold arrives, and gold decides what gets built.
     for (const faction of ['player', 'enemy'] as Faction[]) {
       mix(Math.round(this.boneBank[faction] * 100))
+      const inc = this.incarnation[faction]
+      mix(inc.invested)
+      mix(Math.round(inc.gold))
+      mix(inc.hostId ?? -1)
+      mix(Math.round(inc.clockMs))
+      mix(inc.auditioning ? 1 : 0)
       for (const slot of this.wrights[faction]) {
         mix(slot.carried.meat * 100 + slot.carried.skull * 10 + slot.carried.bone)
         mix(Math.round((slot.value.meat + slot.value.skull * 7 + slot.value.bone * 31) * 100))
@@ -3138,6 +3236,11 @@ export default class Battlefield {
       }
       // The quantity paths' chaff arrives in squads: one card, several
       // soldiers, staggered a step apart so they walk out as a file.
+      // The Incarnation is a payment, not a soldier. Nothing walks out.
+      if (entry.def.invest === 'incarnation') {
+        this.investIncarnation(army.faction, entry.def.cost)
+        continue
+      }
       const copies = entry.def.squad ?? 1
       for (let c = 0; c < copies; c += 1) {
         const unit = this.spawnUnit(army.faction, entry.def, undefined, entry.lane)
@@ -3225,6 +3328,13 @@ export default class Battlefield {
     // makes "is anything in my way" mean the same thing as "am I standing on
     // it". Air rides above all of it and is carried in the same pass — it
     // queues against nothing, so it needs no special call.
+    // Both of these belong to UNITS rather than to research, so they run here
+    // rather than inside `runArmyBehaviours` — which skips any side that owns no
+    // techs at all, and would therefore have silently disabled the Incarnation
+    // for a commander who bought it without researching anything.
+    this.updateFleshEaters(dtMs)
+    this.updateIncarnation('player', dtMs)
+    this.updateIncarnation('enemy', dtMs)
     this.stepSide(playerUnits, enemy.seen, enemy.air, this.enemyBase, dtMs)
     this.stepSide(enemyUnits, player.seen, player.air, this.playerBase, dtMs)
   }
@@ -3391,7 +3501,11 @@ export default class Battlefield {
         ahead += 1
         refX = other.x
       }
-      unit.ranksAhead = ahead
+      // A ROGUE INCARNATION IS NOT IN A QUEUE. It has stopped keeping track of
+      // sides, so the rank rules that stop a soldier swinging past the friend in
+      // front of it no longer apply — without this it would stand politely
+      // behind its own line and never hit the thing it just turned on.
+      unit.ranksAhead = unit.rogue ? 0 : ahead
       // Whichever file's front edge stops this soldier first — the nearest one
       // ahead across every file it stands in.
       //
@@ -3422,8 +3536,11 @@ export default class Battlefield {
         unit.raiding = clear
       }
       this.tryPounce(unit, enemyLanes)
-      const target = this.pickTarget(unit, enemyLanes, enemyAir, enemyBase)
-      unit.update(dtMs, blocker, target)
+      // A taken soldier has stopped keeping track of sides.
+      const target = unit.rogue
+        ? this.pickRogueTarget(unit)
+        : this.pickTarget(unit, enemyLanes, enemyAir, enemyBase)
+      unit.update(dtMs, unit.rogue ? null : blocker, target)
       if (unit.layer === 'ground' && unit.alive) {
         this.stopAtTheWall(unit)
         this.updatePlunder(unit, target, dtMs)
@@ -4068,12 +4185,17 @@ export default class Battlefield {
         // blow and spends the fight chasing, landing one hit per pursuit while
         // being shot the whole way — twenty clubmen drove nineteen slingers
         // three hundred pixels backwards and lost.
-        knockback: Math.min(attack.knockback, this.reachableShove(unit, target)),
+        // THE GREAT MAW pulls. A negative shove is a drag, so everything it
+        // reaches ends up closer to the mouth rather than further from it.
+        knockback:
+          unit.def.special === 'devour'
+            ? -attack.knockback
+            : Math.min(attack.knockback, this.reachableShove(unit, target)),
         crit: this.critChance(unit),
         bonusVs: unit.def.bonusVs
       }
       if (attack.splash && attack.splash > 0) {
-        this.applySplash(target.x, target.y + target.centerOffsetY, attack.splash, unit.faction, event, unit, unit.lane)
+        this.applySplash(target.x, target.y + target.centerOffsetY, attack.splash, unit.faction, event, unit, unit.lane, unit.rogue)
       } else {
         this.applyDamage(unit, target, event)
       }
@@ -4216,7 +4338,7 @@ export default class Battlefield {
       // for BOTH sides to walk to — the spoils belong to whoever's half they
       // land on, so killing deep in your own yard feeds the enemy's harvest
       // and killing in theirs feeds yours.
-      this.dropSpoils(unit, unit.lastDamageType, unit.lastOverkill)
+      this.dropSpoils(unit, unit.lastDamageType, unit.lastOverkill, killer)
     }
     // Release the outpost's standing count, so a seat whose three soldiers are
     // killed starts sending again rather than going quiet for the rest of the
@@ -4229,6 +4351,11 @@ export default class Battlefield {
     // Veterancy is credited to the soldier that actually landed the blow, not
     // to the side — the point is that this one is now worth pulling back.
     if (killer instanceof Unit && killer.alive && killer.faction === winner) killer.creditKill()
+    // What this soldier is personally worth as a killer. The Incarnation of
+    // Slaughter auditions on it, so it is per-head price rather than card price.
+    if (killer instanceof Unit && !unit.def.noncombat) {
+      killer.slain += unit.def.cost / (unit.def.squad ?? 1)
+    }
     const spoils = this.armyFor(winner).modifiers.bounty
     this.armyFor(winner).rewardKill(unit.def.bounty * spoils, unit.def.xp * spoils)
     this.statsFor(winner).kills += 1
@@ -4240,6 +4367,23 @@ export default class Battlefield {
     // them would let Necropolis's "lose 25" and the ascension's "lose 60" be
     // paid off by simply owning the node that raises them.
     if (!unit.def.noncombat) this.armyFor(unit.faction).deeds.losses += 1
+    // A LOT OF BLOOD. The possession ending is the loudest thing on the board,
+    // because it is the one death a player has been watching a clock on.
+    if (unit.incarnate) {
+      this.vfx.explosion(unit.x, unit.centerY, unit.def.height * 2.2, 0x8e1418, true)
+      this.vfx.gore(unit.x, unit.centerY, 3)
+      for (let i = 0; i < 90; i += 1) {
+        this.physics.spawn(
+          'blood',
+          unit.x + this.rng.spread(unit.def.height * 0.4),
+          unit.centerY - this.rng.range(0, unit.def.height * 0.6),
+          this.rng.spread(560),
+          -this.rng.range(80, 620),
+          { size: this.rng.range(0.6, 1.5), floor: this.groundLineFor(unit.lane) }
+        )
+      }
+      this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height, 'THE INCARNATION FALLS', '#ff4a3c')
+    }
     this.vfx.floatingLabel(unit.x, unit.centerY - unit.def.height * 0.4, `+${unit.def.bounty}`, '#f2c14e')
     audio.play('coin', 0.25)
     this.onUnitKilled?.(winner)
@@ -4558,6 +4702,234 @@ export default class Battlefield {
     return this.armyFor(unit.faction).hasTech('butchery') ? base + BUTCHERY_CRIT : base
   }
 
+
+  // ───────────────────── The Incarnation of Slaughter ─────────────────────
+
+  /** One purchase paid into the offer. Opens the audition if nothing is running. */
+  private investIncarnation(faction: Faction, gold: number): void {
+    const inc = this.incarnation[faction]
+    inc.invested += 1
+    inc.gold += gold
+    if (inc.hostId === null && !inc.auditioning) {
+      inc.auditioning = true
+      inc.clockMs = INCARNATION_WINDOW_MS
+    }
+    this.vfx.floatingLabel(
+      this.baseFor(faction).x,
+      this.config.groundY - 300,
+      `INCARNATION ${inc.invested}`,
+      '#c0392b'
+    )
+  }
+
+  /**
+   * Runs the offer: the bleed on a standing host, then the audition clock.
+   *
+   * Everything here is on the simulation clock and decided by simulation state,
+   * so both peers in a networked match possess the same soldier on the same
+   * tick — which matters more here than almost anywhere else, because the thing
+   * being chosen might be the OPPONENT's most valuable unit.
+   */
+  private updateIncarnation(faction: Faction, dtMs: number): void {
+    const inc = this.incarnation[faction]
+    if (inc.invested === 0) return
+
+    // A standing host bleeds harder every second it is still up.
+    if (inc.hostId !== null) {
+      const host = this.units.find(u => u.id === inc.hostId && u.alive)
+      if (!host || host.incarnateMs <= 0) {
+        // The clock running out IS the death. Reverting a burnt-out host to a
+        // permanently doubled ordinary soldier would make the timer a bonus
+        // rather than a price, and lifesteal on a well-fed host can outrun the
+        // bleed indefinitely — so the bleed is not what has to finish it.
+        if (host) this.burnOut(host)
+        inc.hostId = null
+        // The next one comes sooner for every investment made, down to a floor.
+        inc.auditioning = false
+        inc.clockMs = Math.max(INCARNATION_MIN_GAP_MS, INCARNATION_LIFE_MS - inc.invested * 1000)
+        return
+      }
+      host.incarnateMs -= dtMs
+      const spent = 1 - Math.max(0, host.incarnateMs) / Math.max(1, host.incarnateFor)
+      // Integrates to the host's whole health across its life, so lifesteal is
+      // what decides whether it lasts longer than the average half minute.
+      const bleed = (2 * host.maxHp * spent) / (INCARNATION_LIFE_MS / 1000)
+      host.takeDamage(bleed * (dtMs / 1000), 'slash')
+      return
+    }
+
+    inc.clockMs -= dtMs
+    if (inc.clockMs > 0) return
+    if (!inc.auditioning) {
+      inc.auditioning = true
+      inc.clockMs = INCARNATION_WINDOW_MS
+      return
+    }
+
+    // The audition closes. Take the most expensive melee body that earned it —
+    // and past thirty investments, stop asking it to earn anything.
+    const forced = inc.invested >= INCARNATION_ALWAYS
+    const reach = inc.gold * INCARNATION_REACH
+    let best: Unit | null = null
+    for (const u of this.units) {
+      if (!u.alive || u.incarnate || u.def.noncombat || u.def.invest) continue
+      if (u.def.attack.kind !== 'melee' || u.layer !== 'ground') continue
+      const price = u.def.cost / (u.def.squad ?? 1)
+      if (price <= 0 || price > reach) continue
+      if (!forced && u.slain < price * INCARNATION_DEED) continue
+      if (!best || price > best.def.cost / (best.def.squad ?? 1)) best = u
+    }
+    if (!best) {
+      // Nobody earned it. Watch another half minute.
+      inc.clockMs = INCARNATION_WINDOW_MS
+      return
+    }
+    this.possess(faction, best)
+    inc.hostId = best.id
+    inc.auditioning = false
+    inc.clockMs = 0
+  }
+
+  /** Takes a soldier. Doubles it, plus a tenth per investment, and starts the bleed. */
+  private possess(faction: Faction, host: Unit): void {
+    const inc = this.incarnation[faction]
+    const k = 2 + 0.1 * inc.invested
+    host.maxHp *= k
+    host.hp = host.maxHp
+    host.damageMult *= k
+    host.speedMult *= k
+    host.toughness *= k
+    host.incarnateFor = INCARNATION_LIFE_MS
+    host.incarnateMs = INCARNATION_LIFE_MS
+    // Somebody else's soldier does not come back onto your side — it comes off
+    // everybody's. That is the risk the offer carries and the reason it is worth
+    // paying into even when the board is going badly.
+    host.rogue = host.faction !== faction
+    this.vfx.explosion(host.x, host.centerY, host.def.height * 1.4, 0xc0392b, true)
+    this.vfx.floatingLabel(
+      host.x,
+      host.centerY - host.def.height,
+      host.rogue ? 'TAKEN' : 'INCARNATE',
+      '#ff4a3c'
+    )
+    audio.play('death_mech', 0.7)
+  }
+
+  /** The clock runs out. The host does not survive being put down. */
+  private burnOut(host: Unit): void {
+    host.incarnateMs = 1
+    host.hp = 0
+    host.kill()
+    host.incarnateMs = 0
+    host.rogue = false
+  }
+
+  /**
+   * A rogue Incarnation's target: the nearest living thing that is not itself,
+   * whichever side it belongs to.
+   */
+  private pickRogueTarget(unit: Unit): Damageable | null {
+    let best: Damageable | null = null
+    let bestD = Infinity
+    for (const other of this.units) {
+      if (other === unit || !other.alive || other.def.noncombat) continue
+      if (other.layer === 'air' && !(unit.def.hitsAir ?? false)) continue
+      const d = unit.distanceTo(other)
+      if (d >= bestD) continue
+      bestD = d
+      best = other
+    }
+    return best
+  }
+
+  // ─────────────────────── The age-four flesh rules ───────────────────────
+
+  /**
+   * THE MONSTRUM, THE FLESH WALL and the Flesh Wagon: three different ways of
+   * reading the same heap.
+   *
+   * All three run here rather than inside the units because all three need a
+   * view of what is lying on the ground, which a soldier does not have.
+   */
+  private updateFleshEaters(dtMs: number): void {
+    for (const u of this.units) {
+      if (!u.alive) continue
+      switch (u.def.special) {
+        case 'monstrum': {
+          // It eats what it walks over, and it KEEPS it. Health and damage climb
+          // with no ceiling, and the silhouette climbs with them so an opponent
+          // can see exactly how badly they have fed it.
+          u.eatTimer -= dtMs
+          if (u.eatTimer > 0) break
+          u.eatTimer = MONSTRUM_BITE_MS
+          const meal = this.nearestSpoil(u.x, u.def.height * 0.8, ['meat', 'bone'])
+          if (!meal) break
+          meal.dead = true
+          const worth = meal.worth ?? 1
+          u.gorged += worth
+          u.maxHp += MONSTRUM_HP_PER_BITE * worth
+          u.hp = Math.min(u.maxHp, u.hp + MONSTRUM_HP_PER_BITE * worth * 1.5)
+          u.damageMult += MONSTRUM_DAMAGE_PER_BITE * worth
+          u.setGorge(u.gorged)
+          this.vfx.impact(meal.x, meal.y - 6, 0xc4544a, 1.2, true)
+          break
+        }
+        case 'flesh_wall': {
+          // Architecture that knits itself back together out of the field. On a
+          // clean stretch of ground it is simply a very large slab.
+          u.eatTimer -= dtMs
+          if (u.eatTimer > 0) break
+          u.eatTimer = FLESH_WALL_MEND_MS
+          if (u.hp >= u.maxHp) break
+          const patch = this.nearestSpoil(u.x, u.def.height * 0.9, ['meat'])
+          if (!patch) break
+          patch.dead = true
+          u.heal(u.maxHp * FLESH_WALL_MEND_FRACTION * (patch.worth ?? 1))
+          this.vfx.impact(patch.x, patch.y - 6, 0x9fd6a0, 0.9, true)
+          break
+        }
+        case 'flesh_wagon': {
+          // The creed's healer does not keep a soldier alive; it replaces him
+          // out of the last one. Renders the spoils around it into a body.
+          u.eatTimer -= dtMs
+          if (u.eatTimer > 0) break
+          u.eatTimer = WAGON_RAISE_MS
+          let taken = 0
+          for (let i = 0; i < WAGON_RAISE_COST; i += 1) {
+            const piece = this.nearestSpoil(u.x, WAGON_REACH, ['meat', 'bone'])
+            if (!piece) break
+            piece.dead = true
+            taken += 1
+          }
+          if (taken < WAGON_RAISE_COST) break
+          const roster = this.armyFor(u.faction).roster
+          if (roster.length === 0) break
+          const cheapest = roster.reduce((a, b) => (b.cost < a.cost && b.cost > 0 ? b : a))
+          const risen = this.spawnUnit(u.faction, cheapest, u.x, u.lane)
+          risen.hp = risen.maxHp * WAGON_RAISE_HEALTH
+          risen.risen = true
+          this.vfx.impact(risen.x, risen.centerY, 0x7fd6a0, 1.4, true)
+          this.vfx.floatingLabel(u.x, u.centerY - 40, 'RENDERED', '#9fd6a0')
+          break
+        }
+      }
+    }
+  }
+
+  /** The nearest live spoil of one of these kinds, within a radius. */
+  private nearestSpoil(x: number, radius: number, kinds: readonly Spoil[]): Body | null {
+    let best: Body | null = null
+    let bestD = radius
+    for (const b of this.physics.bodies) {
+      if (b.dead || !b.spoil || !kinds.includes(b.spoil)) continue
+      const d = Math.abs(b.x - x)
+      if (d >= bestD) continue
+      bestD = d
+      best = b
+    }
+    return best
+  }
+
   /** Core damage pipeline: modifiers, crits, stats, then the target's own logic. */
   applyDamage(attacker: Damageable | null, target: Damageable, event: DamageEvent): void {
     this.lastViolenceMs = this.elapsedMs
@@ -4621,6 +4993,8 @@ export default class Battlefield {
     // the Petardier's concussion knocks the reply out of rhythm, and the
     // Gall Tosser's toxin keeps working after the dart is gone.
     if (attacker instanceof Unit && attacker.alive && target instanceof Unit) {
+      // The Incarnation drinks, whatever the body it is wearing used to do.
+      if (attacker.incarnate && attacker.def.special !== 'lifesteal') attacker.heal(amount * 0.4)
       switch (attacker.def.special) {
         case 'lifesteal':
           attacker.heal(amount * 0.4)
@@ -4680,7 +5054,13 @@ export default class Battlefield {
     faction: Faction,
     event: DamageEvent,
     attacker: Damageable | null = null,
-    laneLock?: number
+    laneLock?: number,
+    /**
+     * Ignore the "not my own side" rule. Only a rogue Incarnation sets it: it
+     * has stopped knowing whose side it was on, and a cleave that politely
+     * spared its former comrades would make that entirely cosmetic.
+     */
+    hitAll = false
   ): void {
     // A Powder Magazine is a shed of the stuff behind the line: every charge
     // you pack is a heavier one. It applies here, at the single point every
@@ -4701,7 +5081,7 @@ export default class Battlefield {
     const caught: { t: Damageable; dist: number; seq: number }[] = []
     for (let seq = 0; seq < targets.length; seq += 1) {
       const t = targets[seq]
-      if (!t.alive || t.faction === faction) continue
+      if (!t.alive || (!hitAll && t.faction === faction)) continue
       // A swung weapon sweeps the swinger's own file. Shells do not care.
       if (laneLock !== undefined && t instanceof Unit && t.layer === 'ground' && !t.lanes.includes(laneLock)) continue
       const dx = t.x - x
@@ -4750,7 +5130,7 @@ export default class Battlefield {
 
     if (attacker instanceof Unit && attacker.def.special === 'gravity_well') {
       for (const u of this.units) {
-        if (!u.alive || u.faction === faction || u.layer !== 'ground') continue
+        if (!u.alive || (!hitAll && u.faction === faction) || u.layer !== 'ground') continue
         const dx = u.x - x
         if (Math.abs(dx) > radius * 1.4 || Math.abs(dx) < 8) continue
         u.launch(-Math.sign(dx) * 200, -150)
@@ -4799,7 +5179,7 @@ export default class Battlefield {
     this.physics.blast(x, y, radius * 1.6 * (force > 1 ? 1.35 : 1), (event.knockback * 1.5 + 220) * force * packed)
     if (force > 1) {
       for (const u of this.units) {
-        if (!u.alive || u.faction === faction || u.layer !== 'ground') continue
+        if (!u.alive || (!hitAll && u.faction === faction) || u.layer !== 'ground') continue
         const dx = u.x - x
         const d = Math.abs(dx)
         if (d > radius * 1.5) continue

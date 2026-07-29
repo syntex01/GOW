@@ -222,6 +222,20 @@ export interface UnitDef {
   /** Never shown on a command bar — summoned by another unit's special. */
   hidden?: boolean
   /**
+   * EXTRA SPOILS this soldier's kills leave behind, on top of what the weapon
+   * and the victim's armour already decide.
+   *
+   * The harvest reads the killing blow, so a unit built to feed it has to say
+   * so here rather than merely carrying the right damage type. This is what
+   * makes the age-two butchers *flesh producers* and not just anti-chaff.
+   */
+  harvest?: Partial<Record<'meat' | 'skull' | 'bone', number>>
+  /**
+   * This card does not put a body on the field. Buying it pays into something
+   * else — the Incarnation of Slaughter is the only one.
+   */
+  invest?: 'incarnation'
+  /**
    * This body is not in the war.
    *
    * It is stepped by its own routine rather than by the line pass, it never
