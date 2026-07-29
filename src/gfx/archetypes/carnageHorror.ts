@@ -17,7 +17,6 @@ import {
   suture,
   viscera,
   wet,
-  wingMembrane,
   type FleshKit
 } from '../flesh'
 import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
@@ -1013,37 +1012,128 @@ function wagonParts(v: UnitVisual, height: number): Record<string, PartArt> {
  * as suspended rather than as flying, which is the difference between this and
  * an aircraft.
  */
+/**
+ * THE WIDOW'S CAGE — the smallest body in the faction, and it was the most
+ * overdrawn. At the old fractions the canvas was eight pixels by eleven and it
+ * was being given a four-bar rib cage, an eight-vertebra spine, a heart, a bone
+ * collar, an eye cluster and a loop of viscera: six features in eighty-eight
+ * pixels, which is not a hanging ribcage, it is grey mush.
+ *
+ * Drawn larger — the art fraction is purely visual, the unit's `height` and
+ * therefore its reach and hitbox are untouched — and cut to the three marks that
+ * make the silhouette: the bars, a dark heart hanging inside them, and the bone
+ * collar where a neck used to be. An empty ribcage swinging under a pair of
+ * wings is a strong enough read on its own.
+ */
+/**
+ * THE WIDOW'S CAGE — an empty human ribcage hung from a pair of wings.
+ *
+ * The previous version was wrong twice over. Its art called `ribCage` across the
+ * full width of an eight-by-eleven canvas, which is not a ribcage, it is a crate
+ * lid: five bars of equal length at equal spacing filling a rectangle. And the
+ * bone that carried it sat at `angle: Math.PI / 2` with `orient: 'up'`, which
+ * `partRotation` turns into a rotation of π — the whole thing rendered UPSIDE
+ * DOWN, collar at the bottom.
+ *
+ * So the bars are drawn here rather than borrowed. What makes a ribcage read is
+ * that it TAPERS and that it is OPEN: the bars run from each flank inward and
+ * stop short of the middle, so the gap down the centre shows the dark heart
+ * hanging inside. That gap is the whole silhouette.
+ */
 function widowCage(height: number, k: FleshKit): PartArt {
-  const w = art(0.3, height)
-  const h = art(0.42, height)
+  const w = art(0.5, height)
+  const h = art(0.66, height)
   const p = pad(w, h)
   const cx = p.w / 2
-  // A hanging cage, open at the front, with a heart in it.
-  ribCage(p, 3, 3, w - 2, h * 0.7, k, 4, 1)
-  spine(p, cx, 3, cx, p.h * 0.8, k, 8)
-  fleshMass(p, cx, p.h * 0.38, w * 0.16, h * 0.12, k.meat, 141, 3)
+  const bars = 5
+  for (let i = 0; i < bars; i += 1) {
+    const t = i / (bars - 1)
+    // Full width at the collar, three fifths of it at the bottom of the cage.
+    const half = (w * 0.5) * (1 - t * 0.42)
+    const y = Math.round(3 + h * (0.16 + t * 0.66))
+    // The gap widens as the cage narrows, so the opening is always visible.
+    const gap = Math.max(1, Math.round(half * (0.18 + t * 0.22)))
+    for (let o = gap; o <= half; o += 1) {
+      // Two pixels thick with a lit top edge — one-pixel bars are noise at this
+      // size, which is the lesson the Ripjaw's rib cage taught.
+      for (const s of [-1, 1]) {
+        p.set(Math.round(cx + s * o), y, k.bone[3])
+        p.set(Math.round(cx + s * o), y + 1, k.gristle[1])
+      }
+    }
+  }
+  // The sternum: one bright vertical down the front, tying the bars together.
+  for (let y = 3; y < 3 + h * 0.86; y += 1) p.set(Math.round(cx), Math.round(y), k.bone[y % 3 === 0 ? 4 : 2])
+  // The heart, hung in the opening and the darkest thing on the unit — which is
+  // what tells the eye the bars are bars and not stripes.
+  p.ellipse(cx, 3 + h * 0.52, Math.max(1.6, w * 0.17), Math.max(1.8, h * 0.15), k.cavity[0])
+  p.ellipse(cx - w * 0.04, 3 + h * 0.48, Math.max(1, w * 0.08), Math.max(1, h * 0.07), k.meat[2])
   // A collar of skull at the top where the neck used to be.
-  p.ellipse(cx, 4, w * 0.2, h * 0.06, k.bone[2])
-  eyeCluster(p, cx, 5, w * 0.14, k, 3, 142)
-  viscera(p, cx, p.h * 0.72, Math.round(h * 0.24), k, 143)
-  return { canvas: finish(p, k, 140, 0.9), origin: [cx / p.w, 0.14] }
+  p.ellipse(cx, 4, w * 0.3, h * 0.05, k.bone[3])
+  p.set(Math.round(cx), 3, k.bone[4])
+  return { canvas: finishSmall(p, k, 140), origin: [cx / p.w, 2 / p.h] }
 }
 
+/**
+ * A WING, drawn LEFTWARD from an origin at its own trailing edge.
+ *
+ * Authoring it the other way round — extending right from a left-hand origin —
+ * forced the bone to sit at angle π to sweep the wing backward, and a rotation
+ * of π also turns the membrane upside down, so the leading-edge spar ended up
+ * underneath. Drawn leftward, a small negative angle sweeps it back and up with
+ * no flip, which is the pose a wing actually holds.
+ */
 function widowWing(height: number, k: FleshKit, seed: number): PartArt {
-  const span = art(0.5, height)
-  const drop = art(0.24, height)
+  const span = art(0.72, height)
+  const drop = art(0.34, height)
   const p = pad(span, drop + 4)
-  wingMembrane(p, 2, 3, span - 1, drop, k, seed)
-  return { canvas: p.toCanvas() as Canvas2D, origin: [2 / p.w, 3 / p.h] }
+  const noise = pixelNoise(seed * 811 + 3)
+  const tip = 2
+  const root = 2 + span
+  // The leading spar runs the whole span along the top edge.
+  p.thickLine(root, 3, tip, 3 + drop * 0.28, 2, k.bone[3])
+  // The membrane hangs off it, deepest near the body and pinched at the tip.
+  for (let i = 0; i <= span; i += 1) {
+    const t = i / Math.max(1, span)
+    const x = root - i
+    const top = 3 + drop * 0.28 * t
+    const deep = drop * (0.28 + Math.sin((1 - t) * Math.PI * 0.8) * 0.72)
+    for (let y = 0; y < deep; y += 1) {
+      const s = y / Math.max(1, deep)
+      p.set(x, Math.round(top + y), k.membrane[s > 0.78 ? 1 : s > 0.4 ? 2 : 3])
+    }
+    // Torn along the trailing edge. Nothing on this thing is intact.
+    if (noise(i, 5) > 0.66) p.set(x, Math.round(top + deep - 1), 0, 0)
+  }
+  // Three finger bones fanning out through the web.
+  for (let f = 1; f <= 3; f += 1) {
+    const t = f / 4
+    const x = root - Math.round(span * t)
+    const deep = drop * (0.28 + Math.sin((1 - t) * Math.PI * 0.8) * 0.72)
+    p.thickLine(root, 4, x, 3 + drop * 0.28 * t + deep * 0.9, 1, k.gristle[2])
+  }
+  // Origin at the trailing edge, next to the body.
+  return { canvas: p.toCanvas() as Canvas2D, origin: [root / p.w, 3 / p.h] }
 }
 
 const WIDOW_SKELETON = (): Skeleton => {
   const s: Skeleton = [
     bone('root', null, { y: -0.5, depth: 30 }),
-    bone('cage', 'root', { angle: Math.PI / 2, length: 0.36, part: 'cage', orient: 'up', depth: 31, weights: { breathe: 1, flinch: 1 } }),
-    // Wings hinge at the top of the cage and sweep back — one near, one far.
-    bone('wingF', 'root', { x: -0.02, y: 0.02, angle: -0.2, part: 'wingF', orient: 'right', depth: 48 }),
-    bone('wingB', 'root', { x: -0.04, y: -0.02, angle: -0.2, part: 'wingB', orient: 'right', depth: 8 }),
+    // `orient: 'up'` renders at `angle + π/2`, so -π/2 is upright and +π/2 —
+    // what this was — is a rotation of π: the cage hung collar-DOWN.
+    bone('cage', 'root', { angle: -Math.PI / 2, length: 0.36, part: 'cage', orient: 'up', depth: 31, weights: { breathe: 1, flinch: 1 } }),
+    // Wings hinge at the collar and sweep back — one near, one far. The art is
+    // drawn leftward from its own trailing edge, so a small negative angle
+    // sweeps it back and up without the 180° flip that would invert the spar.
+    // BOTH wings sit BEHIND the cage. The near one used to be drawn in front of
+    // it at depth 48, and since its membrane hangs nine pixels below its own spar
+    // it covered the ribs completely — hiding the one feature the unit is. The
+    // cage is the identity; the wings frame it.
+    //
+    // Swept up as well as back, so the membrane hangs into empty air above the
+    // cage rather than across it.
+    bone('wingF', 'root', { x: -0.02, y: 0.08, angle: -0.45, part: 'wingF', orient: 'right', depth: 26 }),
+    bone('wingB', 'root', { x: -0.07, y: 0.03, angle: -0.95, part: 'wingB', orient: 'right', depth: 8 }),
     // Trailing legs. They never touch anything.
     bone('legF', 'cage', { x: 0.02, y: 0.05, angle: -0.2, length: 0.14, part: 'legF', depth: 44 }),
     bone('legF2', 'legF', { angle: 0.3, length: 0.12, part: 'legF2', depth: 45 }),
@@ -1065,10 +1155,14 @@ const WIDOW_WALK: Clip = {
   loop: true,
   ease: 'sine',
   keys: [
-    { t: 0, pose: { wingF: { angle: -0.9 }, wingB: { angle: -0.8 }, root: { y: -0.02 }, cage: { angle: 0.06 }, legF: { angle: 0.2 }, legB: { angle: 0.16 } } },
-    { t: 0.3, pose: { wingF: { angle: 0.55 }, wingB: { angle: 0.5 }, root: { y: 0.024 }, cage: { angle: -0.05 }, legF: { angle: -0.16 }, legB: { angle: -0.12 } }, ease: 'quad' },
-    { t: 0.55, pose: { wingF: { angle: 0.7 }, wingB: { angle: 0.64 }, root: { y: 0.014 }, cage: { angle: 0 }, legF: { angle: 0.24 }, legB: { angle: 0.2 } } },
-    { t: 0.8, pose: { wingF: { angle: -0.5 }, wingB: { angle: -0.44 }, root: { y: -0.014 }, cage: { angle: 0.04 }, legF: { angle: 0.1 }, legB: { angle: 0.06 } }, ease: 'cubic' }
+    // THE FAR WING LAGS, and beats through a shallower arc. Both wings used to
+    // sit within a tenth of a radian of each other for the whole cycle, so they
+    // drew on top of one another and the Widow appeared to have one wing. A 2D
+    // side view sells a wingbeat through foreshortening and phase, not amplitude.
+    { t: 0, pose: { wingF: { angle: -0.9 }, wingB: { angle: 0.34 }, root: { y: -0.02 }, cage: { angle: 0.06 }, legF: { angle: 0.2 }, legB: { angle: 0.16 } } },
+    { t: 0.3, pose: { wingF: { angle: 0.55 }, wingB: { angle: -0.46 }, root: { y: 0.024 }, cage: { angle: -0.05 }, legF: { angle: -0.16 }, legB: { angle: -0.12 } }, ease: 'quad' },
+    { t: 0.55, pose: { wingF: { angle: 0.7 }, wingB: { angle: 0.1 }, root: { y: 0.014 }, cage: { angle: 0 }, legF: { angle: 0.24 }, legB: { angle: 0.2 } } },
+    { t: 0.8, pose: { wingF: { angle: -0.5 }, wingB: { angle: 0.42 }, root: { y: -0.014 }, cage: { angle: 0.04 }, legF: { angle: 0.1 }, legB: { angle: 0.06 } }, ease: 'cubic' }
   ]
 }
 
@@ -1079,11 +1173,14 @@ const WIDOW_ATTACK: Clip = {
   loop: false,
   ease: 'quad',
   keys: [
-    { t: 0, pose: { wingF: { angle: -0.3 }, wingB: { angle: -0.26 }, cage: { angle: 0 } } },
-    { t: 0.24, pose: { wingF: { angle: 1.1 }, wingB: { angle: 1.05 }, cage: { angle: 0.2 }, root: { y: 0.03 } }, ease: 'cubic' },
-    { t: 0.42, pose: { wingF: { angle: 1.3 }, wingB: { angle: 1.24 }, cage: { angle: 0.34 }, root: { y: 0.05 } }, ease: 'hold' },
-    { t: 0.66, pose: { wingF: { angle: -1.1 }, wingB: { angle: -1 }, cage: { angle: -0.1 }, root: { y: -0.02 } }, ease: 'back' },
-    { t: 1, pose: { wingF: { angle: -0.3 }, wingB: { angle: -0.26 }, cage: { angle: 0 }, root: { y: 0 } } }
+    { t: 0, pose: { wingF: { angle: -0.3 }, wingB: { angle: 0.2 }, cage: { angle: 0 } } },
+    // Both wings FOLD for the stoop — this is the one beat where they agree, and
+    // it reads as commitment precisely because they are apart the rest of the time.
+    { t: 0.24, pose: { wingF: { angle: 1.1 }, wingB: { angle: 0.95 }, cage: { angle: 0.2 }, root: { y: 0.03 } }, ease: 'cubic' },
+    { t: 0.42, pose: { wingF: { angle: 1.3 }, wingB: { angle: 1.16 }, cage: { angle: 0.34 }, root: { y: 0.05 } }, ease: 'hold' },
+    // And flare, hard, out of phase again to stop the dive.
+    { t: 0.66, pose: { wingF: { angle: -1.1 }, wingB: { angle: -0.5 }, cage: { angle: -0.1 }, root: { y: -0.02 } }, ease: 'back' },
+    { t: 1, pose: { wingF: { angle: -0.3 }, wingB: { angle: 0.2 }, cage: { angle: 0 }, root: { y: 0 } } }
   ]
 }
 
