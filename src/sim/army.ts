@@ -3,6 +3,7 @@ import { AGES, MAX_AGE, ageDef } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
+import { escalated } from '../data/escalate'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import { LANE_COUNT, type Faction, type ReserveMode } from './types'
 import { powi } from './dmath'
@@ -270,7 +271,7 @@ export default class Army {
     // Morphs run last, over whatever the roster turned out to be, so an
     // ascended faction's own units keep changing shape as you research past
     // the ascension rather than freezing the moment you took it.
-    if (this.ascendedTo) return morphedRoster(factionRoster(this.ascendedTo), this.techs)
+    if (this.ascendedTo) return this.grown(morphedRoster(factionRoster(this.ascendedTo), this.techs))
 
     const dominant = this.dominantBranch
     const pathDefs = (branch: string): UnitDef[] =>
@@ -316,7 +317,24 @@ export default class Army {
         }
       }
     }
-    return morphedRoster(list.slice(0, MAX_ROSTER), this.techs)
+    return this.grown(morphedRoster(list.slice(0, MAX_ROSTER), this.techs))
+  }
+
+  /**
+   * The age-appropriate tier of anything that grows rather than being replaced.
+   *
+   * Runs last, over whatever the roster turned out to be, so a tier multiplies
+   * what the drills and the doctrine morphs already made of the soldier instead
+   * of being overwritten by them.
+   */
+  private grown(list: UnitDef[]): UnitDef[] {
+    let changed = false
+    const out = list.map(d => {
+      const g = escalated(d, this.age)
+      if (g !== d) changed = true
+      return g
+    })
+    return changed ? out : list
   }
 
   /**
@@ -660,7 +678,7 @@ export default class Army {
     // have rendered the other's roster.
     const base = ALL_UNITS_BY_ID[baseIdFor(unitId)]
     if (!base) return false
-    const def = morphedDef(base, this.techs)
+    const def = escalated(morphedDef(base, this.techs), this.age)
     if (this.blockReason(def) !== null) return false
     this.gold -= def.cost
     this.queue.push({

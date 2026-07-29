@@ -12,6 +12,7 @@ import { TURRETS } from './data/turrets'
 import { ALL_BUILDINGS } from './data/buildings'
 import { drawBuilding } from './gfx/buildingArt'
 import { TECHS } from './data/tech'
+import { escalationTiers } from './data/escalate'
 import { FACTION_UNITS } from './data/factions'
 import BattleScene from './scenes/battleScene'
 import BootScene from './scenes/bootScene'
@@ -68,6 +69,7 @@ function start(): void {
     __gowCosmeticRng: typeof rng
     __gowUnits: typeof UNITS_BY_ID
     __gowFactionUnits: Record<string, UnitDef>
+    __gowEscalation: typeof escalationTiers
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
     __gowLog: typeof gameLog
     __gowTurrets: string[]
@@ -138,6 +140,9 @@ function start(): void {
   debug.__gowUnits = UNITS_BY_ID
   // The five paths' own soldiers, for tests that field them directly.
   debug.__gowFactionUnits = Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
+  // Every tier a growing unit reaches, so a test or a film can put all four
+  // Husks on the field side by side without having to age up four times.
+  debug.__gowEscalation = escalationTiers
   // Lets a test ask "what does this unit become under these doctrines?" without
   // having to reach an age whose roster happens to contain it.
   debug.__gowMorph = (unitId, techs) => {

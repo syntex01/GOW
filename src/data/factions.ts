@@ -130,6 +130,10 @@ export const FACTION_UNITS: UnitDef[] = [
     squad: 2,
     conduct: 'swarm',
     height: 66,
+    // The Husk is never replaced. It is what the creed is MADE of, so it gets
+    // heavier and more numerous every age instead of being outclassed — twice as
+    // many at the second age, and widening from there. See `data/escalate.ts`.
+    escalates: 'husk',
     special: 'gravebound',
     attack: { kind: 'melee', knockback: 50 },
     description: 'It was someone. A quarter of them refuse to stay down the first time.',

@@ -46,9 +46,12 @@ import type { Faction, ReserveMode } from '../sim/types'
  * rebuilt as a rendering wagon that raises bodies out of spoils, and an age four
  * of Flesh Wall, Monstrum, Great Maw and the Incarnation of Slaughter — which
  * can possess the OPPONENT's best melee soldier, so a disagreement about it is
- * a disagreement about the whole match.
+ * a disagreement about the whole match. v33 makes the Ripjaw a leaping raider
+ * and the Shrike a tentacle executioner that takes heads, escalates the Husk by
+ * age instead of replacing it, and puts the four age-four bodies behind research
+ * nodes so the last age is earned rather than handed over by the lean.
  */
-export const PROTOCOL_VERSION = 32
+export const PROTOCOL_VERSION = 33
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

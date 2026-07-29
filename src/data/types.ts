@@ -232,6 +232,11 @@ export interface UnitDef {
    */
   harvest?: Partial<Record<'meat' | 'skull' | 'bone', number>>
   /**
+   * This soldier is not replaced when the age turns over — it GROWS. Names the
+   * escalation table it follows; see `src/data/escalate.ts`.
+   */
+  escalates?: 'husk'
+  /**
    * This card does not put a body on the field. Buying it pays into something
    * else — the Incarnation of Slaughter is the only one.
    */

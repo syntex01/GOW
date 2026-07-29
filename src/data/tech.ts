@@ -868,6 +868,64 @@ export const TECHS: TechNode[] = [
       'Shooters open their ranks and let the fighters through. Your melee units walk past friendly ranged troops who have halted to fire, instead of queueing behind them.'
   },
   {
+    // ─────────────── The age-four bodies are EARNED, not inherited ───────────
+    //
+    // Leaning carnage used to hand you the whole last age the moment you got
+    // there. These four are the creed's identity, so each one is a node: the bar
+    // at age four is what you researched toward, not what the lean gave you.
+    id: 'flesh_architecture',
+    name: 'Flesh Architecture',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 6,
+    row: 2,
+    age: 4,
+    cost: 3200,
+    requires: ['corpse_wall'],
+    unlocks: 'nk_fleshwall',
+    effect: 'Grow a Flesh Wall: three files of architecture that knits itself back together out of whatever is lying near it.'
+  },
+  {
+    id: 'the_hunger_made_flesh',
+    name: 'The Hunger Made Flesh',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 6,
+    row: 3,
+    age: 4,
+    cost: 3600,
+    requires: ['bone_levy'],
+    unlocks: 'nk_monstrum',
+    effect: 'Fields the Monstrum: it eats what it walks over and KEEPS it, with no ceiling. Bought into a clean field it is a mediocre elite; walked across a slaughter it ends the match.'
+  },
+  {
+    id: 'the_maw',
+    name: 'The Great Maw',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 7,
+    row: 0,
+    age: 4,
+    cost: 4400,
+    requires: ['the_hunger_made_flesh'],
+    unlocks: 'nk_maw',
+    effect: 'A mouth on legs. It drags what it reaches toward itself instead of shoving it away, and whatever dies in it is rendered onto YOUR ground wherever the body was standing.'
+  },
+  {
+    id: 'incarnation_rite',
+    name: 'The Incarnation of Slaughter',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 7,
+    row: 2,
+    age: 4,
+    cost: 5000,
+    requires: ['necropolis'],
+    unlocks: 'nk_incarnation',
+    demand: { metric: 'kills', amount: 120, label: 'Kill 120 — it only answers a slaughter' },
+    effect: 'Not a soldier — a standing offer you pay into. It watches the whole board for half a minute and takes the most expensive melee body that killed three times its own price. Whoever owns it.'
+  },
+  {
     id: 'clean_kills',
     name: 'Clean Kills',
     branch: 'carnage',
