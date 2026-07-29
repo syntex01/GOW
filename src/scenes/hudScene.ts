@@ -851,7 +851,8 @@ export default class HUDScene extends Phaser.Scene {
     const RESERVE_TEXT: Record<string, [string, string]> = {
       none: ['SPEND ALL', 'nothing held back'],
       age: ['HOLD: AGE', 'keeps the age-up'],
-      elite: ['HOLD: ELITE', 'keeps the dearest']
+      elite: ['HOLD: ELITE', 'keeps the dearest'],
+      rush: ['RUSH', 'no reserve, no build clock']
     }
     const [rText, rSub] = RESERVE_TEXT[army.reserveMode]
     const held = army.reserve

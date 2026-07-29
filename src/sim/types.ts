@@ -63,7 +63,16 @@ export type TechBranchLean = 'carnage' | 'ordnance' | 'engineering' | 'occult' |
  *  - `age`   — never spend below what the next age costs.
  *  - `elite` — never spend below the dearest thing on your own bar.
  */
-export type ReserveMode = 'none' | 'age' | 'elite'
+/**
+ * What the standing orders refuse to spend — and, at the top of the cycle,
+ * whether the build clock is being paid out at all.
+ *
+ * `rush` is a FOURTH position rather than a change to `none`, deliberately.
+ * `none` is the default every match opens on, so folding "skip the queue" into
+ * it would have deleted build time from the game outright and taken the Muster
+ * Yard with it. Rushing is something you turn on.
+ */
+export type ReserveMode = 'none' | 'age' | 'elite' | 'rush'
 
 /** A minimal 2D vector used throughout the simulation. */
 export interface Vec2 {

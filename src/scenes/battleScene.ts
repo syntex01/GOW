@@ -740,7 +740,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   cycleReserve(): void {
-    const order: ReserveMode[] = ['none', 'age', 'elite']
+    const order: ReserveMode[] = ['none', 'age', 'elite', 'rush']
     const next = order[(order.indexOf(this.localArmy.reserveMode) + 1) % order.length]
     this.dispatch({ t: 'reserve', mode: next })
     audio.play('ui_click', 0.4)

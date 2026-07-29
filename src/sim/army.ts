@@ -695,9 +695,17 @@ export default class Army {
    * Advances timers. Returns the units that finished building this tick,
    * plus the gold earned from passive income.
    */
-  /** Blood Pact pays a build's time out of the fortress instead of the clock. */
+  /**
+   * Whether the queue finishes the moment it is paid for.
+   *
+   * Two ways in. Blood Pact pays a build's time out of the FORTRESS, which is
+   * a doctrine's bargain and costs hull. RUSH pays it out of nothing — it is
+   * the commander deciding that the yard's clock is not the interesting part of
+   * the late game, which is a fair thing to decide when a full purse can afford
+   * more soldiers than a yard can turn out.
+   */
   get instantBuild(): boolean {
-    return this.techs.has('blood_pact')
+    return this.techs.has('blood_pact') || this.reserveMode === 'rush'
   }
 
   tick(dtMs: number): { ready: QueueEntry[]; income: number; autoSpawn: UnitDef | null } {
