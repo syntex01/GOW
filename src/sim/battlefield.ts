@@ -3880,7 +3880,11 @@ export default class Battlefield {
   private shedRubble = (x: number, y: number, amount: number): void => {
     const chunks = Math.min(4, 1 + Math.floor(amount / 90))
     for (let i = 0; i < chunks; i += 1) {
-      this.physics.spawn('rubble', x, y, this.rng.spread(150), -this.rng.range(40, 200), {
+      // Scattered up the face of the wall from the SIMULATION's stream. The
+      // caller hands over one fixed height because it cannot scatter it itself
+      // without forking a networked match — see the note in `Base.takeDamage`.
+      const at = y - this.rng.range(0, 90)
+      this.physics.spawn('rubble', x, at, this.rng.spread(150), -this.rng.range(40, 200), {
         size: this.rng.range(0.45, 1),
         spin: this.rng.spread(9),
         ttl: 14000

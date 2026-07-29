@@ -474,7 +474,18 @@ export default class Base implements Damageable, Solid {
     // looks it. It is knocked out of THIS seat's wall — a first seat is barely
     // half the height of the art, and masonry shed at the full-size wall's
     // height simply appears in the sky above the roof.
-    this.onWallHit?.(this.getImpactX(), this.y - BASE_H * s * (0.15 + rng.next() * 0.5), applied)
+    // A FIXED height, drawn from nothing.
+    //
+    // This is the one line on this path that is not cosmetic. Everything else
+    // here — the shake, the damage number, the ricochet — is drawn from the
+    // shared cosmetic stream and never leaves the scene. `onWallHit` does: it
+    // knocks masonry into the deterministic physics world, and that world is in
+    // `stateHash`. Jittering the spawn height with the cosmetic random therefore
+    // put a number that differs between two machines straight into the
+    // fingerprint, and a networked match forked the first time anybody touched
+    // a wall. The scatter now comes from the simulation's own stream, in
+    // `shedRubble`, where it is the same on both peers.
+    this.onWallHit?.(this.getImpactX(), this.y - BASE_H * s * 0.4, applied)
     audio.play('base_hit', Math.min(1, 0.3 + applied / 400))
 
     // Splash damage bleeds into the turrets mounted on the wall.

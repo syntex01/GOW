@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { gameLog } from './core/log'
 import type { Difficulty } from './core/save'
+import { rng } from './core/rng'
 import { session } from './core/session'
 import { AGES } from './data/ages'
 import { LEVELS_BY_ID, type GameMode } from './data/levels'
@@ -64,6 +65,7 @@ function start(): void {
     __gowGame: Phaser.Game
     __gowStart: (mode: GameMode, difficulty: Difficulty, levelId?: string) => void
     __gowStartSeeded: (mode: GameMode, difficulty: Difficulty, seed: number) => void
+    __gowCosmeticRng: typeof rng
     __gowUnits: typeof UNITS_BY_ID
     __gowFactionUnits: Record<string, UnitDef>
     __gowMorph: (unitId: string, techs: string[]) => UnitDef | null
@@ -142,6 +144,13 @@ function start(): void {
     const base = UNITS_BY_ID[unitId]
     return base ? morphedDef(base, new Set(techs)) : null
   }
+  // The COSMETIC stream, exposed so a harness can desynchronise it.
+  //
+  // Two machines never share it — different menus, different frame counts, a
+  // mouse moved — and that is fine right up until something cosmetic leaks into
+  // the simulation. Being able to spin it deliberately is what turns "the
+  // networked match forked" into a test that fails on one machine.
+  debug.__gowCosmeticRng = rng
   debug.__gowStartSeeded = (mode, difficulty, seed) => {
     session.start({ mode, difficulty, seed })
     for (const scene of game.scene.scenes) {
