@@ -34,13 +34,23 @@ import type { Archetype, ArchetypeBuild, ClipName, PartArt } from './types'
  *   RIPJAW     a quadruped built to leave the ground
  *   WAGON      a cart of viscera, hauled by things in harness
  *   WIDOW      a ribcage that learned to fly
+ *   MOUND      a blistered heap with no head that gets about by rolling
+ *   FLAYER     a robe with nothing under it and a curtain where a face was
  *
  * They share the flesh vocabulary and nothing else — no common skeleton, no
  * shared clip, and in three cases no legs in the usual sense. What holds them
  * together as one army is the material, which is the right thing to share.
  */
 
-export type HorrorPlan = 'monstrum' | 'maw' | 'fleshwall' | 'ripjaw' | 'wagon' | 'widow'
+export type HorrorPlan =
+  | 'monstrum'
+  | 'maw'
+  | 'fleshwall'
+  | 'ripjaw'
+  | 'wagon'
+  | 'widow'
+  | 'brainstealer'
+  | 'mindflayer'
 
 const art = (fraction: number, height: number): number => Math.max(1, Math.round(fraction * height * RES))
 
@@ -1200,6 +1210,287 @@ function widowParts(v: UnitVisual, height: number): Record<string, PartArt> {
   }
 }
 
+
+// ──────────────────────────── THE BRAIN STEALER ────────────────────────────
+
+/**
+ * A MOUND, and the only body in the army with no head and no visible legs.
+ *
+ * Everything else in the creed is built from something that used to walk. This
+ * is built from something that used to be a heap: a low blistered mass, wider
+ * than it is tall, that gets across the ground by ROLLING its own weight from
+ * one side to the other. Two stub feet paddle underneath and never leave it.
+ *
+ * The read has to survive being the slowest thing on the board, so the
+ * silhouette does all the work — a flat wide dome breaks the skyline of a rank
+ * of uprights. The brood sac is a pale swelling in the top-forward quadrant of
+ * the same shape, with the opening cut into it — the one bright thing on a
+ * mid-toned heap, so the eye knows which end throws.
+ */
+function moundBody(height: number, k: FleshKit, big: boolean): PartArt {
+  const w = art(big ? 0.92 : 0.8, height)
+  const h = art(big ? 0.44 : 0.4, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  const cy = p.h * 0.62
+  // Wider at the bottom than a sphere would be: it is sitting on itself.
+  fleshMass(p, cx, cy, w * 0.5, h * 0.46, k.hide, 3, 11)
+  // A gut shadow INSIDE the dome, not a stripe along the bottom of it. Drawn in
+  // fat at nearly full width it came out as a pale band under the whole body,
+  // which the rim then outlined — the mound read as a plank rather than a heap.
+  fleshMass(p, cx - w * 0.08, cy + h * 0.12, w * 0.3, h * 0.2, k.meat, 4, 13)
+  // Blisters along the CROWN only, and small.
+  //
+  // The first pass put nine of them across the whole body at radius two to four.
+  // The canvas is twenty-five pixels by twelve, so that is a row of pale lumps
+  // most of a body-height across: it stopped reading as blistered skin and
+  // started reading as a cart carrying a row of skulls — which is the Carrion
+  // Choir's silhouette, the one thing this body must not be mistaken for. Five,
+  // small, and above the waterline, so the dome stays a dome.
+  for (let i = 0; i < 5; i += 1) {
+    const t = i / 4
+    const bx = cx - w * 0.3 + t * w * 0.6
+    const by = cy - h * 0.26 + Math.sin(t * Math.PI) * -h * 0.1
+    pustule(p, bx, by, 1.4 + (i % 2) * 0.7, k)
+  }
+  // A seam round the middle where the two halves of it have grown together.
+  suture(p, cx - w * 0.44, cy + h * 0.06, cx + w * 0.42, cy + h * 0.03, k)
+  // THE BROOD SAC IS PART OF THE SAME CANVAS.
+  //
+  // It was its own part on its own bone, and at six pixels by five it could not
+  // carry a swelling, an opening, a rim and an outline — it came back as a dark
+  // cap on top of a wide body, which reads as a hooded man on a cart. There is
+  // no pixel budget for a separate head-sized object on a body twelve pixels
+  // tall, so the sac is a pale swelling in the top-forward quadrant of the mound
+  // itself, with the opening cut into it. One shape, and it cannot go wrong.
+  const sx = cx + w * 0.2
+  const sy = cy - h * 0.34
+  fleshMass(p, sx, sy, w * 0.22, h * 0.3, k.fat, 4, 17)
+  maw(p, sx + w * 0.06, sy - h * 0.12, w * 0.14, h * 0.14, k, 3)
+  return { canvas: finish(p, k, 21, 1.2) as Canvas2D, origin: [cx / p.w, cy / p.h] }
+}
+
+/** A stub. Barely a leg — a foot on a wrist, doing all the walking. */
+function stubFoot(height: number, k: FleshKit, seed: number): PartArt {
+  const w = art(0.15, height)
+  const h = art(0.13, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  fleshMass(p, cx, p.h * 0.44, w * 0.42, h * 0.4, k.meat, 3, seed)
+  claw(p, cx, Math.round(p.h * 0.6), Math.round(h * 0.4), k)
+  return { canvas: finishSmall(p, k, seed) as Canvas2D, origin: [cx / p.w, 0.2] }
+}
+
+const MOUND_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.2, depth: 30 }),
+    // The mass tips rather than bends: one bone, and the walk rolls it.
+    bone('mass', 'root', { angle: -Math.PI / 2, length: 0.3, part: 'mass', orient: 'up', depth: 30, weights: { breathe: 1.4, lean: 0.5 } }),
+    bone('footF', 'root', { x: 0.12, y: 0.13, angle: Math.PI / 2, length: 0.13, part: 'footF', depth: 40 }),
+    bone('footB', 'root', { x: -0.12, y: 0.13, angle: Math.PI / 2, length: 0.13, part: 'footB', depth: 10 })
+  ]
+  validateSkeleton(s, 'brainstealer')
+  return s
+}
+
+/**
+ * THE ROLL. Not a gait — a series of controlled falls.
+ *
+ * The whole mass leans hard one way, the stub on that side takes the weight and
+ * paddles, and then it falls back the other way. `root.x` moves with the lean so
+ * the body genuinely travels on the tip rather than sliding while it wobbles,
+ * which is the difference between reading as a rolling weight and reading as a
+ * sprite being shaken.
+ */
+const MOUND_WALK: Clip = {
+  name: 'walk',
+  duration: 1500,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { root: { x: -0.012, y: 0.004 }, mass: { angle: -0.13 }, footF: { angle: -0.32 }, footB: { angle: 0.26 } } },
+    { t: 0.25, pose: { root: { x: 0, y: -0.016 }, mass: { angle: 0 }, footF: { angle: 0.1 }, footB: { angle: 0.1 } } },
+    { t: 0.5, pose: { root: { x: 0.012, y: 0.004 }, mass: { angle: 0.13 }, footF: { angle: 0.26 }, footB: { angle: -0.32 } } },
+    { t: 0.75, pose: { root: { x: 0, y: -0.016 }, mass: { angle: 0 }, footF: { angle: 0.1 }, footB: { angle: 0.1 } } }
+  ]
+}
+
+/**
+ * THE THROW. It rears back onto its heels, holds, and then kicks the whole mass
+ * forward and rocks back off it — the thing being thrown is heavy relative to the
+ * thing throwing it. There are no arms and no separate sac to animate; the recoil
+ * IS the animation, which is why the mass gets a hold frame at full extension.
+ */
+const MOUND_ATTACK: Clip = {
+  name: 'attack',
+  duration: 900,
+  loop: false,
+  ease: 'quad',
+  keys: [
+    { t: 0, pose: { mass: { angle: 0 } } },
+    // Clench, and rear.
+    { t: 0.34, pose: { root: { y: 0.01 }, mass: { angle: -0.2 } }, ease: 'cubic' },
+    // Kick. One frame held at full extension so the release reads.
+    { t: 0.5, pose: { root: { y: -0.012 }, mass: { angle: 0.12 } }, ease: 'hold' },
+    { t: 0.7, pose: { root: { y: 0.006 }, mass: { angle: -0.1 } } },
+    { t: 1, pose: { root: { y: 0 }, mass: { angle: 0 } }, ease: 'back' }
+  ]
+}
+
+/** Idle: it breathes, and the whole heap shifts as things move inside it. */
+const MOUND_IDLE: Clip = {
+  name: 'idle',
+  duration: 3800,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { mass: { angle: -0.03 } } },
+    { t: 0.4, pose: { mass: { angle: 0.02 } } },
+    { t: 0.7, pose: { mass: { angle: -0.01 } } }
+  ]
+}
+
+function moundParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  // The Brood Nurse is the same animal with more of it — the tier bump the
+  // vision document describes — so it takes this plan at a larger bulk rather
+  // than a second body that would have to be told apart from the first.
+  const big = (v.bulk ?? 1) > 1.45
+  return {
+    mass: moundBody(height, k, big),
+    footF: stubFoot(height, k, 25),
+    footB: stubFoot(height, k, 26)
+  }
+}
+
+// ───────────────────────────── THE MIND FLAYER ─────────────────────────────
+
+/**
+ * A ROBE WITH NOTHING UNDER IT, and a face that is a curtain.
+ *
+ * The mound throws. This one does not throw anything, and the body has to say
+ * so: no arms held ready, no opening, nothing that could be a muzzle. It is a
+ * tall narrow cone that never breaks its outline — it GLIDES, hem dragging, and
+ * the only things that move are the tentacles hanging where a face should be and
+ * two thin arms held out to either side like a man feeling his way in the dark.
+ *
+ * Against the mound it is the exact opposite silhouette: tall where that is
+ * wide, still where that rocks, vertical where that is horizontal. Two bodies in
+ * one line have to be told apart at a glance, and height is the cheapest way.
+ */
+function flayerRobe(height: number, k: FleshKit): PartArt {
+  const w = art(0.4, height)
+  const h = art(0.72, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  // A cone, drawn column by column so the hem flares and the shoulders taper.
+  const noise = pixelNoise(931)
+  for (let i = 0; i < h; i += 1) {
+    const t = i / Math.max(1, h - 1)
+    const wid = Math.max(2, Math.round(w * (0.2 + t * 0.78) * (0.95 + noise(i, 5) * 0.1)))
+    for (let o = 0; o < wid; o += 1) {
+      const sh = o / Math.max(1, wid - 1)
+      const shade = sh < 0.16 ? 1 : sh < 0.4 ? 2 : sh < 0.74 ? 3 : 2
+      p.set(Math.round(cx - wid / 2 + o), 2 + i, k.cavity[shade])
+    }
+  }
+  // Vertical folds. Three, not ten: at twenty pixels wide the fourth is noise.
+  for (let f = 0; f < 3; f += 1) {
+    const fx = cx - w * 0.24 + f * w * 0.24
+    for (let i = Math.round(h * 0.3); i < h; i += 1) p.set(Math.round(fx + (i - h * 0.3) * 0.06), 2 + i, k.cavity[1])
+  }
+  spine(p, cx, p.h * 0.22, cx, p.h * 0.8, k, 7)
+  return { canvas: finish(p, k, 31, 0.7) as Canvas2D, origin: [cx / p.w, 1] }
+}
+
+/** The crown: a smooth lobe, no eyes, no mouth. The tentacles are the face. */
+function flayerCrown(height: number, k: FleshKit): PartArt {
+  const w = art(0.2, height)
+  const h = art(0.18, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  fleshMass(p, cx, p.h * 0.5, w * 0.44, h * 0.46, k.hide, 3, 33)
+  // One dark band where a brow would be, which is all the face it gets.
+  p.fill(Math.round(cx - w * 0.3), Math.round(p.h * 0.52), Math.max(2, Math.round(w * 0.6)), 1, k.cavity[1])
+  return { canvas: finishSmall(p, k, 33) as Canvas2D, origin: [cx / p.w, 0.86] }
+}
+
+const FLAYER_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.5, depth: 30 }),
+    bone('robe', 'root', { angle: Math.PI / 2, length: 0.7, part: 'robe', depth: 30, weights: { breathe: 0.6, lean: 1 } }),
+    bone('crown', 'root', { angle: -Math.PI / 2, length: 0.16, part: 'crown', orient: 'up', depth: 35, weights: { flinch: 1 } }),
+    // Six of them, hanging DOWN from the crown — a curtain, not a beard.
+    bone('f1', 'crown', { x: -0.03, angle: Math.PI - 0.1, length: 0.15, part: 'f1', depth: 36 }),
+    bone('f2', 'crown', { x: -0.01, angle: Math.PI + 0.06, length: 0.17, part: 'f2', depth: 37 }),
+    bone('f3', 'crown', { x: 0.02, angle: Math.PI + 0.2, length: 0.14, part: 'f3', depth: 38 }),
+    bone('f4', 'crown', { x: 0.04, angle: Math.PI + 0.34, length: 0.12, part: 'f4', depth: 39 }),
+    // Two thin arms, held out. They never strike anything.
+    bone('armF', 'root', { x: 0.03, y: -0.16, angle: Math.PI - 0.9, length: 0.3, part: 'armF', depth: 42, weights: { aim: 0.5 } }),
+    bone('armB', 'root', { x: -0.03, y: -0.16, angle: Math.PI - 1.5, length: 0.28, part: 'armB', depth: 14, weights: { aim: 0.4 } })
+  ]
+  validateSkeleton(s, 'mindflayer')
+  return s
+}
+
+/** No gait at all. The hem drags and the curtain swings a beat behind it. */
+const FLAYER_WALK: Clip = {
+  name: 'walk',
+  duration: 1700,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { root: { y: -0.004 }, robe: { angle: -0.03 }, f1: { angle: 0.16 }, f2: { angle: 0.1 }, f3: { angle: 0.2 }, f4: { angle: 0.06 } } },
+    { t: 0.5, pose: { root: { y: 0.004 }, robe: { angle: 0.03 }, f1: { angle: -0.14 }, f2: { angle: -0.08 }, f3: { angle: -0.18 }, f4: { angle: -0.04 } } }
+  ]
+}
+
+/**
+ * THE SEEDING. Arms open wide, the curtain lifts, and everything shivers
+ * outward at once — a body opening rather than a body striking. Nothing about it
+ * travels toward the target, because the rule does not either.
+ */
+const FLAYER_ATTACK: Clip = {
+  name: 'attack',
+  duration: 1100,
+  loop: false,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { armF: { angle: 0 }, armB: { angle: 0 }, f1: { angle: 0 }, f2: { angle: 0 }, f3: { angle: 0 }, f4: { angle: 0 } } },
+    { t: 0.3, pose: { armF: { angle: -0.5 }, armB: { angle: 0.4 }, crown: { angle: -0.1 }, f1: { angle: -0.5 }, f2: { angle: -0.35 }, f3: { angle: -0.55 }, f4: { angle: -0.3 } }, ease: 'cubic' },
+    { t: 0.55, pose: { armF: { angle: -0.9 }, armB: { angle: 0.8 }, crown: { angle: 0.06 }, f1: { angle: -0.9 }, f2: { angle: -0.7 }, f3: { angle: -1 }, f4: { angle: -0.6 } }, ease: 'hold' },
+    { t: 1, pose: { armF: { angle: 0 }, armB: { angle: 0 }, crown: { angle: 0 }, f1: { angle: 0 }, f2: { angle: 0 }, f3: { angle: 0 }, f4: { angle: 0 } }, ease: 'back' }
+  ]
+}
+
+/** Idle: only the curtain moves, and never all of it together. */
+const FLAYER_IDLE: Clip = {
+  name: 'idle',
+  duration: 4200,
+  loop: true,
+  ease: 'sine',
+  keys: [
+    { t: 0, pose: { f1: { angle: 0.12 }, f2: { angle: -0.08 }, f3: { angle: 0.16 }, f4: { angle: -0.1 } } },
+    { t: 0.3, pose: { f1: { angle: -0.1 }, f2: { angle: 0.14 }, f3: { angle: -0.06 }, f4: { angle: 0.12 } } },
+    { t: 0.65, pose: { f1: { angle: 0.08 }, f2: { angle: -0.12 }, f3: { angle: 0.1 }, f4: { angle: -0.14 } } }
+  ]
+}
+
+function flayerParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const t = Math.max(3, art(0.03, height))
+  return {
+    robe: flayerRobe(height, k),
+    crown: flayerCrown(height, k),
+    f1: softLimb(art(0.15, height), t, k, 41, k.membrane),
+    f2: softLimb(art(0.17, height), t, k, 42, k.membrane),
+    f3: softLimb(art(0.14, height), t * 0.9, k, 43, k.membrane),
+    f4: softLimb(art(0.12, height), t * 0.9, k, 44, k.membrane),
+    armF: softLimb(art(0.3, height), t * 1.1, k, 45),
+    armB: softLimb(art(0.28, height), t, k, 46)
+  }
+}
+
 // ─────────────────────────────── Registration ───────────────────────────────
 
 interface PlanSpec {
@@ -1220,7 +1511,22 @@ const PLANS: Record<HorrorPlan, PlanSpec> = {
   fleshwall: { skeleton: WALL_SKELETON, parts: wallParts, clips: { idle: WALL_IDLE, walk: WALL_WALK, attack: WALL_ATTACK }, muzzle: [0.2, -0.5] },
   ripjaw: { skeleton: RIPJAW_SKELETON, parts: ripjawParts, clips: { idle: RIPJAW_IDLE, walk: RIPJAW_WALK, attack: RIPJAW_ATTACK }, muzzle: [0.4, -0.36] },
   wagon: { skeleton: WAGON_SKELETON, parts: wagonParts, clips: { idle: WAGON_IDLE, walk: WAGON_WALK, attack: WAGON_ATTACK }, muzzle: [0.28, -0.3] },
-  widow: { skeleton: WIDOW_SKELETON, parts: widowParts, clips: { idle: WIDOW_IDLE, walk: WIDOW_WALK, attack: WIDOW_ATTACK }, muzzle: [0.14, -0.1] }
+  widow: { skeleton: WIDOW_SKELETON, parts: widowParts, clips: { idle: WIDOW_IDLE, walk: WIDOW_WALK, attack: WIDOW_ATTACK }, muzzle: [0.14, -0.1] },
+  // The mound serves both rungs of the mind line's lower half: the Brood Nurse
+  // is a tier bump, which the vision defines as the same body with more of it,
+  // and `moundParts` reads the bulk to decide how much more.
+  brainstealer: {
+    skeleton: MOUND_SKELETON,
+    parts: moundParts,
+    clips: { idle: MOUND_IDLE, walk: MOUND_WALK, attack: MOUND_ATTACK },
+    muzzle: [0.14, -0.46]
+  },
+  mindflayer: {
+    skeleton: FLAYER_SKELETON,
+    parts: flayerParts,
+    clips: { idle: FLAYER_IDLE, walk: FLAYER_WALK, attack: FLAYER_ATTACK },
+    muzzle: [0.1, -0.6]
+  }
 }
 
 export const CARNAGE_HORROR_PLANS = Object.keys(PLANS) as HorrorPlan[]

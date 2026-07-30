@@ -1277,7 +1277,7 @@ export const FACTION_UNITS: UnitDef[] = [
     },
     harvest: { skull: 3 },
     description: 'It stopped spitting them one at a time. The sac on its back is where they wait.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.55, plan: 'broodnurse' })
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.55, plan: 'brainstealer' })
   },
   {
     // A MUTATION, and the reason the line is worth climbing: it stops throwing.
@@ -1373,7 +1373,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { light: 1.4, heavy: 1.7 },
     harvest: { meat: 2 },
     description: 'It lands on the back of the biggest thing in the file and stays there. The thing stops being a threat some time before it stops being alive.',
-    visual: look('nekrotics', { kind: 'rider', torso: 'bare', weapon: 'tentacle', helmet: 'none', bulk: 1.05, plan: 'skinrider' })
+    visual: look('nekrotics', { kind: 'rider', torso: 'bare', weapon: 'tentacle', helmet: 'none', bulk: 1.05, plan: 'shrike' })
   },
   {
     // THE RENDER LINE's last rung, and a mutation in the truest sense: it is not
@@ -1406,7 +1406,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { unarmored: 1.85, light: 1.5 },
     harvest: { meat: 3 },
     description: 'Three of them, cut from the same body and still sharing it. What one of them kills, all three of them feel.',
-    visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.1, plan: 'host' })
+    visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.1, plan: 'flenser' })
   },
   {
     // THE EXECUTE LINE's last rung. The Shrike picks off whoever is nearly done;
@@ -1438,7 +1438,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 90 },
     harvest: { skull: 3 },
     description: 'It does not fight a rank. It walks down one, and the rank watches.',
-    visual: look('nekrotics', { torso: 'coat', weapon: 'axe', helmet: 'hood', bulk: 1.2, plan: 'headsman' })
+    visual: look('nekrotics', { torso: 'coat', weapon: 'axe', helmet: 'hood', bulk: 1.2, plan: 'flenser' })
   },
   {
     // THE RAISE LINE's last rung. The Choir mends a file and rebuilds a body out
@@ -1475,7 +1475,7 @@ export const FACTION_UNITS: UnitDef[] = [
       weapon: 'none',
       helmet: 'hood',
       bulk: 1.6,
-      plan: 'engine'
+      plan: 'wagon'
     })
   },
   {
@@ -1508,7 +1508,7 @@ export const FACTION_UNITS: UnitDef[] = [
     hitsAir: true,
     attack: { kind: 'projectile', projectile: 'bolt', speed: 920, gravity: 0, spread: 0.04, knockback: 70 },
     description: 'It does not feed on what it kills. It leaves something in it, and the something gets up.',
-    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'robe', weapon: 'tentacle', bulk: 1.35, plan: 'widowqueen' })
+    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'robe', weapon: 'tentacle', bulk: 1.35, plan: 'widow' })
   },
   {
     id: 'ch_petardier',
