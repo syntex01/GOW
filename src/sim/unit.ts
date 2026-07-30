@@ -1706,7 +1706,19 @@ export default class Unit implements Damageable {
     }
 
     this.handleBurst(dtMs)
-    this.updateVisual(dtMs)
+    // THE ARTWORK IS NOT THE SIMULATION.
+    //
+    // This used to call `updateVisual` directly, which meant the rig was posed,
+    // every bone's sprite repositioned, and every tint reapplied once per
+    // SUBSTEP. Substeps run at fifty a second and the fast-forward toggle runs
+    // several of them per drawn frame, so at 4x the game rebuilt each soldier's
+    // pose four times and showed one of them. Profiled at four hundred bodies,
+    // rig and sprite work was 23% of what looked like simulation cost.
+    //
+    // The debt is banked instead and flushed once per rendered frame, with the
+    // same total dt — so the animation advances at exactly the same rate and the
+    // work happens once.
+    this.visualDebtMs += dtMs
     this.updateBurdenVisual()
   }
 
@@ -1873,6 +1885,22 @@ export default class Unit implements Damageable {
   }
 
   // ─────────────────────────── Procedural animation ───────────────────────────
+
+  /** Animation time owed to the rig, paid off once per drawn frame. */
+  private visualDebtMs = 0
+
+  /**
+   * Pose the rig for everything banked since the last drawn frame. Called once
+   * per frame by the scene, never from the simulation — and called even while
+   * the scene is paused, so a harness that steps the field by hand and then
+   * screenshots still sees the pose it stepped to.
+   */
+  flushVisual(): void {
+    if (this.visualDebtMs <= 0) return
+    const owed = this.visualDebtMs
+    this.visualDebtMs = 0
+    this.updateVisual(owed)
+  }
 
   private updateVisual(dtMs: number): void {
     const art = getUnitArt(this.def.id)

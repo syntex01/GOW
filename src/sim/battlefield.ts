@@ -607,6 +607,19 @@ export default class Battlefield {
   /** Frames carried home and not yet stood up. Four make a Boneling. */
   private boneBank: Record<Faction, number> = { player: 0, enemy: 0 }
   /**
+   * Fighting bodies per side, refreshed once at the top of every substep. Read by
+   * `outnumbered`, which is called from inside the per-unit pass and must not walk
+   * the unit list itself. Gatherers are excluded: five Bonewrights ferrying meat
+   * are not the line.
+   */
+  private fighterCount: Record<Faction, number> = { player: 0, enemy: 0 }
+  /**
+   * Scratch set for target selection, reused rather than allocated. A fresh Set
+   * per soldier per substep is twenty thousand allocations a second on a full
+   * field, and all of them garbage.
+   */
+  private targetScratch = new Set<Damageable>()
+  /**
    * The Incarnation of Slaughter, per commander.
    *
    * Per commander rather than one global entity: two carnage armies each get
@@ -780,13 +793,8 @@ export default class Battlefield {
    * two peers cannot disagree about it.
    */
   outnumbered(faction: Faction): number {
-    let mine = 0
-    let theirs = 0
-    for (const u of this.units) {
-      if (!u.alive || u.def.noncombat) continue
-      if (u.faction === faction) mine += 1
-      else theirs += 1
-    }
+    const mine = this.fighterCount[faction]
+    const theirs = this.fighterCount[faction === 'player' ? 'enemy' : 'player']
     // An empty field is not an outnumbered one. Without this the fraction is 1
     // on the opening frame of every match, when neither side has anything out.
     if (theirs === 0) return 0
@@ -3367,9 +3375,21 @@ export default class Battlefield {
     this.enemy.population = enemyUnits.reduce(upkeep, 0)
     // Deeds only ever go one way, so that a demand once met stays met.
     const fighters = (list: Unit[]): number => list.reduce((n, u) => n + (u.def.noncombat ? 0 : 1), 0)
+    const playerFighters = fighters(playerUnits)
+    const enemyFighters = fighters(enemyUnits)
+    // ONE COUNT PER SUBSTEP, not one per soldier.
+    //
+    // The Hunger asks "how badly am I outnumbered" and the first version answered
+    // by walking the whole unit list — from inside the per-unit update, so an
+    // O(n) scan nested in an O(n) pass. Measured at four hundred bodies it cost
+    // 4.7ms of a 20ms substep on its own and pushed the total to 112% of budget:
+    // researching one node made the game unable to keep up. The two numbers are
+    // already computed here for the deeds, so the cache is free.
+    this.fighterCount.player = playerFighters
+    this.fighterCount.enemy = enemyFighters
     for (const [army, count, base] of [
-      [this.player, fighters(playerUnits), this.playerBase],
-      [this.enemy, fighters(enemyUnits), this.enemyBase]
+      [this.player, playerFighters, this.playerBase],
+      [this.enemy, enemyFighters, this.enemyBase]
     ] as const) {
       army.deeds.peakArmy = Math.max(army.deeds.peakArmy, count)
       army.deeds.goldEarned = this.statsFor(army.faction).goldEarned
@@ -3779,15 +3799,30 @@ export default class Battlefield {
     const flying = unit.layer === 'air'
     const siege = unit.def.role === 'siege'
 
-    const seen = new Set<Damageable>()
+    // Reach and the dead zone are read ONCE, not once per candidate. `reach` is a
+    // getter that samples the terrain for high ground and can run a ballistic
+    // solve; it was being recomputed for every enemy considered, which at four
+    // hundred bodies made target selection and the distance maths a third of the
+    // whole simulation cost.
+    const reach = unit.reach
+    const minReach = unit.minReach
+    // The horizontal slack that could still bring something inside reach. True
+    // separation is never less than the x gap minus the two radii, so anything
+    // further out than this cannot possibly qualify and never needs a sqrt.
+    const selfSlack = reach + unit.radius * 0.4
+    const seen = this.targetScratch
+    seen.clear()
     const gather = (list: readonly Damageable[], out: { target: Damageable; dist: number }[]): void => {
       for (const c of list) {
         // A machine wide enough to straddle files appears in each of them.
         if (seen.has(c)) continue
         seen.add(c)
         if (!unit.canTarget(c)) continue
+        // Cheap reject first. `distanceTo` costs a square root and this costs a
+        // subtraction, and on a full field most candidates are nowhere near.
+        if (Math.abs(c.x - unit.x) - c.radius > selfSlack) continue
         const dist = unit.distanceTo(c)
-        if (dist > unit.reach || dist < unit.minReach) continue
+        if (dist > reach || dist < minReach) continue
         out.push({ target: c, dist })
       }
     }

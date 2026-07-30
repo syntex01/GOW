@@ -1063,6 +1063,11 @@ export default class BattleScene extends Phaser.Scene {
       this.ambientClock = 0
       this.spawnCreedMotes()
     }
+    // Pay off the frame's animation debt for every soldier: one pose per drawn
+    // frame rather than one per simulation substep. Outside the pause check on
+    // purpose — a paused field that has been stepped by hand still has to show
+    // where it was stepped to.
+    for (const u of this.battlefield.units) u.flushVisual()
     this.debris.render(this.battlefield.physics)
     this.zoneLayer.update(delta)
     const layoutKey = this.battlefield.banners.map(b => `${b.x}:${b.lane}:${b.kind}`).join('|')
