@@ -1230,8 +1230,8 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'crab',
-      speed: 300,
-      gravity: 520,
+      speed: 540,
+      gravity: 480,
       spread: 0.06,
       knockback: 0,
       muzzle: [10, -22]
@@ -1268,8 +1268,8 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: {
       kind: 'projectile',
       projectile: 'crab',
-      speed: 320,
-      gravity: 500,
+      speed: 560,
+      gravity: 460,
       spread: 0.09,
       count: 2,
       knockback: 0,

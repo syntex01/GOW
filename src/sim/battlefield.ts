@@ -262,7 +262,17 @@ const INCARNATION_MIN_GAP_MS = 4000
  * a mediocre elite that stays mediocre.
  */
 const MONSTRUM_BITE_MS = 700
-const MONSTRUM_HP_PER_BITE = 130
+/**
+ * A FRACTION of the body it started as, not a flat number of points.
+ *
+ * It was 130 points a bite. That is a real 6% of an age-4 Monstrum and a much
+ * smaller share of an age-3 one, so moving the body one age earlier — where its
+ * own line puts it — quietly halved the growth the rule exists to show: measured,
+ * fifteen mouthfuls took it up 8.8% where the same fifteen used to take it up
+ * nearly a fifth. Priced against its own spawn health, the appetite survives
+ * every future re-lay of the stat curves.
+ */
+const MONSTRUM_HP_PER_BITE = 0.014
 const MONSTRUM_DAMAGE_PER_BITE = 0.045
 
 /** The Flesh Wall's mending: slower than a bite, and only ever out of meat. */
@@ -304,6 +314,45 @@ const WAGON_RAISE_MS = 5200
 const WAGON_RAISE_COST = 5
 const WAGON_REACH = 230
 const WAGON_RAISE_HEALTH = 0.6
+
+/**
+ * THE CRABS. The mind line's whole mechanism, and the Carnage research economy.
+ *
+ * A crab is not a unit — it is a count riding a soldier, which is what makes a
+ * board carpeted in them affordable to simulate. Each one does almost nothing
+ * (`CRAB_DPS`) and none of them ever falls off. What they change is the height at
+ * which their host can simply be FINISHED: every crab lifts the execute line by
+ * `CRAB_EXECUTE_STEP` of his maximum health, so a rank that has been spat on for
+ * half a minute dies to chip damage all at once and leaves a head behind.
+ *
+ * And the payment. A soldier who dies while carrying crabs has one of them walk
+ * his brain back to the nearest thing that spits them, IF the kill was clean —
+ * overkill past `CRAB_CLEAN_OVERKILL` per crab spoils the head, the same rule the
+ * meat economy already runs on. The carrier then turns brains into research for
+ * the rest of the match, slowly, from anywhere on the board.
+ */
+const CRAB_DPS = 2.4
+const CRAB_EXECUTE_STEP = 0.01
+const CRAB_CAP = 25
+const CRAB_CLEAN_OVERKILL = 0.05
+const CRAB_TICK_MS = 250
+/** Research a second per brain a carrier holds. Very slow, and it never stops. */
+const BRAIN_RESEARCH_PER_S = 0.55
+/** The Mind Flayer seeds instead of throwing: one crab per target, this often. */
+const FLAYER_SEED_MS = 1400
+
+/** Health below which the Headsman finishes outright, and how far the file feels it. */
+const HEADSMAN_THRESHOLD = 0.2
+const HEADSMAN_DREAD_PX = 220
+const HEADSMAN_DREAD_MS = 900
+
+/** How long a Skinrider's grip lasts after its last blow. */
+const SKINRIDE_HOLD_MS = 1400
+
+/** The Charnel Engine: the Wagon's job, done without being asked. */
+const ENGINE_RAISE_MS = 3400
+const ENGINE_RAISE_COST = 3
+const ENGINE_REACH = 300
 
 /** One commander's standing offer. */
 interface Incarnation {
@@ -620,6 +669,17 @@ export default class Battlefield {
    */
   private targetScratch = new Set<Damageable>()
   /**
+   * The crabs run on a quarter-second beat, not a sub-step. Two points a second
+   * does not need fifty updates a second to be two points a second, and the whole
+   * point of the mechanism is that a board can be carpeted in it.
+   */
+  private crabTimer = CRAB_TICK_MS
+  /**
+   * The soldiers currently holding brains, so the research trickle does not have
+   * to walk the whole field for the handful of bodies that pay it.
+   */
+  private brainCarriers: Unit[] = []
+  /**
    * The Incarnation of Slaughter, per commander.
    *
    * Per commander rather than one global entity: two carnage armies each get
@@ -706,6 +766,7 @@ export default class Battlefield {
       rng: this.rng,
       goreAt: x => this.goreAt(x),
       outnumbered: faction => this.outnumbered(faction),
+      hostKills: (faction, defId) => this.hostKills(faction, defId),
       scavenge: unit => this.scavenge(unit),
       onDeathCharge: unit => this.detonateCorpse(unit),
       requestFlank: unit => this.handleFlank(unit),
@@ -1845,6 +1906,14 @@ export default class Battlefield {
       mix(Math.round(u.eatTimer))
       mix(u.leapPhase * 4 + (u.landsSoft ? 1 : 0) + (u.beheaded ? 2 : 0))
       mix(Math.round(u.leapMs))
+      // The crabs. They decide the height at which this soldier can simply be
+      // finished, so two peers that disagree about the count disagree about
+      // whether he is alive — and the brains a carrier holds are an income
+      // stream, which forks a match faster than anything else on this list.
+      mix(u.crabs * 4 + (u.crabFaction === 'player' ? 1 : 0))
+      mix(u.brains)
+      // A ridden soldier does not swing. That is a whole body's output.
+      mix(Math.round(u.riddenFor))
       // Where a gatherer is walking. It is the only body on the board whose
       // destination is not implied by its faction, so nothing else in this loop
       // pins it down.
@@ -3439,6 +3508,7 @@ export default class Battlefield {
     // techs at all, and would therefore have silently disabled the Incarnation
     // for a commander who bought it without researching anything.
     this.updateFleshEaters(dtMs)
+    this.updateCrabs(dtMs)
     this.updateLeapers(dtMs)
     this.updateIncarnation('player', dtMs)
     this.updateIncarnation('enemy', dtMs)
@@ -4683,6 +4753,42 @@ export default class Battlefield {
         this.vfx.impact(unit.x, groundY + LANE_Y[unit.lane] - 14, 0x7fd6a0, 1.1, true)
       }
     }
+    // THE WIDOW QUEEN does not feed on what she kills. She leaves something in
+    // it, and the something gets up where the body fell — which is how the
+    // creed's air slot ends up feeding the creed's thesis rather than sitting
+    // outside it.
+    if (slayer instanceof Unit && slayer.def.special === 'widow_brood' && unit.layer === 'ground') {
+      const def = FACTION_UNITS_BY_ID['nk_husk']
+      if (def) {
+        const hatched = this.spawnUnit(slayer.faction, def, unit.x, unit.lane)
+        hatched.hp = hatched.maxHp * 0.5
+        hatched.risen = true
+        this.vfx.render(unit.x, groundY + LANE_Y[unit.lane], hatched.def.height)
+      }
+    }
+    // A BRAIN IS SNATCHED. One of the crabs takes the head and walks it back to
+    // the nearest thing on its own side that spits them; that carrier turns
+    // brains into research for the rest of the match, from anywhere on the board.
+    //
+    // The same rule the meat economy runs on decides whether there is anything
+    // left to take: a body torn far past dead has no head worth carrying, and
+    // the tolerance scales with how many crabs were on it — more of them means
+    // more of them holding it together.
+    if (unit.crabs > 0) {
+      const overkill = Math.max(0, -unit.hp) / Math.max(1, unit.maxHp)
+      if (overkill <= CRAB_CLEAN_OVERKILL * unit.crabs) {
+        const carrier = this.nearestMind(unit.crabFaction, unit.x)
+        if (carrier) {
+          carrier.brains += 1
+          if (!this.brainCarriers.includes(carrier)) this.brainCarriers.push(carrier)
+          carrier.setBrains(carrier.brains)
+          this.vfx.siphon(unit.x, unit.centerY, carrier.x, carrier.centerY)
+          this.vfx.floatingLabel(carrier.x, carrier.centerY - 44, 'BRAIN', '#cfe6a8')
+        }
+      }
+      unit.crabs = 0
+      unit.setCrabs(0)
+    }
   }
 
   /**
@@ -4995,8 +5101,9 @@ export default class Battlefield {
           meal.dead = true
           const worth = meal.worth ?? 1
           u.gorged += worth
-          u.maxHp += MONSTRUM_HP_PER_BITE * worth
-          u.hp = Math.min(u.maxHp, u.hp + MONSTRUM_HP_PER_BITE * worth * 1.5)
+          const bite = u.spawnMaxHp * MONSTRUM_HP_PER_BITE * worth
+          u.maxHp += bite
+          u.hp = Math.min(u.maxHp, u.hp + bite * 1.5)
           u.damageMult += MONSTRUM_DAMAGE_PER_BITE * worth
           u.setGorge(u.gorged)
           this.vfx.gorge(u.x, u.centerY, Math.min(2.2, 0.8 + worth * 0.5))
@@ -5015,6 +5122,32 @@ export default class Battlefield {
           u.heal(u.maxHp * FLESH_WALL_MEND_FRACTION * (patch.worth ?? 1))
           this.vfx.siphon(patch.x, patch.y - 6, u.x, u.centerY)
           this.vfx.knit(u.x, u.centerY + u.def.height * 0.3, u.def.height)
+          break
+        }
+        case 'charnel_engine': {
+          // The Choir waits to be asked and needs five pieces; the Engine does
+          // neither. Cheaper per body, faster, and it reaches further, so a
+          // Carnage half of the field with one parked on it converts remains
+          // into chaff faster than the remains can rot.
+          u.eatTimer -= dtMs
+          if (u.eatTimer > 0) break
+          u.eatTimer = ENGINE_RAISE_MS
+          let milled = 0
+          for (let i = 0; i < ENGINE_RAISE_COST; i += 1) {
+            const piece = this.nearestSpoil(u.x, ENGINE_REACH, ['meat', 'bone'])
+            if (!piece) break
+            piece.dead = true
+            milled += 1
+          }
+          if (milled < ENGINE_RAISE_COST) break
+          const chaff = this.armyFor(u.faction).roster
+          if (chaff.length === 0) break
+          const cheapest = chaff.reduce((a, b) => (b.cost < a.cost && b.cost > 0 ? b : a))
+          const made = this.spawnUnit(u.faction, cheapest, u.x, u.lane)
+          made.hp = made.maxHp * WAGON_RAISE_HEALTH
+          made.risen = true
+          this.vfx.render(made.x, this.groundLineFor(made.lane), made.def.height)
+          this.vfx.ossify(u.x, u.centerY, u.def.height * 0.5)
           break
         }
         case 'flesh_wagon': {
@@ -5043,6 +5176,109 @@ export default class Battlefield {
         }
       }
     }
+  }
+
+  /**
+   * THE CRABS, one beat per quarter second rather than per sub-step.
+   *
+   * Three jobs, all of them cheap: the chip damage, the execute line, and the
+   * Mind Flayer's weather. The tick is deliberately coarse — a crab doing two
+   * points a second does not need fifty updates a second to do it, and the whole
+   * point of the mechanism is that a board can be carpeted in them.
+   */
+  private updateCrabs(dtMs: number): void {
+    this.crabTimer -= dtMs
+    // The carriers turn brains into research continuously, on the real clock,
+    // because a trickle quantised to a quarter second reads as a stutter in the
+    // research bar. This part is cheap: only the carriers hold brains.
+    if (this.brainCarriers.length > 0) {
+      const seconds = dtMs / 1000
+      for (const carrier of this.brainCarriers) {
+        if (!carrier.alive || carrier.brains <= 0) continue
+        this.armyFor(carrier.faction).research += carrier.brains * BRAIN_RESEARCH_PER_S * seconds
+      }
+    }
+    if (this.crabTimer > 0) return
+    const step = CRAB_TICK_MS - this.crabTimer
+    this.crabTimer = CRAB_TICK_MS
+    // A dead carrier stops paying, and its brains are gone with it — killing the
+    // thing holding the heads is how an opponent turns the tap off. Pruned on the
+    // coarse beat so the trickle loop above stays a walk over live bodies only.
+    if (this.brainCarriers.some(c => !c.alive)) {
+      this.brainCarriers = this.brainCarriers.filter(c => c.alive)
+    }
+
+    // The Flayer stands there and everything near it is already carrying them.
+    for (const u of this.units) {
+      if (!u.alive || u.def.special !== 'mind_flayer') continue
+      u.pulseTimer -= step
+      if (u.pulseTimer > 0) continue
+      u.pulseTimer = FLAYER_SEED_MS
+      let seeded = false
+      for (const other of this.units) {
+        if (!other.alive || other.faction === u.faction || other.def.noncombat) continue
+        if (other.crabs >= CRAB_CAP) continue
+        if (u.distanceTo(other) > u.def.range) continue
+        this.infest(other, u.faction, 1)
+        seeded = true
+      }
+      if (seeded) this.vfx.possession(u.x, u.centerY, u.def.height)
+    }
+
+    // Then the crabs themselves. A soldier under his own execute line has his
+    // head come off — which is a kill credited to whoever put them on him, and
+    // it leaves a skull rather than meat.
+    const seconds = step / 1000
+    for (const u of this.units) {
+      if (!u.alive || u.crabs <= 0) continue
+      const line = u.maxHp * CRAB_EXECUTE_STEP * u.crabs
+      if (u.hp <= line) {
+        u.beheaded = true
+        const killer = this.nearestMind(u.crabFaction, u.x)
+        u.takeDamage(u.maxHp * 40 + 1000, 'pierce', killer ?? undefined, 0, false)
+        this.vfx.impact(u.x, u.centerY, 0xd8cfa8, 1.8, true)
+        continue
+      }
+      u.takeDamage(CRAB_DPS * u.crabs * seconds, 'pierce', undefined, 0, false)
+    }
+  }
+
+  /** Puts crabs on a soldier, up to the cap, and remembers who is owed for them. */
+  private infest(target: Unit, faction: Faction, count: number): void {
+    if (!target.alive || target.crabs >= CRAB_CAP) return
+    target.crabFaction = faction
+    target.crabs = Math.min(CRAB_CAP, target.crabs + count)
+    target.setCrabs(target.crabs)
+  }
+
+  /**
+   * The nearest living thing on a side that spits crabs — the one a brain gets
+   * carried home to. Nothing on the side that does means the head is wasted,
+   * which is the honest outcome: there is nobody left to carry it to.
+   */
+  private nearestMind(faction: Faction, x: number): Unit | null {
+    let best: Unit | null = null
+    let bestD = Infinity
+    for (const u of this.units) {
+      if (!u.alive || u.faction !== faction) continue
+      if (u.def.special !== 'crab_spit' && u.def.special !== 'mind_flayer') continue
+      const d = Math.abs(u.x - x)
+      if (d >= bestD) continue
+      bestD = d
+      best = u
+    }
+    return best
+  }
+
+  /** Kills scored by every living body of one squad-def on one side. */
+  hostKills(faction: Faction, defId: string): number {
+    let n = 0
+    for (const u of this.units) {
+      if (!u.alive || u.faction !== faction) continue
+      if (u.def.id !== defId) continue
+      n += u.kills
+    }
+    return n
   }
 
   /** The nearest live spoil of one of these kinds, within a radius. */
@@ -5174,6 +5410,45 @@ export default class Battlefield {
       // its own — two fields, no projectile, nothing in flight to intercept.
       this.vfx.lash(attacker.x, attacker.centerY, target.x, target.centerY - target.def.height * 0.55)
       this.vfx.impact(target.x, target.centerY, 0xe6dfc4, 1.5, true)
+    }
+    // THE HEADSMAN does not fight a rank, it walks down one. A fifth of health
+    // rather than a tenth, and the finishing is CONTAGIOUS: everything hostile in
+    // the same file within a couple of bodies loses its next swing watching it.
+    // That is how one soldier breaks a rank instead of shortening it.
+    if (
+      attacker instanceof Unit &&
+      attacker.def.special === 'headsman' &&
+      target instanceof Unit &&
+      target.hp > 0 &&
+      target.hp < target.maxHp * HEADSMAN_THRESHOLD
+    ) {
+      amount = target.maxHp * 40 + 1000
+      target.beheaded = true
+      for (const other of this.units) {
+        if (!other.alive || other === target) continue
+        // The men who feel it are the dead man's own — written the other way
+        // round it terrified the Headsman's army and left the rank untouched.
+        if (other.faction === attacker.faction) continue
+        if (other.lane !== target.lane) continue
+        if (Math.abs(other.x - target.x) > HEADSMAN_DREAD_PX) continue
+        other.terrorFor = Math.max(other.terrorFor, HEADSMAN_DREAD_MS)
+        other.attackCooldown = Math.max(other.attackCooldown, HEADSMAN_DREAD_MS * 0.5)
+      }
+      this.vfx.cleaveArc(target.x, target.centerY, ADVANCE_DIR[attacker.faction])
+      this.vfx.flinch(target.x, this.groundLineFor(target.lane), HEADSMAN_DREAD_PX)
+    }
+    // THE SKINRIDER lands on the back and stays there. Every blow it lands
+    // refreshes the grip, so the only way off is to kill the thing wearing you —
+    // and while it is on, the host cannot get an arm behind itself.
+    if (attacker instanceof Unit && attacker.def.special === 'skinride' && target instanceof Unit) {
+      target.riddenFor = SKINRIDE_HOLD_MS
+      this.vfx.possession(target.x, target.centerY, target.def.height)
+    }
+    // A CRAB LANDS. The dart is a live thing, so what it leaves behind is not a
+    // wound — the damage is nearly nothing and the point is the passenger.
+    if (attacker instanceof Unit && target instanceof Unit) {
+      const spits = attacker.def.special === 'crab_spit'
+      if (spits && event.type === 'pierce') this.infest(target, attacker.faction, 1)
     }
     // The older javelin-Shrike's bonus, kept for anything else carrying it.
     if (

@@ -39,6 +39,12 @@ export interface UnitWorld {
   goreAt?: (x: number) => number
   /** How badly a side is outnumbered right now, 0..1, for The Hunger. */
   outnumbered?: (faction: Faction) => number
+  /**
+   * Kills scored by every living body of one squad-def on one side, for the
+   * Flensing Host. Three butchers sharing a nervous system means the frenzy is
+   * a property of the CARD, not of whichever of the three happened to land it.
+   */
+  hostKills?: (faction: Faction, defId: string) => number
   /** A unit wants to eat the remains around it, for Bonepickers. */
   scavenge?: (unit: Unit) => void
   /** Ground relief under a point of a lane — mounds up, craters down. */
@@ -262,6 +268,14 @@ export default class Unit implements Damageable {
   private purgeShow = 0
   hp: number
   maxHp: number
+  /**
+   * The health this body was fielded with, before anything grew it.
+   *
+   * The Monstrum's appetite is priced against this rather than against a flat
+   * number of points, so the growth the rule exists to show stays the same
+   * fraction of the body however the stat curves are re-laid.
+   */
+  readonly spawnMaxHp: number
   alive = true
   radius: number
   centerOffsetY: number
@@ -382,7 +396,36 @@ export default class Unit implements Damageable {
     this.gorgeScale = 1 + grow
   }
 
+  /**
+   * A carrier holding brains gets visibly heavier, on the same scale channel the
+   * Monstrum's gorge uses — a body that has been fed reads as fed whatever fed
+   * it, and one soldier cannot be doing both.
+   */
+  private applyBrainWeight(): void {
+    this.gorgeScale = 1 + Math.min(0.4, this.brainShow * 0.03)
+  }
+
   private gorgeScale = 1
+
+  /**
+   * Crabs are drawn as a count of small clinging things rather than as sprites,
+   * so a rank carrying eighty of them between it costs eighty numbers and not
+   * eighty game objects. The visual is one badge and a tint: past a handful the
+   * soldier reads as infested from across the board, which is the information
+   * that matters — the exact number is on the health bar's business.
+   */
+  setCrabs(total: number): void {
+    this.crabShow = total
+  }
+
+  /** Brains a carrier is holding, so the body visibly gets heavier with them. */
+  setBrains(total: number): void {
+    this.brainShow = total
+    this.applyBrainWeight()
+  }
+
+  private crabShow = 0
+  private brainShow = 0
 
   get inThroes(): boolean {
     return this.throesMs > 0
@@ -645,6 +688,26 @@ export default class Unit implements Damageable {
   poisonFor = 0
   /** The Seer's terror: while this runs, this soldier swings 15% slower. */
   terrorFor = 0
+  /**
+   * CRABS RIDING THIS SOLDIER. The Brain Stealer's whole mechanism.
+   *
+   * They do almost nothing on their own — a couple of points a second each — and
+   * they never fall off. What they change is the height at which this soldier can
+   * simply be FINISHED: every crab raises the execute line by one percent of his
+   * maximum health, so a rank that has been spat on for thirty seconds dies to
+   * chip damage all at once. And a soldier who dies while carrying them has one
+   * of them walk his head home. See `Battlefield.updateCrabs`.
+   */
+  crabs = 0
+  /** Which side put them there, so it is the side that is paid for them. */
+  crabFaction: Faction = 'enemy'
+  /** Brains this soldier has been brought. It turns them into research, slowly. */
+  brains = 0
+  /**
+   * A Skinrider is on this soldier's back, and while it is there he cannot swing.
+   * Refreshed by every blow the rider lands, so shaking one off means killing it.
+   */
+  riddenFor = 0
   /** Charge: the first blow after arriving lands half again as hard. */
   chargeReady = true
   private disengagedMs = 0
@@ -687,6 +750,7 @@ export default class Unit implements Damageable {
 
     this.hp = def.hp
     this.maxHp = def.hp
+    this.spawnMaxHp = def.hp
     this.ward = def.drill?.ward ?? 0
     this.wardMax = this.ward
     this.radius = def.height * 0.24 * (def.visual.bulk ?? 1)
@@ -1558,6 +1622,9 @@ export default class Unit implements Damageable {
     if (this.cursedFor > 0) this.cursedFor -= dtMs
     if (this.hexedFor > 0) this.hexedFor -= dtMs * purge
     if (this.terrorFor > 0) this.terrorFor -= dtMs * purge
+    // A rider is shaken off by killing it, not by waiting — but if it stops
+    // landing blows (it died, or it was knocked clear) the hold lapses quickly.
+    if (this.riddenFor > 0) this.riddenFor -= dtMs
     if (this.poisonFor > 0) {
       this.poisonFor -= dtMs
       this.hp -= this.poisonDps * (dtMs / 1000)
@@ -1820,10 +1887,19 @@ export default class Unit implements Damageable {
     // No arms, no argument. A body in its throes that lost the weapon hand can
     // still walk into the line and hold a file; it cannot swing at anything.
     if (this.armsGone) return
+    // Something is on this soldier's back. It cannot get an arm behind itself.
+    if (this.riddenFor > 0) return
     const attack = this.def.attack
 
+    // FRENZY, and the Host's version of it: three bodies cut from one and still
+    // sharing it, so a kill by any of them quickens all three. Read through the
+    // world rather than off this soldier, because the count is not his.
     const frenzied =
-      this.def.special === 'frenzy' ? 1 + Math.min(0.64, this.kills * 0.08) : 1
+      this.def.special === 'frenzy'
+        ? 1 + Math.min(0.64, this.kills * 0.08)
+        : this.def.special === 'host_frenzy'
+          ? 1 + Math.min(0.8, (this.world.hostKills?.(this.faction, this.def.id) ?? this.kills) * 0.06)
+          : 1
     // Twice as fast while it is dying. Nothing else about the blow changes —
     // the node buys swings, not damage.
     const haste = this.frenzy * frenzied * (this.inThroes ? THROES_HASTE : 1)
@@ -2323,6 +2399,17 @@ export default class Unit implements Damageable {
     } else if (this.dread > 0.15) {
       // Standing on the hungry ground: the colour drains toward the violet.
       Object.values(this.parts).forEach(part => part.setTint(graded(0xb2a6d6)))
+    } else if (this.crabShow > 0) {
+      // INFESTED. The crabs are a count rather than a sprite each — eighty of
+      // them across a rank costs eighty numbers, not eighty game objects — so
+      // the read has to come from the body: pale carapace creeping over the
+      // colour, deepening with how many are on it. Past a handful a soldier
+      // looks wrong from across the board, which is the information that
+      // matters; the exact number is the health bar's business.
+      const t = Math.min(1, this.crabShow / 12)
+      const shade =
+        (Math.round(0xff - 0x38 * t) << 16) | (Math.round(0xff - 0x20 * t) << 8) | Math.round(0xff - 0x62 * t)
+      Object.values(this.parts).forEach(part => part.setTint(graded(shade)))
     } else if (this.faction === 'enemy') {
       Object.values(this.parts).forEach(part => part.setTint(ENEMY_GRADE))
     } else {

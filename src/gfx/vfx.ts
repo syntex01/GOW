@@ -1202,6 +1202,39 @@ export default class Vfx {
   }
 
   /**
+   * THE RANK FLINCHES. The Headsman's effect, and the only one that travels
+   * SIDEWAYS along the file rather than radiating from a point.
+   *
+   * A head comes off and the men either side of it feel it. Two thin dark bands
+   * run out along the ground away from the body, low and fast, and fade at the
+   * edge of what the flinch reached — so the effect draws the actual radius of
+   * the rule rather than decorating the kill. Nothing else in the vocabulary
+   * moves like this, which is the point: a busy lane still reads.
+   */
+  flinch(x: number, y: number, reach: number): void {
+    if (!this.afford(1)) return
+    for (const dir of [-1, 1]) {
+      const band = this.scene.add
+        .image(x, y - 4, 'fx:flash')
+        .setDepth(314)
+        .setTint(0x2a1d22)
+        .setAlpha(0.55)
+        .setScale(0.12, 0.06)
+      this.scene.tweens.add({
+        targets: band,
+        x: x + dir * reach * 0.6,
+        scaleX: reach / 260,
+        scaleY: 0.02,
+        alpha: 0,
+        duration: 300,
+        ease: 'Quad.easeOut',
+        onComplete: () => band.destroy()
+      })
+    }
+    this.lighting?.flash(x, y - 10, 90, 0x6b3b46, 0.5)
+  }
+
+  /**
    * OSSIFYING. A Boneling assembling itself: shards arrive on ARCS from all
    * round and snap together, then one hard white frame. Converging like the
    * Monstrum's gorge, but bone rather than meat, and it ends in a snap instead
