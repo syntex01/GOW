@@ -106,6 +106,16 @@ export interface TechNode {
    * This is what stops the network being a schedule you eventually finish.
    */
   excludes?: TechId[]
+  /**
+   * This node does not count as LEANING toward its branch.
+   *
+   * The machine doctrines are filed under whichever creed would plausibly have
+   * built the thing, but a tank is nobody's religion. Without this, buying the
+   * siege train and an armoured corps made an army two nodes deep in ordnance
+   * and two in engineering, and the roster consolidated at age 4 around a creed
+   * the commander had never chosen — it came back holding nothing but Cyborgs.
+   */
+  noLean?: boolean
   /** What it does, stated as a behaviour. */
   effect: string
   /** For `unit` nodes: which unit joins the roster. */
@@ -368,6 +378,26 @@ export const TECHS: TechNode[] = [
     effect: 'Flat shots that strike armour at a shallow angle skip off it and keep going.'
   },
   {
+    // ── MACHINE DOCTRINE ─ nobody starts an age already owning one of these ──
+    //
+    // Five nodes, and between them they hold every siege engine, rocket, tank,
+    // walker, aircraft and Titan in the game. Until one is finished its slot on
+    // the command bar is simply EMPTY — which is the whole point: an empty slot
+    // is room for a creed to put its own answer there. See `data/lines.ts`.
+    id: 'siege_train',
+    name: 'The Siege Train',
+    branch: 'ordnance',
+    kind: 'unit',
+    ring: 2,
+    row: 8,
+    age: 1,
+    cost: 900,
+    requires: ['powder_discipline'],
+    noLean: true,
+    effect:
+      'Raise a train: teamsters, timber, and men who know how far a stone falls. The siege slot fills, and refills with the age — catapult, then cannon, then mortar, then a walker with a rail down its spine.'
+  },
+  {
     id: 'salvage',
     name: 'Salvage Crews',
     branch: 'engineering',
@@ -378,6 +408,20 @@ export const TECHS: TechNode[] = [
     cost: 750,
     requires: ['field_stripping', 'powder_discipline', 'long_hafts'],
     effect: 'Wreckage that comes to rest on the field is stripped for gold where it lies.'
+  },
+  {
+    id: 'armoured_corps',
+    name: 'Armoured Corps',
+    branch: 'engineering',
+    kind: 'unit',
+    ring: 2,
+    row: 19,
+    age: 2,
+    cost: 1200,
+    requires: ['salvage'],
+    noLean: true,
+    effect:
+      'Stop stripping the wrecks and start building them. The armour slot fills the moment you have an age to field it in: a tank first, and a walking gun after that.'
   },
   {
     id: 'blood_pact',
@@ -476,6 +520,34 @@ export const TECHS: TechNode[] = [
     cost: 1300,
     requires: ['salvage'],
     effect: 'Your vehicles, walkers and aircraft repair themselves continuously while they fight.'
+  },
+  {
+    id: 'shaped_charges',
+    name: 'Shaped Charges',
+    branch: 'ordnance',
+    kind: 'unit',
+    ring: 3,
+    row: 9,
+    age: 3,
+    cost: 1900,
+    requires: ['siege_train', 'shrapnel'],
+    noLean: true,
+    effect:
+      'A charge that throws its blast forward instead of everywhere. Small enough for one man to carry, which is how a rocket team happens.'
+  },
+  {
+    id: 'rotary_wing',
+    name: 'Rotary Wing',
+    branch: 'engineering',
+    kind: 'unit',
+    ring: 3,
+    row: 19,
+    age: 3,
+    cost: 2000,
+    requires: ['armoured_corps', 'nanite_field'],
+    noLean: true,
+    effect:
+      'Get off the ground. Nothing in a lane can answer a thing that is above the lane — the air slot fills with a gunship, and later with the swarm that replaces its crew.'
   },
   {
     id: 'soul_tithe',
@@ -799,6 +871,20 @@ export const TECHS: TechNode[] = [
     excludes: ['corpse_wall'],
     demand: { metric: 'losses', amount: 25, label: 'Lose 25 of your own' },
     effect: 'Your half of the field raises what has fallen on it. Enough remains, and they get up again.'
+  },
+  {
+    id: 'titan_program',
+    name: 'The Titan Program',
+    branch: 'engineering',
+    kind: 'unit',
+    ring: 6,
+    row: 18,
+    age: 4,
+    cost: 4600,
+    requires: ['armoured_corps', 'aegis'],
+    noLean: true,
+    effect:
+      'One machine, and a field around it. Nobody is handed a Titan for surviving into the last age — you build the corps, you learn to hold a shield up, and then you build the thing.'
   },
   {
     id: 'ninth_seal',

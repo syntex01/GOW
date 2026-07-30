@@ -3,6 +3,7 @@ import { AGES, MAX_AGE, ageDef } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
+import { resolveLines } from '../data/lines'
 import { escalated } from '../data/escalate'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
 import { LANE_COUNT, type Faction, type ReserveMode } from './types'
@@ -19,6 +20,15 @@ const ALL_UNITS_BY_ID: Record<string, UnitDef> = {
   ...UNITS_BY_ID,
   ...Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
 }
+
+/**
+ * Every machine in the game, in author order so the bar is deterministic.
+ *
+ * A machine is a unit standing in a line that a doctrine has to open — the
+ * siege engines, the rockets, the armour, the rotary wing and the Titan. Nobody
+ * is handed one with an age.
+ */
+const MACHINE_UNITS: readonly UnitDef[] = Object.values(ALL_UNITS_BY_ID).filter(u => Boolean(u.lineTech))
 
 /** Which research direction a path unit belongs to, read off its id prefix. */
 const BRANCH_BY_PREFIX: Record<string, string> = {
@@ -229,7 +239,11 @@ export default class Army {
   branchDepth(branch: string): number {
     let n = 0
     for (const id of this.techs) {
-      if (TECHS_BY_ID[id]?.branch === branch) n += 1
+      const node = TECHS_BY_ID[id]
+      // A machine doctrine is filed under a creed but is not a lean toward it —
+      // otherwise paying for a siege train and an armoured corps consolidated
+      // the roster around a creed the commander never chose.
+      if (node?.branch === branch && !node.noLean) n += 1
     }
     return n
   }
@@ -271,7 +285,10 @@ export default class Army {
     // Morphs run last, over whatever the roster turned out to be, so an
     // ascended faction's own units keep changing shape as you research past
     // the ascension rather than freezing the moment you took it.
-    if (this.ascendedTo) return this.grown(morphedRoster(factionRoster(this.ascendedTo), this.techs))
+    if (this.ascendedTo) {
+      const own = resolveLines(factionRoster(this.ascendedTo), this.age, this.techs)
+      return this.grown(morphedRoster(own, this.techs))
+    }
 
     const dominant = this.dominantBranch
     const pathDefs = (branch: string): UnitDef[] =>
@@ -317,7 +334,30 @@ export default class Army {
         }
       }
     }
-    return this.grown(morphedRoster(list.slice(0, MAX_ROSTER), this.techs))
+    // A MACHINE SLOT BELONGS TO NO CREED, so it survives consolidation.
+    //
+    // At age 4 the dominant path replaces the bar outright, and no creed's path
+    // contains a tank — so without this every machine doctrine was a node you
+    // could buy and never field: the Titan Program cost 4,600 and put nothing
+    // on the bar for anyone who had leant anywhere at all. The rung is chosen by
+    // age, so what a commander keeps is the slot rather than the soldier.
+    const machines = this.machineRungs()
+    if (machines.length > 0 || list.some(d => d.lineTech)) {
+      // Machines are pulled OUT of whatever list they arrived in and put back as
+      // one group, because the bar has to be budgeted by slots rather than by
+      // rungs: an owned line is one card however many of its rungs are
+      // candidates. Trimming the list with the machines still in it clipped the
+      // Titan off the end of the age-4 bar of a commander who had paid for it.
+      const rest = list.filter(d => !d.lineTech)
+      const slots = resolveLines(machines, this.age, this.techs).length
+      list = rest.slice(0, Math.max(4, MAX_ROSTER - slots))
+      list.push(...machines)
+    }
+    // Lines collapse LAST, over whatever the roster turned out to be, so a slot
+    // shows exactly one rung however the unit got onto the bar — through the
+    // neutral core, through a creed's path, or through a research unlock.
+    const lined = resolveLines(list, this.age, this.techs)
+    return this.grown(morphedRoster(lined.slice(0, MAX_ROSTER), this.techs))
   }
 
   /**
@@ -357,6 +397,23 @@ export default class Army {
 
   /** The apocalyptic faction this army ascended into, if it has. */
   ascendedTo: FactionId | null = null
+  /**
+   * Every rung of every machine slot this army has paid the doctrine for.
+   *
+   * Returns all reachable rungs rather than the live one; `resolveLines` picks
+   * which of them is on the bar. Lines with no `lineTech` are free tier bumps
+   * that arrive with the age, and they ride in on the roster they belong to —
+   * they are not machines and are deliberately not collected here.
+   */
+  private machineRungs(): UnitDef[] {
+    if (this.techs.size === 0) return []
+    const out: UnitDef[] = []
+    for (const def of MACHINE_UNITS) {
+      if (this.techs.has(def.lineTech as string) && def.age <= this.age) out.push(def)
+    }
+    return out
+  }
+
   /** Units added to the roster by research. */
   readonly unlocked = new Set<string>()
 

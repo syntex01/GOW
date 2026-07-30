@@ -393,6 +393,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'catapult',
+    line: 'siege_engines',
+    lineTech: 'siege_train',
     name: 'Catapult',
     age: 1,
     role: 'siege',
@@ -641,6 +643,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'field_cannon',
+    line: 'siege_engines',
+    lineTech: 'siege_train',
     name: 'Field Cannon',
     age: 2,
     role: 'siege',
@@ -813,6 +817,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'bazooka',
+    line: 'rockets',
+    lineTech: 'shaped_charges',
     name: 'Rocket Team',
     age: 3,
     role: 'ranged',
@@ -860,6 +866,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'battle_tank',
+    line: 'armour',
+    lineTech: 'armoured_corps',
     name: 'Battle Tank',
     age: 3,
     role: 'tank',
@@ -906,6 +914,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'mortar_team',
+    line: 'siege_engines',
+    lineTech: 'siege_train',
     name: 'Mortar Team',
     age: 3,
     role: 'siege',
@@ -954,6 +964,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'gunship',
+    line: 'rotary',
+    lineTech: 'rotary_wing',
     name: 'Gunship',
     age: 3,
     role: 'air',
@@ -1115,6 +1127,64 @@ export const UNITS: UnitDef[] = [
     }
   },
   {
+    // The age-4 rung of the rockets slot.
+    //
+    // Without it `shaped_charges` was a doctrine you paid for once and lost on
+    // your next age-up: the Rocket Team is an age-3 body, and a line with a
+    // single rung two ages from the end of the game is not a line, it is a
+    // rental. A salvo launcher keeps the slot honest — same job, more of it,
+    // arriving free with the age the way a tier bump should.
+    id: 'missile_battery',
+    line: 'rockets',
+    lineTech: 'shaped_charges',
+    name: 'Missile Battery',
+    age: 4,
+    role: 'ranged',
+    layer: 'ground',
+    cost: 1420,
+    buildMs: 4200,
+    hp: 1180,
+    armor: 'light',
+    damage: 420,
+    damageType: 'explosive',
+    attackMs: 3000,
+    range: 430,
+    minRange: 130,
+    speed: 40,
+    mass: 3,
+    bounty: 452,
+    xp: 396,
+    pop: 1,
+    height: 70,
+    hitsAir: true,
+    attack: {
+      kind: 'projectile',
+      projectile: 'rocket',
+      speed: 540,
+      gravity: 0,
+      spread: 0.025,
+      knockback: 240,
+      splash: 96,
+      burst: { rounds: 2, gapMs: 240 },
+      homing: 2.2,
+      muzzle: [26, -30]
+    },
+    bonusVs: { heavy: 2.3 },
+    description: 'Two missiles a salvo, both of them looking for the same tank.',
+    visual: {
+      kind: 'humanoid',
+      skin: 0xb89478,
+      cloth: 0x33405e,
+      cloth2: 0x1e2740,
+      metal: 0x7a8296,
+      accent: 0xe06a2a,
+      helmet: 'visor',
+      torso: 'exo',
+      weapon: 'rpg',
+      bulk: 1.12
+    }
+  },
+  {
     id: 'shield_bearer',
     name: 'Aegis Bearer',
     age: 4,
@@ -1154,6 +1224,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'drone_swarm',
+    line: 'rotary',
+    lineTech: 'rotary_wing',
     name: 'Drone Swarm',
     age: 4,
     role: 'air',
@@ -1200,6 +1272,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'plasma_mech',
+    line: 'armour',
+    lineTech: 'armoured_corps',
     name: 'Plasma Mech',
     age: 4,
     role: 'tank',
@@ -1247,6 +1321,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'railgun_walker',
+    line: 'siege_engines',
+    lineTech: 'siege_train',
     name: 'Railgun Walker',
     age: 4,
     role: 'siege',
@@ -1328,6 +1404,8 @@ export const UNITS: UnitDef[] = [
   },
   {
     id: 'titan',
+    line: 'titan',
+    lineTech: 'titan_program',
     name: 'Titan',
     age: 4,
     role: 'tank',

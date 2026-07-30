@@ -13,6 +13,7 @@ import {
   type TechNode
 } from '../data/tech'
 import { MORPH_LINES, MORPH_TECHS } from '../data/morphs'
+import { rungsForTech } from '../data/lines'
 import { UNITS_BY_ID } from '../data/units'
 import { FACTION_UNITS } from '../data/factions'
 import { LEAN_RULES, TECH_MECHANICS } from '../data/techInfo'
@@ -73,6 +74,20 @@ const ANY_UNIT_BY_ID: Record<string, UnitDef> = {
   ...Object.fromEntries(FACTION_UNITS.map(u => [u.id, u]))
 }
 
+const ANY_UNIT: readonly UnitDef[] = Object.values(ANY_UNIT_BY_ID)
+
+/**
+ * A machine doctrine hands over a SLOT, not a soldier — one purchase, and the
+ * siege line refills itself every age. Stated as the ladder, with the age each
+ * rung arrives in, because otherwise the node reads as badly overpriced for
+ * whatever single unit it happens to field on the day you buy it.
+ */
+function lineLadder(node: TechNode): string | null {
+  const rungs = rungsForTech(ANY_UNIT, node.id)
+  if (rungs.length === 0) return null
+  return rungs.map(d => `${d.name} (age ${d.age + 1})`).join('  →  ')
+}
+
 /** One line of card numbers for the unit a node fields. */
 function unitStatline(unitId: string): string | null {
   const def = ANY_UNIT_BY_ID[unitId]
@@ -93,6 +108,16 @@ function affectedUnits(node: TechNode, army: Army): string {
   if (node.kind === 'unit' && node.unlocks) {
     const def = ANY_UNIT_BY_ID[node.unlocks]
     return def ? `adds ${def.name} to your roster` : 'adds a new unit to your roster'
+  }
+  const rungs = rungsForTech(ANY_UNIT, node.id)
+  if (rungs.length > 0) {
+    // The slot is empty until this is bought, and stays filled for the rest of
+    // the match — so what it affects is a position on the bar, not a unit.
+    const now = rungs.filter(d => d.age <= army.age)
+    const live = now.length > 0 ? now[now.length - 1] : null
+    return live
+      ? `one slot on your command bar — ${live.name} at your age, and it grows with every age after`
+      : `one slot on your command bar — empty until age ${rungs[0].age + 1}, then ${rungs[0].name}`
   }
   if (node.kind === 'ascension') {
     return 'your whole army — ascending rebuilds the roster around this creed'
@@ -918,6 +943,7 @@ export default class TechTree {
     const mechanics =
       TECH_MECHANICS[node.id] ??
       (node.kind === 'unit' && node.unlocks ? unitStatline(node.unlocks) : null) ??
+      lineLadder(node) ??
       (node.branch !== 'core' ? LEAN_RULES[node.branch] : null)
     this.detailBody.setText(mechanics ? `${node.effect}\n▸ ${mechanics}` : node.effect)
     this.detailAffects

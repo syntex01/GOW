@@ -246,6 +246,29 @@ export interface UnitDef {
    */
   escalates?: 'husk'
   /**
+   * THE SLOT THIS UNIT OCCUPIES.
+   *
+   * A line is one place on the command bar that changes hands as the war ages.
+   * Only ever ONE rung of a line is on the bar: the highest whose age the
+   * commander has reached. So the age-3 rung does not sit beside the age-2 rung,
+   * it takes its place — which is what makes an upgrade feel like an upgrade
+   * rather than a longer list.
+   *
+   * Replaces a blind `list.slice(0, MAX_ROSTER - path.length)` that trimmed from
+   * the END of the roster, so which unit got displaced was an accident of sort
+   * order rather than a decision.
+   */
+  line?: string
+  /**
+   * The tech that opens this line AT ALL. Without it the slot stays empty — no
+   * rung of the line appears at any age.
+   *
+   * This is how machines are earned. Nobody begins an age already owning a tank,
+   * a rocket launcher or a helicopter; the slot is blank until somebody pays for
+   * the doctrine, and thereafter ageing up brings the next rung for free.
+   */
+  lineTech?: string
+  /**
    * This card does not put a body on the field. Buying it pays into something
    * else — the Incarnation of Slaughter is the only one.
    */

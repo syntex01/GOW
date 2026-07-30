@@ -6,7 +6,24 @@ import { turretsForAge } from '../data/turrets'
 import { BUILDINGS_BY_ID, DOCTRINE_BUILDINGS, buildingCost, maxTierFor } from '../data/buildings'
 import type Battlefield from './battlefield'
 import type { ArmorType } from './types'
-import { TECHS, TECH_BRANCHES, ascensionFor, lineageFor, type TechBranch, type TechNode } from '../data/tech'
+import { TECHS, TECHS_BY_ID, TECH_BRANCHES, ascensionFor, lineageFor, type TechBranch, type TechNode } from '../data/tech'
+import { lineTechsIn } from '../data/lines'
+import { UNITS } from '../data/units'
+import { FACTION_UNITS } from '../data/factions'
+
+/**
+ * The doctrines that open a machine slot, cheapest first.
+ *
+ * These are the only nodes in the network that no ascension road passes
+ * through: a Titan belongs to nobody's creed, which is exactly why it has to be
+ * bought rather than handed out with the age. An AI following only its lineage
+ * therefore reached the last age with every machine slot on its bar still
+ * empty. It considers these alongside the next step of its road.
+ */
+const MACHINE_DOCTRINES: readonly TechNode[] = [...lineTechsIn([...UNITS, ...FACTION_UNITS]).keys()]
+  .map(id => TECHS_BY_ID[id])
+  .filter((n): n is TechNode => Boolean(n))
+  .sort((a, b) => a.cost - b.cost || (a.id < b.id ? -1 : 1))
 
 export interface AiProfile {
   name: string
@@ -112,7 +129,28 @@ export default class AiController {
     // oath demands rather than stalling at a fork it cannot buy both sides of.
     const oath = [...new Set(TECHS.flatMap(t => t.requiresAny ?? []))].filter(() => this.rng.next() < 0.5)
     const goal = ascensionFor(this.branch)
-    this.path = goal ? lineageFor(goal.id, oath) : []
+    // THE ROAD, plus the machine slots that road passes near.
+    //
+    // A machine doctrine is on nobody's lineage, and it sits behind core nodes a
+    // given creed's road may never touch — so an AI that only followed its
+    // ascension could not buy one even when it had the research banked, and
+    // reached the last age with every machine slot on its bar empty. It splices
+    // in the doctrines it can reach in a step or two and leaves the ones that
+    // would mean a detour through somebody else's creed: in practice every
+    // commander raises a siege train, and only an engineer builds a Titan.
+    const road = goal ? lineageFor(goal.id, oath) : []
+    const onRoad = new Set(road.map(n => n.id))
+    for (const doctrine of MACHINE_DOCTRINES) {
+      const detour = lineageFor(doctrine.id, oath).filter(n => !onRoad.has(n.id))
+      if (detour.length > 2) continue
+      for (const n of detour) {
+        onRoad.add(n.id)
+        road.push(n)
+      }
+    }
+    // By ring, so the spliced nodes interleave with the road instead of waiting
+    // behind all of it. Ties keep insertion order, which keeps peers in step.
+    this.path = road.sort((a, b) => a.ring - b.ring)
   }
 
   update(dtMs: number): void {
@@ -193,9 +231,24 @@ export default class AiController {
     // Research is no longer bought with gold, so there is nothing to hold back
     // for the army: a node it can afford is a node it should take. What used to
     // be a spending decision is now purely a question of what is unlocked.
+    let pick: TechNode | null = null
     for (const node of this.path) {
       if (army.techAvailability(node.id) !== 'ready') continue
-      this.bf.buyTech('enemy', node.id)
+      pick = node
+      break
+    }
+    // A machine slot is the one purchase that puts a whole LINE on the bar —
+    // one node, and the siege slot refills itself every age from catapult to
+    // railgun walker. It is also off every creed's road, so it competes with
+    // the next step of that road on price rather than waiting behind all of it.
+    for (const node of MACHINE_DOCTRINES) {
+      if (army.techs.has(node.id)) continue
+      if (pick && node.cost >= pick.cost) continue
+      if (army.techAvailability(node.id) !== 'ready') continue
+      pick = node
+    }
+    if (pick) {
+      this.bf.buyTech('enemy', pick.id)
       return true
     }
 
