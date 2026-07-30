@@ -74,9 +74,15 @@ Two reasons, and the second is the important one:
   machine, Ordnance with a gun. The board stops being "the standard army, tinted"
   and starts being five genuinely different armies.
 
-Today the code does the opposite: a Carnage commander at age 3 fields a "Carrion
+**Shipped.** Every siege engine, rocket, tank, walker, aircraft and Titan stands
+in a line behind one of five doctrines — the Siege Train, Shaped Charges, the
+Armoured Corps, the Rotary Wing and the Titan Program. Nothing is handed out with
+an age. A machine slot belongs to no creed, so it also survives the age-4
+consolidation that replaces the bar with the dominant path's soldiers: paying for
+the Titan Program and then ascending does not take the Titan away.
+
+The old failure this replaced was a Carnage commander at age 3 fielding a "Carrion
 Battle Tank" and a "Carrion Gunship" — a flesh cult with a renamed helicopter.
-That is the single worst thing about the faction as it stands.
 
 ## 4. Lines, not lists
 
@@ -92,18 +98,24 @@ in one of two ways, and the difference decides whether it costs research:
 
 The lines:
 
-| Line | Age 1 | Age 2 | Age 3 | Age 4 |
-|---|---|---|---|---|
-| Bodies | Husk ×2 | Swollen ×4 | Bloated ×6 | Charnel ×8 |
-| Flanker | — | Ripjaw | Ripjaw Alpha | Skinrider |
-| Chaff clear | — | Flenser | Butcher of the Yard | Flensing Host |
-| Mind / research | — | Brain Stealer | Brood Nurse | Mind Flayer |
-| Executioner | — | — | Shrike | The Headsman |
-| Raiser | — | — | Carrion Choir | Charnel Engine |
-| Tank | — | — | Monstrum | The Great Maw |
-| Air | — | — | Carrion Widow | Widow Queen |
-| Screen | — | — | — | Flesh Wall |
-| Wildcard | — | — | — | Incarnation |
+| Line | Age 1 | Age 2 | Age 3 | Age 4 | Owed |
+|---|---|---|---|---|---|
+| Bodies | Husk ×2 | Swollen ×4 | Bloated ×6 | Charnel ×8 | nothing — it escalates |
+| Flanker | — | Ripjaw | Ripjaw Alpha | Skinrider | Skinriders |
+| Chaff clear | — | Flenser | Butcher of the Yard | Flensing Host | The Butcher, Flensing Hosts |
+| Mind / research | — | Brain Stealer | Brood Nurse | Mind Flayer | Brain Thieves, Mind Flayers |
+| Executioner | — | — | Shrike | The Headsman | Rite of the Headsman |
+| Raiser | — | — | Carrion Choir | Charnel Engine | The Charnel Engine |
+| Tank | — | — | Monstrum | The Great Maw | The Hunger Made Flesh, The Maw |
+| Air | — | — | Carrion Widow | Widow Queen | The Widow Queen |
+| Screen | — | — | — | Flesh Wall | Flesh Architecture |
+| Wildcard | — | — | — | Incarnation | Incarnation Rite |
+
+**Shipped**, and asserted age by age in `scratchpad/carnagelines.mjs`. The Ripjaw
+Alpha and the Brood Nurse are the two free tier bumps: they arrive with the age
+and cost nothing, because ageing up is what paid for them. Everything in the Owed
+column is a node, and each one *replaces* the rung below it rather than sitting
+beside it.
 
 Bodies on the bar: **1 → 4 → 8 → 10**, eleven once the Incarnation is bought.
 Slightly increasing with age, which is the intent.
