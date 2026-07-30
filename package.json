@@ -1,7 +1,7 @@
 {
   "name": "gow",
   "productName": "GOW",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "GOW \u2014 a side-view autobattler across five ages of warfare",
   "private": true,
   "main": "electron/main.cjs",
@@ -94,6 +94,12 @@
         },
         {
           "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64"
           ]
