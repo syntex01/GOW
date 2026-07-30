@@ -70,6 +70,15 @@ export interface ButtonOptions {
   onOut?: () => void
   /** Small text pinned to the bottom-right corner, e.g. a hotkey. */
   corner?: string
+  /**
+   * Extra pixels of TOUCHABLE area on every side, beyond the button's drawn
+   * bounds. The game is authored at 1280x720 and FIT-scaled, so on a 640x360
+   * phone canvas every design pixel is worth half a CSS pixel: a 96x38 button
+   * measures 48x19 to a finger, well under any sane minimum. Growing the drawn
+   * button instead would cost top-bar space it does not have, so the hit area
+   * grows and the artwork does not.
+   */
+  hitSlop?: number
 }
 
 /** Interactive panel button with hover, press, disabled and "flash" states. */
@@ -99,6 +108,8 @@ export class Button {
   private cornerObj?: Phaser.GameObjects.Text
   private iconObj?: Phaser.GameObjects.Image
   private overlay: Phaser.GameObjects.Rectangle
+  /** The touchable rectangle. Same as `overlay` unless `hitSlop` grows it. */
+  private hit!: Phaser.GameObjects.Rectangle
   private cooldownMask: Phaser.GameObjects.Rectangle
   private enabled = true
   private muted = false
@@ -158,10 +169,20 @@ export class Button {
       .setOrigin(0, 1)
     this.container.add(this.cooldownMask)
 
+    // The tint and the hit area are two different rectangles once slop exists.
+    // The overlay stays exactly button-sized, because it is what lights up on
+    // hover and a tint drawn over the slop would read as a halo round the
+    // button. The hit rect is the bigger, permanently invisible one.
     this.overlay = scene.add.rectangle(0, 0, options.width, options.height, 0xffffff, 0).setOrigin(0, 0)
     this.container.add(this.overlay)
 
-    this.overlay
+    const slop = options.hitSlop ?? 0
+    this.hit = scene.add
+      .rectangle(-slop, -slop, options.width + slop * 2, options.height + slop * 2, 0xffffff, 0)
+      .setOrigin(0, 0)
+    this.container.add(this.hit)
+
+    this.hit
       .setInteractive({ useHandCursor: true })
       .on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
         if (!this.enabled) return

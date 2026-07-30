@@ -219,13 +219,21 @@ export default class HUDScene extends Phaser.Scene {
     // It gets a button, next to the speed and pause controls, showing which half
     // you currently command and carrying the shortcut in its corner. Hidden
     // outside the sandbox, where swapping is not allowed anyway.
-    this.sideButton = new Button(this, cx + 74, 48, {
-      width: 96,
-      height: 38,
+    // Sized and slopped for a THUMB, not a mouse. On Android there is no
+    // keyboard, so F8 does not exist there and this button is the only way to
+    // take the other half — which makes it the one control in the top bar that
+    // has to survive being tapped. Measured on a Galaxy-class landscape canvas
+    // (640x360 CSS), the first version came out 48x19 CSS px: hittable by a test
+    // that taps dead centre, not by a person. Bigger, plus twelve pixels of
+    // invisible slop on every side.
+    this.sideButton = new Button(this, cx + 74, 46, {
+      width: 108,
+      height: 46,
       text: 'LEFT',
-      fontSize: 14,
+      fontSize: 15,
       accent: UI.player,
       corner: 'F8',
+      hitSlop: 12,
       onClick: () => this.battle.swapSide()
     })
     this.sideButton.setDepth(2)
