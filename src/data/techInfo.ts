@@ -25,6 +25,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
   clean_kills: 'Pierce and energy kills on your half leave one EXTRA skull, and Bonewrights start carrying skulls home for 9 research apiece. Blunt and explosive kills still leave none. Base skull life 18s off a cheap body, longer off a dear one.',
   bone_levy: 'Bonewrights now also carry BONE, and 4 frames’ worth delivered stand up as a free Boneling. Bone comes off pierce and energy kills and off heavy armour, and keeps longest of the three.',
   bloodlust: 'Blood-soaked ground grants up to +45% attack and move speed. Gore builds where things die messily.',
+  the_hunger: 'While outnumbered, every soldier you have left gains attack and move speed: +50% × (1 − yours ÷ theirs), so +33% at three against two and the full +50% at three to one. Counts fighting bodies only — gatherers do not dilute it.',
   flenser_rite: 'Unlocks the Flenser.',
   plague_wind: 'Every enemy you kill leaves a plague cloud: 70px, 26 damage/s, for 6s, in that lane.',
   necropolis: 'Every 4s, 12 corpse pieces on your half assemble into a free soldier of your age at 50% hp.',

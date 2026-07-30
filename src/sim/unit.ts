@@ -37,6 +37,8 @@ export interface UnitWorld {
   onDeathCharge?: (unit: Unit) => void
   /** How soaked the ground is under a point, for Bloodlust. */
   goreAt?: (x: number) => number
+  /** How badly a side is outnumbered right now, 0..1, for The Hunger. */
+  outnumbered?: (faction: Faction) => number
   /** A unit wants to eat the remains around it, for Bonepickers. */
   scavenge?: (unit: Unit) => void
   /** Ground relief under a point of a lane — mounds up, craters down. */
@@ -1601,6 +1603,17 @@ export default class Unit implements Damageable {
     // are capped and both end the moment the soldier steps off the ground
     // that caused them.
     this.frenzy *= (1 + this.groundFury * 0.28) * (1 - this.dread * 0.12) * (this.terrorFor > 0 ? 0.85 : 1)
+    // THE HUNGER. The fewer of you there are, the harder what is left of you
+    // fights — up to half again as fast once you are badly outnumbered.
+    //
+    // Measured against the ENEMY's living count rather than your own population
+    // cap, and deliberately so: a cap-based reading would hand the bonus out at
+    // full strength on the opening frame of a match, when both sides have nothing
+    // on the field, turning a last-stand node into a rush node. A ratio cannot do
+    // that — two empty fields are not outnumbered.
+    if (this.techs?.has('the_hunger')) {
+      this.frenzy *= 1 + 0.5 * (this.world.outnumbered?.(this.faction) ?? 0)
+    }
     // The carnage banner rally: fury for the garrison holding the flag.
     this.frenzy *= 1 + this.bannerZeal
     // Bonepickers feed on what is lying around them while they are hurt.

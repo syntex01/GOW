@@ -687,6 +687,7 @@ export default class Battlefield {
       physics: null as never,
       rng: this.rng,
       goreAt: x => this.goreAt(x),
+      outnumbered: faction => this.outnumbered(faction),
       scavenge: unit => this.scavenge(unit),
       onDeathCharge: unit => this.detonateCorpse(unit),
       requestFlank: unit => this.handleFlank(unit),
@@ -758,6 +759,33 @@ export default class Battlefield {
   /** How soaked the ground is under a point, 0..1. */
   goreAt(x: number): number {
     return this.goreMap[this.goreBucket(x)]
+  }
+
+  /**
+   * HOW BADLY A SIDE IS OUTNUMBERED, as a fraction from 0 to 1. The Hunger reads
+   * this, and nothing else does yet.
+   *
+   * Counted in bodies rather than in gold, because the node is about a line that
+   * is too thin to hold rather than about an army that is behind on value — and
+   * because a player can SEE bodies. Noncombatants are left out: five Bonewrights
+   * ferrying meat are not the line, and counting them would quietly cancel the
+   * bonus exactly when the line was gone.
+   *
+   * Both counts come out of the unit list, which is already in the state hash, so
+   * two peers cannot disagree about it.
+   */
+  outnumbered(faction: Faction): number {
+    let mine = 0
+    let theirs = 0
+    for (const u of this.units) {
+      if (!u.alive || u.def.noncombat) continue
+      if (u.faction === faction) mine += 1
+      else theirs += 1
+    }
+    // An empty field is not an outnumbered one. Without this the fraction is 1
+    // on the opening frame of every match, when neither side has anything out.
+    if (theirs === 0) return 0
+    return Math.max(0, Math.min(1, 1 - mine / theirs))
   }
 
   /**

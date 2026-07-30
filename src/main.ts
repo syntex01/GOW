@@ -88,6 +88,8 @@ function start(): void {
       blurb: string
     }[]
     __gowTechs: {
+      ring: number
+      row: number
       id: string
       name: string
       kind: string
@@ -131,6 +133,12 @@ function start(): void {
     kind: t.kind,
     cost: t.cost,
     age: t.age,
+    // Ring and row are the tree's LAYOUT, and the layout carries a rule: a node
+    // may not sit in a ring at or before one of its own prerequisites, or the
+    // screen draws a dependency arrow pointing backwards. Exposed so that rule
+    // can be asserted instead of eyeballed.
+    ring: t.ring,
+    row: t.row,
     branch: t.branch,
     requires: [...t.requires],
     requiresAny: t.requiresAny ? [...t.requiresAny] : undefined,

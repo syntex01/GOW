@@ -1163,9 +1163,13 @@ const DOCTRINE_TECHS: TechNode[] = [
     name: 'Ossuary Rite',
     branch: 'carnage',
     kind: 'behaviour',
-    ring: 5,
+    // Ring 7 and age 4, not ring 5 and age 3. It requires Necropolis, which is
+    // ring 6 and age 4, so the old numbers put a node BEFORE its own
+    // prerequisite: the tree drew an arrow pointing backwards down the rings and
+    // the age-3 gate on it could never be the binding one.
+    ring: 7,
     row: 1,
-    age: 3,
+    age: 4,
     cost: 2900,
     requires: ['necropolis'],
     excludes: ['charnel_rite'],
@@ -1181,7 +1185,7 @@ const DOCTRINE_TECHS: TechNode[] = [
     age: 3,
     cost: 3100,
     requires: ['bloodlust'],
-    effect: 'As your own army thins, what is left of it gets faster and hits harder — up to half again as fast once you are down to nothing.'
+    effect: 'While you are outnumbered on the field, what is left of your line fights faster and harder — up to half again at three to one against.'
   },
   {
     id: 'the_butcher',
@@ -1294,7 +1298,10 @@ const DOCTRINE_TECHS: TechNode[] = [
     kind: 'behaviour',
     ring: 4,
     row: 21,
-    age: 2,
+    // Age 3, not 2. It requires Sacrament, which is age 3 — so the age-2 gate on
+    // it could never be the binding one, and the card advertised an availability
+    // it did not have.
+    age: 3,
     cost: 2300,
     requires: ['sacrament'],
     effect: 'Lets you draw a Summoning Circle. It takes time, it consumes itself, and everyone on the field can see how far along it is.'
