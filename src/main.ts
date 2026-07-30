@@ -90,6 +90,7 @@ function start(): void {
     __gowTechs: {
       ring: number
       row: number
+      unlocks?: string
       id: string
       name: string
       kind: string
@@ -140,6 +141,10 @@ function start(): void {
     ring: t.ring,
     row: t.row,
     branch: t.branch,
+    // Which unit this node puts on the bar, if any. Without it a harness cannot
+    // reproduce a real roster at all: node-gated units stay invisible however
+    // many techs you hand the army.
+    unlocks: t.unlocks,
     requires: [...t.requires],
     requiresAny: t.requiresAny ? [...t.requiresAny] : undefined,
     excludes: t.excludes ? [...t.excludes] : undefined
