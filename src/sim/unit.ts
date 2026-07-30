@@ -1674,7 +1674,19 @@ export default class Unit implements Damageable {
     const staggered = this.stagger > 0
 
     if (this.holdMs > 0) this.holdMs -= dtMs
-    if (nearest && this.distanceTo(nearest) <= this.reach && this.formedUp(blockerX) && this.canBringToBear()) {
+    // AN ERRAND OUTRANKS A FIGHT.
+    //
+    // This used to sit below the engagement test, which quietly cancelled the
+    // Ripjaw's whole raid: it landed next to something alive, the engage branch
+    // won every frame, and the withdrawal it had been given never moved it a
+    // pixel. Measured over eight seconds it leapt three times and travelled
+    // thirty-six pixels in total, fighting from where it stood — the exact
+    // opposite of leap in, bite, leave. The comment on the withdrawal phase
+    // already claimed it "cannot be engaged into standing still"; now it cannot.
+    if (this.errandX !== null) {
+      this.state = 'advance'
+      this.walkTo(this.errandX, staggered ? dt * STAGGER_ADVANCE : dt, this.leapPhase !== 3)
+    } else if (nearest && this.distanceTo(nearest) <= this.reach && this.formedUp(blockerX) && this.canBringToBear()) {
       this.state = 'engage'
       if (!staggered) this.tryAttack(nearest, dtMs)
     } else {
@@ -1689,8 +1701,7 @@ export default class Unit implements Damageable {
       // that outranged them by 30. It still slows the charge, so a heavy blow
       // reads as a heavy blow.
       const pace = staggered ? dt * STAGGER_ADVANCE : dt
-      if (this.errandX !== null) this.walkTo(this.errandX, pace)
-      else if (this.overrun()) this.giveGround(pace)
+      if (this.overrun()) this.giveGround(pace)
       else this.advance(pace, blockerX)
     }
 
@@ -1743,7 +1754,7 @@ export default class Unit implements Damageable {
    * Walk to a place rather than at an enemy. Queues against nothing and blocks
    * nothing — a gatherer threads through the line it is scavenging behind.
    */
-  private walkTo(x: number, dt: number): void {
+  private walkTo(x: number, dt: number, turn = true): void {
     const step = this.def.speed * this.speedMult * dt
     const gap = x - this.x
     if (Math.abs(gap) <= step) {
@@ -1751,13 +1762,23 @@ export default class Unit implements Damageable {
       return
     }
     const way = gap > 0 ? 1 : -1
-    this.facing = way
+    // `turn` is what separates a labourer from a raider. A Bonewright carrying a
+    // sack home genuinely turns round and walks away. A Ripjaw breaking off a
+    // kill backs out of reach still pointing at what it just bit — it keeps its
+    // head to the enemy, which is both what the animal should do and what stops
+    // the withdrawal reading as the model having flipped the wrong way.
+    if (turn) this.facing = way
     this.x += way * step
     this.stepPhase += step
     this.blockedMs = 0
   }
 
   private advance(dt: number, blockerX: number | null): void {
+    // Anything moving forward faces forward. Without this a unit that ever ran an
+    // errand backwards kept the mirrored sprite for the rest of its life, because
+    // `facing` was only ever written by `walkTo` — so a Ripjaw that withdrew once
+    // spent the remainder of the match running head-first the wrong way.
+    this.facing = this.dir
     // An open road is an invitation: a flanker in an enemy-free file rides it.
     const raid = this.raiding || this.lungeMs > 0 ? 1.3 : 1
     const step = this.def.speed * this.speedMult * this.frenzy * raid * (this.miredFor > 0 ? 0.35 : 1) * dt * this.dir

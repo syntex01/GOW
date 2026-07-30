@@ -286,8 +286,13 @@ const LEAP_FLIGHT_MS = 620
 /** How long it stays to do the work, once it has landed. */
 const LEAP_STRIKE_MS = 900
 /** How long it spends getting back out, and how far back it goes. */
-const LEAP_WITHDRAW_MS = 850
-const LEAP_WITHDRAW_PX = 240
+const LEAP_WITHDRAW_MS = 1250
+// A distance the animal can actually COVER in its withdrawal window. At 92px/s
+// and the old 850ms clock, a 240px target was never reached — the phase expired
+// 162px short, so the constant described an intention rather than a behaviour.
+// 110px clears the Ripjaw's own 44px reach with room to spare, which is all
+// breaking contact requires, and it arrives with a beat left over.
+const LEAP_WITHDRAW_PX = 110
 /** Breath between raids. */
 const LEAP_REST_MS = 700
 
