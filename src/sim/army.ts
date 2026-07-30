@@ -341,22 +341,29 @@ export default class Army {
     // could buy and never field: the Titan Program cost 4,600 and put nothing
     // on the bar for anyone who had leant anywhere at all. The rung is chosen by
     // age, so what a commander keeps is the slot rather than the soldier.
-    const machines = this.machineRungs()
-    if (machines.length > 0 || list.some(d => d.lineTech)) {
-      // Machines are pulled OUT of whatever list they arrived in and put back as
-      // one group, because the bar has to be budgeted by slots rather than by
-      // rungs: an owned line is one card however many of its rungs are
-      // candidates. Trimming the list with the machines still in it clipped the
-      // Titan off the end of the age-4 bar of a commander who had paid for it.
-      const rest = list.filter(d => !d.lineTech)
-      const slots = resolveLines(machines, this.age, this.techs).length
-      list = rest.slice(0, Math.max(4, MAX_ROSTER - slots))
-      list.push(...machines)
+    // LINES COLLAPSE BEFORE THE BAR IS TRIMMED, and machines are trimmed last.
+    //
+    // Collapsing first is what makes the trim safe: a creed's path hands over
+    // every rung of every line it owns — at age 4 Carnage that is eighteen
+    // soldiers for ten slots — so cutting the list to length before the collapse
+    // decided which rung survived by author order. It could take the Great Maw
+    // off the end and leave the Monstrum standing in the tank slot, which reads
+    // as a research node that silently did nothing.
+    //
+    // Machines then go on the end because a machine slot belongs to no creed and
+    // has to survive consolidation. At age 4 the dominant path replaces the bar
+    // outright and no path contains a tank, so without this every machine
+    // doctrine was a node you could buy and never field.
+    const machines = resolveLines(this.machineRungs(), this.age, this.techs)
+    let lined = resolveLines(
+      list.filter(d => !d.lineTech),
+      this.age,
+      this.techs
+    )
+    if (machines.length > 0) {
+      lined = lined.slice(0, Math.max(4, MAX_ROSTER - machines.length))
+      lined.push(...machines)
     }
-    // Lines collapse LAST, over whatever the roster turned out to be, so a slot
-    // shows exactly one rung however the unit got onto the bar — through the
-    // neutral core, through a creed's path, or through a research unlock.
-    const lined = resolveLines(list, this.age, this.techs)
     return this.grown(morphedRoster(lined.slice(0, MAX_ROSTER), this.techs))
   }
 

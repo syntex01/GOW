@@ -83,6 +83,8 @@ export type ProjectileId =
   | 'plasmaball'
   | 'railslug'
   | 'bomb'
+  /** A live thing, thrown. It arcs, it lands, and it starts climbing. */
+  | 'crab'
 
 export type AttackSpec =
   | { kind: 'melee'; knockback: number; splash?: number }

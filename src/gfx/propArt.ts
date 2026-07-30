@@ -498,6 +498,27 @@ export function drawProjectile(id: ProjectileId): Canvas2D {
       p.outline(0x14171c, { diagonals: false })
       return done(p)
     }
+    case 'crab': {
+      // The only living projectile in the game, so it has to read as ALIVE at
+      // seven pixels across: a pale carapace, a dark seam down it, and legs that
+      // stick out past the shell on both sides. Legs are what say "animal" —
+      // a plain blob at this size is a stone.
+      const p = new Pix(9, 7)
+      const shell = ramp(0xc7b39a)
+      const leg = ramp(0x6d5b4a)
+      p.fill(0, 2, 2, 1, leg[2])
+      p.fill(7, 2, 2, 1, leg[2])
+      p.fill(1, 5, 2, 1, leg[1])
+      p.fill(6, 5, 2, 1, leg[1])
+      p.ellipse(4.5, 3, 3.2, 2.4, shell[2])
+      p.ellipse(4.5, 2.4, 2.2, 1.4, shell[3])
+      p.fill(4, 1, 1, 4, leg[1])
+      // Two black specks where the eyes are. They are the whole face.
+      p.set(3, 2, 0x241c16)
+      p.set(6, 2, 0x241c16)
+      p.outline(0x1d1712, { diagonals: false })
+      return done(p)
+    }
     case 'laserbolt': {
       // Energy gets no outline: a hot white core inside a coloured envelope.
       const p = new Pix(14, 5)

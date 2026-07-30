@@ -53,7 +53,8 @@ const PROJECTILE_IDS: ProjectileId[] = [
   'laserbolt',
   'plasmaball',
   'railslug',
-  'bomb'
+  'bomb',
+  'crab'
 ]
 
 export interface UnitArtInfo {

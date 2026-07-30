@@ -141,6 +141,7 @@ export const FACTION_UNITS: UnitDef[] = [
   },
   {
     id: 'nk_flenser',
+    line: 'carnage_render',
     name: 'Flenser',
     age: 2,
     role: 'melee',
@@ -170,6 +171,7 @@ export const FACTION_UNITS: UnitDef[] = [
   },
   {
     id: 'nk_carrion',
+    line: 'carnage_raise',
     name: 'Carrion Choir',
     age: 3,
     role: 'support',
@@ -909,6 +911,7 @@ export const FACTION_UNITS: UnitDef[] = [
   },
   {
     id: 'nk_ripjaw',
+    line: 'carnage_flank',
     name: 'Ripjaw',
     age: 2,
     role: 'melee',
@@ -945,6 +948,7 @@ export const FACTION_UNITS: UnitDef[] = [
   },
   {
     id: 'nk_butcher',
+    line: 'carnage_render',
     name: 'Butcher of the Yard',
     age: 3,
     role: 'melee',
@@ -970,6 +974,7 @@ export const FACTION_UNITS: UnitDef[] = [
   },
   {
     id: 'nk_shrike',
+    line: 'carnage_execute',
     name: 'Shrike',
     age: 3,
     role: 'melee',
@@ -1053,8 +1058,9 @@ export const FACTION_UNITS: UnitDef[] = [
     // creed's whole thesis made into one object: the dead are a resource, and
     // this is what happens when something eats enough of them.
     id: 'nk_monstrum',
+    line: 'carnage_tank',
     name: 'Monstrum',
-    age: 4,
+    age: 3,
     role: 'melee',
     layer: 'ground',
     cost: 2100,
@@ -1087,6 +1093,7 @@ export const FACTION_UNITS: UnitDef[] = [
     // board it was standing. Every other unit in the game turns your gold into
     // damage. This one turns their army into your economy.
     id: 'nk_maw',
+    line: 'carnage_tank',
     name: 'The Great Maw',
     age: 4,
     role: 'siege',
@@ -1146,8 +1153,9 @@ export const FACTION_UNITS: UnitDef[] = [
   },
   {
     id: 'nk_widow',
+    line: 'carnage_air',
     name: 'Carrion Widow',
-    age: 4,
+    age: 3,
     role: 'air',
     layer: 'air',
     cost: 2000,
@@ -1170,6 +1178,337 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: { kind: 'projectile', projectile: 'bolt', speed: 900, gravity: 0, spread: 0.05, knockback: 60 },
     description: 'The carnage answer to the sky: it feeds on what it strikes, and it strikes the weakest first.',
     visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'bare', weapon: 'saber', bulk: 1.05 , plan: 'widow'})
+  },
+
+  // ══════════════════════ THE CARNAGE LINES, CLIMBED ══════════════════════
+  //
+  // Every slot on the Carnage bar is a LINE with one rung per age, and a rung
+  // arrives one of two ways. A TIER BUMP is the same body with more of it: it
+  // costs no research, because ageing up is what paid for it. A MUTATION is a
+  // different body doing a different thing, and it always sits behind a node.
+  //
+  //   flank    Ripjaw a2 → Ripjaw Alpha a3 (bump) → Skinrider a4 (node)
+  //   render   Flenser a2 → Butcher of the Yard a3 (node) → Flensing Host a4
+  //   mind     Brain Stealer a2 (node) → Brood Nurse a3 (bump) → Mind Flayer a4
+  //   execute  Shrike a3 → The Headsman a4 (node)
+  //   raise    Carrion Choir a3 → Charnel Engine a4 (node)
+  //   tank     Monstrum a3 (node) → The Great Maw a4 (node)
+  //   air      Carrion Widow a3 → Widow Queen a4 (node)
+  //
+  // Only ever one rung of a line is on the bar, so the bar reads 1 → 4 → 8 → 10
+  // and ageing up feels like the army growing rather than the menu growing.
+  {
+    // THE MIND LINE. The creed's research economy, standing on the field.
+    //
+    // Skulls pay for research, and this is the body built to collect them. It
+    // does not fight: it lobs a live thing at somebody two files away, and the
+    // thing climbs. Crabs do almost nothing on their own — a few points a
+    // second each — but every one riding a soldier raises the height at which
+    // that soldier can simply be finished, and a soldier who dies with crabs on
+    // him has one of them walk his brain home. See `Battlefield.updateCrabs`.
+    id: 'nk_brainstealer',
+    line: 'carnage_mind',
+    name: 'Brain Stealer',
+    age: 2,
+    role: 'support',
+    layer: 'ground',
+    cost: 540,
+    buildMs: 3300,
+    hp: 900,
+    armor: 'unarmored',
+    damage: 18,
+    damageType: 'pierce',
+    attackMs: 1900,
+    range: 330,
+    speed: 26,
+    mass: 3.2,
+    bounty: 232,
+    xp: 202,
+    pop: 2,
+    height: 62,
+    special: 'crab_spit',
+    attack: {
+      kind: 'projectile',
+      projectile: 'crab',
+      speed: 300,
+      gravity: 520,
+      spread: 0.06,
+      knockback: 0,
+      muzzle: [10, -22]
+    },
+    harvest: { skull: 2 },
+    description: 'A mound that waddles, and spits something that lands on its feet. What it takes is not the body.',
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.35, plan: 'brainstealer' })
+  },
+  {
+    // A TIER BUMP, and the model for what one is: the same animal, more of it.
+    // It arrives with the third age and costs no research. More crabs per throw,
+    // a longer throw, and a bigger sac to keep them in.
+    id: 'nk_broodnurse',
+    line: 'carnage_mind',
+    name: 'Brood Nurse',
+    age: 3,
+    role: 'support',
+    layer: 'ground',
+    cost: 900,
+    buildMs: 3800,
+    hp: 1500,
+    armor: 'unarmored',
+    damage: 24,
+    damageType: 'pierce',
+    attackMs: 1700,
+    range: 350,
+    speed: 24,
+    mass: 4,
+    bounty: 342,
+    xp: 298,
+    pop: 2,
+    height: 72,
+    special: 'crab_spit',
+    attack: {
+      kind: 'projectile',
+      projectile: 'crab',
+      speed: 320,
+      gravity: 500,
+      spread: 0.09,
+      count: 2,
+      knockback: 0,
+      muzzle: [12, -26]
+    },
+    harvest: { skull: 3 },
+    description: 'It stopped spitting them one at a time. The sac on its back is where they wait.',
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.55, plan: 'broodnurse' })
+  },
+  {
+    // A MUTATION, and the reason the line is worth climbing: it stops throwing.
+    // Everything hostile inside its reach is seeded continuously, so the crabs
+    // stop being a thing you aim and become weather. It is very slow, it dies to
+    // anything that reaches it, and it is why an army wants a screen.
+    id: 'nk_mindflayer',
+    line: 'carnage_mind',
+    name: 'Mind Flayer',
+    age: 4,
+    role: 'support',
+    layer: 'ground',
+    cost: 1650,
+    buildMs: 5200,
+    hp: 2000,
+    armor: 'light',
+    damage: 0,
+    damageType: 'pierce',
+    attackMs: 1600,
+    range: 320,
+    speed: 22,
+    mass: 5,
+    bounty: 627,
+    xp: 545,
+    pop: 3,
+    height: 84,
+    special: 'mind_flayer',
+    attack: { kind: 'melee', knockback: 0 },
+    harvest: { skull: 4 },
+    description: 'It no longer throws them. It simply stands there, and they are already on you.',
+    visual: look('nekrotics', { kind: 'mech', torso: 'robe', weapon: 'tentacle', helmet: 'hood', bulk: 1.5, plan: 'mindflayer' })
+  },
+  {
+    // THE FLANK LINE, bumped. The Ripjaw that has been eating.
+    id: 'nk_ripjaw_alpha',
+    line: 'carnage_flank',
+    name: 'Ripjaw Alpha',
+    age: 3,
+    role: 'melee',
+    layer: 'ground',
+    cost: 780,
+    buildMs: 3600,
+    hp: 1700,
+    armor: 'light',
+    damage: 175,
+    damageType: 'slash',
+    attackMs: 600,
+    range: 48,
+    speed: 96,
+    mass: 3,
+    bounty: 297,
+    xp: 258,
+    pop: 2,
+    height: 82,
+    conduct: 'hunt',
+    flanker: true,
+    special: 'leap',
+    attack: { kind: 'melee', knockback: 150 },
+    bonusVs: { unarmored: 1.75, light: 1.45 },
+    harvest: { meat: 3 },
+    description: 'The one that kept the pack. Same bound, longer, and it lands on something that matters.',
+    visual: look('nekrotics', { kind: 'rider', torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.3, plan: 'ripjaw' })
+  },
+  {
+    // A MUTATION off the flank line: it stops trying to kill things and starts
+    // riding them. The leap ends with it ON the target, which cannot swing while
+    // it is being worn, and it steps off onto the next one when the first drops.
+    // Heaviest against the things a flanker normally cannot touch.
+    id: 'nk_skinrider',
+    line: 'carnage_flank',
+    name: 'Skinrider',
+    age: 4,
+    role: 'melee',
+    layer: 'ground',
+    cost: 1500,
+    buildMs: 4400,
+    hp: 1400,
+    armor: 'light',
+    damage: 120,
+    damageType: 'slash',
+    attackMs: 700,
+    range: 46,
+    speed: 104,
+    mass: 2.2,
+    bounty: 570,
+    xp: 495,
+    pop: 2,
+    height: 74,
+    conduct: 'hunt',
+    flanker: true,
+    special: 'skinride',
+    attack: { kind: 'melee', knockback: 40 },
+    bonusVs: { light: 1.4, heavy: 1.7 },
+    harvest: { meat: 2 },
+    description: 'It lands on the back of the biggest thing in the file and stays there. The thing stops being a threat some time before it stops being alive.',
+    visual: look('nekrotics', { kind: 'rider', torso: 'bare', weapon: 'tentacle', helmet: 'none', bulk: 1.05, plan: 'skinrider' })
+  },
+  {
+    // THE RENDER LINE's last rung, and a mutation in the truest sense: it is not
+    // one butcher, it is three lesser ones that share a nervous system. Any kill
+    // by any of them quickens all three, so the card accelerates as a unit and
+    // erases a screen faster than one large body ever could.
+    id: 'nk_flensing_host',
+    line: 'carnage_render',
+    name: 'Flensing Host',
+    age: 4,
+    role: 'melee',
+    layer: 'ground',
+    cost: 1900,
+    buildMs: 5000,
+    hp: 1100,
+    armor: 'light',
+    damage: 130,
+    damageType: 'slash',
+    attackMs: 900,
+    range: 50,
+    speed: 46,
+    mass: 2,
+    bounty: 241,
+    xp: 210,
+    pop: 3,
+    squad: 3,
+    height: 78,
+    special: 'host_frenzy',
+    attack: { kind: 'melee', knockback: 150, splash: 60 },
+    bonusVs: { unarmored: 1.85, light: 1.5 },
+    harvest: { meat: 3 },
+    description: 'Three of them, cut from the same body and still sharing it. What one of them kills, all three of them feel.',
+    visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.1, plan: 'host' })
+  },
+  {
+    // THE EXECUTE LINE's last rung. The Shrike picks off whoever is nearly done;
+    // this finishes them outright below a threshold, and the finishing is
+    // CONTAGIOUS — everything in the file flinches when a head comes off, which
+    // is how one body breaks a rank rather than shortening it.
+    id: 'nk_headsman',
+    line: 'carnage_execute',
+    name: 'The Headsman',
+    age: 4,
+    role: 'melee',
+    layer: 'ground',
+    cost: 1700,
+    buildMs: 4600,
+    hp: 1600,
+    armor: 'light',
+    damage: 300,
+    damageType: 'pierce',
+    attackMs: 1200,
+    range: 160,
+    speed: 46,
+    mass: 2.4,
+    bounty: 646,
+    xp: 562,
+    pop: 3,
+    height: 88,
+    conduct: 'hunt',
+    special: 'headsman',
+    attack: { kind: 'melee', knockback: 90 },
+    harvest: { skull: 3 },
+    description: 'It does not fight a rank. It walks down one, and the rank watches.',
+    visual: look('nekrotics', { torso: 'coat', weapon: 'axe', helmet: 'hood', bulk: 1.2, plan: 'headsman' })
+  },
+  {
+    // THE RAISE LINE's last rung. The Choir mends a file and rebuilds a body out
+    // of what is lying nearby; the Engine does not wait to be asked. It stands
+    // over your half of the field and mills whatever is on it, continuously, and
+    // what comes out the back is chaff walking forward.
+    id: 'nk_charnel_engine',
+    line: 'carnage_raise',
+    name: 'Charnel Engine',
+    age: 4,
+    role: 'support',
+    layer: 'ground',
+    cost: 2200,
+    buildMs: 5800,
+    hp: 3000,
+    armor: 'heavy',
+    damage: 0,
+    damageType: 'blunt',
+    attackMs: 2400,
+    range: 220,
+    speed: 30,
+    mass: 7,
+    bounty: 836,
+    xp: 727,
+    pop: 3,
+    height: 98,
+    special: 'charnel_engine',
+    attack: { kind: 'heal', amount: 220, radius: 220 },
+    description: 'A mill with a crew that has stopped complaining. It goes through the field faster than the field can rot.',
+    visual: look('nekrotics', {
+      kind: 'vehicle',
+      chassis: 'tracks',
+      torso: 'coat',
+      weapon: 'none',
+      helmet: 'hood',
+      bulk: 1.6,
+      plan: 'engine'
+    })
+  },
+  {
+    // THE AIR LINE's last rung. The Widow feeds on what it strikes; the Queen
+    // lays in it. Every kill leaves an egg on the ground where the body fell,
+    // and what climbs out of the egg walks forward — the creed's thesis said in
+    // the one place the creed normally cannot reach.
+    id: 'nk_widow_queen',
+    line: 'carnage_air',
+    name: 'Widow Queen',
+    age: 4,
+    role: 'air',
+    layer: 'air',
+    cost: 2800,
+    buildMs: 6200,
+    hp: 2600,
+    armor: 'air',
+    damage: 330,
+    damageType: 'slash',
+    attackMs: 1200,
+    range: 300,
+    speed: 82,
+    mass: 2.6,
+    bounty: 1064,
+    xp: 925,
+    pop: 4,
+    height: 64,
+    conduct: 'hunt',
+    special: 'widow_brood',
+    hitsAir: true,
+    attack: { kind: 'projectile', projectile: 'bolt', speed: 920, gravity: 0, spread: 0.04, knockback: 70 },
+    description: 'It does not feed on what it kills. It leaves something in it, and the something gets up.',
+    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'robe', weapon: 'tentacle', bulk: 1.35, plan: 'widowqueen' })
   },
   {
     id: 'ch_petardier',
