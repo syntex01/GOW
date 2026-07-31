@@ -1,0 +1,72 @@
+name: Render Carnage showcase
+
+on:
+  push:
+    branches:
+      - claude/carnage-roster-progression
+    paths:
+      - scripts/render-carnage.mjs
+      - .github/workflows/render-carnage.yml
+      - src/data/carnage.ts
+      - src/data/factions.ts
+      - src/data/tech.ts
+      - src/ui/techTree.ts
+      - src/ui/techTreeArt.ts
+      - src/gfx/**
+      - src/sim/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out Carnage branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/carnage-roster-progression
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install render browser
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start game server
+        run: |
+          npm start > /tmp/gow-render-server.log 2>&1 &
+          echo $! > /tmp/gow-render-server.pid
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/gow-render-server.log
+          exit 1
+
+      - name: Capture Carnage roster and tech tree
+        run: node scripts/render-carnage.mjs
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: carnage-in-engine-renders
+          path: artifacts/carnage-renders/*.png
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/gow-render-server.log || true
