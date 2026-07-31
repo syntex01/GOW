@@ -101,33 +101,35 @@ async function stageCloseup(def, age) {
     for (const unit of all) {
       const keep = selected.includes(unit)
       unit.container?.setVisible(keep)
-      if (!keep) unit.x = -20_000
-    }
-
-    const centerX = field.config.worldWidth / 2
-    const span = Math.max(42, desired.height * 0.58)
-    selected.forEach((unit, index) => {
-      unit.setLane(2)
-      unit.x = centerX + (index - (selected.length - 1) / 2) * span
-      unit.y = desired.layer === 'air' ? unit.y : unit.groundLine
-      unit.setStage(index * 2 - selected.length)
-      unit.container?.setPosition(unit.x, unit.y + unit.stageY)
-      unit.container?.setDepth(1_000_000 + index)
-      unit.container?.setVisible(true)
       unit.shadow?.setVisible(false)
       unit.teamRing?.setVisible(false)
       unit.conductMark?.setVisible(false)
+    }
+
+    selected.forEach((unit, index) => {
+      // Keep the unit at the position where the simulation actually spawned and
+      // posed it. Teleporting only the data object can leave Phaser culling the
+      // old bounds for the current frame; framing the genuine render position
+      // avoids that entire class of screenshot-only errors.
+      unit.container?.setDepth(1_000_000 + index)
+      unit.container?.setAlpha(1)
+      unit.container?.setVisible(true)
+      unit.flushVisual?.()
     })
 
     const targetPixels = desired.squad > 1 ? 330 : 430
     const zoom = Math.max(1.7, Math.min(5.2, targetPixels / Math.max(48, desired.height)))
-    const focusY = selected.length > 0
-      ? (desired.layer === 'air' ? selected[0].y : selected[0].groundLine - desired.height * 0.46)
+    const centerX = selected.length > 0
+      ? selected.reduce((sum, unit) => sum + unit.container.x, 0) / selected.length
+      : field.config.worldWidth / 2
+    const centerY = selected.length > 0
+      ? selected.reduce((sum, unit) => sum + unit.container.y - desired.height * 0.46, 0) / selected.length
       : field.config.groundY - desired.height * 0.46
+
     battle.cameras.main.setZoom(zoom)
     battle.cameras.main.setScroll(
       centerX - battle.cameras.main.width / (2 * zoom),
-      focusY - battle.cameras.main.height / (2 * zoom)
+      centerY - battle.cameras.main.height / (2 * zoom)
     )
     hud.scene.setVisible(false)
 
@@ -157,7 +159,24 @@ async function stageCloseup(def, age) {
     document.body.append(overlay)
 
     battle.paused = true
-    return { count: selected.length, zoom }
+    return {
+      count: selected.length,
+      zoom,
+      centerX,
+      centerY,
+      units: selected.map(unit => ({
+        x: unit.x,
+        y: unit.y,
+        containerX: unit.container.x,
+        containerY: unit.container.y,
+        visible: unit.container.visible,
+        alpha: unit.container.alpha,
+        depth: unit.container.depth,
+        children: unit.container.list.length,
+        scaleX: unit.container.scaleX,
+        scaleY: unit.container.scaleY
+      }))
+    }
   }, { desired: def, ageIndex: age })
 }
 
@@ -175,7 +194,7 @@ async function captureUnit(age, def, index) {
   const output = path.join(dir, filename)
   await page.waitForTimeout(250)
   await page.screenshot({ path: output, fullPage: true })
-  manifest.push({ age, ...live, filename: `age-${age}/${filename}`, renderedBodies: staged.count, zoom: staged.zoom })
+  manifest.push({ age, ...live, filename: `age-${age}/${filename}`, renderedBodies: staged.count, zoom: staged.zoom, diagnostics: staged.units })
   console.log(`Rendered Age ${age}: ${live.name} (${staged.count} body/bodies)`)
 }
 
