@@ -35,7 +35,7 @@ permissions:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Check out Carnage branch
         uses: actions/checkout@v4
@@ -69,14 +69,14 @@ jobs:
           cat /tmp/gow-render-server.log
           exit 1
 
-      - name: Capture Carnage roster and tech tree
+      - name: Capture corrected Carnage roster and tech tree
         run: node scripts/render-carnage.mjs
 
-      - name: Upload screenshots
+      - name: Upload corrected screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: carnage-in-engine-renders
-          path: artifacts/carnage-renders/*.png
+          name: carnage-corrected-in-engine-renders
+          path: artifacts/carnage-renders/**
           if-no-files-found: error
           retention-days: 30
 
