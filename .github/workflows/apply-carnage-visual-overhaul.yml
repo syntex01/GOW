@@ -48,3 +48,6 @@ jobs:
           git add src/data/types.ts src/data/factions.ts src/data/morphs.ts src/gfx/unitArt.ts src/gfx/carnageVisualVariants.ts scripts/render-carnage.mjs scripts/validate-carnage-visuals.mjs package.json
           git commit -m "feat(carnage): implement distinct procedural unit designs"
           git push origin HEAD:claude/carnage-roster-progression
+
+      # This workflow is intentionally retriggered after the roster work so the
+      # visual implementation is committed before any showcase is rendered.
