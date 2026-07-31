@@ -14,6 +14,19 @@ on:
       - src/ui/techTreeArt.ts
       - src/gfx/**
       - src/sim/**
+  pull_request:
+    branches:
+      - claude/gow-game-development-hjs2e0
+    paths:
+      - scripts/render-carnage.mjs
+      - .github/workflows/render-carnage.yml
+      - src/data/carnage.ts
+      - src/data/factions.ts
+      - src/data/tech.ts
+      - src/ui/techTree.ts
+      - src/ui/techTreeArt.ts
+      - src/gfx/**
+      - src/sim/**
   workflow_dispatch:
 
 permissions:
