@@ -26,18 +26,22 @@ jobs:
 
       - name: Apply visual migration when still pending
         run: |
-          if test -f src/gfx/carnageVisualVariants.ts; then
-            echo "Carnage visual migration already applied."
+          if grep -q "skinrider:" src/gfx/archetypes/carnageHorror.ts; then
+            echo "Distinct Carnage archetypes already applied."
             exit 0
           fi
-          python scripts/apply_carnage_visual_overhaul_v2.py
+          python scripts/apply_carnage_visual_overhaul_v3.py
           npm ci
           npm run check
           git diff --check
+          rm -rf scripts/.carnage_visual_payload
+          rm -f scripts/apply_carnage_visual_overhaul_v2.py
+          rm -f scripts/apply_carnage_visual_overhaul_v3.py
+          rm -f .github/workflows/apply-carnage-visual-overhaul.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/types.ts src/data/factions.ts src/data/morphs.ts src/gfx/unitArt.ts src/gfx/carnageVisualVariants.ts scripts/render-carnage.mjs scripts/validate-carnage-visuals.mjs package.json
-          git commit -m "feat(carnage): implement distinct procedural unit designs"
+          git add -A
+          git commit -m "feat(carnage): implement distinct apex unit archetypes"
           git push origin HEAD:claude/carnage-roster-progression
 
   build:
