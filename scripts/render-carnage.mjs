@@ -106,53 +106,57 @@ async function stageCloseup(def, age) {
     const centerX = field.config.worldWidth / 2
     const span = Math.max(42, desired.height * 0.58)
     selected.forEach((unit, index) => {
-      unit.setLane(desired.layer === 'air' ? 2 : 2)
+      unit.setLane(2)
       unit.x = centerX + (index - (selected.length - 1) / 2) * span
       unit.y = desired.layer === 'air' ? unit.y : unit.groundLine
       unit.setStage(index * 2 - selected.length)
+      // The simulation coordinate and the Phaser container are deliberately
+      // separate. A screenshot harness that moves only `unit.x` captures empty
+      // ground until the next visual flush. Put every rendered object at the
+      // staged position immediately so the close-up is deterministic.
+      unit.container?.setPosition(unit.x, unit.y + unit.stageY)
       unit.container?.setVisible(true)
+      unit.shadow?.setVisible(false)
+      unit.teamRing?.setVisible(false)
+      unit.conductMark?.setVisible(false)
     })
 
     const targetPixels = desired.squad > 1 ? 330 : 430
     const zoom = Math.max(1.7, Math.min(5.2, targetPixels / Math.max(48, desired.height)))
+    const focusY = selected.length > 0
+      ? (desired.layer === 'air' ? selected[0].y : selected[0].groundLine - desired.height * 0.46)
+      : field.config.groundY - desired.height * 0.46
     battle.cameras.main.setZoom(zoom)
-    battle.cameras.main.setScroll(centerX - battle.cameras.main.width / (2 * zoom), desired.layer === 'air' ? -70 : 0)
+    battle.cameras.main.setScroll(
+      centerX - battle.cameras.main.width / (2 * zoom),
+      focusY - battle.cameras.main.height / (2 * zoom)
+    )
     hud.scene.setVisible(false)
 
     const accent = desired.name.includes('Brain') || desired.name.includes('Mind') || desired.name.includes('Brood')
-      ? 0x55b9ff
+      ? '#55b9ff'
       : desired.name.includes('Head') || desired.name.includes('Host') || desired.name.includes('Butcher') || desired.name.includes('Slaughter')
-        ? 0xef4638
-        : 0xe8dcc4
+        ? '#ef4638'
+        : '#e8dcc4'
 
-    battle.add.rectangle(640, 54, 820, 74, 0x05070b, 0.84)
-      .setStrokeStyle(2, accent, 0.9)
-      .setScrollFactor(0)
-      .setDepth(100_000)
-    battle.add.text(640, 24, desired.name.toUpperCase(), {
-      fontFamily: 'Impact, Haettenschweiler, Arial Black, sans-serif',
-      fontSize: '30px',
-      color: '#f4ece4',
-      stroke: '#100506',
-      strokeThickness: 6,
-      letterSpacing: 2
-    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100_001)
-    battle.add.text(640, 61, `AGE ${ageIndex} · ${desired.role.toUpperCase()} · ${desired.squad > 1 ? `${desired.squad}-BODY HOST` : 'SINGLE BODY'}`, {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '13px',
-      color: `#${accent.toString(16).padStart(6, '0')}`,
-      stroke: '#08090d',
-      strokeThickness: 3
-    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100_001)
-    battle.add.text(640, 662, desired.description, {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '14px',
-      color: '#d9d1ca',
-      stroke: '#050608',
-      strokeThickness: 4,
-      align: 'center',
-      wordWrap: { width: 1040 }
-    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100_001)
+    document.getElementById('carnage-render-overlay')?.remove()
+    const overlay = document.createElement('div')
+    overlay.id = 'carnage-render-overlay'
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;font-family:Arial,sans-serif;color:#f4ece4;text-align:center;'
+    const header = document.createElement('div')
+    header.style.cssText = `position:absolute;top:18px;left:50%;transform:translateX(-50%);min-width:720px;padding:12px 34px 10px;background:rgba(5,7,11,.86);border:2px solid ${accent};box-shadow:0 8px 30px rgba(0,0,0,.45);`
+    const title = document.createElement('div')
+    title.textContent = desired.name.toUpperCase()
+    title.style.cssText = 'font-family:Impact,Haettenschweiler,Arial Black,sans-serif;font-size:31px;letter-spacing:2px;text-shadow:0 3px 0 #100506;'
+    const meta = document.createElement('div')
+    meta.textContent = `AGE ${ageIndex} · ${desired.role.toUpperCase()} · ${desired.squad > 1 ? `${desired.squad}-BODY HOST` : 'SINGLE BODY'}`
+    meta.style.cssText = `font-size:13px;margin-top:4px;color:${accent};font-weight:700;letter-spacing:1px;`
+    header.append(title, meta)
+    const footer = document.createElement('div')
+    footer.textContent = desired.description
+    footer.style.cssText = 'position:absolute;left:50%;bottom:20px;transform:translateX(-50%);width:min(1040px,86vw);padding:10px 18px;background:rgba(5,7,11,.78);font-size:14px;line-height:1.35;text-shadow:0 2px 0 #050608;'
+    overlay.append(header, footer)
+    document.body.append(overlay)
 
     battle.paused = true
     return { count: selected.length, zoom }
