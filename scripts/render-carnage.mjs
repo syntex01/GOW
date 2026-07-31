@@ -22,6 +22,7 @@ page.on('console', message => console.log(`[browser:${message.type()}] ${message
 page.on('pageerror', error => console.error(`[browser:error] ${error.stack ?? error.message}`))
 
 const slug = value => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+const FILTER = new Set((process.env.GOW_RENDER_FILTER ?? '').split('|').map(value => value.trim()).filter(Boolean))
 
 async function boot(seed) {
   await page.goto(`${BASE_URL}/?render=${seed}`, { waitUntil: 'networkidle' })
@@ -110,11 +111,8 @@ async function stageCloseup(def, age) {
       unit.x = centerX + (index - (selected.length - 1) / 2) * span
       unit.y = desired.layer === 'air' ? unit.y : unit.groundLine
       unit.setStage(index * 2 - selected.length)
-      // The simulation coordinate and the Phaser container are deliberately
-      // separate. A screenshot harness that moves only `unit.x` captures empty
-      // ground until the next visual flush. Put every rendered object at the
-      // staged position immediately so the close-up is deterministic.
       unit.container?.setPosition(unit.x, unit.y + unit.stageY)
+      unit.container?.setDepth(1_000_000 + index)
       unit.container?.setVisible(true)
       unit.shadow?.setVisible(false)
       unit.teamRing?.setVisible(false)
@@ -201,9 +199,10 @@ try {
   for (const age of [1, 2, 3, 4]) {
     await boot(19_000 + age)
     const roster = await configureCarnage(age, { ascended: age === 4 })
-    for (let index = 0; index < roster.length; index += 1) await captureUnit(age, roster[index], index)
+    const targets = FILTER.size > 0 ? roster.filter(unit => FILTER.has(unit.name)) : roster
+    for (let index = 0; index < targets.length; index += 1) await captureUnit(age, targets[index], index)
   }
-  await captureTechTree()
+  if (FILTER.size === 0) await captureTechTree()
   await writeFile(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2))
 } finally {
   await browser.close()
