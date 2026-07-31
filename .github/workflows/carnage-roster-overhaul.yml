@@ -7,6 +7,12 @@ on:
     paths:
       - scripts/apply_carnage_roster_overhaul.py
       - .github/workflows/carnage-roster-overhaul.yml
+  pull_request:
+    branches:
+      - claude/gow-game-development-hjs2e0
+    paths:
+      - scripts/apply_carnage_roster_overhaul.py
+      - .github/workflows/carnage-roster-overhaul.yml
 
 permissions:
   contents: write
@@ -28,7 +34,7 @@ jobs:
           cache: npm
 
       - name: Apply source migration
-        run: python scripts/apply_carnage-roster-overhaul.py apply
+        run: python scripts/apply_carnage_roster_overhaul.py apply
 
       - name: Install dependencies
         run: npm ci
@@ -40,7 +46,7 @@ jobs:
         run: git diff --check
 
       - name: Remove migration bootstrap
-        run: python scripts/apply_carnage_roster-overhaul.py cleanup
+        run: python scripts/apply_carnage_roster_overhaul.py cleanup
 
       - name: Commit verified overhaul
         run: |
