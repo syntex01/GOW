@@ -131,3 +131,55 @@ jobs:
       - name: Print server log on failure
         if: failure()
         run: cat /tmp/gow-render-server.log || true
+
+  render-carnage-combat:
+    name: Render Carnage HD combat
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/carnage-roster-progression
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install Chromium and FFmpeg
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Start game server
+        run: |
+          npm start > /tmp/gow-combat-server.log 2>&1 &
+          echo $! > /tmp/gow-combat-server.pid
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/gow-combat-server.log
+          exit 1
+
+      - name: Render native 1080p combat animations
+        run: node scripts/render-carnage-combat.mjs
+
+      - name: Upload HD combat animations
+        uses: actions/upload-artifact@v4
+        with:
+          name: carnage-hd-combat-animations
+          path: artifacts/carnage-combat/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/gow-combat-server.log || true
