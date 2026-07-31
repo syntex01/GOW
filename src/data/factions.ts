@@ -949,7 +949,7 @@ export const FACTION_UNITS: UnitDef[] = [
   {
     id: 'nk_butcher',
     line: 'carnage_render',
-    name: 'Butcher of the Yard',
+    name: 'Butcher',
     age: 3,
     role: 'melee',
     layer: 'ground',
@@ -1120,36 +1120,50 @@ export const FACTION_UNITS: UnitDef[] = [
     visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'horns', bulk: 1.9 , plan: 'maw'})
   },
   {
-    // THE INCARNATION OF SLAUGHTER. Not a body — a standing offer.
+    // THE INCARNATION OF SLAUGHTER. A real capstone body.
     //
-    // Buying this card does not put anything on the field. It pays into the
-    // Incarnation, and the Incarnation waits for somebody on the board to earn
-    // it: the most expensive melee soldier to kill three times its own price
-    // inside half a minute gets possessed, whoever it belongs to. See
-    // `Battlefield.updateIncarnation`.
+    // The old card paid into a possession lottery and placed nothing on the
+    // field. That made the most expensive Carnage research feel like a UI trap.
+    // It now occupies the Titan slot directly: expensive, three files wide and
+    // deliberately slow, but an actual demon-lord the player can deploy and
+    // counter on the battlefield.
     id: 'nk_incarnation',
+    line: 'carnage_capstone',
     name: 'Incarnation of Slaughter',
     age: 4,
     role: 'melee',
     layer: 'ground',
-    cost: 1200,
-    buildMs: 4000,
-    hp: 1,
-    armor: 'unarmored',
-    damage: 0,
+    cost: 5200,
+    buildMs: 9000,
+    hp: 8200,
+    armor: 'heavy',
+    damage: 760,
     damageType: 'slash',
-    attackMs: 1000,
-    range: 0,
-    speed: 0,
-    mass: 1,
-    bounty: 0,
-    xp: 0,
-    pop: 0,
-    height: 60,
-    invest: 'incarnation',
-    attack: { kind: 'melee', knockback: 0 },
-    description: 'Nothing arrives. Something starts watching for whoever kills best, and takes them.',
-    visual: look('nekrotics', { torso: 'robe', weapon: 'none', helmet: 'horns', cape: true, bulk: 1.1 })
+    attackMs: 1900,
+    range: 72,
+    speed: 32,
+    mass: 18,
+    bounty: 1900,
+    xp: 1650,
+    pop: 5,
+    height: 240,
+    laneSpan: 3,
+    regen: 28,
+    crit: 0.2,
+    conduct: 'screen',
+    special: 'lifesteal',
+    attack: { kind: 'melee', knockback: 520, splash: 190 },
+    bonusVs: { heavy: 1.25, structure: 1.2 },
+    description: 'The Titan slot made flesh: a three-file demon-lord that heals from every wound it opens.',
+    visual: look('nekrotics', {
+      kind: 'humanoid',
+      torso: 'bare',
+      weapon: 'axe',
+      helmet: 'horns',
+      cape: true,
+      bulk: 1.9,
+      plan: 'butcher'
+    })
   },
   {
     id: 'nk_widow',

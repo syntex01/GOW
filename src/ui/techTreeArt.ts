@@ -85,6 +85,7 @@ const KEYSTONE_RING = 5
 
 export function nodeSizeFor(node: TechNode): NodeSize {
   if (node.kind === 'ascension') return 'ascendancy'
+  if (node.prominence) return node.prominence
   if (node.kind === 'stat') return 'minor'
   if (node.kind === 'unit') return 'notable'
   if (node.id === 'collapse') return 'keystone'

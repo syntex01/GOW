@@ -2,7 +2,7 @@
   "name": "gow",
   "productName": "GOW",
   "version": "1.1.0",
-  "description": "GOW \u2014 a side-view autobattler across five ages of warfare",
+  "description": "GOW — a side-view autobattler across five ages of warfare",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {
@@ -10,7 +10,7 @@
     "dev": "node build.mjs --watch",
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build",
+    "check": "npm run typecheck && npm run check:carnage && npm run build",
     "app": "npm run build && electron .",
     "dist": "npm run build && electron-builder --publish never",
     "dist:linux": "npm run build && electron-builder --linux --publish never",
@@ -19,7 +19,8 @@
     "dist:all": "npm run build && electron-builder --linux --win --publish never",
     "android:sync": "npm run build && npx cap sync android",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
-    "android:release": "npm run android:sync && cd android && ./gradlew assembleRelease"
+    "android:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
+    "check:carnage": "node scripts/check-carnage.mjs"
   },
   "keywords": [
     "phaser",

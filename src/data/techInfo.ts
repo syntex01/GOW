@@ -19,7 +19,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
   old_rites: 'Commander ability charges 10% faster. Opens the occult line.',
 
   // ── carnage ──
-  butchery: '+10% crit chance on everything you field, and a CRIT KILL dismembers the body completely (ordinary kills still follow the era/overkill rule). Your corpses count double toward a Charnel Yard. Side effect: your dead are too torn apart for Mind Thrall to puppet.',
+  butchery: 'Commits the roster to Carnage. +10% crit chance; critical kills dismember completely; Charnel Yards count those corpses twice. Conventional machine research closes and queued machines are cancelled.',
   bonepickers: 'A wounded soldier (below 92% hp) stoops over a nearby corpse piece every 3s and eats it, healing 6% of max hp + 8. Visible: it bends down, and the piece bursts. Consumes the remains.',
   bone_harvest: 'Raises five Bonewrights, one per lane, who walk out, sack up to 3 spoils and carry them home. MEAT pays 12 gold each. 70 hp, no attack, flees when struck, 22s to come back. Meat off a cheap body rots in ~15s and off an elite in ~40s — what you cannot reach, you do not get.',
   clean_kills: 'Pierce and energy kills on your half leave one EXTRA skull, and Bonewrights start carrying skulls home for 9 research apiece. Blunt and explosive kills still leave none. Base skull life 18s off a cheap body, longer off a dear one.',
@@ -73,7 +73,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
 
   // ── lane doctrines ──
   phalanx_doctrine: 'Your phalanx-conduct units deal ×2.4 to flankers (up from ×1.85).',
-  death_throes: 'A soldier killed with less than its own max hp of overkill stays up for 2s at 2x attack speed, minus 1-2 limbs, bleeding hard. Lose both arms and it cannot attack. Cannot be healed, and a heavy enough blow skips it entirely.',
+  death_throes: 'Replaces Man-at-Arms with the persistent Husk slot. Carnage bodies killed with less than their own max hp of overkill stay up for 2s at 2x attack speed; obliterating hits skip the state.',
   iron_line: 'Ranks pressing from behind add +65% damage each (up from +50%, max 4 ranks), and light hits no longer stagger your infantry.',
   plunging_volleys: 'Your ranged units can drop fire two lanes over at 32% damage when nothing closer offers itself.',
 
@@ -94,7 +94,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
  */
 export const LEAN_RULES: Record<string, string> = {
   carnage:
-    'CARNAGE builds two threats. THE MEAT ENGINE: Butchery, Bone Harvest, Bonepickers and Necropolis turn every corpse into fuel — gold, healing, fresh soldiers. THE FLESH WALL: Corpse Wall makes the piled dead stop enemy shots, and tall burial mounds physically block flat fire. Its answers: kills inside hostile blight scald the growth back, and THE DEAD BURY THE LINE — corpses piling against a planted enemy soldier half-bury it, mired, roots capped. Broken by: FIRE (burns the remains, shells crater the walls), THE BANISHMENT (its victims never rise), the quarry (crews eat the walls for gold) and hungry gardens (spores digest corpses first).',
+    'CARNAGE replaces roles instead of adding duplicates. Butchery closes conventional machines; Death Throes begins the persistent Husk line. Predators own mobility and anti-horde work, parasites provide the faction’s narrow ranged pressure, and corpsecraft turns losses into healing, terrain and new bodies. Every broad Carnage buff follows a functional slot into its later evolutions. Counter it by burning or denying remains, breaking its corpse economy, and forcing expensive monsters to fight on clean ground.',
   ordnance:
     'ORDNANCE builds two threats. THE BARRAGE: Shrapnel, Cluster and Overpressure turn every shell into an area — and shells crater the flesh walls down. THE FIRESTORM: Incendiary and Ashfall leave the ground burning and spreading. Its answers: fire consumes settled remains, burns spore fields at triple speed, and SCOURS THE HAUNT out of ground it crosses. Broken by: THE FLESH WALL (flat shots stop; only lobbed fire arcs over), work crews smothering fires, grown gardens (110px+) starving the flames, and Black Sun scattering the guns.',
   engineering:
