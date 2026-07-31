@@ -32,6 +32,20 @@ jobs:
           path: dist/
           retention-days: 14
 
+      - name: Package editable source
+        run: |
+          mkdir -p export
+          tar --exclude=node_modules --exclude=dist --exclude=release --exclude=.git \
+            -czf export/gow-carnage-source.tar.gz \
+            src scripts docs package.json package-lock.json tsconfig.json build.mjs
+
+      - name: Upload editable source
+        uses: actions/upload-artifact@v4
+        with:
+          name: gow-carnage-source
+          path: export/gow-carnage-source.tar.gz
+          retention-days: 7
+
   render-carnage:
     name: Render Carnage showcase
     runs-on: ubuntu-latest
