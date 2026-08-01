@@ -1,0 +1,37 @@
+name: Android APK
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+      - run: npm ci
+      - name: Build bundle and sync Capacitor
+        run: npm run android:sync
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: android
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: gow-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30
