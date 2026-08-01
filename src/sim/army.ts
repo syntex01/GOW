@@ -3,6 +3,12 @@ import { AGES, MAX_AGE, ageDef } from '../data/ages'
 import type { UnitDef } from '../data/types'
 import { UNITS_BY_ID, rosterForAge } from '../data/units'
 import { FACTION_UNITS, factionRoster, type FactionId } from '../data/factions'
+import {
+  CARNAGE_BLOCKED_TECHS,
+  CARNAGE_COMMIT_TECH,
+  carnageRosterForAge,
+  isCarnageCommitted
+} from '../data/carnage'
 import { resolveLines } from '../data/lines'
 import { escalated } from '../data/escalate'
 import { baseIdFor, morphedDef, morphedRoster } from '../data/morphs'
@@ -286,8 +292,23 @@ export default class Army {
     // ascended faction's own units keep changing shape as you research past
     // the ascension rather than freezing the moment you took it.
     if (this.ascendedTo) {
-      const own = resolveLines(factionRoster(this.ascendedTo), this.age, this.techs)
+      // Nekrotics keep the same researched functional slots after
+      // ascension; the rim passive must not hand out every optional
+      // age-four body for free. Other ascensions retain their authored
+      // faction rosters.
+      const own =
+        this.ascendedTo === 'nekrotics'
+          ? carnageRosterForAge(this.age, this.techs, this.unlocked)
+          : resolveLines(factionRoster(this.ascendedTo), this.age, this.techs)
       return this.grown(morphedRoster(own, this.techs))
+    }
+
+    // Carnage is a replacement roster, not a bag of extra units. This
+    // short-circuits the generic append-and-trim path before machines
+    // can be re-added at the bottom of this getter.
+    if (isCarnageCommitted(this.techs)) {
+      const own = carnageRosterForAge(this.age, this.techs, this.unlocked)
+      return this.grown(morphedRoster(resolveLines(own, this.age, this.techs), this.techs))
     }
 
     const dominant = this.dominantBranch
@@ -448,6 +469,10 @@ export default class Army {
     const node = TECHS_BY_ID[id]
     if (!node) return 'locked'
     if (this.techs.has(id)) return 'owned'
+    // Butchery closes every conventional machine doctrine. Existing
+    // research remains recorded for saves, but no new machine line may
+    // be started once the roster has committed to Carnage.
+    if (isCarnageCommitted(this.techs) && CARNAGE_BLOCKED_TECHS.has(id)) return 'locked'
     // You get one ascension. Committing to a faction closes the other four.
     if (node.kind === 'ascension' && this.ascendedTo) return 'locked'
     // An oath already sworn is not a thing you are short of — it is a door you
@@ -539,6 +564,12 @@ export default class Army {
       this.research = Math.max(0, this.research - this.researchCost(id))
     }
     this.techs.add(id)
+    if (id === CARNAGE_COMMIT_TECH) {
+      // A commitment cannot leave a tank or mortar half-built behind
+      // the new command bar. Bodies already deployed remain; the queue
+      // belongs to the roster that exists now.
+      this.queue = this.queue.filter(entry => !entry.def.lineTech)
+    }
     // Stat research compounds into the army's modifiers. Units already on the
     // field keep the numbers they were built with — research equips the next
     // wave, it does not retrofit the one that is already dying.

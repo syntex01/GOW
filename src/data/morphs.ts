@@ -84,7 +84,7 @@ export const MORPH_LINES: MorphLine[] = [
     stages: [
       {
         tech: 'butchery',
-        epithet: 'Bloodied',
+        epithet: 'Corrupted',
         blurb: 'Hits harder and moves quicker, and does not much care what it takes back.',
         mult: { damage: 1.14, speed: 1.08, hp: 0.94 },
         crit: 0.1,
@@ -93,7 +93,7 @@ export const MORPH_LINES: MorphLine[] = [
       },
       {
         tech: 'plague_wind',
-        epithet: 'Carrion',
+        epithet: 'Corrupted',
         blurb: 'Melee strikes now cleave through everything standing close. Ranged fire comes in ragged pairs.',
         mult: { damage: 1.12, hp: 1.06 },
         crit: 0.18,
@@ -107,7 +107,7 @@ export const MORPH_LINES: MorphLine[] = [
       },
       {
         tech: 'necropolis',
-        epithet: 'Charnel',
+        epithet: 'Corrupted',
         blurb: 'A walking abattoir. Wide cleaves, savage against anything unarmoured, and hard to put down.',
         mult: { damage: 1.22, hp: 1.18, bounty: 1.2 },
         crit: 0.24,
@@ -441,7 +441,7 @@ export function morphedDef(base: UnitDef, techs: ReadonlySet<string>): UnitDef {
   def = {
     ...def,
     id: key,
-    name: `${top.epithet} ${base.name}`,
+    name: base.id.startsWith('nk_') ? base.name : `${top.epithet} ${base.name}`,
     description: top.blurb
   }
   morphCache.set(key, def)

@@ -5,29 +5,171 @@ on:
     branches: ['**']
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
-    name: Typecheck and build
+  apply-carnage-visuals:
+    name: Apply staged Carnage visuals
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: claude/carnage-roster-progression
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      - name: Apply visual migration when still pending
+        run: |
+          if grep -q "skinrider:" src/gfx/archetypes/carnageHorror.ts; then
+            echo "Distinct Carnage archetypes already applied."
+            exit 0
+          fi
+          python scripts/apply_carnage_visual_overhaul_v3.py
+          npm ci
+          npm run check
+          git diff --check
+          rm -rf scripts/.carnage_visual_payload
+          rm -f scripts/apply_carnage_visual_overhaul_v2.py
+          rm -f scripts/apply_carnage_visual_overhaul_v3.py
+          rm -f .github/workflows/apply-carnage-visual-overhaul.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(carnage): implement distinct apex unit archetypes"
+          git push origin HEAD:claude/carnage-roster-progression
 
+  build:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Typecheck
         run: npm run typecheck
-
       - name: Production build
         run: npm run build
-
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
           name: gow-dist
           path: dist/
           retention-days: 14
+      - name: Package editable source
+        run: |
+          mkdir -p export
+          tar --exclude=node_modules --exclude=dist --exclude=release --exclude=.git \
+            -czf export/gow-carnage-source.tar.gz \
+            src scripts docs package.json package-lock.json tsconfig.json build.mjs
+      - name: Upload editable source
+        uses: actions/upload-artifact@v4
+        with:
+          name: gow-carnage-source
+          path: export/gow-carnage-source.tar.gz
+          retention-days: 7
+
+  render-carnage:
+    name: Render Carnage showcase
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install project dependencies
+        run: npm ci
+      - name: Install render browser
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start game server
+        run: |
+          npm start > /tmp/gow-render-server.log 2>&1 &
+          echo $! > /tmp/gow-render-server.pid
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/gow-render-server.log
+          exit 1
+      - name: Capture Carnage roster and tech tree
+        run: node scripts/render-carnage.mjs
+      - name: Upload Carnage renders
+        uses: actions/upload-artifact@v4
+        with:
+          name: carnage-in-engine-renders
+          path: artifacts/carnage-renders/**
+          if-no-files-found: error
+          retention-days: 30
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/gow-render-server.log || true
+
+  render-carnage-combat:
+    name: Fixed combat — ${{ matrix.scene }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scene:
+          - 01-age-1-corrupted-vanguard
+          - 02-age-2-early-mutations
+          - 03-age-3-monster-host
+          - 04-age-4-apex-roster
+          - 05-incarnation-of-slaughter
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/carnage-roster-progression
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install project dependencies
+        run: npm ci
+      - name: Install Chromium and FFmpeg
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Start game server
+        run: |
+          npm start > /tmp/gow-combat-server.log 2>&1 &
+          echo $! > /tmp/gow-combat-server.pid
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/gow-combat-server.log
+          exit 1
+      - name: Render one deterministic 1080p scene
+        env:
+          GOW_COMBAT_SCENE: ${{ matrix.scene }}
+        run: node scripts/render-carnage-combat.mjs
+      - name: Upload deterministic scene
+        uses: actions/upload-artifact@v4
+        with:
+          name: carnage-fixed-${{ matrix.scene }}
+          path: artifacts/carnage-combat/**
+          if-no-files-found: error
+          retention-days: 30
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/gow-combat-server.log || true

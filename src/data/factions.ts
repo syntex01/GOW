@@ -949,7 +949,7 @@ export const FACTION_UNITS: UnitDef[] = [
   {
     id: 'nk_butcher',
     line: 'carnage_render',
-    name: 'Butcher of the Yard',
+    name: 'Butcher',
     age: 3,
     role: 'melee',
     layer: 'ground',
@@ -1120,36 +1120,51 @@ export const FACTION_UNITS: UnitDef[] = [
     visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'horns', bulk: 1.9 , plan: 'maw'})
   },
   {
-    // THE INCARNATION OF SLAUGHTER. Not a body — a standing offer.
+    // THE INCARNATION OF SLAUGHTER. A real capstone body.
     //
-    // Buying this card does not put anything on the field. It pays into the
-    // Incarnation, and the Incarnation waits for somebody on the board to earn
-    // it: the most expensive melee soldier to kill three times its own price
-    // inside half a minute gets possessed, whoever it belongs to. See
-    // `Battlefield.updateIncarnation`.
+    // The old card paid into a possession lottery and placed nothing on the
+    // field. That made the most expensive Carnage research feel like a UI trap.
+    // It now occupies the Titan slot directly: expensive, three files wide and
+    // deliberately slow, but an actual demon-lord the player can deploy and
+    // counter on the battlefield.
     id: 'nk_incarnation',
+    line: 'carnage_capstone',
     name: 'Incarnation of Slaughter',
     age: 4,
     role: 'melee',
     layer: 'ground',
-    cost: 1200,
-    buildMs: 4000,
-    hp: 1,
-    armor: 'unarmored',
-    damage: 0,
+    cost: 5200,
+    buildMs: 9000,
+    hp: 8200,
+    armor: 'heavy',
+    damage: 760,
     damageType: 'slash',
-    attackMs: 1000,
-    range: 0,
-    speed: 0,
-    mass: 1,
-    bounty: 0,
-    xp: 0,
-    pop: 0,
-    height: 60,
-    invest: 'incarnation',
-    attack: { kind: 'melee', knockback: 0 },
-    description: 'Nothing arrives. Something starts watching for whoever kills best, and takes them.',
-    visual: look('nekrotics', { torso: 'robe', weapon: 'none', helmet: 'horns', cape: true, bulk: 1.1 })
+    attackMs: 1900,
+    range: 72,
+    speed: 32,
+    mass: 18,
+    bounty: 1900,
+    xp: 1650,
+    pop: 5,
+    height: 240,
+    laneSpan: 3,
+    regen: 28,
+    crit: 0.2,
+    conduct: 'screen',
+    special: 'lifesteal',
+    attack: { kind: 'melee', knockback: 520, splash: 190 },
+    bonusVs: { heavy: 1.25, structure: 1.2 },
+    description: 'The Titan slot made flesh: a three-file demon-lord that heals from every wound it opens.',
+    visual: look('nekrotics', {
+      kind: 'humanoid',
+      torso: 'bare',
+      weapon: 'axe',
+      helmet: 'horns',
+      cape: true,
+      bulk: 2.15,
+      plan: 'incarnation',
+      accent: 0xff2d20
+    })
   },
   {
     id: 'nk_widow',
@@ -1238,7 +1253,7 @@ export const FACTION_UNITS: UnitDef[] = [
     },
     harvest: { skull: 2 },
     description: 'A mound that waddles, and spits something that lands on its feet. What it takes is not the body.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.35, plan: 'brainstealer' })
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.35, plan: 'brainstealer', accent: 0x4ba7ff })
   },
   {
     // A TIER BUMP, and the model for what one is: the same animal, more of it.
@@ -1277,7 +1292,7 @@ export const FACTION_UNITS: UnitDef[] = [
     },
     harvest: { skull: 3 },
     description: 'It stopped spitting them one at a time. The sac on its back is where they wait.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.55, plan: 'brainstealer' })
+    visual: look('nekrotics', { kind: 'mech', torso: 'bare', weapon: 'none', helmet: 'none', bulk: 1.55, plan: 'brainstealer', accent: 0x4ba7ff })
   },
   {
     // A MUTATION, and the reason the line is worth climbing: it stops throwing.
@@ -1308,7 +1323,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 0 },
     harvest: { skull: 4 },
     description: 'It no longer throws them. It simply stands there, and they are already on you.',
-    visual: look('nekrotics', { kind: 'mech', torso: 'robe', weapon: 'tentacle', helmet: 'hood', bulk: 1.5, plan: 'mindflayer' })
+    visual: look('nekrotics', { kind: 'mech', torso: 'robe', weapon: 'tentacle', helmet: 'hood', bulk: 1.5, plan: 'mindflayer', accent: 0x6ec8ff })
   },
   {
     // THE FLANK LINE, bumped. The Ripjaw that has been eating.
@@ -1373,7 +1388,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { light: 1.4, heavy: 1.7 },
     harvest: { meat: 2 },
     description: 'It lands on the back of the biggest thing in the file and stays there. The thing stops being a threat some time before it stops being alive.',
-    visual: look('nekrotics', { kind: 'rider', torso: 'bare', weapon: 'tentacle', helmet: 'none', bulk: 1.05, plan: 'shrike' })
+    visual: look('nekrotics', { kind: 'rider', torso: 'bare', weapon: 'tentacle', helmet: 'none', bulk: 1.05, plan: 'skinrider', accent: 0xe85a47 })
   },
   {
     // THE RENDER LINE's last rung, and a mutation in the truest sense: it is not
@@ -1406,7 +1421,7 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { unarmored: 1.85, light: 1.5 },
     harvest: { meat: 3 },
     description: 'Three of them, cut from the same body and still sharing it. What one of them kills, all three of them feel.',
-    visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.1, plan: 'flenser' })
+    visual: look('nekrotics', { torso: 'fur', weapon: 'axe', helmet: 'horns', bulk: 1.1, plan: 'flensinghost', accent: 0xf05a48 })
   },
   {
     // THE EXECUTE LINE's last rung. The Shrike picks off whoever is nearly done;
@@ -1438,7 +1453,7 @@ export const FACTION_UNITS: UnitDef[] = [
     attack: { kind: 'melee', knockback: 90 },
     harvest: { skull: 3 },
     description: 'It does not fight a rank. It walks down one, and the rank watches.',
-    visual: look('nekrotics', { torso: 'coat', weapon: 'axe', helmet: 'hood', bulk: 1.2, plan: 'flenser' })
+    visual: look('nekrotics', { torso: 'coat', weapon: 'axe', helmet: 'hood', bulk: 1.2, plan: 'headsman', accent: 0xf3e7cf })
   },
   {
     // THE RAISE LINE's last rung. The Choir mends a file and rebuilds a body out
@@ -1475,7 +1490,7 @@ export const FACTION_UNITS: UnitDef[] = [
       weapon: 'none',
       helmet: 'hood',
       bulk: 1.6,
-      plan: 'wagon'
+      plan: 'charnelengine', accent: 0xf0dfbf
     })
   },
   {
@@ -1508,7 +1523,7 @@ export const FACTION_UNITS: UnitDef[] = [
     hitsAir: true,
     attack: { kind: 'projectile', projectile: 'bolt', speed: 920, gravity: 0, spread: 0.04, knockback: 70 },
     description: 'It does not feed on what it kills. It leaves something in it, and the something gets up.',
-    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'robe', weapon: 'tentacle', bulk: 1.35, plan: 'widow' })
+    visual: look('nekrotics', { kind: 'aircraft', chassis: 'rotor', torso: 'robe', weapon: 'tentacle', bulk: 1.35, plan: 'widowqueen', accent: 0xeedcb8 })
   },
   {
     id: 'ch_petardier',

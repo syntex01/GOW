@@ -53,6 +53,8 @@ export type CarnagePlan =
   | 'butcher'
   | 'bonewright'
   | 'boneling'
+  | 'flensinghost'
+  | 'headsman'
 
 /** Art pixels from a height fraction. Everything is authored at half res. */
 const art = (fraction: number, height: number): number => Math.max(1, Math.round(fraction * height * RES))
@@ -891,6 +893,100 @@ function shrikeParts(v: UnitVisual, height: number): Record<string, PartArt> {
   }
 }
 
+
+
+// ──────────────────────── LATE RENDERING SPECIALISTS ────────────────────────
+
+/**
+ * The Flensing Host is not simply a larger Flenser. Each card fields three
+ * underfed bodies cut from the same donor, linked by pale exposed nerve cords.
+ * The squad count provides the broad silhouette; the bodies themselves are
+ * narrow, white-boned and visibly unfinished.
+ */
+function hostParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const parts = flenserParts(v, height)
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const nerve = Math.max(3, art(0.035, height))
+  // Replace the heavy cleavers with longer bone-saws: lighter bodies, wider
+  // cutting arcs, and a pale edge that reads as the shared-host line.
+  parts.bladeF = cleaver(art(0.38, height), k)
+  parts.bladeB = cleaver(art(0.35, height), k, true)
+  parts.armF = meatLimb(art(0.2, height), nerve * 1.15, k, 210)
+  parts.foreF = meatLimb(art(0.22, height), nerve * 1.25, k, 211)
+  parts.armB = meatLimb(art(0.19, height), nerve * 1.1, k, 212)
+  parts.foreB = meatLimb(art(0.21, height), nerve * 1.2, k, 213)
+  return parts
+}
+
+/** A blind execution mask: tall bone face, one red cut, no readable humanity. */
+function headsmanHead(height: number, k: FleshKit): PartArt {
+  const w = art(0.18, height)
+  const h = art(0.26, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  // Long funeral mask, tapering into a hooked chin.
+  for (let y = 0; y < h; y += 1) {
+    const t = y / Math.max(1, h - 1)
+    const wid = Math.max(2, Math.round(w * (0.82 - t * 0.34)))
+    for (let x = 0; x < wid; x += 1) {
+      const q = x / Math.max(1, wid - 1)
+      p.set(Math.round(cx - wid / 2 + x), 2 + y, k.bone[q < 0.2 ? 1 : q > 0.75 ? 4 : 2])
+    }
+  }
+  // The only facial mark is a vertical wound-light.
+  p.fill(Math.round(cx), 4, 1, Math.max(3, Math.round(h * 0.62)), k.accent[4])
+  boneSpur(p, cx - w * 0.38, 5, art(0.1, height), -2.25, k)
+  boneSpur(p, cx + w * 0.38, 5, art(0.1, height), -0.9, k)
+  return { canvas: finish(p, k, 220, 0.55), origin: [cx / p.w, (p.h - 2) / p.h] }
+}
+
+/** A hooked execution blade grown around a vertebral core. */
+function executionBlade(len: number, k: FleshKit, seed: number): PartArt {
+  const p = pad(len + 4, Math.round(len * 0.42) + 4)
+  const cy = p.h * 0.54
+  p.thickLine(2, cy, len * 0.72, cy - len * 0.05, 3, k.bone[2])
+  p.thickLine(2, cy - 1, len * 0.72, cy - len * 0.05 - 1, 1, k.bone[4])
+  // A crescent at the tip: much more scythe than cleaver.
+  for (let i = 0; i < len * 0.34; i += 1) {
+    const t = i / Math.max(1, len * 0.34)
+    const x = Math.round(len * 0.7 + i)
+    const y = Math.round(cy - len * 0.05 + Math.sin(t * Math.PI) * len * 0.16)
+    p.thickLine(x, y, x + 1, y + 1, 2, i % 3 === 0 ? k.accent[3] : k.bone[3])
+  }
+  blemish(p, k, seed, 0.01)
+  return { canvas: p.toCanvas() as Canvas2D, origin: [2 / p.w, cy / p.h] }
+}
+
+/**
+ * The Headsman keeps the Shrike's impossible long-legged skeleton, but its four
+ * probing beaks have fused into two execution arms and two trailing balance
+ * tendons. The silhouette is therefore recognisably descended from Shrike while
+ * reading as one deliberate killer rather than a many-pointed animal.
+ */
+function headsmanParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const thin = Math.max(3, art(0.035, height))
+  const limb = Math.max(4, art(0.05, height))
+  return {
+    torso: shrikeTorso(height, k),
+    head: headsmanHead(height, k),
+    t1: meatLimb(art(0.24, height), limb, k, 221),
+    t1b: executionBlade(art(0.34, height), k, 222),
+    t2: meatLimb(art(0.22, height), limb * 0.95, k, 223),
+    t2b: executionBlade(art(0.31, height), k, 224),
+    t3: tentaclePart(art(0.2, height), thin, k, 225),
+    t3b: tentaclePart(art(0.16, height), thin * 0.8, k, 226),
+    t4: tentaclePart(art(0.18, height), thin, k, 227),
+    t4b: tentaclePart(art(0.14, height), thin * 0.8, k, 228),
+    thighF: meatLeg(art(0.27, height), thin * 1.25, k, 229),
+    shinF: meatLeg(art(0.25, height), thin, k, 230),
+    footF: footClaw(Math.round(thin * 1.8), k, 231),
+    thighB: meatLeg(art(0.27, height), thin * 1.2, k, 232),
+    shinB: meatLeg(art(0.25, height), thin * 0.95, k, 233),
+    footB: footClaw(Math.round(thin * 1.7), k, 234)
+  }
+}
+
 // ─────────────────────────────── Registration ───────────────────────────────
 
 interface PlanSpec {
@@ -908,7 +1004,9 @@ const PLANS: Partial<Record<CarnagePlan, PlanSpec>> = {
   butcher: { skeleton: FLENSER_SKELETON, parts: flenserParts, clips: { idle: FLENSER_IDLE, walk: FLENSER_WALK, attack: FLENSER_ATTACK }, muzzle: [0.3, -0.52] },
   // The gatherers are Husks that were never issued a purpose.
   bonewright: { skeleton: HUSK_SKELETON, parts: huskParts, clips: { idle: HUSK_IDLE, walk: HUSK_WALK, attack: HUSK_ATTACK }, muzzle: [0.2, -0.44] },
-  boneling: { skeleton: HUSK_SKELETON, parts: huskParts, clips: { idle: HUSK_IDLE, walk: HUSK_WALK, attack: HUSK_ATTACK }, muzzle: [0.2, -0.46] }
+  boneling: { skeleton: HUSK_SKELETON, parts: huskParts, clips: { idle: HUSK_IDLE, walk: HUSK_WALK, attack: HUSK_ATTACK }, muzzle: [0.2, -0.46] },
+  flensinghost: { skeleton: FLENSER_SKELETON, parts: hostParts, clips: { idle: FLENSER_IDLE, walk: FLENSER_WALK, attack: FLENSER_ATTACK }, muzzle: [0.34, -0.54] },
+  headsman: { skeleton: SHRIKE_SKELETON, parts: headsmanParts, clips: { idle: SHRIKE_IDLE, walk: SHRIKE_WALK, attack: SHRIKE_ATTACK }, muzzle: [0.42, -0.68] }
 }
 
 export const CARNAGE_FOOT_PLANS = Object.keys(PLANS) as CarnagePlan[]

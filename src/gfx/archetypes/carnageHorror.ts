@@ -51,6 +51,10 @@ export type HorrorPlan =
   | 'widow'
   | 'brainstealer'
   | 'mindflayer'
+  | 'skinrider'
+  | 'charnelengine'
+  | 'widowqueen'
+  | 'incarnation'
 
 const art = (fraction: number, height: number): number => Math.max(1, Math.round(fraction * height * RES))
 
@@ -1491,6 +1495,262 @@ function flayerParts(v: UnitVisual, height: number): Record<string, PartArt> {
   }
 }
 
+
+
+// ───────────────────────────── APEX MUTATIONS ─────────────────────────────
+
+/** A parasite torso fused onto the back of the animal it is wearing. */
+function skinriderBody(height: number, k: FleshKit): PartArt {
+  const w = art(0.25, height)
+  const h = art(0.34, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  fleshMass(p, cx, p.h * 0.56, w * 0.42, h * 0.42, k.necrotic, 3, 240)
+  ribCage(p, cx - w * 0.22, p.h * 0.3, w * 0.46, h * 0.36, k, 4, 1)
+  spine(p, cx, p.h * 0.12, cx, p.h * 0.86, k, 7)
+  // The skin-hook that says this body is mounted, not riding willingly.
+  boneSpur(p, cx - w * 0.35, p.h * 0.72, art(0.11, height), 2.6, k)
+  boneSpur(p, cx + w * 0.35, p.h * 0.72, art(0.11, height), 0.55, k)
+  return { canvas: finish(p, k, 240, 0.8), origin: [cx / p.w, (p.h - 2) / p.h] }
+}
+
+function skinriderHead(height: number, k: FleshKit): PartArt {
+  const r = art(0.09, height)
+  const p = pad(r * 2.4, r * 2.2)
+  const cx = p.w / 2
+  const cy = p.h * 0.5
+  p.ellipse(cx, cy, r * 0.78, r * 0.9, k.bone[2])
+  p.ellipse(cx + r * 0.18, cy - r * 0.2, r * 0.45, r * 0.42, k.bone[4])
+  p.fill(Math.round(cx - r * 0.25), Math.round(cy), Math.max(2, Math.round(r * 0.6)), 1, k.cavity[0])
+  p.set(Math.round(cx + r * 0.12), Math.round(cy - r * 0.18), k.accent[4])
+  return { canvas: finishSmall(p, k, 241), origin: [cx / p.w, 0.82] }
+}
+
+const SKINRIDER_SKELETON = (): Skeleton => {
+  const s = RIPJAW_SKELETON()
+  s.push(
+    bone('rider', 'body', { x: -0.08, y: -0.08, angle: -Math.PI / 2 + 0.12, length: 0.28, part: 'rider', orient: 'up', depth: 55, weights: { breathe: 1, lean: 1 } }),
+    bone('riderHead', 'rider', { angle: -0.08, length: 0.12, part: 'riderHead', orient: 'up', depth: 56, weights: { flinch: 1 } }),
+    bone('hookF', 'rider', { x: 0.02, y: -0.04, angle: 1.4, length: 0.24, part: 'hookF', depth: 57 }),
+    bone('hookB', 'rider', { x: -0.03, y: -0.04, angle: 1.85, length: 0.22, part: 'hookB', depth: 18 })
+  )
+  validateSkeleton(s, 'skinrider')
+  return s
+}
+
+function skinriderParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const parts = ripjawParts(v, height)
+  parts.rider = skinriderBody(height, k)
+  parts.riderHead = skinriderHead(height, k)
+  parts.hookF = softLimb(art(0.25, height), Math.max(3, art(0.04, height)), k, 242, k.necrotic)
+  parts.hookB = softLimb(art(0.23, height), Math.max(3, art(0.038, height)), k, 243, k.necrotic)
+  return parts
+}
+
+/** The Charnel Engine's vertical mill: rollers, furnace throat and bone stack. */
+function engineMill(height: number, k: FleshKit): PartArt {
+  const w = art(0.44, height)
+  const h = art(0.58, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  // Iron cage around a breathing flesh core.
+  p.fill(3, 4, w - 2, h - 2, k.iron[1])
+  p.fill(5, 6, w - 6, h - 6, k.cavity[0])
+  fleshMass(p, cx, p.h * 0.48, w * 0.34, h * 0.34, k.meat, 5, 250)
+  // Three crushing rollers; bright bone teeth give the machine its read.
+  for (let i = 0; i < 3; i += 1) {
+    const y = p.h * (0.26 + i * 0.22)
+    p.ellipse(cx, y, w * 0.34, h * 0.075, k.iron[2])
+    p.ellipseFrame(cx, y, w * 0.34, h * 0.075, k.bone[3])
+    for (let x = -3; x <= 3; x += 1) p.set(Math.round(cx + x * w * 0.08), Math.round(y), k.bone[4])
+  }
+  maw(p, cx, p.h * 0.82, w * 0.18, h * 0.08, k, 8, 251)
+  return { canvas: finish(p, k, 250, 0.65), origin: [cx / p.w, (p.h - 2) / p.h] }
+}
+
+function engineStack(height: number, k: FleshKit): PartArt {
+  const w = art(0.14, height)
+  const h = art(0.42, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  p.fill(Math.round(cx - w * 0.28), 2, Math.max(2, Math.round(w * 0.56)), h, k.bone[2])
+  p.fill(Math.round(cx - w * 0.18), 2, Math.max(1, Math.round(w * 0.2)), h, k.bone[4])
+  for (let y = 4; y < h; y += 4) p.fill(Math.round(cx - w * 0.42), y, Math.max(2, Math.round(w * 0.84)), 1, k.iron[2])
+  return { canvas: p.toCanvas() as Canvas2D, origin: [cx / p.w, 1] }
+}
+
+const CHARNEL_ENGINE_SKELETON = (): Skeleton => {
+  const s = WAGON_SKELETON()
+  s.push(
+    bone('mill', 'tub', { y: -0.08, angle: -Math.PI / 2, length: 0.42, part: 'mill', orient: 'up', depth: 52, weights: { breathe: 0.5 } }),
+    bone('stack', 'mill', { x: -0.1, y: -0.05, angle: -Math.PI / 2, length: 0.28, part: 'stack', orient: 'up', depth: 51 })
+  )
+  validateSkeleton(s, 'charnelengine')
+  return s
+}
+
+function charnelEngineParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const parts = wagonParts(v, height)
+  parts.mill = engineMill(height, k)
+  parts.stack = engineStack(height, k)
+  return parts
+}
+
+/** A swollen egg-throne suspended below the Queen's rib cage. */
+function queenSac(height: number, k: FleshKit): PartArt {
+  const w = art(0.42, height)
+  const h = art(0.38, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  fleshMass(p, cx, p.h * 0.52, w * 0.46, h * 0.44, k.fat, 4, 260)
+  for (let i = 0; i < 5; i += 1) pustule(p, cx - w * 0.25 + i * w * 0.13, p.h * (0.42 + (i % 2) * 0.16), 2.2, k)
+  suture(p, cx - w * 0.32, p.h * 0.25, cx + w * 0.32, p.h * 0.72, k)
+  return { canvas: finish(p, k, 260, 1.15), origin: [cx / p.w, 0.12] }
+}
+
+function queenCrown(height: number, k: FleshKit): PartArt {
+  const w = art(0.34, height)
+  const h = art(0.22, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  p.ellipse(cx, p.h * 0.62, w * 0.28, h * 0.22, k.bone[2])
+  for (let i = 0; i < 7; i += 1) boneSpur(p, cx - w * 0.32 + i * w * 0.105, p.h * 0.56, art(0.09, height), -2.4 + i * 0.26, k)
+  p.set(Math.round(cx), Math.round(p.h * 0.6), k.accent[4])
+  return { canvas: finishSmall(p, k, 261), origin: [cx / p.w, 0.9] }
+}
+
+const WIDOW_QUEEN_SKELETON = (): Skeleton => {
+  const s = WIDOW_SKELETON()
+  s.push(
+    bone('sac', 'cage', { y: 0.14, angle: Math.PI / 2, length: 0.26, part: 'sac', depth: 29, weights: { breathe: 1 } }),
+    bone('crown', 'cage', { y: -0.08, angle: -Math.PI / 2, length: 0.16, part: 'crown', orient: 'up', depth: 52 })
+  )
+  validateSkeleton(s, 'widowqueen')
+  return s
+}
+
+function widowQueenParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const parts = widowParts(v, height)
+  parts.sac = queenSac(height, k)
+  parts.crown = queenCrown(height, k)
+  // Queen wings are visibly longer and more ragged than the hunter's.
+  parts.wingF = widowWing(height * 1.18, k, 262)
+  parts.wingB = widowWing(height * 1.12, k, 263)
+  return parts
+}
+
+/** The capstone torso: a ribbed demon column with an open furnace-heart. */
+function incarnationTorso(height: number, k: FleshKit): PartArt {
+  const w = art(0.48, height)
+  const h = art(0.5, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  fleshMass(p, cx, p.h * 0.54, w * 0.44, h * 0.45, k.necrotic, 5, 270)
+  ribCage(p, cx - w * 0.3, p.h * 0.25, w * 0.62, h * 0.42, k, 6, 1)
+  spine(p, cx, p.h * 0.08, cx, p.h * 0.9, k, 10)
+  maw(p, cx, p.h * 0.5, w * 0.16, h * 0.13, k, 10, 271)
+  // Red radial scars make it the Slaughter apex, not another pale corpse.
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2
+    p.thickLine(cx, p.h * 0.5, cx + Math.cos(a) * w * 0.34, p.h * 0.5 + Math.sin(a) * h * 0.28, 1, k.accent[3])
+  }
+  return { canvas: finish(p, k, 270, 1.2), origin: [cx / p.w, (p.h - 2) / p.h] }
+}
+
+function incarnationHead(height: number, k: FleshKit): PartArt {
+  const r = art(0.12, height)
+  const p = pad(r * 2.6, r * 2.5)
+  const cx = p.w / 2
+  const cy = p.h * 0.56
+  p.ellipse(cx, cy, r * 0.8, r, k.bone[2])
+  maw(p, cx, cy + r * 0.18, r * 0.48, r * 0.34, k, 8, 272)
+  for (let i = 0; i < 5; i += 1) boneSpur(p, cx - r * 0.56 + i * r * 0.28, cy - r * 0.72, art(0.12, height), -2.35 + i * 0.38, k)
+  eyeCluster(p, cx, cy - r * 0.18, r * 0.42, k, 5, 273)
+  return { canvas: finish(p, k, 272, 1.0), origin: [cx / p.w, 0.9] }
+}
+
+function incarnationClaw(height: number, k: FleshKit, seed: number): PartArt {
+  const size = art(0.11, height)
+  const p = pad(size * 3, size * 2.2)
+  const cx = p.w / 2
+  p.ellipse(cx, 3, size * 0.82, size * 0.62, k.meat[2])
+  for (let i = -1; i <= 1; i += 1) claw(p, cx + i * size * 0.5, 3, size * (1.3 - Math.abs(i) * 0.15), k)
+  blemish(p, k, seed, 0.01)
+  return { canvas: p.toCanvas() as Canvas2D, origin: [cx / p.w, 2 / p.h] }
+}
+
+const INCARNATION_SKELETON = (): Skeleton => {
+  const s: Skeleton = [
+    bone('root', null, { y: -0.48, depth: 30 }),
+    bone('torso', 'root', { angle: -Math.PI / 2 + 0.08, length: 0.46, part: 'torso', orient: 'up', depth: 31, weights: { breathe: 1, lean: 1, flinch: 1 } }),
+    bone('head', 'torso', { angle: -0.04, length: 0.17, part: 'head', orient: 'up', depth: 55, weights: { aim: 0.5, flinch: 1 } }),
+    bone('wingF', 'torso', { x: -0.02, y: -0.12, angle: -0.6, part: 'wingF', orient: 'right', depth: 20 }),
+    bone('wingB', 'torso', { x: -0.08, y: -0.08, angle: -1.0, part: 'wingB', orient: 'right', depth: 6 }),
+    bone('arm1', 'torso', { x: 0.04, y: -0.08, angle: 0.35, length: 0.25, part: 'arm1', depth: 52 }),
+    bone('fore1', 'arm1', { angle: -0.45, length: 0.24, part: 'fore1', depth: 53 }),
+    bone('claw1', 'fore1', { angle: 0.1, part: 'claw1', depth: 54 }),
+    bone('arm2', 'torso', { x: 0.02, y: 0.02, angle: 0.8, length: 0.24, part: 'arm2', depth: 49 }),
+    bone('fore2', 'arm2', { angle: -0.55, length: 0.22, part: 'fore2', depth: 50 }),
+    bone('claw2', 'fore2', { angle: 0.15, part: 'claw2', depth: 51 }),
+    bone('arm3', 'torso', { x: -0.03, y: -0.08, angle: 2.7, length: 0.24, part: 'arm3', depth: 12 }),
+    bone('fore3', 'arm3', { angle: 0.45, length: 0.23, part: 'fore3', depth: 13 }),
+    bone('claw3', 'fore3', { angle: -0.1, part: 'claw3', depth: 14 }),
+    bone('arm4', 'torso', { x: -0.05, y: 0.02, angle: 2.25, length: 0.23, part: 'arm4', depth: 9 }),
+    bone('fore4', 'arm4', { angle: 0.5, length: 0.21, part: 'fore4', depth: 10 }),
+    bone('claw4', 'fore4', { angle: -0.15, part: 'claw4', depth: 11 }),
+    bone('hipF', 'root', { x: 0.07, angle: Math.PI / 2, depth: 44 }),
+    bone('legF', 'hipF', { length: 0.28, part: 'legF', depth: 44 }),
+    bone('shinF', 'legF', { angle: 0.35, length: 0.25, part: 'shinF', depth: 45 }),
+    bone('footF', 'shinF', { angle: -0.25, part: 'footF', depth: 46 }),
+    bone('hipB', 'root', { x: -0.08, angle: Math.PI / 2, depth: 8 }),
+    bone('legB', 'hipB', { length: 0.28, part: 'legB', depth: 8 }),
+    bone('shinB', 'legB', { angle: 0.35, length: 0.25, part: 'shinB', depth: 9 }),
+    bone('footB', 'shinB', { angle: -0.25, part: 'footB', depth: 10 })
+  ]
+  validateSkeleton(s, 'incarnation')
+  return s
+}
+
+const INCARNATION_WALK: Clip = {
+  name: 'walk', duration: 1100, loop: true, ease: 'sine', keys: [
+    { t: 0, pose: { root: { y: 0.014 }, legF: { angle: 0.3 }, shinF: { angle: 0.4 }, legB: { angle: -0.35 }, shinB: { angle: 0.15 }, wingF: { angle: -0.16 }, wingB: { angle: 0.12 } } },
+    { t: 0.5, pose: { root: { y: -0.016 }, legF: { angle: -0.35 }, shinF: { angle: 0.15 }, legB: { angle: 0.3 }, shinB: { angle: 0.4 }, wingF: { angle: 0.14 }, wingB: { angle: -0.12 } } }
+  ]
+}
+const INCARNATION_ATTACK: Clip = {
+  name: 'attack', duration: 900, loop: false, ease: 'quad', keys: [
+    { t: 0, pose: { arm1: { angle: 0 }, arm2: { angle: 0 }, arm3: { angle: 0 }, arm4: { angle: 0 } } },
+    { t: 0.3, pose: { torso: { angle: -0.15 }, arm1: { angle: -1.1 }, arm2: { angle: -0.8 }, arm3: { angle: 1.0 }, arm4: { angle: 0.75 }, wingF: { angle: -0.45 }, wingB: { angle: 0.3 } }, ease: 'cubic' },
+    { t: 0.52, pose: { torso: { angle: 0.28 }, arm1: { angle: 1.2 }, arm2: { angle: 0.9 }, arm3: { angle: -1.1 }, arm4: { angle: -0.85 }, wingF: { angle: 0.4 }, wingB: { angle: -0.28 } }, ease: 'hold' },
+    { t: 1, pose: { torso: { angle: 0 }, arm1: { angle: 0 }, arm2: { angle: 0 }, arm3: { angle: 0 }, arm4: { angle: 0 }, wingF: { angle: 0 }, wingB: { angle: 0 } }, ease: 'back' }
+  ]
+}
+const INCARNATION_IDLE: Clip = {
+  name: 'idle', duration: 3300, loop: true, ease: 'sine', keys: [
+    { t: 0, pose: { wingF: { angle: -0.08 }, wingB: { angle: 0.08 }, arm2: { angle: 0.06 }, arm4: { angle: -0.06 } } },
+    { t: 0.5, pose: { wingF: { angle: 0.1 }, wingB: { angle: -0.08 }, arm2: { angle: -0.06 }, arm4: { angle: 0.06 } } }
+  ]
+}
+
+function incarnationParts(v: UnitVisual, height: number): Record<string, PartArt> {
+  const k = fleshKit(v.skin, v.cloth, v.accent)
+  const arm = Math.max(5, art(0.055, height))
+  const leg = Math.max(6, art(0.07, height))
+  return {
+    torso: incarnationTorso(height, k), head: incarnationHead(height, k),
+    wingF: widowWing(height * 1.55, k, 274), wingB: widowWing(height * 1.42, k, 275),
+    arm1: softLimb(art(0.25, height), arm, k, 276), fore1: softLimb(art(0.24, height), arm * 0.9, k, 277), claw1: incarnationClaw(height, k, 278),
+    arm2: softLimb(art(0.24, height), arm * 0.95, k, 279), fore2: softLimb(art(0.22, height), arm * 0.85, k, 280), claw2: incarnationClaw(height, k, 281),
+    arm3: softLimb(art(0.24, height), arm * 0.95, k, 282, k.necrotic), fore3: softLimb(art(0.23, height), arm * 0.85, k, 283, k.necrotic), claw3: incarnationClaw(height, k, 284),
+    arm4: softLimb(art(0.23, height), arm * 0.9, k, 285, k.necrotic), fore4: softLimb(art(0.21, height), arm * 0.8, k, 286, k.necrotic), claw4: incarnationClaw(height, k, 287),
+    legF: softLimb(art(0.28, height), leg, k, 288), shinF: softLimb(art(0.25, height), leg * 0.85, k, 289), footF: stubFoot(height * 1.2, k, 290),
+    legB: softLimb(art(0.28, height), leg, k, 291, k.necrotic), shinB: softLimb(art(0.25, height), leg * 0.85, k, 292, k.necrotic), footB: stubFoot(height * 1.2, k, 293)
+  }
+}
+
 // ─────────────────────────────── Registration ───────────────────────────────
 
 interface PlanSpec {
@@ -1526,7 +1786,11 @@ const PLANS: Record<HorrorPlan, PlanSpec> = {
     parts: flayerParts,
     clips: { idle: FLAYER_IDLE, walk: FLAYER_WALK, attack: FLAYER_ATTACK },
     muzzle: [0.1, -0.6]
-  }
+  },
+  skinrider: { skeleton: SKINRIDER_SKELETON, parts: skinriderParts, clips: { idle: RIPJAW_IDLE, walk: RIPJAW_WALK, attack: RIPJAW_ATTACK }, muzzle: [0.48, -0.52] },
+  charnelengine: { skeleton: CHARNEL_ENGINE_SKELETON, parts: charnelEngineParts, clips: { idle: WAGON_IDLE, walk: WAGON_WALK, attack: WAGON_ATTACK }, muzzle: [0.28, -0.55] },
+  widowqueen: { skeleton: WIDOW_QUEEN_SKELETON, parts: widowQueenParts, clips: { idle: WIDOW_IDLE, walk: WIDOW_WALK, attack: WIDOW_ATTACK }, muzzle: [0.18, -0.2] },
+  incarnation: { skeleton: INCARNATION_SKELETON, parts: incarnationParts, clips: { idle: INCARNATION_IDLE, walk: INCARNATION_WALK, attack: INCARNATION_ATTACK }, muzzle: [0.42, -0.65] }
 }
 
 export const CARNAGE_HORROR_PLANS = Object.keys(PLANS) as HorrorPlan[]

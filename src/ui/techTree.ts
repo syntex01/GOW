@@ -3,6 +3,7 @@ import { audio } from '../core/audio'
 import { FACTIONS_BY_ID } from '../data/factions'
 import {
   BRANCH_ACCENT,
+  CARNAGE_CLUSTERS,
   CREEDS,
   MAX_RING,
   OATHS,
@@ -13,6 +14,7 @@ import {
   type TechNode
 } from '../data/tech'
 import { MORPH_LINES, MORPH_TECHS } from '../data/morphs'
+import { carnageReplacementSummary, isCarnageCommitted } from '../data/carnage'
 import { rungsForTech } from '../data/lines'
 import { UNITS_BY_ID } from '../data/units'
 import { FACTION_UNITS } from '../data/factions'
@@ -105,9 +107,11 @@ function unitStatline(unitId: string): string | null {
  * else is an army-wide rule.
  */
 function affectedUnits(node: TechNode, army: Army): string {
+  const replacement = carnageReplacementSummary(node.id)
+  if (replacement) return replacement
   if (node.kind === 'unit' && node.unlocks) {
     const def = ANY_UNIT_BY_ID[node.unlocks]
-    return def ? `adds ${def.name} to your roster` : 'adds a new unit to your roster'
+    return def ? `fields ${def.name}` : 'fields a new unit'
   }
   const rungs = rungsForTech(ANY_UNIT, node.id)
   if (rungs.length > 0) {
@@ -238,7 +242,9 @@ export default class TechTree {
         py + 44,
         ascended
           ? ascended.doctrine
-          : 'One root. The further out you go the fewer ways there are onward — and the rim makes you choose.',
+          : isCarnageCommitted(army.techs)
+            ? 'CARNAGE COMMITTED · replacements permanently own their slots · conventional machines are closed'
+            : 'One root. The further out you go the fewer ways there are onward — and the rim makes you choose.',
         { size: 12, color: UI.textDim, wrap: panelW - 480 }
       )
     )
@@ -540,12 +546,20 @@ export default class TechTree {
     }
   }
 
-  /** Thin ring markers, so "how far out am I" is readable at a glance. */
+  /** Age columns and Carnage's five thematic lanes. */
   private layoutRingHeaders(scene: Phaser.Scene): void {
+    const columns = ['ROOT', 'OPENING', 'COMMITMENT', 'AGE I–II', 'AGE III', 'AGE IV', 'APEX', 'ASCENSION']
     for (let ring = 0; ring <= MAX_RING; ring += 1) {
       const x = 20 + ring * COL_W
-      const text = ring === 0 ? 'ROOT' : ring === MAX_RING ? 'THE RIM' : `RING ${ring}`
+      const text = columns[ring] ?? `DEPTH ${ring}`
       const t = label(scene, x, 4, text, { size: 10, color: ring === MAX_RING ? UI.gold : UI.panelEdge, bold: true })
+      this.graph.add(t)
+    }
+    for (const cluster of CARNAGE_CLUSTERS) {
+      const y = 14 + cluster.row * ROW_H
+      const t = label(scene, 74, y, cluster.name, { size: 9, color: BRANCH_ACCENT.carnage, bold: true })
+        .setOrigin(0, 0.5)
+        .setAlpha(0.78)
       this.graph.add(t)
     }
   }
@@ -581,6 +595,8 @@ export default class TechTree {
       y2: number
       color: number
       state: NodeState
+      branch: TechNode['branch']
+      depth: number
     }
     const g = this.edges
     g.clear()
@@ -600,7 +616,13 @@ export default class TechTree {
         const color =
           child.kind === 'ascension' && child.becomes
             ? FACTIONS_BY_ID[child.becomes].accent
-            : BRANCH_ACCENT[child.branch]
+            : child.branch === 'carnage'
+              ? child.ring >= 6
+                ? 0xe14a3f
+                : child.ring >= 4
+                  ? 0xb8322d
+                  : 0x74231f
+              : BRANCH_ACCENT[child.branch]
         raw.push({ parent, child, state, color })
       }
     }
@@ -633,12 +655,15 @@ export default class TechTree {
         x2: this.nodeX(e.child) - hc + 5,
         y2: this.nodeY(e.child) + fan(arriving.get(e.child.id)!, e, hc, a => this.nodeY(a.parent)),
         color: e.color,
-        state: e.state
+        state: e.state,
+        branch: e.child.branch,
+        depth: e.child.ring
       }
     })
 
     const stroke = (e: EdgeRun, width: number, alpha: number) => {
-      g.lineStyle(width, e.color, alpha)
+      const organic = e.branch === 'carnage' ? Math.max(0, e.depth - 2) * 0.22 : 0
+      g.lineStyle(width + organic, e.color, alpha)
       g.beginPath()
       // Cubic with horizontal tangents; the pull grows with the horizontal
       // gap so long hops swing wide instead of kinking.
@@ -653,6 +678,20 @@ export default class TechTree {
         g.lineTo(x, y)
       }
       g.strokePath()
+      // Deep Carnage links acquire visible nodes like veins and barbs.
+      // They are deliberately subtle when locked and progressively
+      // denser toward the apex, so the tree itself mutates with depth.
+      if (e.branch === 'carnage' && e.depth >= 3 && alpha >= 0.75) {
+        g.fillStyle(e.color, Math.min(1, alpha * 0.8))
+        const marks = Math.min(4, Math.max(1, e.depth - 2))
+        for (let mark = 1; mark <= marks; mark += 1) {
+          const t = mark / (marks + 1)
+          const mt = 1 - t
+          const x = mt * mt * mt * e.x1 + 3 * mt * mt * t * (e.x1 + c) + 3 * mt * t * t * (e.x2 - c) + t * t * t * e.x2
+          const y = (mt * mt * mt + 3 * mt * mt * t) * e.y1 + (3 * mt * t * t + t * t * t) * e.y2
+          g.fillCircle(x, y, 1.2 + e.depth * 0.12)
+        }
+      }
     }
 
     // Ghosts under glows under solids, so what you own is always on top.

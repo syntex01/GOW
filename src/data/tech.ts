@@ -68,6 +68,10 @@ export interface TechNode {
   /** Which direction this node leans. `core` nodes belong to everyone. */
   branch: TechBranch
   kind: TechKind
+  /** Explicit visual weight. Carnage uses this to separate defining rites from support research. */
+  prominence?: 'minor' | 'notable' | 'keystone'
+  /** Optional thematic lane shown as a section label in the graph. */
+  cluster?: string
   /** Distance from the root. Drives layout and, loosely, cost. */
   ring: number
   /**
@@ -1564,9 +1568,272 @@ const DOCTRINE_TECHS: TechNode[] = [
   }
 ]
 
-TECHS.push(...DOCTRINE_TECHS)
+const CARNAGE_ROSTER_TECHS: TechNode[] = [
+  {
+    id: 'ripjaw_brood',
+    name: 'Predatory Glands',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 3,
+    row: 4,
+    age: 2,
+    cost: 1650,
+    requires: ['butchery'],
+    unlocks: 'nk_ripjaw',
+    effect: 'The Cuirassier slot becomes Ripjaw. It becomes Ripjaw Alpha with age three and never returns to a human cavalry line.'
+  },
+  {
+    id: 'carrion_choir',
+    name: 'Choir of Ruin',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 5,
+    row: 11,
+    age: 3,
+    cost: 2400,
+    requires: ['charnel_rite'],
+    unlocks: 'nk_carrion',
+    effect: 'The medic slot becomes Carrion Choir. Every corpse-support improvement already owned continues to apply to the Choir and its Engine.'
+  },
+  {
+    id: 'shrike_rite',
+    name: 'Shrike Brood',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 4,
+    row: 5,
+    age: 3,
+    cost: 2400,
+    requires: ['flenser_rite'],
+    unlocks: 'nk_shrike',
+    effect: 'The disabled rocket slot becomes Shrike: a living execution weapon with no launcher, ammunition or firearm.'
+  },
+  {
+    id: 'widow_hatchery',
+    name: 'Widow Hatchery',
+    branch: 'carnage',
+    kind: 'unit',
+    ring: 4,
+    row: 14,
+    age: 3,
+    cost: 2800,
+    requires: ['plague_wind'],
+    unlocks: 'nk_widow',
+    effect: 'The disabled aircraft slot becomes Carrion Widow, the faction’s organic answer to the sky.'
+  }
+]
 
+TECHS.push(...DOCTRINE_TECHS)
+TECHS.push(...CARNAGE_ROSTER_TECHS)
 TECHS.push(...STAT_TECHS)
+
+/** Labelled lanes in the widened Carnage band. */
+export const CARNAGE_CLUSTERS = [
+  { name: 'SWARM & CORRUPTION', row: 0 },
+  { name: 'PREDATORS & ASSAULT', row: 3 },
+  { name: 'PARASITES & RANGED', row: 7 },
+  { name: 'FLESHCRAFT SUPPORT', row: 9 },
+  { name: 'MONSTROSITIES & CAPSTONES', row: 14 }
+] as const
+
+/**
+ * Carnage is the first creed authored as a deliberately readable sub-tree.
+ * The literals above retain history; this table is the canonical presentation
+ * and balance pass. Every chain stays on one row after it branches, so no two
+ * Carnage links need to cross to explain progression.
+ */
+const CARNAGE_REWORK: Record<string, Partial<TechNode>> = {
+  mob_rule: {
+    ring: 1, row: 0, age: 0, cost: 320, prominence: 'minor', cluster: 'Swarm & Corruption',
+    effect: 'Clubmen train cheaper and faster. A small opening improvement, not yet a roster commitment.'
+  },
+  butchery: {
+    ring: 2, row: 0, age: 0, cost: 1000, prominence: 'keystone', cluster: 'Swarm & Corruption',
+    requires: ['field_stripping', 'mob_rule'],
+    effect: 'Commit to Carnage. Early humans become corrupted; conventional siege, rockets, armour, aircraft and Titan research closes. Every Carnage replacement permanently owns its battlefield slot.'
+  },
+  death_throes: {
+    kind: 'unit', ring: 3, row: 0, age: 1, cost: 1350, prominence: 'keystone', cluster: 'Swarm & Corruption',
+    requires: ['butchery'], unlocks: 'nk_husk',
+    effect: 'Replace the corrupted Man-at-Arms with Husk. The Husk grows through every later age, and all current and future Carnage-slot bodies keep fighting briefly after a non-obliterating death.'
+  },
+  honed_edges: {
+    ring: 3, row: 1, age: 2, cost: 850, prominence: 'minor', cluster: 'Swarm & Corruption',
+    requires: ['butchery'],
+    effect: 'All bodies you build now and every later Carnage evolution deal 10% more damage.'
+  },
+  bloodlust: {
+    ring: 4, row: 0, age: 2, cost: 1200, prominence: 'minor', cluster: 'Swarm & Corruption',
+    requires: ['death_throes'],
+    effect: 'Every current and future Carnage-slot unit attacks and moves faster on blood-soaked ground.'
+  },
+  the_hunger: {
+    ring: 5, row: 0, age: 3, cost: 2400, prominence: 'notable', cluster: 'Swarm & Corruption',
+    requires: ['bloodlust'],
+    effect: 'While outnumbered, the entire Carnage roster — including later tier replacements — gains up to 50% attack and movement speed.'
+  },
+
+  flenser_rite: {
+    ring: 3, row: 3, age: 2, cost: 1700, prominence: 'notable', cluster: 'Predators & Assault',
+    requires: ['butchery'], unlocks: 'nk_flenser',
+    effect: 'Replace the Grenadier anti-horde slot with Flenser. Butcher and Flensing Host inherit the slot and every earlier Carnage-wide improvement.'
+  },
+  the_butcher: {
+    ring: 4, row: 3, age: 3, cost: 2600, prominence: 'notable', cluster: 'Predators & Assault',
+    requires: ['flenser_rite'], unlocks: 'nk_butcher',
+    effect: 'Evolve Flenser into Butcher in the same anti-horde slot. It heals for two fifths of the wounds it opens.'
+  },
+  flensing_hosts: {
+    ring: 5, row: 3, age: 4, cost: 3900, prominence: 'keystone', cluster: 'Predators & Assault',
+    requires: ['the_butcher'], unlocks: 'nk_flensing_host',
+    effect: 'Evolve Butcher into Flensing Host. No additional command-bar card is created.'
+  },
+  ripjaw_brood: {
+    ring: 3, row: 4, age: 2, cost: 1650, prominence: 'notable', cluster: 'Predators & Assault',
+    requires: ['butchery'], unlocks: 'nk_ripjaw',
+    effect: 'Replace the Cuirassier fast-assault slot with Ripjaw. It becomes Ripjaw Alpha automatically in age three.'
+  },
+  skinriders: {
+    ring: 5, row: 4, age: 4, cost: 3600, prominence: 'keystone', cluster: 'Predators & Assault',
+    requires: ['ripjaw_brood'], unlocks: 'nk_skinrider',
+    effect: 'Evolve Ripjaw Alpha into Skinrider. Predatory and Carnage-wide buffs remain attached to the slot.'
+  },
+  shrike_rite: {
+    ring: 4, row: 5, age: 3, cost: 2400, prominence: 'notable', cluster: 'Predators & Assault',
+    requires: ['flenser_rite'], unlocks: 'nk_shrike',
+    effect: 'Fill the disabled rocket slot with Shrike, a close organic execution specialist rather than a weapon team.'
+  },
+  headsman_rite: {
+    ring: 5, row: 5, age: 4, cost: 4000, prominence: 'keystone', cluster: 'Predators & Assault',
+    requires: ['shrike_rite'], unlocks: 'nk_headsman',
+    effect: 'Evolve Shrike into Headsman in the execution slot. Earlier execution and Carnage-wide effects continue to apply.'
+  },
+
+  bonepickers: {
+    ring: 3, row: 7, age: 1, cost: 700, prominence: 'minor', cluster: 'Parasites & Ranged',
+    requires: ['butchery'],
+    effect: 'Wounded Carnage bodies consume nearby remains to heal. The rule follows every later body occupying their slot.'
+  },
+  brain_thieves: {
+    ring: 4, row: 7, age: 2, cost: 1700, prominence: 'notable', cluster: 'Parasites & Ranged',
+    requires: ['bonepickers'], unlocks: 'nk_brainstealer',
+    effect: 'Replace the Musketeer firearm slot with Brain Stealer. It becomes Brood Nurse automatically in age three and supplies Carnage’s limited ranged pressure through parasites.'
+  },
+  mind_flayers: {
+    ring: 5, row: 7, age: 4, cost: 3900, prominence: 'keystone', cluster: 'Parasites & Ranged',
+    requires: ['brain_thieves'], unlocks: 'nk_mindflayer',
+    effect: 'Evolve Brood Nurse into Mind Flayer. Every parasite and research-economy benefit from the earlier line remains active.'
+  },
+
+  bone_harvest: {
+    ring: 3, row: 10, age: 1, cost: 900, prominence: 'notable', cluster: 'Fleshcraft Support',
+    requires: ['butchery'],
+    effect: 'Raise one Bonewright per lane to carry usable remains home. This opens the corpse-support economy.'
+  },
+  charnel_rite: {
+    ring: 4, row: 10, age: 2, cost: 1200, prominence: 'minor', cluster: 'Fleshcraft Support',
+    requires: ['bone_harvest'], excludes: undefined,
+    effect: 'Unlock the Charnel Yard. It accelerates the cheapest line body and turns corpses on your half into damage.'
+  },
+  corpse_wall: {
+    ring: 5, row: 9, age: 3, cost: 2700, prominence: 'keystone', cluster: 'Fleshcraft Support',
+    requires: ['charnel_rite'], excludes: ['necropolis'],
+    effect: 'Choose fortification: settled remains block fire and deep piles become physical terrain.'
+  },
+  necropolis: {
+    ring: 5, row: 10, age: 4, cost: 3000, prominence: 'keystone', cluster: 'Fleshcraft Support',
+    requires: ['charnel_rite'], excludes: ['corpse_wall'],
+    effect: 'Choose resurrection: corpse pieces on your half periodically assemble into a free age-appropriate soldier.'
+  },
+  flesh_architecture: {
+    ring: 6, row: 9, age: 4, cost: 3600, prominence: 'keystone', cluster: 'Fleshcraft Support',
+    requires: ['corpse_wall'], unlocks: 'nk_fleshwall',
+    effect: 'Replace the Aegis screen slot with Flesh Wall, a three-file living bulwark that repairs itself from nearby remains.'
+  },
+  ossuary_rite: {
+    ring: 6, row: 10, age: 4, cost: 1800, prominence: 'minor', cluster: 'Fleshcraft Support',
+    requires: ['necropolis'], excludes: undefined,
+    effect: 'Unlock the Ossuary and turn gathered remains into stored strategic value.'
+  },
+  carrion_choir: {
+    ring: 5, row: 11, age: 3, cost: 2400, prominence: 'notable', cluster: 'Fleshcraft Support',
+    requires: ['charnel_rite'], unlocks: 'nk_carrion',
+    effect: 'Replace Combat Medic with Carrion Choir. The temporary human support line ends here.'
+  },
+  charnel_engine: {
+    ring: 6, row: 11, age: 4, cost: 4200, prominence: 'keystone', cluster: 'Fleshcraft Support',
+    requires: ['carrion_choir'], requiresAny: ['corpse_wall', 'necropolis'], unlocks: 'nk_charnel_engine',
+    effect: 'Evolve Carrion Choir into Charnel Engine. It continuously mills your half of the field and inherits every corpse-support improvement.'
+  },
+  clean_kills: {
+    ring: 4, row: 12, age: 2, cost: 900, prominence: 'minor', cluster: 'Fleshcraft Support',
+    requires: ['bone_harvest'],
+    effect: 'Clean kills leave extra skulls, and Bonewrights return them as research instead of gold.'
+  },
+  bone_levy: {
+    ring: 5, row: 12, age: 3, cost: 2200, prominence: 'notable', cluster: 'Fleshcraft Support',
+    requires: ['clean_kills'],
+    effect: 'Bonewrights carry frames as well as meat; four frames raised at home become a free Boneling.'
+  },
+
+  plague_wind: {
+    ring: 3, row: 14, age: 3, cost: 2200, prominence: 'minor', cluster: 'Monstrosities & Capstones',
+    requires: ['butchery'],
+    effect: 'Every enemy killed by any current or later Carnage body leaves a damaging plague cloud in its lane.'
+  },
+  widow_hatchery: {
+    ring: 4, row: 14, age: 3, cost: 2800, prominence: 'notable', cluster: 'Monstrosities & Capstones',
+    requires: ['plague_wind'], unlocks: 'nk_widow',
+    effect: 'Fill the disabled aircraft slot with Carrion Widow, an organic air hunter that feeds on what it strikes.'
+  },
+  widow_queen: {
+    ring: 5, row: 14, age: 4, cost: 4200, prominence: 'keystone', cluster: 'Monstrosities & Capstones',
+    requires: ['widow_hatchery'], unlocks: 'nk_widow_queen',
+    effect: 'Evolve Carrion Widow into Widow Queen. The same air-hunter slot now turns kills into eggs and replacements.'
+  },
+  the_hunger_made_flesh: {
+    ring: 3, row: 15, age: 3, cost: 3100, prominence: 'keystone', cluster: 'Monstrosities & Capstones',
+    requires: ['butchery'], unlocks: 'nk_monstrum',
+    effect: 'Fill the disabled armour slot with Monstrum. It permanently gains health, damage and size from the remains it consumes.'
+  },
+  the_maw: {
+    ring: 5, row: 15, age: 4, cost: 4400, prominence: 'keystone', cluster: 'Monstrosities & Capstones',
+    requires: ['the_hunger_made_flesh'], unlocks: 'nk_maw',
+    effect: 'Evolve Monstrum into Great Maw. It drags prey inward and renders its kills onto your side of the field.'
+  },
+  incarnation_rite: {
+    ring: 6, row: 15, age: 4, cost: 6200, prominence: 'keystone', cluster: 'Monstrosities & Capstones',
+    requires: ['the_maw'], unlocks: 'nk_incarnation',
+    demand: { metric: 'kills', amount: 120, label: 'Kill 120 — it only answers a slaughter' },
+    effect: 'Replace Titan with a real deployable Incarnation of Slaughter: a costly three-file demon-lord, not an investment or possession lottery.'
+  },
+  ascend_nekrotics: {
+    ring: 7, row: 10, age: 4, cost: 7000, prominence: 'keystone', cluster: 'Fleshcraft Support',
+    requires: ['charnel_rite'], requiresAny: ['corpse_wall', 'necropolis'],
+    effect: 'Ascend as the Nekrotics. Keep the Carnage slots you actually researched; every soldier you lose rises once at reduced health.'
+  }
+}
+
+// Carnage now owns rows 0–16. Preserve every other branch's relative layout by
+// shifting the old lower bands together rather than letting the view resolve
+// collisions differently in each ring.
+for (const node of TECHS) {
+  if (node.branch !== 'carnage' && node.row >= 8) node.row += 10
+}
+for (const [id, patch] of Object.entries(CARNAGE_REWORK)) {
+  const node = TECHS.find(candidate => candidate.id === id)
+  if (!node) throw new Error(`Carnage rework references missing technology: ${id}`)
+  Object.assign(node, patch)
+}
+
+// A collision inside the authored Carnage band is a data error, not something
+// the UI should silently push into another thematic lane.
+const carnageSlots = new Set<string>()
+for (const node of TECHS.filter(candidate => candidate.branch === 'carnage')) {
+  const key = `${node.ring}:${node.row}`
+  if (carnageSlots.has(key)) throw new Error(`Carnage technology slot collision: ${key}`)
+  carnageSlots.add(key)
+}
 
 export const TECHS_BY_ID: Record<string, TechNode> = Object.fromEntries(TECHS.map(t => [t.id, t]))
 
