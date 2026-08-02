@@ -1876,7 +1876,7 @@ const INCARNATION_SKELETON = (): Skeleton => {
     bone('halo', 'head', { y: -0.045, angle: 0, part: 'halo', orient: 'right', depth: 20 }),
     bone('armR', 'torso', { x: 0.03, y: -0.115, angle: 0.85, length: 0.2, part: 'armR', depth: 50 }),
     bone('foreR', 'armR', { angle: -0.2, length: 0.19, part: 'foreR', depth: 51 }),
-    bone('sword', 'foreR', { angle: -0.65, part: 'sword', orient: 'down', depth: 58 }),
+    bone('sword', 'foreR', { angle: 2.45, part: 'sword', orient: 'down', depth: 58 }),
     bone('armL', 'torso', { x: -0.03, y: -0.1, angle: 2.35, length: 0.19, part: 'armL', depth: 12 }),
     bone('foreL', 'armL', { angle: 0.4, length: 0.18, part: 'foreL', depth: 13 }),
     bone('clawL', 'foreL', { angle: -0.1, part: 'clawL', depth: 14 })
