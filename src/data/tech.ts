@@ -1024,7 +1024,7 @@ export const TECHS: TechNode[] = [
     requires: ['necropolis'],
     unlocks: 'nk_incarnation',
     demand: { metric: 'kills', amount: 120, label: 'Kill 120 — it only answers a slaughter' },
-    effect: 'A standing offer you pay into, carried by a Herald that channels on the field. It watches the whole board for half a minute and takes the most expensive melee body that killed three times its own price. Whoever owns it.'
+    effect: 'A standing offer you pay into. Every half minute it takes the best melee body on the board — whoever owns it — and raises a demon-lord where it stood.'
   },
   {
     id: 'clean_kills',
@@ -1805,7 +1805,7 @@ const CARNAGE_REWORK: Record<string, Partial<TechNode>> = {
     ring: 6, row: 15, age: 4, cost: 6200, prominence: 'keystone', cluster: 'Monstrosities & Capstones',
     requires: ['the_maw'], unlocks: 'nk_incarnation',
     demand: { metric: 'kills', amount: 120, label: 'Kill 120 — it only answers a slaughter' },
-    effect: 'Fill the disabled Titan slot with the Herald of Slaughter. Each Herald pays into the Incarnation and stands channelling: while one lives, the board is watched and the best melee body on it — either side — is taken.'
+    effect: 'Fill the disabled Titan slot with the Incarnation of Slaughter. Each card bought grows the sigil over your fortress; every thirty seconds the best melee body on the board — either side — is taken, and a sword-bearing demon-lord rises in its place.'
   },
   ascend_nekrotics: {
     ring: 7, row: 10, age: 4, cost: 7000, prominence: 'keystone', cluster: 'Fleshcraft Support',

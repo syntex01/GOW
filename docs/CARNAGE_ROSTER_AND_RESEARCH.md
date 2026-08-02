@@ -30,7 +30,7 @@ Ripper.
 | Heavy monster | corrupted Knight | — | Monstrum | Great Maw |
 | Air hunter | — | — | Carrion Widow | Widow Queen |
 | Screen | — | — | — | Flesh Wall |
-| Capstone | — | — | — | optional Herald of Slaughter |
+| Capstone | — | — | — | optional Incarnation of Slaughter |
 
 Machine fallbacks (`Catapult` through `Railgun Walker`, rockets, armour, rotary
 wing and Titan) are intentionally empty after commitment until the matching
@@ -58,19 +58,28 @@ Nodes are grouped into five labelled clusters:
 `prominence` is explicit data. Keystone research is larger and costlier; minor
 support research is quieter and cheaper. Carnage connector veins darken and
 thicken with depth. The validation script checks slot collisions, backwards
-Carnage links, exact rosters, machine lockout and the Herald contract.
+Carnage links, exact rosters, machine lockout and the Incarnation contract.
 
 ## The capstone
 
-The Herald of Slaughter is a payment with a body. Each one bought is one
-investment into the Incarnation and one channelling figure standing behind your
-line: it does no damage, blocks no file and adds nothing to the press, but the
-board-wide audition only runs while at least one is alive.
+The Incarnation of Slaughter is a payment, not a soldier. Buying the card places
+nothing on the field; it adds one mark to the sigil burning over your fortress,
+which grows with every mark and is readable by both players from across the
+board. That is the tell, and it is what the card was missing when it was pulled.
 
-The audition takes the most expensive melee body that has killed three times its
-own price — from either side — doubles it (plus a tenth per investment), grants
-it lifesteal, and bleeds it out over about thirty seconds.
+Every thirty seconds the offer takes somebody: the best melee body on the board,
+either side, consumed where it stands. In its place rises the demon-lord —
+medium, sword, and enormously dangerous for the half minute it lasts.
 
-Killing every Herald stops the watching. It does not refund it: investments
-already made persist, so a replacement resumes at the multiplier already bought.
-A possession already taken also persists — only the bleed ends that.
+**One at a time, always.** While a lord is standing the clock does not run, so
+investments buy a bigger lord rather than a second one: each mark adds a tenth
+to its health, damage and toughness.
+
+The lord does not walk to the fight. It reads the board for the thickest knot of
+enemies, steps out of the air beside them, takes one enormous splash swing, and
+steps again — roughly every four seconds. The swing is slow on purpose: the
+threat is where it appears, not how much of it there is, so the counter is
+spreading out rather than fielding something bigger.
+
+It always ends on schedule. An accelerating bleed integrates to its whole health
+across the thirty seconds, so it cannot outlive its window.

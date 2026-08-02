@@ -100,6 +100,51 @@ export default class BattleScene extends Phaser.Scene {
   private matchSeed = 0
   private bannerFlags: { pole: Phaser.GameObjects.Image; flag: Phaser.GameObjects.Image }[] = []
   private bannerLayoutKey = ''
+  /** The Incarnation sigil burning over each fortress, one per side. */
+  private sigils: Partial<Record<Faction, Phaser.GameObjects.Graphics>> = {}
+
+  /**
+   * THE SIGIL. What the player gets for gold that places no soldier.
+   *
+   * Drawn over the paying side's own fortress and redrawn a size larger with
+   * every mark, so the investment is legible to both players from across the
+   * board — the opponent can see an Incarnation being paid for and how far in
+   * it is, which is the entire counterplay this mechanic used to lack.
+   *
+   * Cosmetic only. The simulation owns the count; this owns the picture.
+   */
+  private growSigil(faction: Faction, marks: number): void {
+    const bf = this.battlefield
+    const base = faction === 'player' ? bf.playerBase : bf.enemyBase
+    let sigil = this.sigils[faction]
+    if (!sigil) {
+      sigil = this.add.graphics()
+      sigil.setDepth(BAND.air + 4)
+      this.sigils[faction] = sigil
+    }
+
+    // Grows fast for the first few marks and then flattens, so a heavy investor
+    // still reads as heavier without the sigil swallowing the sky.
+    const radius = 26 + Math.sqrt(marks) * 15
+    const y = GROUND_Y - 300
+    sigil.clear()
+    sigil.lineStyle(3, 0xc0392b, 0.85)
+    sigil.strokeCircle(base.x, y, radius)
+    sigil.lineStyle(2, 0xff4a3c, 0.55)
+    sigil.strokeCircle(base.x, y, radius * 0.72)
+    // One spoke per mark, so the count is countable and not merely a size.
+    const spokes = Math.min(marks, 12)
+    for (let i = 0; i < spokes; i += 1) {
+      const angle = (i / spokes) * Math.PI * 2
+      sigil.lineBetween(
+        base.x + Math.cos(angle) * radius * 0.72,
+        y + Math.sin(angle) * radius * 0.72,
+        base.x + Math.cos(angle) * radius,
+        y + Math.sin(angle) * radius
+      )
+    }
+    this.vfx.energyBurst(base.x, y, 0xc0392b, 1.2)
+  }
 
   /** The sim re-lays the field's prizes as the war ages; the art follows. */
   private rebuildBannerFlags(): void {
@@ -310,6 +355,7 @@ export default class BattleScene extends Phaser.Scene {
     this.battlefield.onUnitKilled = faction => {
       if (faction === 'player') this.checkKillAchievements()
     }
+    this.battlefield.onIncarnationSigil = (faction, marks) => this.growSigil(faction, marks)
 
     if (session.setup.mode === 'endless') this.configureEndless()
 

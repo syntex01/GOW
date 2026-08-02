@@ -244,33 +244,24 @@ const BUTCHERY_CRIT = 0.1
  * strongest melee body on the board is simply taken, every thirty seconds,
  * forever.
  *
- * THE HERALD IS THE TELL, AND THE ANSWER. The audition only runs while at least
- * one Herald of that faction is alive. This is what makes the offer legible:
- * gold spent puts something visible on the field, the opponent can see an
- * Incarnation being paid for, and killing the Heralds stops the watching. It
- * does not refund it — investments already made survive, so a replacement
- * Herald resumes at the multiplier already bought. A possession already taken
- * also survives; only the bleed ends that.
+ * THE SIGIL IS THE TELL. Buying the card places nothing, so what the player
+ * gets for the gold is a mark on the sigil burning over their own fortress —
+ * bigger with every investment, and readable from across the board by both
+ * sides. That is the answer to the complaint that killed this mechanic once:
+ * the purchase changes the board, it just does not change it where a soldier
+ * would stand.
  */
 const INCARNATION_WINDOW_MS = 30_000
-/** How long a host survives the possession, on average, before the bleed wins. */
+/** How long a lord stands before the bleed puts it down. */
 const INCARNATION_LIFE_MS = 30_000
-/** Kill value a host must have earned, as a multiple of its own price. */
-const INCARNATION_DEED = 3
-/** A host may not cost more than this multiple of the gold paid in. */
-const INCARNATION_REACH = 2
-/** Investments after which the audition stops asking and simply takes. */
-const INCARNATION_ALWAYS = 30
-/** Floor on the gap between possessions, however much has been paid in. */
+/** Retry gap when the board had nobody worth taking. */
 const INCARNATION_MIN_GAP_MS = 4000
-/**
- * How far clear of its own fortress a Herald walks before it stands.
- *
- * Wider than the gatherers' pad so a rank of Heralds does not bury the base
- * sprite, and still well behind the line — reaching one is a push, not a stray
- * shot.
- */
-const HERALD_STAND_PAD = 120
+/** What rises where the host stood. Never bought; only ever possessed into. */
+const INCARNATION_LORD_DEF = ((): UnitDef => {
+  const def = FACTION_UNITS.find(candidate => candidate.id === 'nk_incarnation_lord')
+  if (!def) throw new Error('Incarnation lord definition missing')
+  return def
+})()
 
 /**
  * THE MONSTRUM's appetite. Every bite is permanent, so the numbers are small
@@ -295,6 +286,27 @@ const MONSTRUM_DAMAGE_PER_BITE = 0.045
 /** The Flesh Wall's mending: slower than a bite, and only ever out of meat. */
 const FLESH_WALL_MEND_MS = 900
 const FLESH_WALL_MEND_FRACTION = 0.02
+
+/**
+ * THE LORD'S STEP.
+ *
+ * The demon-lord does not walk to the fight, and it does not stay in one. It
+ * picks the thickest knot of enemies on the board, steps out of the air beside
+ * it, takes one enormous swing, and steps again.
+ *
+ * This is why it is medium rather than a Titan: the threat is WHERE it appears,
+ * not how much of it there is. A rank cannot brace against something that
+ * ignores the queue entirely, but the swing is slow enough to walk out of, so
+ * the counter is spreading out rather than fielding a bigger body.
+ */
+/** Beat between steps. Long enough that a step is an event, not a jitter. */
+const LORD_STEP_MS = 4200
+/** It will not step onto something already within reach of its current ground. */
+const LORD_STEP_MIN_GAIN = 90
+/** How wide a clump it measures when deciding where to land. */
+const LORD_CLUMP_RADIUS = 150
+/** Landing offset from the prey, so it arrives beside them rather than inside. */
+const LORD_STEP_STANDOFF = 56
 
 /**
  * THE RIPJAW'S LEAP.
@@ -373,16 +385,14 @@ const ENGINE_REACH = 300
 
 /** One commander's standing offer. */
 interface Incarnation {
-  /** Times the card has been bought. */
+  /** Marks on the sigil: times the card has been bought. */
   invested: number
-  /** Gold paid in, which is what caps how expensive a host may be. */
+  /** Gold paid in. Kept for the record and the end-of-match tallies. */
   gold: number
-  /** The unit currently possessed, by simulation id. */
+  /** The lord currently standing, by simulation id. Never more than one. */
   hostId: number | null
-  /** Milliseconds left in the current audition, or until the next one opens. */
+  /** Milliseconds until the next possession. Frozen while a lord is up. */
   clockMs: number
-  /** True while the clock is counting down an audition rather than a cooldown. */
-  auditioning: boolean
 }
 
 
@@ -703,8 +713,8 @@ export default class Battlefield {
    * their own offer, and each can only ever have one host walking at a time.
    */
   private incarnation: Record<Faction, Incarnation> = {
-    player: { invested: 0, gold: 0, hostId: null, clockMs: 0, auditioning: false },
-    enemy: { invested: 0, gold: 0, hostId: null, clockMs: 0, auditioning: false }
+    player: { invested: 0, gold: 0, hostId: null, clockMs: 0 },
+    enemy: { invested: 0, gold: 0, hostId: null, clockMs: 0 }
   }
   /**
    * How long the remains stay worthless after a Bone Kiln comes down. Losing a
@@ -1753,6 +1763,14 @@ export default class Battlefield {
     return bought
   }
 
+  /**
+   * A mark was added to a side's Incarnation sigil.
+   *
+   * Cosmetic: the scene owns the sigil sprite, the simulation owns the count.
+   * It cannot move the hash, and a peer that never draws it still possesses the
+   * same soldier on the same tick.
+   */
+  onIncarnationSigil?: (faction: Faction, marks: number) => void
   onTechResearched?: (faction: Faction, id: TechId) => void
   onAscended?: (faction: Faction, becomes: FactionId) => void
 
@@ -1946,7 +1964,6 @@ export default class Battlefield {
       mix(Math.round(inc.gold))
       mix(inc.hostId ?? -1)
       mix(Math.round(inc.clockMs))
-      mix(inc.auditioning ? 1 : 0)
       for (const slot of this.wrights[faction]) {
         mix(slot.carried.meat * 100 + slot.carried.skull * 10 + slot.carried.bone)
         mix(Math.round((slot.value.meat + slot.value.skull * 7 + slot.value.bone * 31) * 100))
@@ -3416,14 +3433,10 @@ export default class Battlefield {
       }
       // The quantity paths' chaff arrives in squads: one card, several
       // soldiers, staggered a step apart so they walk out as a file.
-      //
-      // The Incarnation card is BOTH a payment and a soldier. It registers the
-      // investment and puts a Herald on the board to carry it, so the purchase
-      // is something the player and the opponent can both see.
+      // The Incarnation is a payment, not a soldier. Nothing walks out — the
+      // sigil over the fortress grows instead.
       if (entry.def.invest === 'incarnation') {
         this.investIncarnation(army.faction, entry.def.cost)
-        const herald = this.spawnUnit(army.faction, entry.def, undefined, entry.lane)
-        this.anchorHerald(herald)
         continue
       }
       const copies = entry.def.squad ?? 1
@@ -3532,6 +3545,7 @@ export default class Battlefield {
     this.updateFleshEaters(dtMs)
     this.updateCrabs(dtMs)
     this.updateLeapers(dtMs)
+    this.updateLords(dtMs)
     this.updateIncarnation('player', dtMs)
     this.updateIncarnation('enemy', dtMs)
     this.stepSide(playerUnits, enemy.seen, enemy.air, this.enemyBase, dtMs)
@@ -4960,33 +4974,13 @@ export default class Battlefield {
 
   // ───────────────────── The Incarnation of Slaughter ─────────────────────
 
-  /**
-   * Walks a freshly bought Herald to its channelling ground and pins it there.
-   *
-   * `errandX` overrides the advance outright, so the Herald never marches at
-   * the enemy the way a soldier does — it takes a few steps clear of its own
-   * fortress and then stands, which is what makes it a thing the opponent has
-   * to come and dig out rather than something that delivers itself to them.
-   */
-  private anchorHerald(herald: Unit): void {
-    const base = this.baseFor(herald.faction)
-    herald.errandX = base.x + ADVANCE_DIR[herald.faction] * (base.radius + HERALD_STAND_PAD)
-  }
-
-  /** Is anybody still channelling for this side? */
-  private heraldStanding(faction: Faction): boolean {
-    return this.units.some(u => u.alive && u.faction === faction && u.def.invest === 'incarnation')
-  }
-
-  /** One purchase paid into the offer. Opens the audition if nothing is running. */
+  /** One purchase paid into the offer. Starts the clock on the first mark. */
   private investIncarnation(faction: Faction, gold: number): void {
     const inc = this.incarnation[faction]
+    if (inc.invested === 0) inc.clockMs = INCARNATION_WINDOW_MS
     inc.invested += 1
     inc.gold += gold
-    if (inc.hostId === null && !inc.auditioning) {
-      inc.auditioning = true
-      inc.clockMs = INCARNATION_WINDOW_MS
-    }
+    this.onIncarnationSigil?.(faction, inc.invested)
     this.vfx.floatingLabel(
       this.baseFor(faction).x,
       this.config.groundY - 300,
@@ -5007,122 +5001,107 @@ export default class Battlefield {
     const inc = this.incarnation[faction]
     if (inc.invested === 0) return
 
-    // A standing host bleeds harder every second it is still up.
-    //
-    // Deliberately ABOVE the Herald check: a possession already taken is not
-    // undone by killing the Herald late. Once the thing is in a body, the only
-    // way out of it is the bleed. Otherwise the counterplay would be "let them
-    // spend it, then snipe the Herald and hand the host back", which is worse
-    // than the invisible card ever was.
+    // ONE AT A TIME, ALWAYS. While a lord is standing the clock does not run,
+    // so the thirty seconds is a gap between manifestations rather than a
+    // parallel spawn timer. Stacking investments buys a BIGGER lord, never a
+    // second one.
     if (inc.hostId !== null) {
-      const host = this.units.find(u => u.id === inc.hostId && u.alive)
-      if (!host || host.incarnateMs <= 0) {
-        // The clock running out IS the death. Reverting a burnt-out host to a
-        // permanently doubled ordinary soldier would make the timer a bonus
-        // rather than a price, and lifesteal on a well-fed host can outrun the
-        // bleed indefinitely — so the bleed is not what has to finish it.
-        if (host) this.burnOut(host)
+      const lord = this.units.find(u => u.id === inc.hostId && u.alive)
+      if (!lord || lord.incarnateMs <= 0) {
+        // The clock running out IS the death: a lord that could outlive its
+        // window by healing would turn the timer into a bonus rather than a
+        // price.
+        if (lord) this.burnOut(lord)
         inc.hostId = null
-        // The next one comes sooner for every investment made, down to a floor.
-        inc.auditioning = false
-        inc.clockMs = Math.max(INCARNATION_MIN_GAP_MS, INCARNATION_LIFE_MS - inc.invested * 1000)
+        inc.clockMs = INCARNATION_WINDOW_MS
         return
       }
-      host.incarnateMs -= dtMs
-      const spent = 1 - Math.max(0, host.incarnateMs) / Math.max(1, host.incarnateFor)
-      // Integrates to the host's whole health across its life, so lifesteal is
-      // what decides whether it lasts longer than the average half minute.
-      const bleed = (2 * host.maxHp * spent) / (INCARNATION_LIFE_MS / 1000)
-      host.takeDamage(bleed * (dtMs / 1000), 'slash')
-      return
-    }
-
-    // No Herald, no offer. The watching is something a body does, so with every
-    // Herald dead the audition stops where it stands.
-    //
-    // What was paid in is NOT refunded and NOT forgotten: `invested` and `gold`
-    // survive, so a replacement Herald resumes at the multiplier already bought
-    // rather than starting the climb again. Killing the Herald buys the
-    // opponent time and denies the current window — it does not undo the spend.
-    if (!this.heraldStanding(faction)) {
-      if (inc.auditioning) {
-        inc.auditioning = false
-        inc.clockMs = 0
-        this.vfx.floatingLabel(
-          this.baseFor(faction).x,
-          this.config.groundY - 300,
-          'THE RITE BREAKS',
-          '#7f8c8d'
-        )
-      }
+      lord.incarnateMs -= dtMs
+      const spent = 1 - Math.max(0, lord.incarnateMs) / Math.max(1, lord.incarnateFor)
+      // Integrates to the lord's whole health across its life, so it always
+      // ends on schedule however the fight went.
+      const bleed = (2 * lord.maxHp * spent) / (INCARNATION_LIFE_MS / 1000)
+      lord.takeDamage(bleed * (dtMs / 1000), 'slash')
       return
     }
 
     inc.clockMs -= dtMs
     if (inc.clockMs > 0) return
-    if (!inc.auditioning) {
-      inc.auditioning = true
-      inc.clockMs = INCARNATION_WINDOW_MS
-      return
-    }
 
-    // The audition closes. Take the most expensive melee body that earned it —
-    // and past thirty investments, stop asking it to earn anything.
-    const forced = inc.invested >= INCARNATION_ALWAYS
-    const reach = inc.gold * INCARNATION_REACH
+    // The half minute closes and somebody is taken. No deed to earn and no
+    // price ceiling: the offer simply reaches for the best melee body on the
+    // board, either side. What the investments buy is how big the thing that
+    // stands up is, not whether it comes.
     let best: Unit | null = null
     for (const u of this.units) {
       if (!u.alive || u.incarnate || u.def.noncombat || u.def.invest) continue
       if (u.def.attack.kind !== 'melee' || u.layer !== 'ground') continue
       const price = u.def.cost / (u.def.squad ?? 1)
-      if (price <= 0 || price > reach) continue
-      if (!forced && u.slain < price * INCARNATION_DEED) continue
+      if (price <= 0) continue
       if (!best || price > best.def.cost / (best.def.squad ?? 1)) best = u
     }
     if (!best) {
-      // Nobody earned it. Watch another half minute.
-      inc.clockMs = INCARNATION_WINDOW_MS
+      // An empty board owes nobody. Look again shortly rather than burning the
+      // whole window, so the lord arrives as soon as there is a body to take.
+      inc.clockMs = INCARNATION_MIN_GAP_MS
       return
     }
-    this.possess(faction, best)
-    inc.hostId = best.id
-    inc.auditioning = false
+    const lord = this.possess(faction, best)
+    inc.hostId = lord.id
     inc.clockMs = 0
   }
 
-  /** Takes a soldier. Doubles it, plus a tenth per investment, and starts the bleed. */
-  private possess(faction: Faction, host: Unit): void {
+  /**
+   * Consumes the chosen soldier and stands the demon-lord up where it fell.
+   *
+   * A REPLACEMENT, not a buff. Unit art is bound in the `Unit` constructor from
+   * `def.id`, so a possessed soldier cannot be re-skinned in place — and a
+   * possession that looks like a slightly larger swordsman is the invisible
+   * card's problem all over again. The host is consumed outright and the lord
+   * takes its ground, its file and its facing.
+   */
+  private possess(faction: Faction, host: Unit): Unit {
     const inc = this.incarnation[faction]
-    const k = 2 + 0.1 * inc.invested
-    host.maxHp *= k
-    host.hp = host.maxHp
-    host.damageMult *= k
-    host.speedMult *= k
-    host.toughness *= k
-    host.incarnateFor = INCARNATION_LIFE_MS
-    host.incarnateMs = INCARNATION_LIFE_MS
-    // Somebody else's soldier does not come back onto your side — it comes off
-    // everybody's. That is the risk the offer carries and the reason it is worth
-    // paying into even when the board is going badly.
-    host.rogue = host.faction !== faction
-    this.vfx.possession(host.x, host.centerY, host.def.height)
-    this.vfx.explosion(host.x, host.centerY, host.def.height * 1.4, 0xc0392b, true)
+    const stolen = host.faction !== faction
+    const x = host.x
+    const lane = host.lane
+    const height = host.def.height
+
+    this.vfx.possession(x, host.centerY, height)
+    this.vfx.explosion(x, host.centerY, height * 1.4, 0xc0392b, true)
+    this.vfx.gore(x, host.centerY, 3)
+    // Consumed, not killed by anybody: no bounty, no kill credit, no deed
+    // progress for the owner of whatever happened to be standing there.
+    host.hp = 0
+    host.kill()
+
+    const lord = this.spawnUnit(faction, INCARNATION_LORD_DEF, x, lane)
+    // Every mark on the sigil makes the thing that arrives harder to put down.
+    const k = 1 + 0.1 * inc.invested
+    lord.maxHp *= k
+    lord.hp = lord.maxHp
+    lord.damageMult *= k
+    lord.toughness *= k
+    lord.incarnateFor = INCARNATION_LIFE_MS
+    lord.incarnateMs = INCARNATION_LIFE_MS
+
     this.vfx.floatingLabel(
-      host.x,
-      host.centerY - host.def.height,
-      host.rogue ? 'TAKEN' : 'INCARNATE',
+      x,
+      host.centerY - height,
+      stolen ? 'TAKEN' : 'INCARNATE',
       '#ff4a3c'
     )
     audio.play('death_mech', 0.7)
+    return lord
   }
 
-  /** The clock runs out. The host does not survive being put down. */
-  private burnOut(host: Unit): void {
-    host.incarnateMs = 1
-    host.hp = 0
-    host.kill()
-    host.incarnateMs = 0
-    host.rogue = false
+  /** The clock runs out. Nothing survives being put down. */
+  private burnOut(lord: Unit): void {
+    lord.incarnateMs = 1
+    lord.hp = 0
+    lord.kill()
+    lord.incarnateMs = 0
+    lord.rogue = false
   }
 
   /**
@@ -5372,6 +5351,63 @@ export default class Battlefield {
    * advance rule outright, so a retreating raider walks *backwards through its
    * own line* instead of queueing politely behind it.
    */
+  /**
+   * THE LORD'S STEP, one beat per sub-step.
+   *
+   * Decided here rather than in the unit for the same reason the Ripjaw's raid
+   * is: the interesting part is reading the whole board for the thickest knot
+   * of enemies, and a soldier cannot see the board.
+   *
+   * Deterministic throughout — the clump score is an integer count and ties
+   * break on `seq`, so both peers step the lord onto the same ground on the
+   * same tick.
+   */
+  private updateLords(dtMs: number): void {
+    for (const u of this.units) {
+      if (!u.alive || u.def.special !== 'incarnate_lord') continue
+      if (u.stepMs > 0) {
+        u.stepMs -= dtMs
+        continue
+      }
+
+      // Where is the killing worth doing? Score every enemy by how many of its
+      // own are packed around it, and step beside the densest.
+      let prey: Unit | null = null
+      let bestScore = 0
+      for (const foe of this.units) {
+        if (!foe.alive || foe.faction === u.faction || foe.def.noncombat) continue
+        if (foe.layer !== 'ground') continue
+        let clump = 0
+        for (const other of this.units) {
+          if (!other.alive || other.faction === u.faction || other.layer !== 'ground') continue
+          if (Math.abs(other.x - foe.x) <= LORD_CLUMP_RADIUS) clump += 1
+        }
+        if (clump > bestScore || (clump === bestScore && prey && foe.seq < prey.seq)) {
+          bestScore = clump
+          prey = foe
+        }
+      }
+      if (!prey) continue
+      // Already standing in the best place there is. Keep swinging rather than
+      // blinking on the spot, which would read as a stutter and nothing else.
+      if (Math.abs(prey.x - u.x) < LORD_STEP_MIN_GAIN) {
+        u.stepMs = LORD_STEP_MS
+        continue
+      }
+
+      const dir = ADVANCE_DIR[u.faction]
+      this.vfx.banish(u.x, u.centerY)
+      u.x = prey.x - dir * LORD_STEP_STANDOFF
+      u.setLane(prey.lane)
+      // Arriving mid-swing would let it dodge its own cooldown by stepping.
+      u.errandX = null
+      u.stepMs = LORD_STEP_MS
+      this.vfx.possession(u.x, u.centerY, u.def.height)
+      this.vfx.shake(0.4, 120)
+      audio.play('death_mech', 0.35)
+    }
+  }
+
   private updateLeapers(dtMs: number): void {
     for (const u of this.units) {
       if (!u.alive || u.def.special !== 'leap' || u.layer !== 'ground') continue

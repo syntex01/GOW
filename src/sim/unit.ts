@@ -372,6 +372,14 @@ export default class Unit implements Damageable {
   leapPhase = 0
   leapMs = 0
   /**
+   * THE STEP. Time left before the demon-lord may blink to fresh ground.
+   *
+   * Separate from `leapMs` because the two are different fantasies on different
+   * clocks — a Ripjaw's leap is a physical arc the physics owns, while a step
+   * is instantaneous and ignores everything in between.
+   */
+  stepMs = 0
+  /**
    * A deliberate leap does not hurt on landing. Without this the fall-damage
    * rule — which exists to punish being THROWN — would bill a raider for every
    * jump it made on purpose.

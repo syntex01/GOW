@@ -218,7 +218,7 @@ const REPLACEMENT_SUMMARIES: Record<TechId, string> = {
   widow_hatchery: 'fills the disabled aircraft slot with Carrion Widow',
   widow_queen: 'evolves the air-hunter slot from Carrion Widow to Widow Queen',
   flesh_architecture: 'replaces the Aegis screen slot with Flesh Wall',
-  incarnation_rite: 'fills the disabled Titan slot with the Herald of Slaughter, which channels the Incarnation on the field'
+  incarnation_rite: 'fills the disabled Titan slot with the Incarnation of Slaughter, which takes a body every half minute'
 }
 
 export function carnageReplacementSummary(techId: TechId): string | null {

@@ -84,23 +84,28 @@ assert(
 const withoutCapstone = carnageRosterForAge(4, new Set(fullCarnage.filter(id => id !== 'incarnation_rite')))
 assert(!withoutCapstone.some(def => def.id === 'nk_incarnation'), 'Incarnation must remain optional')
 
-// THE HERALD CONTRACT.
+// THE INCARNATION CONTRACT.
 //
-// These two assertions previously read `!invest` and `damage > 0`, pinning the
-// capstone as a plain deployable body. That was the fix for a real complaint —
-// the card used to place nothing on the field — but it unhooked the possession
-// system without deleting it, stranding ~165 lines of live simulation behind a
-// flag nothing set. The Herald keeps the fix and the mechanic: it invests AND
-// it deploys.
+// These assertions once read `!invest` and `damage > 0`, pinning the capstone
+// as a plain deployable body. That was the fix for a real complaint — the card
+// placed nothing on the field — but it unhooked the possession system without
+// deleting it, stranding ~165 lines of live simulation behind a flag nothing
+// set. The sigil answers the complaint instead: the purchase changes the board
+// over the fortress rather than in front of it.
 //
-// What must stay true: it pays into the offer, and it is a body the opponent
-// can see and kill. It deliberately does NO damage, so damage is not asserted.
+// So the card is a payment again, and what must be pinned now is that the pair
+// exists: a card that invests, and a lord for it to possess into. The lord is
+// hidden — reachable only through `Battlefield.possess`, never a purchase.
 const incarnation = FACTION_UNITS.find(def => def.id === 'nk_incarnation')
 assert(incarnation, 'Incarnation definition missing')
-assert(incarnation.invest === 'incarnation', 'Herald must pay into the Incarnation')
-assert(incarnation.noncombat, 'Herald must be noncombat — it channels, it does not fight')
-assert(incarnation.hp > 1 && incarnation.pop > 0, 'Herald must be a real body the opponent can kill')
-assert(incarnation.damage === 0, 'Herald must not fight')
+assert(incarnation.invest === 'incarnation', 'Incarnation card must pay into the offer')
+
+const lord = FACTION_UNITS.find(def => def.id === 'nk_incarnation_lord')
+assert(lord, 'Incarnation lord definition missing — possession has nothing to raise')
+assert(lord.hidden, 'The lord must never appear on a command bar')
+assert(lord.special === 'incarnate_lord', 'The lord must carry the step behaviour')
+assert(lord.hp > 1 && lord.damage > 0, 'The lord must be a real body that fights')
+assert((lord.attack.splash ?? 0) > 0, 'The lord swings wide — splash is the whole moveset')
 assert(TECHS_BY_ID.death_throes?.unlocks === 'nk_husk', 'Death Throes must own the Husk unlock')
 
 const occupied = new Set<string>()

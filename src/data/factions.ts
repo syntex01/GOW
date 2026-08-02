@@ -1120,60 +1120,91 @@ export const FACTION_UNITS: UnitDef[] = [
     visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'horns', bulk: 1.9 , plan: 'maw'})
   },
   {
-    // THE HERALD OF SLAUGHTER. The offer, given a body to stand in.
+    // THE INCARNATION OF SLAUGHTER. A payment, not a soldier.
     //
-    // The card is still a payment — buying it is one investment, and the thing
-    // that eventually arrives is somebody else's soldier, taken. But the older
-    // version of this card placed NOTHING on the field, which made the branch's
-    // most expensive research read as a UI trap: gold left the purse and the
-    // board did not change.
+    // Buying this card puts nothing on the field. It pays into the offer, and
+    // the SIGIL over your fortress grows by one mark — that is the whole tell,
+    // and it is what the earlier invisible version of this card was missing.
+    // The board changes when you pay, just not where a soldier would stand.
     //
-    // So the payment now walks out. The Herald is deliberately useless in a
-    // fight: it does not swing, does not block a file and adds nothing to the
-    // press. It stands in the back file and channels, and the audition in
-    // `Battlefield.updateIncarnation` runs only while at least one of them is
-    // alive. That buys three things the invisible card never had — the purchase
-    // is visible, the offer has a tell the opponent can read, and the opponent
-    // has an answer that is not "lose your best soldier and hope".
-    //
-    // Killing every Herald collapses the offer. It does NOT refund it: what has
-    // been paid in stays paid, and a fresh Herald resumes at the multiplier the
-    // investments already bought.
+    // Then, every thirty seconds, the Incarnation takes somebody: the best
+    // melee body on the board, either side, consumed where it stands so the
+    // demon-lord can rise in its place. One at a time, always — see
+    // `Battlefield.updateIncarnation`.
     id: 'nk_incarnation',
     line: 'carnage_capstone',
-    name: 'Herald of Slaughter',
+    name: 'Incarnation of Slaughter',
     age: 4,
     role: 'melee',
     layer: 'ground',
     cost: 1200,
     buildMs: 4000,
-    // Killable, but not by a stray arrow. It stands behind your line, so taking
-    // one down means pushing to the back file — a real commitment by the
-    // opponent, which is exactly the counterplay the invisible card denied them.
-    hp: 1200,
-    armor: 'light',
+    hp: 1,
+    armor: 'unarmored',
     damage: 0,
     damageType: 'slash',
     attackMs: 1000,
     range: 0,
-    // Walks out, reaches the channelling ground, and stops there for good.
-    speed: 46,
-    mass: 2,
-    bounty: 260,
-    xp: 200,
-    pop: 1,
-    height: 96,
-    noncombat: true,
+    speed: 0,
+    mass: 1,
+    bounty: 0,
+    xp: 0,
+    pop: 0,
+    height: 60,
     invest: 'incarnation',
     attack: { kind: 'melee', knockback: 0 },
-    description: 'It does not fight. It stands at the back and watches the board for whoever kills best — then takes them, whoever they belong to.',
+    description: 'Nothing arrives. The sigil over your fortress grows another mark, and every half minute something on the field stops being whose it was.',
+    visual: look('nekrotics', { torso: 'robe', weapon: 'none', helmet: 'horns', cape: true, bulk: 1.1 })
+  },
+  {
+    // WHAT RISES WHERE THE HOST STOOD.
+    //
+    // Never bought and never on a bar: `Battlefield.possess` consumes the
+    // chosen soldier and spawns this in its place, under the investor's flag.
+    //
+    // It is a REPLACEMENT rather than a buff on the host because unit art is
+    // bound in the `Unit` constructor from `def.id` — there is no way to re-skin
+    // a standing soldier — and a possession the player cannot see is the exact
+    // failure that got this whole mechanic pulled once already.
+    //
+    // Medium. Not a Titan: it is a duellist that arrives where it likes, kills
+    // one clump, and is gone inside half a minute. The threat is the placement,
+    // not the tonnage — a swing this slow is dodgeable by anything that keeps
+    // moving, and it cannot hold ground because it will not live long enough.
+    id: 'nk_incarnation_lord',
+    name: 'Incarnation of Slaughter',
+    age: 4,
+    role: 'melee',
+    layer: 'ground',
+    cost: 0,
+    buildMs: 0,
+    hp: 4200,
+    armor: 'heavy',
+    // One swing, one clump. Enormous damage on an enormous cooldown: it should
+    // read as an execution, not a damage-per-second contribution.
+    damage: 1500,
+    damageType: 'slash',
+    attackMs: 3200,
+    range: 84,
+    speed: 34,
+    mass: 10,
+    bounty: 900,
+    xp: 700,
+    pop: 0,
+    height: 140,
+    crit: 0.25,
+    hidden: true,
+    special: 'incarnate_lord',
+    attack: { kind: 'melee', knockback: 460, splash: 210 },
+    bonusVs: { heavy: 1.2, structure: 1.15 },
+    description: 'It steps out of the air with a sword already swinging, and whatever was standing there is not any more.',
     visual: look('nekrotics', {
       kind: 'humanoid',
-      torso: 'robe',
-      weapon: 'none',
+      torso: 'bare',
+      weapon: 'sword',
       helmet: 'horns',
       cape: true,
-      bulk: 1.1,
+      bulk: 1.45,
       accent: 0xff2d20
     })
   },
