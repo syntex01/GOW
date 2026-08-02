@@ -56,6 +56,13 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      # The Carnage contract is a runtime assertion suite, and until now nothing
+      # ran it against the branch under test: the only `npm run check` in these
+      # workflows lives in apply-carnage-visuals, which checks out a hardcoded
+      # ref and exits early. That is how a headline mechanic went unreachable
+      # without CI noticing.
+      - name: Carnage contract
+        run: npm run check:carnage
       - name: Production build
         run: npm run build
       - name: Upload bundle
