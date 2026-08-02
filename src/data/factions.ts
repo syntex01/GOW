@@ -1191,12 +1191,12 @@ export const FACTION_UNITS: UnitDef[] = [
     bounty: 900,
     xp: 700,
     pop: 0,
-    // TALL AND THIN. An age-4 footman is ~70 and the Titan it replaces is 250:
-    // this sits deliberately between them, head and shoulders over the line it
-    // walks through without ever being the biggest thing on the field. The
-    // `incarnation` plan carries the slenderness — bulk stays low so nothing
-    // widens it back out.
-    height: 185,
+    // SMALLER. 185 was gangly: at that height the rig's long segments read as a
+    // scarecrow rather than a lord, and it towered over a line it is supposed to
+    // walk INTO. 120 still stands clear of an age-4 footman's ~70 without being
+    // the biggest thing on the field, and the reworked proportions carry the
+    // presence the height was doing badly.
+    height: 120,
     crit: 0.25,
     hidden: true,
     special: 'incarnate_lord',

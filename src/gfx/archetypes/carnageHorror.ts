@@ -1655,23 +1655,56 @@ function widowQueenParts(v: UnitVisual, height: number): Record<string, PartArt>
  * height rather than clustering at the chest, and the radial scar sits high, so
  * at battle zoom the shape is a long pale column with a red star in it.
  */
+/**
+ * THE TORSO, SECOND PASS. The first one left its top third empty.
+ *
+ * `fleshMass` sat at 0.58 of the canvas and the ribs ran 0.2–0.64, so above the
+ * collarbone there was nothing but background — and with a neck bone and a head
+ * bone stacking their own lengths on top of that empty band, the skull ended up
+ * floating a head-height clear of the shoulders. It read as a scarecrow.
+ *
+ * So the mass now fills the canvas it is given: ribs from the very top, flesh
+ * centred high, and the taper at the BOTTOM where a waist belongs rather than
+ * dead air at the top where a chest belongs.
+ */
 function incarnationTorso(height: number, k: FleshKit): PartArt {
-  const w = art(0.23, height)
-  const h = art(0.42, height)
+  const w = art(0.3, height)
+  const h = art(0.36, height)
   const p = pad(w, h)
   const cx = p.w / 2
-  fleshMass(p, cx, p.h * 0.58, w * 0.33, h * 0.44, k.necrotic, 5, 270)
-  ribCage(p, cx - w * 0.25, p.h * 0.2, w * 0.5, h * 0.44, k, 8, 1)
-  spine(p, cx, p.h * 0.04, cx, p.h * 0.96, k, 13)
-  // A narrow waist, so the ribs above it read as a cage rather than a barrel.
-  p.ellipse(cx, p.h * 0.82, w * 0.2, h * 0.13, k.necrotic[2])
-  // The scar it is named for. Six arms, not eight: fewer and longer survives
-  // the smaller canvas a slender body gets.
+  fleshMass(p, cx, p.h * 0.44, w * 0.4, h * 0.46, k.necrotic, 5, 270)
+  ribCage(p, cx - w * 0.28, p.h * 0.06, w * 0.56, h * 0.5, k, 7, 1)
+  spine(p, cx, p.h * 0.02, cx, p.h * 0.98, k, 11)
+  // The waist, at the bottom where it belongs.
+  p.ellipse(cx, p.h * 0.88, w * 0.22, h * 0.11, k.necrotic[2])
+  // The scar it is named for, high on the chest.
   for (let i = 0; i < 6; i += 1) {
     const a = (i / 6) * Math.PI * 2
-    p.thickLine(cx, p.h * 0.42, cx + Math.cos(a) * w * 0.26, p.h * 0.42 + Math.sin(a) * h * 0.22, 1, k.accent[3])
+    p.thickLine(cx, p.h * 0.34, cx + Math.cos(a) * w * 0.28, p.h * 0.34 + Math.sin(a) * h * 0.2, 1, k.accent[3])
   }
   return { canvas: finish(p, k, 270, 1.2), origin: [cx / p.w, (p.h - 2) / p.h] }
+}
+
+/**
+ * A YOKE OF BONE ACROSS THE SHOULDERS.
+ *
+ * The first pass had arms sprouting from the sides of a column with no shoulder
+ * line at all, which is most of why it read as a stick. A hard horizontal here
+ * gives the silhouette a top edge and the arms somewhere to hang from.
+ */
+function incarnationYoke(height: number, k: FleshKit): PartArt {
+  const w = art(0.42, height)
+  const h = art(0.12, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  const cy = p.h * 0.55
+  p.ellipse(cx, cy, w * 0.46, h * 0.3, k.bone[2])
+  // Spurs rising off each end, so the shoulders read even in shadow.
+  boneSpur(p, cx - w * 0.4, cy, h * 0.9, -1.9, k)
+  boneSpur(p, cx + w * 0.4, cy, h * 0.9, -1.24, k)
+  boneSpur(p, cx - w * 0.24, cy - h * 0.1, h * 0.6, -1.75, k)
+  boneSpur(p, cx + w * 0.24, cy - h * 0.1, h * 0.6, -1.39, k)
+  return { canvas: finishSmall(p, k, 296), origin: [cx / p.w, cy / p.h] }
 }
 
 /**
@@ -1683,11 +1716,12 @@ function incarnationTorso(height: number, k: FleshKit): PartArt {
  * back into it, which is what makes the silhouette legible from across the field.
  */
 function incarnationHead(height: number, k: FleshKit): PartArt {
-  // Bumped from 0.075: at battle zoom the first render put a skull barely wider
-  // than the neck under it, so the head stopped being a shape and became the
-  // top of the torso. Slender is a limb thickness, not a small head.
-  const r = art(0.095, height)
-  const horn = art(0.19, height)
+  // Bumped again for the smaller body: the skull has to hold its own against a
+  // yoke of bone now sitting directly beneath it.
+  const r = art(0.115, height)
+  // Horns shortened from 0.19 — on a body this size the old crown was taller
+  // than the head it grew out of and read as a hat rather than a skull.
+  const horn = art(0.14, height)
   const p = pad(r * 5.2, r * 2.4 + horn)
   const cx = p.w / 2
   const cy = p.h - r * 1.4
@@ -1713,8 +1747,8 @@ function incarnationHead(height: number, k: FleshKit): PartArt {
  * not be able to lift it.
  */
 function incarnationSword(height: number, k: FleshKit): PartArt {
-  const len = art(0.66, height)
-  const wide = Math.max(3, art(0.05, height))
+  const len = art(0.5, height)
+  const wide = Math.max(3, art(0.06, height))
   const p = pad(wide * 2.6, len)
   const cx = p.w / 2
   const grip = Math.max(3, Math.round(len * 0.14))
@@ -1748,8 +1782,8 @@ function incarnationSword(height: number, k: FleshKit): PartArt {
  * rather than spindly.
  */
 function incarnationCape(height: number, k: FleshKit): PartArt {
-  const w = art(0.36, height)
-  const h = art(0.5, height)
+  const w = art(0.26, height)
+  const h = art(0.42, height)
   const p = pad(w, h)
   const cx = p.w / 2
   const noise = pixelNoise(281 * 977 + 11)
@@ -1789,17 +1823,24 @@ function incarnationClaw(height: number, k: FleshKit, seed: number): PartArt {
  */
 const INCARNATION_SKELETON = (): Skeleton => {
   const s: Skeleton = [
-    bone('root', null, { y: -0.52, depth: 30 }),
-    bone('torso', 'root', { angle: -Math.PI / 2 + 0.06, length: 0.4, part: 'torso', orient: 'up', depth: 31, weights: { breathe: 1, lean: 1, flinch: 1 } }),
+    bone('root', null, { y: -0.5, depth: 30 }),
+    bone('torso', 'root', { angle: -Math.PI / 2 + 0.06, length: 0.33, part: 'torso', orient: 'up', depth: 31, weights: { breathe: 1, lean: 1, flinch: 1 } }),
     // Behind everything, and hung off the shoulders so it swings from the top.
     //
     // ANGLE IS RELATIVE TO THE TORSO, WHICH POINTS UP. A cape bone at ~0 rest
     // therefore inherits -PI/2 and `partRotation('down')` takes it to -PI: the
     // drape renders hanging UPWARD, straight over the head. It has to be turned
     // a half-turn out of its parent to point at the ground.
-    bone('cape', 'torso', { x: -0.04, y: -0.1, angle: Math.PI + 0.06, part: 'cape', orient: 'down', depth: 4 }),
-    bone('neck', 'torso', { angle: -0.03, length: 0.07, depth: 54 }),
-    bone('head', 'neck', { angle: -0.02, length: 0.14, part: 'head', orient: 'up', depth: 55, weights: { aim: 0.5, flinch: 1 } }),
+    //
+    // Pushed further back than the first pass (-0.09 rather than -0.04): the
+    // drape was wide enough to cross in front of the near leg and flatten the
+    // whole silhouette into a slab.
+    bone('cape', 'torso', { x: -0.09, y: -0.08, angle: Math.PI + 0.06, part: 'cape', orient: 'down', depth: 2 }),
+    bone('yoke', 'torso', { y: -0.015, angle: 0, part: 'yoke', orient: 'right', depth: 47 }),
+    // NO NECK BONE. It stacked its own length on top of an already-empty band at
+    // the top of the torso canvas, and the two together are what put the skull a
+    // head-height clear of the shoulders. The head hangs straight off the chest.
+    bone('head', 'torso', { angle: -0.02, length: 0.1, part: 'head', orient: 'up', depth: 55, weights: { aim: 0.5, flinch: 1 } }),
     // SWORD ARM, in front. Long upper, long forearm, blade off the wrist.
     bone('armR', 'torso', { x: 0.035, y: -0.13, angle: 0.62, length: 0.23, part: 'armR', depth: 50 }),
     bone('foreR', 'armR', { angle: -0.34, length: 0.22, part: 'foreR', depth: 51 }),
@@ -1888,12 +1929,13 @@ const INCARNATION_IDLE: Clip = {
  */
 function incarnationParts(v: UnitVisual, height: number): Record<string, PartArt> {
   const k = fleshKit(v.skin, v.cloth, v.accent)
-  const arm = Math.max(4, art(0.04, height))
-  const leg = Math.max(5, art(0.045, height))
+  const arm = Math.max(4, art(0.05, height))
+  const leg = Math.max(5, art(0.058, height))
   return {
     torso: incarnationTorso(height, k),
     head: incarnationHead(height, k),
     cape: incarnationCape(height, k),
+    yoke: incarnationYoke(height, k),
     sword: incarnationSword(height, k),
     armR: softLimb(art(0.23, height), arm, k, 276),
     foreR: softLimb(art(0.22, height), arm * 0.88, k, 277),

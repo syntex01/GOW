@@ -301,6 +301,28 @@ const FLESH_WALL_MEND_FRACTION = 0.02
  */
 /** Beat between steps. Long enough that a step is an event, not a jitter. */
 const LORD_STEP_MS = 4200
+/**
+ * THE LORD'S THREE ATTACKS.
+ *
+ * One is the sword the def describes and the engine already drives. The other
+ * two are conjured, on their own clocks, and cast whether or not anything is in
+ * reach — three attacks sharing one cooldown would only ever be one attack with
+ * three skins.
+ *
+ * BONE HARVEST erupts a ring of spurs out of the ground around it: the answer
+ * to being surrounded, and the reason walling it in is not a plan.
+ * BLOOD TITHE drinks the soaked ground it is standing on, damaging everything
+ * near it and knitting itself back up — which is why it wants to fight where it
+ * has already killed, and why stepping it onto fresh ground is a real cost.
+ */
+const LORD_SPINE_MS = 6500
+const LORD_SPINE_RADIUS = 190
+const LORD_SPINE_DAMAGE = 420
+const LORD_NOVA_MS = 9500
+const LORD_NOVA_RADIUS = 230
+const LORD_NOVA_DAMAGE = 300
+/** Fraction of its own health the tithe returns, on fully soaked ground. */
+const LORD_NOVA_DRINK = 0.14
 /** It will not step onto something already within reach of its current ground. */
 const LORD_STEP_MIN_GAIN = 90
 /** How wide a clump it measures when deciding where to land. */
@@ -794,7 +816,6 @@ export default class Battlefield {
       goreAt: x => this.goreAt(x),
       outnumbered: faction => this.outnumbered(faction),
       hostKills: (faction, defId) => this.hostKills(faction, defId),
-      scavenge: unit => this.scavenge(unit),
       onDeathCharge: unit => this.detonateCorpse(unit),
       requestFlank: unit => this.handleFlank(unit),
       reliefAt: (x, lane) => this.terrain.heightAt(x, lane),
@@ -915,49 +936,6 @@ export default class Battlefield {
       if (dx * dx + dy * dy > (t.radius + 6) * (t.radius + 6)) continue
       this.applyDamage(null, t, { amount: body.damage, type: 'pierce', knockback: 40 })
       body.dead = true
-      return
-    }
-  }
-
-  /**
-   * Bonepickers. A wounded soldier eats the nearest piece of the dead, which
-   * removes it from the field — so the tech trades the corpse wall you might
-   * have built for the health you need now.
-   */
-  /**
-   * Bonepickers. A wounded soldier stoops over a piece of somebody and eats it.
-   *
-   * The unit side of this runs on a three-second clock now instead of a half
-   * second one, so each mouthful is worth three times what it used to be — the
-   * healing is halved overall, which the node could afford, and in exchange it
-   * is something you can watch a soldier do rather than a number going up.
-   * The piece bursts where it lay, and the burst stains: the creed's own
-   * Bloodlust reads that soaked ground, so feeding on your dead makes the
-   * ground you are standing on angrier.
-   */
-  private scavenge(unit: Unit): void {
-    const reach = unit.def.height * 0.7
-    for (const body of this.physics.bodies) {
-      if (!body.settled || body.dead || body.spoil !== 'meat') continue
-      // Meat only. A soldier cannot eat a skull or a femur, and the skull is
-      // the Tithe's alone — otherwise a wounded front line would quietly devour
-      // the research economy standing behind it.
-      if (Math.abs(body.x - unit.x) > reach) continue
-      body.dead = true
-      unit.heal(unit.maxHp * 0.18 + 24)
-      this.vfx.impact(body.x, body.y - 6, 0xc0392b, 1.1, true)
-      // A real splash, thrown from the simulation's own stream so both peers
-      // paint the same ground.
-      for (let i = 0; i < 7; i += 1) {
-        this.physics.spawn(
-          'blood',
-          body.x + this.rng.spread(6),
-          body.y - 6,
-          this.rng.spread(150),
-          -this.rng.range(60, 240),
-          { size: this.rng.range(0.5, 1.1), floor: body.floor }
-        )
-      }
       return
     }
   }
@@ -5391,9 +5369,56 @@ export default class Battlefield {
           )
         }
       }
-      // A low red wash that grows as it burns down. Costs nothing and does more
-      // for "this thing is not ordinary" than any amount of extra geometry.
+      // THE AURA. Two lights, not one: a red wash at the body for the blood and
+      // a pale ring at the feet for the bone, so the thing is lit by what it is
+      // made of rather than by a generic glow. The red swells as it burns down.
       this.vfx.light(u.x, u.centerY, u.def.height * (0.8 + spent * 0.6), 0xc0392b, 0.3 + spent * 0.45)
+      this.vfx.light(u.x, this.groundLineFor(u.lane) - 4, u.def.height * 0.55, 0xe6dfc4, 0.22)
+
+      // ── BONE HARVEST. A ring of spurs out of the ground.
+      u.spineMs -= dtMs
+      if (u.spineMs <= 0) {
+        u.spineMs = LORD_SPINE_MS
+        const ground = this.groundLineFor(u.lane)
+        for (const foe of this.units) {
+          if (!foe.alive || foe.faction === u.faction || foe.def.noncombat) continue
+          if (foe.layer !== 'ground') continue
+          if (Math.abs(foe.x - u.x) > LORD_SPINE_RADIUS) continue
+          foe.takeDamage(LORD_SPINE_DAMAGE * u.damageMult, 'pierce')
+          foe.launch(0, -240)
+          this.vfx.ossify(foe.x, foe.centerY, foe.def.height * 0.5)
+          this.vfx.impact(foe.x, ground - 6, 0xe6dfc4, 1.4, false)
+        }
+        // The spurs themselves, whether or not they caught anybody.
+        for (let i = -3; i <= 3; i += 1) {
+          const sx = u.x + (i / 3) * LORD_SPINE_RADIUS
+          this.vfx.ossify(sx, ground - u.def.height * 0.22, u.def.height * 0.34)
+          this.physics.spawn('rubble', sx + this.rng.spread(10), ground - 8, this.rng.spread(50), -this.rng.range(120, 260), { size: this.rng.range(0.6, 1.2), floor: ground })
+        }
+        this.vfx.shake(0.45, 150)
+        audio.play('death_mech', 0.3)
+      }
+
+      // ── BLOOD TITHE. It drinks the ground it made.
+      u.novaMs -= dtMs
+      if (u.novaMs <= 0) {
+        u.novaMs = LORD_NOVA_MS
+        const soak = this.goreAt(u.x)
+        for (const foe of this.units) {
+          if (!foe.alive || foe.faction === u.faction || foe.def.noncombat) continue
+          if (Math.abs(foe.x - u.x) > LORD_NOVA_RADIUS) continue
+          foe.takeDamage(LORD_NOVA_DAMAGE * u.damageMult, 'slash')
+          this.vfx.siphon(foe.x, foe.centerY, u.x, u.centerY)
+        }
+        // Only the soaked ground pays. On clean ground this is a light show.
+        if (soak > 0.05) u.heal(u.maxHp * LORD_NOVA_DRINK * soak)
+        this.vfx.explosion(u.x, u.centerY, u.def.height * 1.3, 0xc0392b, true)
+        this.vfx.energyBurst(u.x, u.centerY, 0xff2d20, 2)
+        this.vfx.light(u.x, u.centerY, u.def.height * 2.4, 0xff2d20, 1.2)
+        this.vfx.bloodPool(u.x, this.groundLineFor(u.lane))
+        this.vfx.shake(0.6, 200)
+        this.vfx.hitStop(60)
+      }
 
       if (u.stepMs > 0) {
         u.stepMs -= dtMs

@@ -49,9 +49,15 @@ import type { Faction, ReserveMode } from '../sim/types'
  * a disagreement about the whole match. v33 makes the Ripjaw a leaping raider
  * and the Shrike a tentacle executioner that takes heads, escalates the Husk by
  * age instead of replacing it, and puts the four age-four bodies behind research
- * nodes so the last age is earned rather than handed over by the lean.
+ * nodes so the last age is earned rather than handed over by the lean. v34
+ * rebuilds the capstone as a payment: the Incarnation card places nothing and
+ * grows a sigil, and every thirty seconds the best melee body on the board is
+ * consumed and a demon-lord raised in its place. Bonepickers stop stooping —
+ * the healing is now continuous regeneration scaled by how soaked the ground
+ * under the soldier is, which changes both the heal rate and what happens to
+ * the spoils it used to eat. Both move the fingerprint.
  */
-export const PROTOCOL_VERSION = 33
+export const PROTOCOL_VERSION = 34
 
 /**
  * Everything a player can do during a match. Commands are the *only* thing

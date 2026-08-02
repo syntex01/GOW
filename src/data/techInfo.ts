@@ -20,7 +20,7 @@ export const TECH_MECHANICS: Record<TechId, string> = {
 
   // ── carnage ──
   butchery: 'Commits the roster to Carnage. +10% crit chance; critical kills dismember completely; Charnel Yards count those corpses twice. Conventional machine research closes and queued machines are cancelled.',
-  bonepickers: 'A wounded soldier (below 92% hp) stoops over a nearby corpse piece every 3s and eats it, healing 6% of max hp + 8. Visible: it bends down, and the piece bursts. Consumes the remains.',
+  bonepickers: 'A wounded soldier standing on blood-soaked ground knits back up to 5% of max hp per second, scaled by how soaked the ground is. Continuous — no pause, no animation, and it consumes nothing. Reads the same soaked ground Bloodlust does.',
   bone_harvest: 'Raises five Bonewrights, one per lane, who walk out, sack up to 3 spoils and carry them home. MEAT pays 12 gold each. 70 hp, no attack, flees when struck, 22s to come back. Meat off a cheap body rots in ~15s and off an elite in ~40s — what you cannot reach, you do not get.',
   clean_kills: 'Pierce and energy kills on your half leave one EXTRA skull, and Bonewrights start carrying skulls home for 9 research apiece. Blunt and explosive kills still leave none. Base skull life 18s off a cheap body, longer off a dear one.',
   bone_levy: 'Bonewrights now also carry BONE, and 4 frames’ worth delivered stand up as a free Boneling. Bone comes off pierce and energy kills and off heavy armour, and keeps longest of the three.',

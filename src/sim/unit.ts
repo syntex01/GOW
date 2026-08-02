@@ -46,7 +46,6 @@ export interface UnitWorld {
    */
   hostKills?: (faction: Faction, defId: string) => number
   /** A unit wants to eat the remains around it, for Bonepickers. */
-  scavenge?: (unit: Unit) => void
   /** Ground relief under a point of a lane — mounds up, craters down. */
   reliefAt?: (x: number, lane: number) => number
   /** Front of a side's own fortress — as far back as anything will give ground. */
@@ -116,12 +115,21 @@ const BURDEN_COLOR = { meat: 0xc4544a, skull: 0xe6dfc4, bone: 0xd8cfae } as cons
 /** How long a flanker stands blocked before it asks the field for a new file. */
 const FLANK_PATIENCE_MS = 1500
 /**
- * How often a wounded Bonepicker stoops for a mouthful, and how long the stoop
- * lasts. Slow on purpose: the healing is now something you watch happen rather
- * than a number ticking up, so it has to be legible at the pace of a fight.
+ * Fraction of its own health a Bonepicker knits back per second while standing
+ * on fully soaked ground, scaled down by how soaked the ground actually is.
+ *
+ * Priced against what it replaced: the stoop paid 18% + 24 every three seconds
+ * to a wounded soldier that could find meat, which is ~6%/s in the best case
+ * and nothing at all on clean ground. 5%/s on a saturated field lands in the
+ * same place without the pauses, and falls off honestly as the blood dries.
  */
-const BONEPICKER_MS = 3000
-const BONEPICKER_STOOP_MS = 620
+const BONEPICKER_REGEN_PER_S = 0.05
+/**
+ * How long a stoop lasts. Kept after the Bonepickers rework because the harvest
+ * gatherers still bend down — a Bonewright rummaging for a piece is the one
+ * place the pose was never a problem, since a gatherer is not holding a line.
+ */
+const STOOP_MS = 620
 /** Knockback impulse below which a hit hurts but does not interrupt. */
 const STAGGER_FLOOR = 60
 /**
@@ -389,6 +397,16 @@ export default class Unit implements Damageable {
    */
   dripMs = 0
   /**
+   * The lord's two conjured attacks, on their own clocks.
+   *
+   * Separate from `attackCooldown` on purpose: the sword is the melee the def
+   * describes and the engine drives, while these are cast whether or not
+   * anything is in reach. Three attacks that shared one cooldown would only
+   * ever be one attack with three skins.
+   */
+  spineMs = 0
+  novaMs = 0
+  /**
    * A deliberate leap does not hurt on landing. Without this the fall-damage
    * rule — which exists to punish being THROWN — would bill a raider for every
    * jump it made on purpose.
@@ -637,8 +655,7 @@ export default class Unit implements Damageable {
   private lastClip = ''
 
   private frenzy = 1
-  private scavengeTimer = 0
-  /** Milliseconds left of a Bonepicker's stoop — the animation reads this. */
+  /** Milliseconds left of a stoop — the animation reads this. */
   private stoopMs = 0
 
   /** Sappers: how long this soldier has been stuck against the enemy line. */
@@ -1053,7 +1070,7 @@ export default class Unit implements Damageable {
     // sprite-stack — get it for nothing: the soldier drops and leans forward
     // over whatever it is eating, then straightens up again.
     if (this.stoopMs > 0) {
-      const t = 1 - Math.abs(this.stoopMs / BONEPICKER_STOOP_MS - 0.5) * 2
+      const t = 1 - Math.abs(this.stoopMs / STOOP_MS - 0.5) * 2
       lift -= this.def.height * 0.2 * t
       tilt += 0.5 * t
     }
@@ -1206,7 +1223,7 @@ export default class Unit implements Damageable {
   }
 
   /** Bend this body over the ground for a moment. Purely something to look at. */
-  stoop(ms = BONEPICKER_STOOP_MS): void {
+  stoop(ms = STOOP_MS): void {
     this.stoopMs = Math.max(this.stoopMs, ms)
   }
 
@@ -1700,21 +1717,24 @@ export default class Unit implements Damageable {
     }
     // The carnage banner rally: fury for the garrison holding the flag.
     this.frenzy *= 1 + this.bannerZeal
-    // Bonepickers feed on what is lying around them while they are hurt.
+    // BONEPICKERS: THE GROUND FEEDS THEM. No stooping.
     //
-    // It used to happen four times a second and entirely in the numbers: a
-    // wounded soldier standing on a heap simply had a health bar that went up.
-    // Now it is an ACT — the soldier stoops, the piece bursts, and the ground
-    // gets messier — and because you can see it, it is on a clock you can read.
-    if (this.stoopMs > 0) this.stoopMs -= dtMs
-    if (this.techs?.has('bonepickers') && this.hp < this.maxHp * 0.92 && !this.inThroes) {
-      this.scavengeTimer -= dtMs
-      if (this.scavengeTimer <= 0) {
-        this.scavengeTimer = BONEPICKER_MS
-        // The bend-down is what the animation reads; the world decides whether
-        // there was actually anything down there to eat.
-        this.stoopMs = BONEPICKER_STOOP_MS
-        this.world.scavenge?.(this)
+    // This used to be an act — a wounded soldier stopped, bent down, and burst
+    // a piece of meat for a large one-off heal. It read well in isolation and
+    // badly in a line: a rank taking fire would fold at the waist one man at a
+    // time, out of step, in the middle of a fight they were supposed to be
+    // holding, and a soldier mid-stoop is a soldier not swinging.
+    //
+    // So it is the GROUND now. Stand on blood and you knit; the more soaked the
+    // ground, the faster. Same creed idea — the dead feed the living — with no
+    // pause, no animation to break the line, and no scramble for a particular
+    // corpse. It also stacks honestly with Bloodlust, which already reads the
+    // same soaked ground, so a Carnage push over its own kills is both faster
+    // and harder to put down.
+    if (this.techs?.has('bonepickers') && this.hp < this.maxHp && !this.inThroes && this.layer === 'ground') {
+      const soak = this.world.goreAt?.(this.x) ?? 0
+      if (soak > 0.05) {
+        this.heal(this.maxHp * BONEPICKER_REGEN_PER_S * soak * dt)
       }
     }
 
