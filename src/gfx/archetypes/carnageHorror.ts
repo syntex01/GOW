@@ -1643,33 +1643,125 @@ function widowQueenParts(v: UnitVisual, height: number): Record<string, PartArt>
 }
 
 /** The capstone torso: a ribbed demon column with an open furnace-heart. */
+/**
+ * THE INCARNATION'S TORSO. Narrow on purpose.
+ *
+ * Every other horror in this file is built out of MASS — a Monstrum is a heap,
+ * a Maw is jaws with a body trailing behind. This one is the opposite argument:
+ * it is the tallest thing the faction fields and one of the thinnest, so it
+ * reads as a lord standing among its own animals rather than the biggest animal.
+ *
+ * Which means the silhouette has to survive being narrow. The ribs run the full
+ * height rather than clustering at the chest, and the radial scar sits high, so
+ * at battle zoom the shape is a long pale column with a red star in it.
+ */
 function incarnationTorso(height: number, k: FleshKit): PartArt {
-  const w = art(0.48, height)
-  const h = art(0.5, height)
+  const w = art(0.23, height)
+  const h = art(0.42, height)
   const p = pad(w, h)
   const cx = p.w / 2
-  fleshMass(p, cx, p.h * 0.54, w * 0.44, h * 0.45, k.necrotic, 5, 270)
-  ribCage(p, cx - w * 0.3, p.h * 0.25, w * 0.62, h * 0.42, k, 6, 1)
-  spine(p, cx, p.h * 0.08, cx, p.h * 0.9, k, 10)
-  maw(p, cx, p.h * 0.5, w * 0.16, h * 0.13, k, 10, 271)
-  // Red radial scars make it the Slaughter apex, not another pale corpse.
-  for (let i = 0; i < 8; i += 1) {
-    const a = (i / 8) * Math.PI * 2
-    p.thickLine(cx, p.h * 0.5, cx + Math.cos(a) * w * 0.34, p.h * 0.5 + Math.sin(a) * h * 0.28, 1, k.accent[3])
+  fleshMass(p, cx, p.h * 0.58, w * 0.33, h * 0.44, k.necrotic, 5, 270)
+  ribCage(p, cx - w * 0.25, p.h * 0.2, w * 0.5, h * 0.44, k, 8, 1)
+  spine(p, cx, p.h * 0.04, cx, p.h * 0.96, k, 13)
+  // A narrow waist, so the ribs above it read as a cage rather than a barrel.
+  p.ellipse(cx, p.h * 0.82, w * 0.2, h * 0.13, k.necrotic[2])
+  // The scar it is named for. Six arms, not eight: fewer and longer survives
+  // the smaller canvas a slender body gets.
+  for (let i = 0; i < 6; i += 1) {
+    const a = (i / 6) * Math.PI * 2
+    p.thickLine(cx, p.h * 0.42, cx + Math.cos(a) * w * 0.26, p.h * 0.42 + Math.sin(a) * h * 0.22, 1, k.accent[3])
   }
   return { canvas: finish(p, k, 270, 1.2), origin: [cx / p.w, (p.h - 2) / p.h] }
 }
 
+/**
+ * A long skull under a crown of horns.
+ *
+ * The horns are the read at distance, not the face — a head this size is eight
+ * pixels of skull at battle zoom, and eight pixels cannot carry an expression.
+ * So the canvas is mostly empty air above the skull with four spurs sweeping
+ * back into it, which is what makes the silhouette legible from across the field.
+ */
 function incarnationHead(height: number, k: FleshKit): PartArt {
-  const r = art(0.12, height)
-  const p = pad(r * 2.6, r * 2.5)
+  const r = art(0.075, height)
+  const horn = art(0.19, height)
+  const p = pad(r * 5.2, r * 2.4 + horn)
   const cx = p.w / 2
-  const cy = p.h * 0.56
-  p.ellipse(cx, cy, r * 0.8, r, k.bone[2])
-  maw(p, cx, cy + r * 0.18, r * 0.48, r * 0.34, k, 8, 272)
-  for (let i = 0; i < 5; i += 1) boneSpur(p, cx - r * 0.56 + i * r * 0.28, cy - r * 0.72, art(0.12, height), -2.35 + i * 0.38, k)
-  eyeCluster(p, cx, cy - r * 0.18, r * 0.42, k, 5, 273)
-  return { canvas: finish(p, k, 272, 1.0), origin: [cx / p.w, 0.9] }
+  const cy = p.h - r * 1.4
+  // Long and narrow rather than round: a stag's skull, not a man's.
+  p.ellipse(cx, cy, r * 0.58, r * 1.08, k.bone[2])
+  p.ellipse(cx, cy + r * 0.62, r * 0.4, r * 0.46, k.bone[1])
+  maw(p, cx, cy + r * 0.78, r * 0.32, r * 0.28, k, 7, 272)
+  eyeCluster(p, cx, cy - r * 0.34, r * 0.28, k, 3, 273)
+  // The crown: a tall outer pair swept back, a shorter inner pair inside them.
+  boneSpur(p, cx - r * 0.46, cy - r * 0.8, horn, -2.05, k)
+  boneSpur(p, cx + r * 0.4, cy - r * 0.8, horn, -1.16, k)
+  boneSpur(p, cx - r * 0.16, cy - r * 0.98, horn * 0.62, -1.82, k)
+  boneSpur(p, cx + r * 0.14, cy - r * 0.98, horn * 0.62, -1.36, k)
+  return { canvas: finish(p, k, 272, 1.0), origin: [cx / p.w, (cy + r * 1.1) / p.h] }
+}
+
+/**
+ * THE SWORD. Longer than the legs, and the reason the pose works.
+ *
+ * A slender body swinging a small blade reads as a skirmisher. The whole point
+ * of this one is that a single swing clears a clump, so the weapon has to be
+ * absurd — bone grown into a blade, held one-handed by something that should
+ * not be able to lift it.
+ */
+function incarnationSword(height: number, k: FleshKit): PartArt {
+  const len = art(0.66, height)
+  const wide = Math.max(3, art(0.05, height))
+  const p = pad(wide * 2.6, len)
+  const cx = p.w / 2
+  const grip = Math.max(3, Math.round(len * 0.14))
+  const base = p.h - 3
+  const guard = base - grip
+  p.thickLine(cx, base, cx, guard, Math.max(2, Math.round(wide * 0.3)), k.iron[1])
+  // Crossguard, grown rather than forged.
+  boneSpur(p, cx, guard, wide * 1.05, -0.42, k)
+  boneSpur(p, cx, guard, wide * 1.05, Math.PI + 0.42, k)
+  // Blade: a slow taper, so it is a cleaver at the guard and a point at the tip.
+  const tip = 3
+  for (let y = guard - 1; y >= tip; y -= 1) {
+    const t = (guard - 1 - y) / Math.max(1, guard - 1 - tip)
+    const bw = Math.max(1, Math.round(wide * (1 - t * 0.66)))
+    for (let o = 0; o < bw; o += 1) {
+      const s = bw <= 1 ? 0.5 : o / (bw - 1)
+      p.set(Math.round(cx - bw / 2 + o), y, k.iron[s < 0.22 ? 0 : s < 0.52 ? 1 : s < 0.82 ? 2 : 3])
+    }
+  }
+  // The fed edge. One accent line down the cutting side is the only colour on
+  // the weapon, so the eye follows the blade rather than the arm holding it.
+  p.line(cx + Math.round(wide * 0.4), guard - 2, cx, tip + 2, k.accent[2])
+  return { canvas: finishSmall(p, k, 279), origin: [cx / p.w, base / p.h] }
+}
+
+/**
+ * A hanging drape, tattered at the hem.
+ *
+ * It does no anatomical work — it exists so the walk has something trailing a
+ * beat behind it, which is most of what makes a tall thin body read as heavy
+ * rather than spindly.
+ */
+function incarnationCape(height: number, k: FleshKit): PartArt {
+  const w = art(0.36, height)
+  const h = art(0.5, height)
+  const p = pad(w, h)
+  const cx = p.w / 2
+  const noise = pixelNoise(281 * 977 + 11)
+  for (let y = 0; y < h; y += 1) {
+    const t = y / Math.max(1, h - 1)
+    let half = w * (0.16 + t * 0.3)
+    // Tatters: the last fifth is eaten into by a per-column ragged edge.
+    if (t > 0.78) half -= noise(y, 7) * w * 0.3
+    if (half <= 0.5) continue
+    for (let x = Math.round(cx - half); x <= Math.round(cx + half); x += 1) {
+      const s = Math.abs(x - cx) / Math.max(1, half)
+      p.set(x, 2 + y, k.necrotic[s < 0.28 ? 1 : s < 0.66 ? 2 : 3])
+    }
+  }
+  return { canvas: finishSmall(p, k, 281), origin: [cx / p.w, 2 / p.h] }
 }
 
 function incarnationClaw(height: number, k: FleshKit, seed: number): PartArt {
@@ -1682,72 +1774,116 @@ function incarnationClaw(height: number, k: FleshKit, seed: number): PartArt {
   return { canvas: p.toCanvas() as Canvas2D, origin: [cx / p.w, 2 / p.h] }
 }
 
+/**
+ * A LORD, NOT A BEAST. Two arms, two legs, and every segment long.
+ *
+ * The previous rig was a four-armed clawed horror — the right answer when the
+ * capstone was a possession that wore somebody else's body, and the wrong one
+ * for something that walks on carrying a sword. Everything here is stretched
+ * instead of thickened: the legs are nearly half the total height, the torso
+ * rides high on them, and the head sits above the shoulders rather than between
+ * them, which is the difference between a tall man and a big animal.
+ */
 const INCARNATION_SKELETON = (): Skeleton => {
   const s: Skeleton = [
-    bone('root', null, { y: -0.48, depth: 30 }),
-    bone('torso', 'root', { angle: -Math.PI / 2 + 0.08, length: 0.46, part: 'torso', orient: 'up', depth: 31, weights: { breathe: 1, lean: 1, flinch: 1 } }),
-    bone('head', 'torso', { angle: -0.04, length: 0.17, part: 'head', orient: 'up', depth: 55, weights: { aim: 0.5, flinch: 1 } }),
-    bone('wingF', 'torso', { x: -0.02, y: -0.12, angle: -0.6, part: 'wingF', orient: 'right', depth: 20 }),
-    bone('wingB', 'torso', { x: -0.08, y: -0.08, angle: -1.0, part: 'wingB', orient: 'right', depth: 6 }),
-    bone('arm1', 'torso', { x: 0.04, y: -0.08, angle: 0.35, length: 0.25, part: 'arm1', depth: 52 }),
-    bone('fore1', 'arm1', { angle: -0.45, length: 0.24, part: 'fore1', depth: 53 }),
-    bone('claw1', 'fore1', { angle: 0.1, part: 'claw1', depth: 54 }),
-    bone('arm2', 'torso', { x: 0.02, y: 0.02, angle: 0.8, length: 0.24, part: 'arm2', depth: 49 }),
-    bone('fore2', 'arm2', { angle: -0.55, length: 0.22, part: 'fore2', depth: 50 }),
-    bone('claw2', 'fore2', { angle: 0.15, part: 'claw2', depth: 51 }),
-    bone('arm3', 'torso', { x: -0.03, y: -0.08, angle: 2.7, length: 0.24, part: 'arm3', depth: 12 }),
-    bone('fore3', 'arm3', { angle: 0.45, length: 0.23, part: 'fore3', depth: 13 }),
-    bone('claw3', 'fore3', { angle: -0.1, part: 'claw3', depth: 14 }),
-    bone('arm4', 'torso', { x: -0.05, y: 0.02, angle: 2.25, length: 0.23, part: 'arm4', depth: 9 }),
-    bone('fore4', 'arm4', { angle: 0.5, length: 0.21, part: 'fore4', depth: 10 }),
-    bone('claw4', 'fore4', { angle: -0.15, part: 'claw4', depth: 11 }),
-    bone('hipF', 'root', { x: 0.07, angle: Math.PI / 2, depth: 44 }),
-    bone('legF', 'hipF', { length: 0.28, part: 'legF', depth: 44 }),
-    bone('shinF', 'legF', { angle: 0.35, length: 0.25, part: 'shinF', depth: 45 }),
-    bone('footF', 'shinF', { angle: -0.25, part: 'footF', depth: 46 }),
-    bone('hipB', 'root', { x: -0.08, angle: Math.PI / 2, depth: 8 }),
-    bone('legB', 'hipB', { length: 0.28, part: 'legB', depth: 8 }),
-    bone('shinB', 'legB', { angle: 0.35, length: 0.25, part: 'shinB', depth: 9 }),
-    bone('footB', 'shinB', { angle: -0.25, part: 'footB', depth: 10 })
+    bone('root', null, { y: -0.52, depth: 30 }),
+    bone('torso', 'root', { angle: -Math.PI / 2 + 0.06, length: 0.4, part: 'torso', orient: 'up', depth: 31, weights: { breathe: 1, lean: 1, flinch: 1 } }),
+    // Behind everything, and hung off the shoulders so it swings from the top.
+    bone('cape', 'torso', { x: -0.04, y: -0.1, angle: 0.06, part: 'cape', orient: 'down', depth: 4 }),
+    bone('neck', 'torso', { angle: -0.03, length: 0.07, depth: 54 }),
+    bone('head', 'neck', { angle: -0.02, length: 0.14, part: 'head', orient: 'up', depth: 55, weights: { aim: 0.5, flinch: 1 } }),
+    // SWORD ARM, in front. Long upper, long forearm, blade off the wrist.
+    bone('armR', 'torso', { x: 0.035, y: -0.13, angle: 0.62, length: 0.23, part: 'armR', depth: 50 }),
+    bone('foreR', 'armR', { angle: -0.34, length: 0.22, part: 'foreR', depth: 51 }),
+    bone('sword', 'foreR', { angle: 0.24, part: 'sword', orient: 'up', depth: 58 }),
+    // Off hand, behind the torso.
+    bone('armL', 'torso', { x: -0.035, y: -0.11, angle: 2.42, length: 0.22, part: 'armL', depth: 12 }),
+    bone('foreL', 'armL', { angle: 0.46, length: 0.21, part: 'foreL', depth: 13 }),
+    bone('clawL', 'foreL', { angle: -0.12, part: 'clawL', depth: 14 }),
+    bone('hipF', 'root', { x: 0.05, angle: Math.PI / 2, depth: 44 }),
+    bone('thighF', 'hipF', { length: 0.26, part: 'thighF', depth: 44 }),
+    bone('shinF', 'thighF', { angle: 0.3, length: 0.25, part: 'shinF', depth: 45 }),
+    bone('footF', 'shinF', { angle: -0.24, part: 'footF', depth: 46 }),
+    bone('hipB', 'root', { x: -0.06, angle: Math.PI / 2, depth: 8 }),
+    bone('thighB', 'hipB', { length: 0.26, part: 'thighB', depth: 8 }),
+    bone('shinB', 'thighB', { angle: 0.3, length: 0.25, part: 'shinB', depth: 9 }),
+    bone('footB', 'shinB', { angle: -0.24, part: 'footB', depth: 10 })
   ]
   validateSkeleton(s, 'incarnation')
   return s
 }
 
+/**
+ * A LONG, SLOW STRIDE. Half the speed of the footmen and twice the reach.
+ *
+ * The cape trails the torso by a beat rather than matching it — same swing,
+ * opposite sign at the extremes — which is the cheapest way to make a thin
+ * silhouette feel like it has weight behind it.
+ */
 const INCARNATION_WALK: Clip = {
-  name: 'walk', duration: 1100, loop: true, ease: 'sine', keys: [
-    { t: 0, pose: { root: { y: 0.014 }, legF: { angle: 0.3 }, shinF: { angle: 0.4 }, legB: { angle: -0.35 }, shinB: { angle: 0.15 }, wingF: { angle: -0.16 }, wingB: { angle: 0.12 } } },
-    { t: 0.5, pose: { root: { y: -0.016 }, legF: { angle: -0.35 }, shinF: { angle: 0.15 }, legB: { angle: 0.3 }, shinB: { angle: 0.4 }, wingF: { angle: 0.14 }, wingB: { angle: -0.12 } } }
+  name: 'walk', duration: 1250, loop: true, ease: 'sine', keys: [
+    { t: 0, pose: { root: { y: 0.016 }, thighF: { angle: 0.36 }, shinF: { angle: 0.42 }, thighB: { angle: -0.4 }, shinB: { angle: 0.16 }, cape: { angle: -0.14 }, armL: { angle: -0.12 }, armR: { angle: 0.1 } } },
+    { t: 0.5, pose: { root: { y: -0.018 }, thighF: { angle: -0.4 }, shinF: { angle: 0.16 }, thighB: { angle: 0.36 }, shinB: { angle: 0.42 }, cape: { angle: 0.16 }, armL: { angle: 0.12 }, armR: { angle: -0.08 } } }
   ]
 }
+/**
+ * ONE SWING, OVERHEAD, AND A LONG RECOVERY.
+ *
+ * The sim gives this body 1500 damage on a 3.2 s cooldown, so the animation has
+ * to sell an execution rather than a rate of work: a slow wind-up that carries
+ * the blade back past the shoulder, a fast fall, then a HOLD at the bottom —
+ * the pause is what makes the swing look heavy and what makes it dodgeable.
+ */
 const INCARNATION_ATTACK: Clip = {
-  name: 'attack', duration: 900, loop: false, ease: 'quad', keys: [
-    { t: 0, pose: { arm1: { angle: 0 }, arm2: { angle: 0 }, arm3: { angle: 0 }, arm4: { angle: 0 } } },
-    { t: 0.3, pose: { torso: { angle: -0.15 }, arm1: { angle: -1.1 }, arm2: { angle: -0.8 }, arm3: { angle: 1.0 }, arm4: { angle: 0.75 }, wingF: { angle: -0.45 }, wingB: { angle: 0.3 } }, ease: 'cubic' },
-    { t: 0.52, pose: { torso: { angle: 0.28 }, arm1: { angle: 1.2 }, arm2: { angle: 0.9 }, arm3: { angle: -1.1 }, arm4: { angle: -0.85 }, wingF: { angle: 0.4 }, wingB: { angle: -0.28 } }, ease: 'hold' },
-    { t: 1, pose: { torso: { angle: 0 }, arm1: { angle: 0 }, arm2: { angle: 0 }, arm3: { angle: 0 }, arm4: { angle: 0 }, wingF: { angle: 0 }, wingB: { angle: 0 } }, ease: 'back' }
+  name: 'attack', duration: 1150, loop: false, ease: 'quad', keys: [
+    { t: 0, pose: { armR: { angle: 0 }, foreR: { angle: 0 }, sword: { angle: 0 }, torso: { angle: 0 } } },
+    // Wind up: blade goes up and back, weight onto the back foot.
+    { t: 0.34, pose: { torso: { angle: -0.22 }, armR: { angle: -1.35 }, foreR: { angle: -0.5 }, sword: { angle: -0.55 }, cape: { angle: -0.3 }, armL: { angle: 0.3 } }, ease: 'cubic' },
+    // The fall.
+    { t: 0.56, pose: { torso: { angle: 0.34 }, armR: { angle: 1.15 }, foreR: { angle: 0.32 }, sword: { angle: 0.4 }, cape: { angle: 0.34 }, armL: { angle: -0.24 } }, ease: 'hold' },
+    // Blade stays buried a beat before it comes back up.
+    { t: 0.74, pose: { torso: { angle: 0.28 }, armR: { angle: 1.05 }, foreR: { angle: 0.28 }, sword: { angle: 0.34 } }, ease: 'sine' },
+    { t: 1, pose: { torso: { angle: 0 }, armR: { angle: 0 }, foreR: { angle: 0 }, sword: { angle: 0 }, cape: { angle: 0 }, armL: { angle: 0 } }, ease: 'back' }
   ]
 }
+/** Standing still: breathing, and the blade drifting under its own weight. */
 const INCARNATION_IDLE: Clip = {
-  name: 'idle', duration: 3300, loop: true, ease: 'sine', keys: [
-    { t: 0, pose: { wingF: { angle: -0.08 }, wingB: { angle: 0.08 }, arm2: { angle: 0.06 }, arm4: { angle: -0.06 } } },
-    { t: 0.5, pose: { wingF: { angle: 0.1 }, wingB: { angle: -0.08 }, arm2: { angle: -0.06 }, arm4: { angle: 0.06 } } }
+  name: 'idle', duration: 3600, loop: true, ease: 'sine', keys: [
+    { t: 0, pose: { cape: { angle: -0.05 }, armR: { angle: 0.04 }, sword: { angle: -0.06 }, armL: { angle: -0.04 } } },
+    { t: 0.5, pose: { cape: { angle: 0.06 }, armR: { angle: -0.03 }, sword: { angle: 0.05 }, armL: { angle: 0.04 } } }
   ]
 }
 
+/**
+ * SLENDER IS A THICKNESS, NOT A HEIGHT.
+ *
+ * Limb thickness is the whole difference between this and the other horrors.
+ * The Monstrum's legs are 0.07 of its height; these are 0.045 and carry a body
+ * that is TALLER, so the same drawing vocabulary reads as a lord rather than a
+ * beast. The back-side limbs take the necrotic ramp so the two sides separate
+ * at a glance, which matters more on a thin body than a thick one — there is
+ * less silhouette to tell them apart with.
+ */
 function incarnationParts(v: UnitVisual, height: number): Record<string, PartArt> {
   const k = fleshKit(v.skin, v.cloth, v.accent)
-  const arm = Math.max(5, art(0.055, height))
-  const leg = Math.max(6, art(0.07, height))
+  const arm = Math.max(4, art(0.04, height))
+  const leg = Math.max(5, art(0.045, height))
   return {
-    torso: incarnationTorso(height, k), head: incarnationHead(height, k),
-    wingF: widowWing(height * 1.55, k, 274), wingB: widowWing(height * 1.42, k, 275),
-    arm1: softLimb(art(0.25, height), arm, k, 276), fore1: softLimb(art(0.24, height), arm * 0.9, k, 277), claw1: incarnationClaw(height, k, 278),
-    arm2: softLimb(art(0.24, height), arm * 0.95, k, 279), fore2: softLimb(art(0.22, height), arm * 0.85, k, 280), claw2: incarnationClaw(height, k, 281),
-    arm3: softLimb(art(0.24, height), arm * 0.95, k, 282, k.necrotic), fore3: softLimb(art(0.23, height), arm * 0.85, k, 283, k.necrotic), claw3: incarnationClaw(height, k, 284),
-    arm4: softLimb(art(0.23, height), arm * 0.9, k, 285, k.necrotic), fore4: softLimb(art(0.21, height), arm * 0.8, k, 286, k.necrotic), claw4: incarnationClaw(height, k, 287),
-    legF: softLimb(art(0.28, height), leg, k, 288), shinF: softLimb(art(0.25, height), leg * 0.85, k, 289), footF: stubFoot(height * 1.2, k, 290),
-    legB: softLimb(art(0.28, height), leg, k, 291, k.necrotic), shinB: softLimb(art(0.25, height), leg * 0.85, k, 292, k.necrotic), footB: stubFoot(height * 1.2, k, 293)
+    torso: incarnationTorso(height, k),
+    head: incarnationHead(height, k),
+    cape: incarnationCape(height, k),
+    sword: incarnationSword(height, k),
+    armR: softLimb(art(0.23, height), arm, k, 276),
+    foreR: softLimb(art(0.22, height), arm * 0.88, k, 277),
+    armL: softLimb(art(0.22, height), arm * 0.95, k, 282, k.necrotic),
+    foreL: softLimb(art(0.21, height), arm * 0.84, k, 283, k.necrotic),
+    clawL: incarnationClaw(height, k, 284),
+    thighF: softLimb(art(0.26, height), leg, k, 288),
+    shinF: softLimb(art(0.25, height), leg * 0.82, k, 289),
+    footF: stubFoot(height * 0.85, k, 290),
+    thighB: softLimb(art(0.26, height), leg, k, 291, k.necrotic),
+    shinB: softLimb(art(0.25, height), leg * 0.82, k, 292, k.necrotic),
+    footB: stubFoot(height * 0.85, k, 293)
   }
 }
 

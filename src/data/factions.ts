@@ -1191,7 +1191,12 @@ export const FACTION_UNITS: UnitDef[] = [
     bounty: 900,
     xp: 700,
     pop: 0,
-    height: 140,
+    // TALL AND THIN. An age-4 footman is ~70 and the Titan it replaces is 250:
+    // this sits deliberately between them, head and shoulders over the line it
+    // walks through without ever being the biggest thing on the field. The
+    // `incarnation` plan carries the slenderness — bulk stays low so nothing
+    // widens it back out.
+    height: 185,
     crit: 0.25,
     hidden: true,
     special: 'incarnate_lord',
@@ -1199,12 +1204,11 @@ export const FACTION_UNITS: UnitDef[] = [
     bonusVs: { heavy: 1.2, structure: 1.15 },
     description: 'It steps out of the air with a sword already swinging, and whatever was standing there is not any more.',
     visual: look('nekrotics', {
-      kind: 'humanoid',
       torso: 'bare',
-      weapon: 'sword',
+      weapon: 'none',
       helmet: 'horns',
-      cape: true,
-      bulk: 1.45,
+      bulk: 0.92,
+      plan: 'incarnation',
       accent: 0xff2d20
     })
   },
