@@ -1855,9 +1855,15 @@ function ascendantSword(height: number, k: FleshKit): PartArt {
       const sd = bw <= 1 ? 0.5 : o / (bw - 1)
       p.set(Math.round(cx - bw / 2 + o), y, k.iron[sd < 0.25 ? 3 : sd < 0.6 ? 2 : 1])
     }
-    if (i % 2 === 0) p.set(cx + Math.round(bw / 2), y, k.accent[1])
+    // THE EDGE BURNS: a continuous bright channel down the cutting side with
+    // a soft glow halo one pixel out — the blade reads as lit even before the
+    // sim hangs its pulsing light on it.
+    p.set(cx + Math.round(bw / 2), y, k.accent[2])
+    if (i % 2 === 0) p.set(cx + Math.round(bw / 2) + 1, y, k.accent[0])
+    if (i % 3 === 0) p.set(cx - Math.round(bw / 2) - 1, y, k.accent[0])
   }
   p.set(cx, 2 + len, k.accent[3])
+  p.set(cx, 1 + len, k.accent[4])
   seep(p, cx, 3 + len, 3, k)
   return { canvas: finishSmall(p, k, 310), origin: [cx / p.w, 2 / p.h] }
 }

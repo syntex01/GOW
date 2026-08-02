@@ -4588,7 +4588,7 @@ export default class Battlefield {
       this.vfx.bloodPool(unit.x, gl)
       this.vfx.energyBurst(unit.x, unit.centerY, 0xc0392b, 1.6)
       this.vfx.light(unit.x, unit.centerY, unit.def.height * 1.6, 0xff2d20, 0.8)
-      for (let i = 0; i < 16; i += 1) {
+      for (let i = 0; i < 24; i += 1) {
         this.physics.spawn(
           'blood',
           unit.x + this.rng.spread(unit.def.height * 0.3),
@@ -4596,6 +4596,53 @@ export default class Battlefield {
           this.rng.spread(i % 3 === 0 ? 420 : 150),
           -this.rng.range(160, 520),
           { size: this.rng.range(0.7, 1.5), floor: gl }
+        )
+      }
+      // THE CRESCENDO. Every fifth head is an event on its own: the field
+      // flashes, the air is shoved, and the count is something a spectator can
+      // FEEL without reading a number.
+      if (killer.kills > 0 && killer.kills % 5 === 0) {
+        this.vfx.shockwave(unit.x, unit.centerY, 3.2)
+        this.vfx.flash(0xc0392b, 200, 0.22)
+        this.vfx.shake(0.8, 260)
+        this.vfx.hitStop(100)
+        for (let i = 0; i < 20; i += 1) {
+          this.physics.spawn(
+            'blood',
+            unit.x + this.rng.spread(50),
+            unit.centerY - this.rng.range(0, 40),
+            this.rng.spread(560),
+            -this.rng.range(200, 640),
+            { size: this.rng.range(0.9, 1.8), floor: gl }
+          )
+        }
+      }
+    }
+    // THE CATACLYSM. However the lord goes — cut down or burnt out on its own
+    // clock — everything it never spent leaves at once: a triple pressure
+    // wave, a crater, and a rain of blood across half the screen. This fires
+    // through kill() so the scheduled burn-out and a death in battle end on
+    // the same spectacle.
+    if (unit.def.special === 'incarnate_lord') {
+      const gl = this.groundLineFor(unit.lane)
+      this.vfx.shockwave(unit.x, unit.centerY, 4.2)
+      this.vfx.shockwave(unit.x, gl - 6, 3)
+      this.vfx.shockwave(unit.x, unit.centerY, 2, 0xeee7d0)
+      this.vfx.explosion(unit.x, unit.centerY, unit.def.height * 2.4, 0xc0392b, true)
+      this.vfx.flash(0xc0392b, 260, 0.32)
+      this.vfx.crater(unit.x, gl, 34)
+      this.vfx.gore(unit.x, unit.centerY, 4)
+      this.vfx.shake(1, 420)
+      this.vfx.hitStop(120)
+      for (let i = 0; i < 60; i += 1) {
+        const wide = i % 4 === 0
+        this.physics.spawn(
+          'blood',
+          unit.x + this.rng.spread(unit.def.height * 0.4),
+          unit.centerY - this.rng.range(0, unit.def.height * 0.6),
+          this.rng.spread(wide ? 760 : 260),
+          -this.rng.range(180, 700),
+          { size: this.rng.range(0.8, 1.8), floor: gl }
         )
       }
     }
@@ -5409,8 +5456,8 @@ export default class Battlefield {
       const gl = this.groundLineFor(u.lane)
       u.dripMs -= dtMs
       if (u.dripMs <= 0) {
-        u.dripMs = 70 - spent * 25
-        const drops = 5 + Math.round(spent * 3)
+        u.dripMs = 50 - spent * 18
+        const drops = 8 + Math.round(spent * 4)
         for (let i = 0; i < drops; i += 1) {
           const mode = i % 3
           this.physics.spawn(
@@ -5429,11 +5476,11 @@ export default class Battlefield {
       }
       u.goutMs -= dtMs
       if (u.goutMs <= 0) {
-        u.goutMs = 800 - spent * 300
+        u.goutMs = 650 - spent * 250
         // The gout leans with the facing on even beats and against it on odd,
         // read off the sim clock so it stays deterministic.
         const lean = Math.floor(this.elapsedMs / 800) % 2 === 0 ? u.facing : -u.facing
-        for (let i = 0; i < 14; i += 1) {
+        for (let i = 0; i < 22; i += 1) {
           this.physics.spawn(
             'blood',
             u.x + lean * this.rng.range(0, u.def.height * 0.2),
@@ -5445,6 +5492,30 @@ export default class Battlefield {
         }
         this.vfx.gore(u.x + lean * 10, u.centerY, 1.3)
         this.vfx.bloodPool(u.x + lean * this.rng.range(20, 60), gl)
+      }
+
+      // THE BLADE BURNS. A pulsing red light rides where the pendulum hangs,
+      // read off the sim clock so both peers pulse together.
+      const bladeX = u.x + u.facing * u.def.height * 0.14
+      const bladeY = u.centerY + u.def.height * 0.12
+      const pulse = 0.45 + 0.3 * Math.sin(this.elapsedMs / 170)
+      this.vfx.light(bladeX, bladeY, u.def.height * 0.5, 0xff2d20, pulse)
+
+      // AND IT DRINKS. On soaked ground the blade pulls the field's blood up
+      // into itself — three siphon threads a beat off the stained radius, and
+      // a sliver of health with them. The lord wants to fight where it has
+      // already killed; this is that want, made visible and made mechanical.
+      u.drinkMs -= dtMs
+      if (u.drinkMs <= 0) {
+        u.drinkMs = 480
+        const soak = this.goreAt(u.x)
+        if (soak > 0.08) {
+          for (let i = 0; i < 3; i += 1) {
+            this.vfx.siphon(u.x + this.rng.spread(u.def.height * 1.1), gl - 2, bladeX, bladeY)
+          }
+          u.heal(u.maxHp * 0.006 * soak)
+          this.vfx.light(bladeX, bladeY, u.def.height * 0.9, 0xff4a3c, 1.1)
+        }
       }
       // THE AURA. Two lights, not one: a red wash at the body for the blood and
       // a pale ring at the feet for the bone, so the thing is lit by what it is
@@ -5472,6 +5543,7 @@ export default class Battlefield {
           this.vfx.ossify(sx, ground - u.def.height * 0.22, u.def.height * 0.34)
           this.physics.spawn('rubble', sx + this.rng.spread(10), ground - 8, this.rng.spread(50), -this.rng.range(120, 260), { size: this.rng.range(0.6, 1.2), floor: ground })
         }
+        this.vfx.shockwave(u.x, ground - 8, 3.4, 0xeee7d0)
         this.vfx.shake(0.45, 150)
         audio.play('death_mech', 0.3)
       }
@@ -5493,6 +5565,8 @@ export default class Battlefield {
         // Only the soaked ground pays. On clean ground this is a light show.
         if (soak > 0.05) u.heal(u.maxHp * LORD_NOVA_DRINK * soak)
         this.vfx.explosion(u.x, u.centerY, u.def.height * 1.3, 0xc0392b, true)
+        this.vfx.shockwave(u.x, u.centerY, 2.8)
+        this.vfx.shockwave(u.x, this.groundLineFor(u.lane) - 6, 1.6)
         this.vfx.energyBurst(u.x, u.centerY, 0xff2d20, 2)
         this.vfx.light(u.x, u.centerY, u.def.height * 2.4, 0xff2d20, 1.2)
         this.vfx.bloodPool(u.x, this.groundLineFor(u.lane))
@@ -5558,8 +5632,9 @@ export default class Battlefield {
       // where it lands, so the step reads as the ground being struck from
       // above. Still not the possession rings; those stay the rite's.
       this.vfx.energyBurst(u.x, u.centerY, 0xff2d20, 1.6)
+      this.vfx.shockwave(u.x, this.groundLineFor(u.lane) - 6, 2.3)
       this.vfx.light(u.x, u.centerY, u.def.height * 1.8, 0xff2d20, 1)
-      for (let i = 0; i < 12; i += 1) {
+      for (let i = 0; i < 18; i += 1) {
         this.physics.spawn(
           'blood',
           u.x + this.rng.spread(u.def.height * 0.12),
@@ -5722,11 +5797,12 @@ export default class Battlefield {
       // The arc twice, offset a beat apart — a pendulum blade should leave a
       // wake, not a line.
       this.vfx.cleaveArc(target.x - dir * 14, ty + 6, dir)
+      this.vfx.shockwave(target.x, ty + 10, 1.7)
       this.vfx.energyBurst(target.x, ty, 0xff2d20, 2)
       this.vfx.gore(target.x, ty, 2.6)
       this.vfx.light(target.x, ty, attacker.def.height * 1.4, 0xff2d20, 0.9)
       // Thrown OFF the blade, along the swing: the spray leads the cut.
-      for (let i = 0; i < 8; i += 1) {
+      for (let i = 0; i < 14; i += 1) {
         this.physics.spawn(
           'blood',
           target.x + this.rng.spread(30),

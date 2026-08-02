@@ -306,6 +306,31 @@ export default class Vfx {
   // DESTROYED throw outward; things GROWING rise and spread.
 
   /** THE BANISHMENT — the soul is tithed: a wisp torn loose and snuffed. */
+  /**
+   * A PRESSURE WAVE. One ring, flattened to the battle's perspective, thrown
+   * outward fast and gone in a third of a second — the air itself being
+   * shoved. The heavy hitters stack one of these under their impacts so the
+   * blow reads in the ground, not just in the body it lands on.
+   */
+  shockwave(x: number, y: number, scale: number, color = 0xff2d20): void {
+    const ring = this.scene.add
+      .image(x, y, 'fx:ring')
+      .setDepth(322)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(color)
+      .setScale(0.12, 0.045)
+      .setAlpha(0.95)
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: scale,
+      scaleY: scale * 0.38,
+      alpha: 0,
+      duration: 330,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy()
+    })
+  }
+
   banish(x: number, y: number): void {
     this.lighting?.flash(x, y, 96, 0xb46bff, 0.9)
     // A hole in the light where the soul was, so the violet reads even
