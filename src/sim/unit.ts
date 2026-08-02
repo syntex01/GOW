@@ -380,6 +380,15 @@ export default class Unit implements Damageable {
    */
   stepMs = 0
   /**
+   * Beat between blood drips for a body that is bleeding out on a clock.
+   *
+   * Stepped in `updateLords` off the simulation clock like everything else, so
+   * both peers drip on the same tick — the drops are physics bodies and the
+   * physics world is shared, so this cannot be run off the cosmetic stream the
+   * way a spark or a floating label can.
+   */
+  dripMs = 0
+  /**
    * A deliberate leap does not hurt on landing. Without this the fall-damage
    * rule — which exists to punish being THROWN — would bill a raider for every
    * jump it made on purpose.

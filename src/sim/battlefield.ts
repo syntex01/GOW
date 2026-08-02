@@ -5365,6 +5365,36 @@ export default class Battlefield {
   private updateLords(dtMs: number): void {
     for (const u of this.units) {
       if (!u.alive || u.def.special !== 'incarnate_lord') continue
+
+      // IT IS BLEEDING TO DEATH THE WHOLE TIME IT IS HERE, and the player should
+      // be able to see that without reading a health bar. The sim already runs
+      // an accelerating bleed that always finishes on schedule; this is that
+      // curve made visible — drops come faster and in greater number the closer
+      // it is to the end, and the glow under it swells to match.
+      //
+      // `spent` is 0 at arrival and 1 at collapse. A staged lord with no
+      // possession behind it has incarnateFor 0 and simply bleeds at the base
+      // rate, which is what the render scenes want.
+      const spent = u.incarnateFor > 0 ? 1 - Math.max(0, u.incarnateMs) / u.incarnateFor : 0
+      u.dripMs -= dtMs
+      if (u.dripMs <= 0) {
+        u.dripMs = 240 - spent * 170
+        const drops = 1 + Math.round(spent * 3)
+        for (let i = 0; i < drops; i += 1) {
+          this.physics.spawn(
+            'blood',
+            u.x + this.rng.spread(u.def.height * 0.14),
+            u.centerY - this.rng.range(0, u.def.height * 0.34),
+            this.rng.spread(70),
+            this.rng.range(0, 90),
+            { size: this.rng.range(0.5, 1.1), floor: this.groundLineFor(u.lane) }
+          )
+        }
+      }
+      // A low red wash that grows as it burns down. Costs nothing and does more
+      // for "this thing is not ordinary" than any amount of extra geometry.
+      this.vfx.light(u.x, u.centerY, u.def.height * (0.8 + spent * 0.6), 0xc0392b, 0.3 + spent * 0.45)
+
       if (u.stepMs > 0) {
         u.stepMs -= dtMs
         continue
@@ -5395,14 +5425,34 @@ export default class Battlefield {
         continue
       }
 
+      // THE STEP, both ends of it. A teleport that only plays an effect where
+      // it arrives reads as a spawn; the departure is what makes it a step, so
+      // the ground it leaves gets the same treatment as the ground it takes.
       const dir = ADVANCE_DIR[u.faction]
-      this.vfx.banish(u.x, u.centerY)
+      const fromX = u.x
+      this.vfx.banish(fromX, u.centerY)
+      this.vfx.gore(fromX, u.centerY, 1.4)
+      for (let i = 0; i < 10; i += 1) {
+        this.physics.spawn(
+          'blood',
+          fromX + this.rng.spread(u.def.height * 0.2),
+          u.centerY - this.rng.range(0, u.def.height * 0.5),
+          this.rng.spread(180),
+          -this.rng.range(40, 220),
+          { size: this.rng.range(0.6, 1.3), floor: this.groundLineFor(u.lane) }
+        )
+      }
+
       u.x = prey.x - dir * LORD_STEP_STANDOFF
       u.setLane(prey.lane)
       // Arriving mid-swing would let it dodge its own cooldown by stepping.
       u.errandX = null
       u.stepMs = LORD_STEP_MS
+
       this.vfx.possession(u.x, u.centerY, u.def.height)
+      this.vfx.explosion(u.x, u.centerY, u.def.height * 0.7, 0xc0392b, false)
+      this.vfx.energyBurst(u.x, u.centerY, 0xff2d20, 1.3)
+      this.vfx.light(u.x, u.centerY, u.def.height * 1.8, 0xff2d20, 1)
       this.vfx.shake(0.4, 120)
       audio.play('death_mech', 0.35)
     }
@@ -5539,6 +5589,18 @@ export default class Battlefield {
       }
       this.vfx.cleaveArc(target.x, target.centerY, ADVANCE_DIR[attacker.faction])
       this.vfx.flinch(target.x, this.groundLineFor(target.lane), HEADSMAN_DREAD_PX)
+    }
+    // THE LORD'S SWING. One blow every three seconds has to look like an event,
+    // so it gets the cleave arc the Headsman uses plus a burst and a hitstop —
+    // the freeze is doing most of the work, because a slow swing that lands
+    // without one reads as a whiff no matter how much blood comes off it.
+    if (attacker instanceof Unit && attacker.def.special === 'incarnate_lord') {
+      const dir = ADVANCE_DIR[attacker.faction]
+      this.vfx.cleaveArc(target.x, target.centerY, dir)
+      this.vfx.energyBurst(target.x, target.centerY, 0xff2d20, 1.5)
+      this.vfx.gore(target.x, target.centerY, 2)
+      this.vfx.shake(0.5, 140)
+      this.vfx.hitStop(70)
     }
     // THE SKINRIDER lands on the back and stays there. Every blow it lands
     // refreshes the grip, so the only way off is to kill the thing wearing you —

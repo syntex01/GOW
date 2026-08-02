@@ -1830,8 +1830,12 @@ const INCARNATION_SKELETON = (): Skeleton => {
  */
 const INCARNATION_WALK: Clip = {
   name: 'walk', duration: 1250, loop: true, ease: 'sine', keys: [
-    { t: 0, pose: { root: { y: 0.016 }, thighF: { angle: 0.36 }, shinF: { angle: 0.42 }, thighB: { angle: -0.4 }, shinB: { angle: 0.16 }, cape: { angle: -0.14 }, armL: { angle: -0.12 }, armR: { angle: 0.1 } } },
-    { t: 0.5, pose: { root: { y: -0.018 }, thighF: { angle: -0.4 }, shinF: { angle: 0.16 }, thighB: { angle: 0.36 }, shinB: { angle: 0.42 }, cape: { angle: 0.16 }, armL: { angle: 0.12 }, armR: { angle: -0.08 } } }
+    { t: 0, pose: { root: { y: 0.016 }, torso: { angle: 0.03 }, head: { angle: -0.05 }, thighF: { angle: 0.36 }, shinF: { angle: 0.42 }, thighB: { angle: -0.4 }, shinB: { angle: 0.16 }, cape: { angle: -0.14 }, armL: { angle: -0.12 }, armR: { angle: 0.1 }, foreR: { angle: -0.08 }, sword: { angle: 0.12 } } },
+    // Quarter beats: the pass position. Without them a two-key stride reads as
+    // a metronome, and this one is slow enough that the eye has time to notice.
+    { t: 0.25, pose: { root: { y: -0.006 }, torso: { angle: 0 }, head: { angle: 0 }, thighF: { angle: 0 }, shinF: { angle: 0.3 }, thighB: { angle: 0 }, shinB: { angle: 0.3 }, cape: { angle: 0.02 }, sword: { angle: 0 } } },
+    { t: 0.5, pose: { root: { y: -0.018 }, torso: { angle: -0.03 }, head: { angle: 0.05 }, thighF: { angle: -0.4 }, shinF: { angle: 0.16 }, thighB: { angle: 0.36 }, shinB: { angle: 0.42 }, cape: { angle: 0.16 }, armL: { angle: 0.12 }, armR: { angle: -0.08 }, foreR: { angle: 0.06 }, sword: { angle: -0.1 } } },
+    { t: 0.75, pose: { root: { y: -0.006 }, torso: { angle: 0 }, head: { angle: 0 }, thighF: { angle: 0 }, shinF: { angle: 0.3 }, thighB: { angle: 0 }, shinB: { angle: 0.3 }, cape: { angle: -0.02 }, sword: { angle: 0 } } }
   ]
 }
 /**
@@ -1854,11 +1858,21 @@ const INCARNATION_ATTACK: Clip = {
     { t: 1, pose: { torso: { angle: 0 }, armR: { angle: 0 }, foreR: { angle: 0 }, sword: { angle: 0 }, cape: { angle: 0 }, armL: { angle: 0 } }, ease: 'back' }
   ]
 }
-/** Standing still: breathing, and the blade drifting under its own weight. */
+/**
+ * Standing still, badly.
+ *
+ * It is bleeding out the whole time it is on the field, so the idle is not
+ * calm — the head drops and comes back up, the sword arm sags under the blade
+ * and is hauled level again, and the cape settles a beat behind both. Three
+ * channels on slightly different phases, so the loop never quite repeats where
+ * the eye expects it to.
+ */
 const INCARNATION_IDLE: Clip = {
   name: 'idle', duration: 3600, loop: true, ease: 'sine', keys: [
-    { t: 0, pose: { cape: { angle: -0.05 }, armR: { angle: 0.04 }, sword: { angle: -0.06 }, armL: { angle: -0.04 } } },
-    { t: 0.5, pose: { cape: { angle: 0.06 }, armR: { angle: -0.03 }, sword: { angle: 0.05 }, armL: { angle: 0.04 } } }
+    { t: 0, pose: { cape: { angle: -0.05 }, armR: { angle: 0.04 }, foreR: { angle: 0.03 }, sword: { angle: -0.06 }, armL: { angle: -0.04 }, head: { angle: 0.03 }, torso: { angle: 0.01 } } },
+    { t: 0.34, pose: { cape: { angle: 0.03 }, armR: { angle: 0.09 }, foreR: { angle: 0.07 }, sword: { angle: 0.02 }, head: { angle: 0.07 }, torso: { angle: 0.03 } } },
+    { t: 0.62, pose: { cape: { angle: 0.06 }, armR: { angle: -0.03 }, foreR: { angle: -0.02 }, sword: { angle: 0.05 }, armL: { angle: 0.04 }, head: { angle: -0.02 }, torso: { angle: -0.01 } } },
+    { t: 1, pose: { cape: { angle: -0.05 }, armR: { angle: 0.04 }, foreR: { angle: 0.03 }, sword: { angle: -0.06 }, armL: { angle: -0.04 }, head: { angle: 0.03 }, torso: { angle: 0.01 } } }
   ]
 }
 
