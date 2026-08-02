@@ -1222,7 +1222,7 @@ export default class Unit implements Damageable {
    * the thirty seconds while the flash-and-number spam repainted the lord as
    * a flickering white blob with a damage feed attached.
    */
-  bleedOut(amount: number): void {
+  toll(amount: number): void {
     if (!this.alive) return
     this.hp -= amount
     if (this.hp <= 0) this.kill()

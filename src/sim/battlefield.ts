@@ -4999,10 +4999,10 @@ export default class Battlefield {
       // Integrates to the lord's whole health across its life, so it always
       // ends on schedule however the fight went.
       const bleed = (2 * lord.maxHp * spent) / (INCARNATION_LIFE_MS / 1000)
-      // Via bleedOut, NOT takeDamage: a per-frame takeDamage refreshed the hit
+      // Via toll, NOT takeDamage: a per-frame takeDamage refreshed the hit
       // flash every frame (the lord rendered as a solid white silhouette for
       // its whole life) and printed a damage number per frame on top of it.
-      lord.bleedOut(bleed * (dtMs / 1000))
+      lord.toll(bleed * (dtMs / 1000))
       return
     }
 
