@@ -4582,7 +4582,7 @@ export default class Battlefield {
     // where it stands — a fountain thrown high, the ground pooled, a crimson
     // burst — so a lord working through a horde paints its own path across the
     // field. Bounded per kill; the horde itself provides the volume.
-    if (winner instanceof Unit && winner.def.special === 'incarnate_lord' && unit instanceof Unit) {
+    if (killer instanceof Unit && killer.def.special === 'incarnate_lord') {
       const gl = this.groundLineFor(unit.lane)
       this.vfx.gore(unit.x, unit.centerY, 2.4)
       this.vfx.bloodPool(unit.x, gl)
