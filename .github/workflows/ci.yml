@@ -128,7 +128,9 @@ jobs:
   render-carnage-combat:
     name: Fixed combat — ${{ matrix.scene }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The rite scene captures 42 simulated seconds at ~2.5s a frame plus ~8min
+    # of runner setup, which no longer fits in 30 — it timed out at 30m15s.
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
