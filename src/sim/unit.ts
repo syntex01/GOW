@@ -406,6 +406,9 @@ export default class Unit implements Damageable {
    */
   spineMs = 0
   novaMs = 0
+  /** Beat between the lord's arterial gouts — the hard directional bursts
+   * that ride on top of its constant spray. */
+  goutMs = 0
   /**
    * A deliberate leap does not hurt on landing. Without this the fall-damage
    * rule — which exists to punish being THROWN — would bill a raider for every

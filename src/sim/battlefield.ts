@@ -5400,20 +5400,51 @@ export default class Battlefield {
       // possession behind it has incarnateFor 0 and simply bleeds at the base
       // rate, which is what the render scenes want.
       const spent = u.incarnateFor > 0 ? 1 - Math.max(0, u.incarnateMs) / u.incarnateFor : 0
+      // THE SPRAY. Not a drip — the body is a wound held open, venting from
+      // every seam at once: a constant three-way spray (fountain overhead,
+      // jets flung to both sides, a close dribble down the plates), and on a
+      // slower beat an arterial GOUT — one hard directional burst with a gore
+      // puff, alternating sides. Everything from the sim stream; drops are
+      // physics bodies and both peers must paint the same slaughter.
+      const gl = this.groundLineFor(u.lane)
       u.dripMs -= dtMs
       if (u.dripMs <= 0) {
-        u.dripMs = 240 - spent * 170
-        const drops = 1 + Math.round(spent * 3)
+        u.dripMs = 70 - spent * 25
+        const drops = 5 + Math.round(spent * 3)
         for (let i = 0; i < drops; i += 1) {
+          const mode = i % 3
           this.physics.spawn(
             'blood',
-            u.x + this.rng.spread(u.def.height * 0.14),
-            u.centerY - this.rng.range(0, u.def.height * 0.34),
-            this.rng.spread(70),
-            this.rng.range(0, 90),
-            { size: this.rng.range(0.5, 1.1), floor: this.groundLineFor(u.lane) }
+            u.x + this.rng.spread(u.def.height * (mode === 2 ? 0.3 : 0.14)),
+            u.centerY - this.rng.range(0, u.def.height * 0.4),
+            mode === 0 ? this.rng.spread(90)
+              : mode === 1 ? (i % 2 === 0 ? 1 : -1) * this.rng.range(180, 520)
+                : this.rng.spread(140),
+            mode === 0 ? -this.rng.range(320, 640)
+              : mode === 1 ? -this.rng.range(40, 220)
+                : this.rng.range(0, 120),
+            { size: this.rng.range(0.6, 1.4), floor: gl }
           )
         }
+      }
+      u.goutMs -= dtMs
+      if (u.goutMs <= 0) {
+        u.goutMs = 800 - spent * 300
+        // The gout leans with the facing on even beats and against it on odd,
+        // read off the sim clock so it stays deterministic.
+        const lean = Math.floor(this.elapsedMs / 800) % 2 === 0 ? u.facing : -u.facing
+        for (let i = 0; i < 14; i += 1) {
+          this.physics.spawn(
+            'blood',
+            u.x + lean * this.rng.range(0, u.def.height * 0.2),
+            u.centerY - this.rng.range(u.def.height * 0.1, u.def.height * 0.45),
+            lean * this.rng.range(260, 660),
+            -this.rng.range(80, 380),
+            { size: this.rng.range(0.8, 1.7), floor: gl }
+          )
+        }
+        this.vfx.gore(u.x + lean * 10, u.centerY, 1.3)
+        this.vfx.bloodPool(u.x + lean * this.rng.range(20, 60), gl)
       }
       // THE AURA. Two lights, not one: a red wash at the body for the blood and
       // a pale ring at the feet for the bone, so the thing is lit by what it is
