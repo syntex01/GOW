@@ -139,9 +139,11 @@ jobs:
           - 04-age-4-apex-roster
           - 05-incarnation-of-slaughter
     steps:
+      # Deliberately NOT pinned to claude/carnage-roster-progression. It was,
+      # which meant every combat video CI produced rendered that branch rather
+      # than the commit under test — so the videos silently kept showing the old
+      # capstone while the branch changed underneath them.
       - uses: actions/checkout@v4
-        with:
-          ref: claude/carnage-roster-progression
       - uses: actions/setup-node@v4
         with:
           node-version: 22

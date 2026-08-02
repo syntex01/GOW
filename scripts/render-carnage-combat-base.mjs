@@ -48,10 +48,15 @@ const scenes = [
   {
     slug: '05-incarnation-of-slaughter',
     title: 'INCARNATION OF SLAUGHTER',
-    subtitle: 'Deployable Carnage capstone versus the heaviest conventional line',
+    subtitle: 'What rises where the host stood, versus the heaviest conventional line',
     age: 4,
     duration: 16,
-    playerNames: ['Incarnation of Slaughter'],
+    // BY ID, not by name. The lord is `hidden` and never on a roster — in a
+    // real match it exists only because `Battlefield.possess` raised it. The
+    // roster lookup the other scenes use would find the CARD instead, which is
+    // a one-hitpoint payment that places nothing and would render empty ground.
+    playerNames: [],
+    playerIds: ['nk_incarnation_lord'],
     capstone: true
   }
 ]
@@ -155,13 +160,17 @@ async function renderScene(scene, index) {
 
     const lanes = [2, 1, 3, 0, 4, 2, 1, 3, 0, 4]
     selectedPlayer.forEach((def, i) => player.enqueue(def.id, lanes[i % lanes.length]))
+    // `enqueue` resolves through ALL_UNITS_BY_ID rather than the roster, so a
+    // hidden body can be staged for a render without being purchasable.
+    const staged = spec.playerIds ?? []
+    staged.forEach((id, i) => player.enqueue(id, lanes[(selectedPlayer.length + i) % lanes.length]))
     selectedEnemy.forEach((def, i) => enemy.enqueue(def.id, lanes[i % lanes.length]))
 
     battle.paused = false
     hud.scene.setVisible(false)
 
     return {
-      playerNames: selectedPlayer.map(def => def.name),
+      playerNames: [...selectedPlayer.map(def => def.name), ...staged],
       enemyNames: selectedEnemy.map(def => def.name),
       worldWidth: field.config.worldWidth
     }
