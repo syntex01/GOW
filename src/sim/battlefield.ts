@@ -5045,9 +5045,31 @@ export default class Battlefield {
     const lane = host.lane
     const height = host.def.height
 
+    // THE RITE. The loudest thing in the game short of a fortress falling,
+    // because it is the one event a player has been paying toward for minutes:
+    // the host is emptied — a fountain thrown high and to both sides, the
+    // ground pooled before the body has finished coming apart — and the lord
+    // stands up inside the column of it. Every drop is thrown from the sim's
+    // own stream, so both peers paint the same slaughter.
     this.vfx.possession(x, host.centerY, height)
-    this.vfx.explosion(x, host.centerY, height * 1.4, 0xc0392b, true)
-    this.vfx.gore(x, host.centerY, 3)
+    this.vfx.explosion(x, host.centerY, height * 1.8, 0xc0392b, true)
+    this.vfx.gore(x, host.centerY, 4)
+    this.vfx.bloodPool(x, this.groundLineFor(lane))
+    this.vfx.light(x, host.centerY, height * 3, 0xff2d20, 1.4)
+    this.vfx.shake(0.8, 260)
+    this.vfx.hitStop(110)
+    for (let i = 0; i < 60; i += 1) {
+      // Two thirds fountain, one third sideways spray at body height.
+      const fountain = i % 3 !== 0
+      this.physics.spawn(
+        'blood',
+        x + this.rng.spread(height * (fountain ? 0.25 : 0.5)),
+        host.centerY - this.rng.range(0, height * 0.5),
+        this.rng.spread(fountain ? 160 : 520),
+        fountain ? -this.rng.range(260, 640) : -this.rng.range(40, 180),
+        { size: this.rng.range(0.7, 1.6), floor: this.groundLineFor(lane) }
+      )
+    }
     // Consumed, not killed by anybody: no bounty, no kill credit, no deed
     // progress for the owner of whatever happened to be standing there.
     host.hp = 0
