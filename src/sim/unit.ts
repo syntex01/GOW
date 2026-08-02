@@ -1214,6 +1214,20 @@ export default class Unit implements Damageable {
   }
 
   /** Throws this unit bodily. Used by blasts strong enough to lift a man. */
+  /**
+   * A clock's toll, not a blow. Direct health loss with NONE of a hit's
+   * presentation — no flash, no impact, no damage number, no knockback — and
+   * none of its mitigation either: the Incarnation's bleed is scheduled in
+   * absolute health, and routing it through takeDamage let toughness stretch
+   * the thirty seconds while the flash-and-number spam repainted the lord as
+   * a flickering white blob with a damage feed attached.
+   */
+  bleedOut(amount: number): void {
+    if (!this.alive) return
+    this.hp -= amount
+    if (this.hp <= 0) this.kill()
+  }
+
   launch(vx: number, vy: number): void {
     if (!this.alive || this.layer !== 'ground') return
     this.vx += vx

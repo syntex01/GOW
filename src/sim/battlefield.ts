@@ -4999,7 +4999,10 @@ export default class Battlefield {
       // Integrates to the lord's whole health across its life, so it always
       // ends on schedule however the fight went.
       const bleed = (2 * lord.maxHp * spent) / (INCARNATION_LIFE_MS / 1000)
-      lord.takeDamage(bleed * (dtMs / 1000), 'slash')
+      // Via bleedOut, NOT takeDamage: a per-frame takeDamage refreshed the hit
+      // flash every frame (the lord rendered as a solid white silhouette for
+      // its whole life) and printed a damage number per frame on top of it.
+      lord.bleedOut(bleed * (dtMs / 1000))
       return
     }
 
@@ -5496,11 +5499,12 @@ export default class Battlefield {
       u.errandX = null
       u.stepMs = LORD_STEP_MS
 
-      this.vfx.possession(u.x, u.centerY, u.def.height)
-      this.vfx.explosion(u.x, u.centerY, u.def.height * 0.7, 0xc0392b, false)
+      // Arrival is a burst and a flash, NOT the possession rings. The rings
+      // are the rite's signature and this fires every four seconds — at that
+      // rate the ceremony read as a strobe and buried the body under it.
       this.vfx.energyBurst(u.x, u.centerY, 0xff2d20, 1.3)
-      this.vfx.light(u.x, u.centerY, u.def.height * 1.8, 0xff2d20, 1)
-      this.vfx.shake(0.4, 120)
+      this.vfx.light(u.x, u.centerY, u.def.height * 1.6, 0xff2d20, 0.9)
+      this.vfx.shake(0.3, 100)
       audio.play('death_mech', 0.35)
     }
   }
