@@ -4578,6 +4578,27 @@ export default class Battlefield {
     // them would let Necropolis's "lose 25" and the ascension's "lose 60" be
     // paid off by simply owning the node that raises them.
     if (!unit.def.noncombat) this.armyFor(unit.faction).deeds.losses += 1
+    // A DEATH BY THE LORD'S HAND IS AN EXECUTION. Whatever it kills is emptied
+    // where it stands — a fountain thrown high, the ground pooled, a crimson
+    // burst — so a lord working through a horde paints its own path across the
+    // field. Bounded per kill; the horde itself provides the volume.
+    if (winner instanceof Unit && winner.def.special === 'incarnate_lord' && unit instanceof Unit) {
+      const gl = this.groundLineFor(unit.lane)
+      this.vfx.gore(unit.x, unit.centerY, 2.4)
+      this.vfx.bloodPool(unit.x, gl)
+      this.vfx.energyBurst(unit.x, unit.centerY, 0xc0392b, 1.6)
+      this.vfx.light(unit.x, unit.centerY, unit.def.height * 1.6, 0xff2d20, 0.8)
+      for (let i = 0; i < 16; i += 1) {
+        this.physics.spawn(
+          'blood',
+          unit.x + this.rng.spread(unit.def.height * 0.3),
+          unit.centerY - this.rng.range(0, unit.def.height * 0.4),
+          this.rng.spread(i % 3 === 0 ? 420 : 150),
+          -this.rng.range(160, 520),
+          { size: this.rng.range(0.7, 1.5), floor: gl }
+        )
+      }
+    }
     // A LOT OF BLOOD. The possession ending is the loudest thing on the board,
     // because it is the one death a player has been watching a clock on.
     if (unit.incarnate) {
@@ -5434,6 +5455,9 @@ export default class Battlefield {
           if (Math.abs(foe.x - u.x) > LORD_NOVA_RADIUS) continue
           foe.takeDamage(LORD_NOVA_DAMAGE * u.damageMult, 'slash')
           this.vfx.siphon(foe.x, foe.centerY, u.x, u.centerY)
+          // The tithe is taken THROUGH them: each one bleeds where it stands.
+          this.vfx.bloodPool(foe.x, this.groundLineFor(foe.lane))
+          this.vfx.impact(foe.x, foe.centerY, 0xc0392b, 1.2, true)
         }
         // Only the soaked ground pays. On clean ground this is a light show.
         if (soak > 0.05) u.heal(u.maxHp * LORD_NOVA_DRINK * soak)
@@ -5499,11 +5523,21 @@ export default class Battlefield {
       u.errandX = null
       u.stepMs = LORD_STEP_MS
 
-      // Arrival is a burst and a flash, NOT the possession rings. The rings
-      // are the rite's signature and this fires every four seconds — at that
-      // rate the ceremony read as a strobe and buried the body under it.
-      this.vfx.energyBurst(u.x, u.centerY, 0xff2d20, 1.3)
-      this.vfx.light(u.x, u.centerY, u.def.height * 1.6, 0xff2d20, 0.9)
+      // Arrival is a burst, a flash and a COLUMN — blood thrown straight up
+      // where it lands, so the step reads as the ground being struck from
+      // above. Still not the possession rings; those stay the rite's.
+      this.vfx.energyBurst(u.x, u.centerY, 0xff2d20, 1.6)
+      this.vfx.light(u.x, u.centerY, u.def.height * 1.8, 0xff2d20, 1)
+      for (let i = 0; i < 12; i += 1) {
+        this.physics.spawn(
+          'blood',
+          u.x + this.rng.spread(u.def.height * 0.12),
+          this.groundLineFor(u.lane) - 4,
+          this.rng.spread(60),
+          -this.rng.range(240, 560),
+          { size: this.rng.range(0.7, 1.4), floor: this.groundLineFor(u.lane) }
+        )
+      }
       this.vfx.shake(0.3, 100)
       audio.play('death_mech', 0.35)
     }
@@ -5654,8 +5688,23 @@ export default class Battlefield {
       const dir = ADVANCE_DIR[attacker.faction]
       const ty = target instanceof Unit ? target.centerY : attacker.centerY
       this.vfx.cleaveArc(target.x, ty, dir)
-      this.vfx.energyBurst(target.x, ty, 0xff2d20, 1.5)
-      this.vfx.gore(target.x, ty, 2)
+      // The arc twice, offset a beat apart — a pendulum blade should leave a
+      // wake, not a line.
+      this.vfx.cleaveArc(target.x - dir * 14, ty + 6, dir)
+      this.vfx.energyBurst(target.x, ty, 0xff2d20, 2)
+      this.vfx.gore(target.x, ty, 2.6)
+      this.vfx.light(target.x, ty, attacker.def.height * 1.4, 0xff2d20, 0.9)
+      // Thrown OFF the blade, along the swing: the spray leads the cut.
+      for (let i = 0; i < 8; i += 1) {
+        this.physics.spawn(
+          'blood',
+          target.x + this.rng.spread(30),
+          ty - this.rng.range(0, 26),
+          dir * this.rng.range(120, 380),
+          -this.rng.range(60, 300),
+          { size: this.rng.range(0.6, 1.2), floor: this.groundLineFor(attacker.lane) }
+        )
+      }
       this.vfx.shake(0.5, 140)
       this.vfx.hitStop(70)
     }
