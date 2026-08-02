@@ -5594,11 +5594,17 @@ export default class Battlefield {
     // so it gets the cleave arc the Headsman uses plus a burst and a hitstop —
     // the freeze is doing most of the work, because a slow swing that lands
     // without one reads as a whiff no matter how much blood comes off it.
+    //
+    // `target` is a Damageable, which may be a fortress — only a Unit carries
+    // centerY, so the height comes off the attacker when it is swinging at a
+    // wall. The shake and the freeze fire either way: hitting a fortress with
+    // this thing should land just as hard as hitting a man.
     if (attacker instanceof Unit && attacker.def.special === 'incarnate_lord') {
       const dir = ADVANCE_DIR[attacker.faction]
-      this.vfx.cleaveArc(target.x, target.centerY, dir)
-      this.vfx.energyBurst(target.x, target.centerY, 0xff2d20, 1.5)
-      this.vfx.gore(target.x, target.centerY, 2)
+      const ty = target instanceof Unit ? target.centerY : attacker.centerY
+      this.vfx.cleaveArc(target.x, ty, dir)
+      this.vfx.energyBurst(target.x, ty, 0xff2d20, 1.5)
+      this.vfx.gore(target.x, ty, 2)
       this.vfx.shake(0.5, 140)
       this.vfx.hitStop(70)
     }
