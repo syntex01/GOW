@@ -84,10 +84,23 @@ assert(
 const withoutCapstone = carnageRosterForAge(4, new Set(fullCarnage.filter(id => id !== 'incarnation_rite')))
 assert(!withoutCapstone.some(def => def.id === 'nk_incarnation'), 'Incarnation must remain optional')
 
+// THE HERALD CONTRACT.
+//
+// These two assertions previously read `!invest` and `damage > 0`, pinning the
+// capstone as a plain deployable body. That was the fix for a real complaint —
+// the card used to place nothing on the field — but it unhooked the possession
+// system without deleting it, stranding ~165 lines of live simulation behind a
+// flag nothing set. The Herald keeps the fix and the mechanic: it invests AND
+// it deploys.
+//
+// What must stay true: it pays into the offer, and it is a body the opponent
+// can see and kill. It deliberately does NO damage, so damage is not asserted.
 const incarnation = FACTION_UNITS.find(def => def.id === 'nk_incarnation')
 assert(incarnation, 'Incarnation definition missing')
-assert(!incarnation.invest, 'Incarnation must deploy rather than invest')
-assert(incarnation.hp > 1 && incarnation.damage > 0 && incarnation.pop > 0, 'Incarnation must be a real combat unit')
+assert(incarnation.invest === 'incarnation', 'Herald must pay into the Incarnation')
+assert(incarnation.noncombat, 'Herald must be noncombat — it channels, it does not fight')
+assert(incarnation.hp > 1 && incarnation.pop > 0, 'Herald must be a real body the opponent can kill')
+assert(incarnation.damage === 0, 'Herald must not fight')
 assert(TECHS_BY_ID.death_throes?.unlocks === 'nk_husk', 'Death Throes must own the Husk unlock')
 
 const occupied = new Set<string>()

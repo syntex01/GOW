@@ -30,7 +30,7 @@ Ripper.
 | Heavy monster | corrupted Knight | — | Monstrum | Great Maw |
 | Air hunter | — | — | Carrion Widow | Widow Queen |
 | Screen | — | — | — | Flesh Wall |
-| Capstone | — | — | — | optional Incarnation of Slaughter |
+| Capstone | — | — | — | optional Herald of Slaughter |
 
 Machine fallbacks (`Catapult` through `Railgun Walker`, rockets, armour, rotary
 wing and Titan) are intentionally empty after commitment until the matching
@@ -58,4 +58,19 @@ Nodes are grouped into five labelled clusters:
 `prominence` is explicit data. Keystone research is larger and costlier; minor
 support research is quieter and cheaper. Carnage connector veins darken and
 thicken with depth. The validation script checks slot collisions, backwards
-Carnage links, exact rosters, machine lockout and the deployable Incarnation.
+Carnage links, exact rosters, machine lockout and the Herald contract.
+
+## The capstone
+
+The Herald of Slaughter is a payment with a body. Each one bought is one
+investment into the Incarnation and one channelling figure standing behind your
+line: it does no damage, blocks no file and adds nothing to the press, but the
+board-wide audition only runs while at least one is alive.
+
+The audition takes the most expensive melee body that has killed three times its
+own price — from either side — doubles it (plus a tenth per investment), grants
+it lifesteal, and bleeds it out over about thirty seconds.
+
+Killing every Herald stops the watching. It does not refund it: investments
+already made persist, so a replacement resumes at the multiplier already bought.
+A possession already taken also persists — only the bleed ends that.

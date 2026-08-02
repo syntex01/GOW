@@ -1120,49 +1120,60 @@ export const FACTION_UNITS: UnitDef[] = [
     visual: look('nekrotics', { kind: 'mech', chassis: 'legs', torso: 'bare', weapon: 'none', helmet: 'horns', bulk: 1.9 , plan: 'maw'})
   },
   {
-    // THE INCARNATION OF SLAUGHTER. A real capstone body.
+    // THE HERALD OF SLAUGHTER. The offer, given a body to stand in.
     //
-    // The old card paid into a possession lottery and placed nothing on the
-    // field. That made the most expensive Carnage research feel like a UI trap.
-    // It now occupies the Titan slot directly: expensive, three files wide and
-    // deliberately slow, but an actual demon-lord the player can deploy and
-    // counter on the battlefield.
+    // The card is still a payment — buying it is one investment, and the thing
+    // that eventually arrives is somebody else's soldier, taken. But the older
+    // version of this card placed NOTHING on the field, which made the branch's
+    // most expensive research read as a UI trap: gold left the purse and the
+    // board did not change.
+    //
+    // So the payment now walks out. The Herald is deliberately useless in a
+    // fight: it does not swing, does not block a file and adds nothing to the
+    // press. It stands in the back file and channels, and the audition in
+    // `Battlefield.updateIncarnation` runs only while at least one of them is
+    // alive. That buys three things the invisible card never had — the purchase
+    // is visible, the offer has a tell the opponent can read, and the opponent
+    // has an answer that is not "lose your best soldier and hope".
+    //
+    // Killing every Herald collapses the offer. It does NOT refund it: what has
+    // been paid in stays paid, and a fresh Herald resumes at the multiplier the
+    // investments already bought.
     id: 'nk_incarnation',
     line: 'carnage_capstone',
-    name: 'Incarnation of Slaughter',
+    name: 'Herald of Slaughter',
     age: 4,
     role: 'melee',
     layer: 'ground',
-    cost: 5200,
-    buildMs: 9000,
-    hp: 8200,
-    armor: 'heavy',
-    damage: 760,
+    cost: 1200,
+    buildMs: 4000,
+    // Killable, but not by a stray arrow. It stands behind your line, so taking
+    // one down means pushing to the back file — a real commitment by the
+    // opponent, which is exactly the counterplay the invisible card denied them.
+    hp: 1200,
+    armor: 'light',
+    damage: 0,
     damageType: 'slash',
-    attackMs: 1900,
-    range: 72,
-    speed: 32,
-    mass: 18,
-    bounty: 1900,
-    xp: 1650,
-    pop: 5,
-    height: 240,
-    laneSpan: 3,
-    regen: 28,
-    crit: 0.2,
-    conduct: 'screen',
-    special: 'lifesteal',
-    attack: { kind: 'melee', knockback: 520, splash: 190 },
-    bonusVs: { heavy: 1.25, structure: 1.2 },
-    description: 'The Titan slot made flesh: a three-file demon-lord that heals from every wound it opens.',
+    attackMs: 1000,
+    range: 0,
+    // Walks out, reaches the channelling ground, and stops there for good.
+    speed: 46,
+    mass: 2,
+    bounty: 260,
+    xp: 200,
+    pop: 1,
+    height: 96,
+    noncombat: true,
+    invest: 'incarnation',
+    attack: { kind: 'melee', knockback: 0 },
+    description: 'It does not fight. It stands at the back and watches the board for whoever kills best — then takes them, whoever they belong to.',
     visual: look('nekrotics', {
       kind: 'humanoid',
-      torso: 'bare',
-      weapon: 'axe',
+      torso: 'robe',
+      weapon: 'none',
       helmet: 'horns',
       cape: true,
-      bulk: 2.15,
-      plan: 'incarnation',
+      bulk: 1.1,
       accent: 0xff2d20
     })
   },

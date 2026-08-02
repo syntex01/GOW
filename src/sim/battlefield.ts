@@ -230,8 +230,9 @@ const BUTCHERY_CRIT = 0.1
  * THE INCARNATION OF SLAUGHTER.
  *
  * It is not a soldier you buy — it is a standing offer you pay into. Every
- * purchase is one INVESTMENT. Once anything is invested, the Incarnation opens
- * a thirty-second audition, watches the whole board, and at the end of it takes
+ * purchase is one INVESTMENT, and every purchase also puts a HERALD on the
+ * board to carry it. Once anything is invested, the Incarnation opens a
+ * thirty-second audition, watches the whole board, and at the end of it takes
  * the most expensive MELEE body that killed three times its own price. Whoever
  * it belongs to. A possessed enemy soldier stops knowing whose side it was on.
  *
@@ -242,6 +243,14 @@ const BUTCHERY_CRIT = 0.1
  * At thirty investments the audition stops asking for the three-times deed: the
  * strongest melee body on the board is simply taken, every thirty seconds,
  * forever.
+ *
+ * THE HERALD IS THE TELL, AND THE ANSWER. The audition only runs while at least
+ * one Herald of that faction is alive. This is what makes the offer legible:
+ * gold spent puts something visible on the field, the opponent can see an
+ * Incarnation being paid for, and killing the Heralds stops the watching. It
+ * does not refund it — investments already made survive, so a replacement
+ * Herald resumes at the multiplier already bought. A possession already taken
+ * also survives; only the bleed ends that.
  */
 const INCARNATION_WINDOW_MS = 30_000
 /** How long a host survives the possession, on average, before the bleed wins. */
@@ -254,6 +263,14 @@ const INCARNATION_REACH = 2
 const INCARNATION_ALWAYS = 30
 /** Floor on the gap between possessions, however much has been paid in. */
 const INCARNATION_MIN_GAP_MS = 4000
+/**
+ * How far clear of its own fortress a Herald walks before it stands.
+ *
+ * Wider than the gatherers' pad so a rank of Heralds does not bury the base
+ * sprite, and still well behind the line — reaching one is a push, not a stray
+ * shot.
+ */
+const HERALD_STAND_PAD = 120
 
 /**
  * THE MONSTRUM's appetite. Every bite is permanent, so the numbers are small
@@ -3399,9 +3416,14 @@ export default class Battlefield {
       }
       // The quantity paths' chaff arrives in squads: one card, several
       // soldiers, staggered a step apart so they walk out as a file.
-      // The Incarnation is a payment, not a soldier. Nothing walks out.
+      //
+      // The Incarnation card is BOTH a payment and a soldier. It registers the
+      // investment and puts a Herald on the board to carry it, so the purchase
+      // is something the player and the opponent can both see.
       if (entry.def.invest === 'incarnation') {
         this.investIncarnation(army.faction, entry.def.cost)
+        const herald = this.spawnUnit(army.faction, entry.def, undefined, entry.lane)
+        this.anchorHerald(herald)
         continue
       }
       const copies = entry.def.squad ?? 1
@@ -4938,6 +4960,24 @@ export default class Battlefield {
 
   // ───────────────────── The Incarnation of Slaughter ─────────────────────
 
+  /**
+   * Walks a freshly bought Herald to its channelling ground and pins it there.
+   *
+   * `errandX` overrides the advance outright, so the Herald never marches at
+   * the enemy the way a soldier does — it takes a few steps clear of its own
+   * fortress and then stands, which is what makes it a thing the opponent has
+   * to come and dig out rather than something that delivers itself to them.
+   */
+  private anchorHerald(herald: Unit): void {
+    const base = this.baseFor(herald.faction)
+    herald.errandX = base.x + ADVANCE_DIR[herald.faction] * (base.radius + HERALD_STAND_PAD)
+  }
+
+  /** Is anybody still channelling for this side? */
+  private heraldStanding(faction: Faction): boolean {
+    return this.units.some(u => u.alive && u.faction === faction && u.def.invest === 'incarnation')
+  }
+
   /** One purchase paid into the offer. Opens the audition if nothing is running. */
   private investIncarnation(faction: Faction, gold: number): void {
     const inc = this.incarnation[faction]
@@ -4968,6 +5008,12 @@ export default class Battlefield {
     if (inc.invested === 0) return
 
     // A standing host bleeds harder every second it is still up.
+    //
+    // Deliberately ABOVE the Herald check: a possession already taken is not
+    // undone by killing the Herald late. Once the thing is in a body, the only
+    // way out of it is the bleed. Otherwise the counterplay would be "let them
+    // spend it, then snipe the Herald and hand the host back", which is worse
+    // than the invisible card ever was.
     if (inc.hostId !== null) {
       const host = this.units.find(u => u.id === inc.hostId && u.alive)
       if (!host || host.incarnateMs <= 0) {
@@ -4988,6 +5034,27 @@ export default class Battlefield {
       // what decides whether it lasts longer than the average half minute.
       const bleed = (2 * host.maxHp * spent) / (INCARNATION_LIFE_MS / 1000)
       host.takeDamage(bleed * (dtMs / 1000), 'slash')
+      return
+    }
+
+    // No Herald, no offer. The watching is something a body does, so with every
+    // Herald dead the audition stops where it stands.
+    //
+    // What was paid in is NOT refunded and NOT forgotten: `invested` and `gold`
+    // survive, so a replacement Herald resumes at the multiplier already bought
+    // rather than starting the climb again. Killing the Herald buys the
+    // opponent time and denies the current window — it does not undo the spend.
+    if (!this.heraldStanding(faction)) {
+      if (inc.auditioning) {
+        inc.auditioning = false
+        inc.clockMs = 0
+        this.vfx.floatingLabel(
+          this.baseFor(faction).x,
+          this.config.groundY - 300,
+          'THE RITE BREAKS',
+          '#7f8c8d'
+        )
+      }
       return
     }
 
