@@ -1683,7 +1683,10 @@ function incarnationTorso(height: number, k: FleshKit): PartArt {
  * back into it, which is what makes the silhouette legible from across the field.
  */
 function incarnationHead(height: number, k: FleshKit): PartArt {
-  const r = art(0.075, height)
+  // Bumped from 0.075: at battle zoom the first render put a skull barely wider
+  // than the neck under it, so the head stopped being a shape and became the
+  // top of the torso. Slender is a limb thickness, not a small head.
+  const r = art(0.095, height)
   const horn = art(0.19, height)
   const p = pad(r * 5.2, r * 2.4 + horn)
   const cx = p.w / 2
@@ -1789,7 +1792,12 @@ const INCARNATION_SKELETON = (): Skeleton => {
     bone('root', null, { y: -0.52, depth: 30 }),
     bone('torso', 'root', { angle: -Math.PI / 2 + 0.06, length: 0.4, part: 'torso', orient: 'up', depth: 31, weights: { breathe: 1, lean: 1, flinch: 1 } }),
     // Behind everything, and hung off the shoulders so it swings from the top.
-    bone('cape', 'torso', { x: -0.04, y: -0.1, angle: 0.06, part: 'cape', orient: 'down', depth: 4 }),
+    //
+    // ANGLE IS RELATIVE TO THE TORSO, WHICH POINTS UP. A cape bone at ~0 rest
+    // therefore inherits -PI/2 and `partRotation('down')` takes it to -PI: the
+    // drape renders hanging UPWARD, straight over the head. It has to be turned
+    // a half-turn out of its parent to point at the ground.
+    bone('cape', 'torso', { x: -0.04, y: -0.1, angle: Math.PI + 0.06, part: 'cape', orient: 'down', depth: 4 }),
     bone('neck', 'torso', { angle: -0.03, length: 0.07, depth: 54 }),
     bone('head', 'neck', { angle: -0.02, length: 0.14, part: 'head', orient: 'up', depth: 55, weights: { aim: 0.5, flinch: 1 } }),
     // SWORD ARM, in front. Long upper, long forearm, blade off the wrist.
