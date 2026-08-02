@@ -11,6 +11,7 @@ import { UNITS_BY_ID } from './data/units'
 import { TURRETS } from './data/turrets'
 import { ALL_BUILDINGS } from './data/buildings'
 import { drawBuilding } from './gfx/buildingArt'
+import { generateAllTextures } from './gfx/textureFactory'
 import { TECHS } from './data/tech'
 import { BONELING_DEF, GATHERER_DEF } from './data/harvest'
 import { escalationTiers } from './data/escalate'
@@ -180,6 +181,13 @@ function start(): void {
   // unaffected — but without it the workbench was the one mode no harness could
   // start, which is why its side swap went untested for as long as it existed.
   debug.__gowStartSeeded = (mode, difficulty, seed, sandbox) => {
+    // A harness calls this the moment the hook exists — which is BEFORE the
+    // preload scene has finished pumping its texture jobs at 14ms a frame.
+    // Stopping that scene mid-pump left every ungenerated key rendering as the
+    // engine's green placeholder: effects, debris and spoils all drew as green
+    // rectangles in captured footage. Finish the art synchronously first.
+    const pumping = game.scene.scenes.find(scene => scene.scene.isActive())
+    if (pumping) generateAllTextures(pumping)
     session.start({ mode, difficulty, seed, sandbox })
     for (const scene of game.scene.scenes) {
       if (scene.scene.isActive() && scene.scene.key !== 'BattleScene') scene.scene.stop()
